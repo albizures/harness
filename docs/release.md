@@ -36,6 +36,8 @@ A GitHub Actions workflow should create and update a single release PR from `mai
 
 A maintainer reviews and merges the release PR. Merging the release PR prepares the release; it does not publish packages.
 
+The Release PR is exempt from the changeset guard because it consumes pending changesets instead of introducing a new releasable change.
+
 ## Publish flow
 
 Publishing is human-triggered and CI-driven.

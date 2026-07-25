@@ -47,3 +47,7 @@ _Avoid_: any change, internal change
 **Release PR**:
 An automated pull request that applies pending changesets by updating package versions and changelogs before publishing.
 _Avoid_: manual version bump, publish PR
+
+**Changeset guard**:
+A pull request check that requires package-area changes to carry a pending changeset unless the pull request is explicitly exempt from release planning.
+_Avoid_: release check, version check
