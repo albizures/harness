@@ -16,6 +16,18 @@ _Avoid_: plugin
 A Pi package with one narrow behavior and minimal surface area. It should avoid configuration, UI, and extra abstractions unless they are required for that behavior.
 _Avoid_: framework, toolkit
 
+**Pi footer**:
+The bottom UI surface in Pi used for status and session information.
+_Avoid_: bottom bar, status bar
+
+**Project-local dev shim**:
+A committed project-local Pi extension under `.pi/extensions/` that loads a package's source extension from the workspace for development smoke testing.
+_Avoid_: test package, local install
+
+**Context fill bar**:
+A visual indicator in the Pi footer that shows how much of the active model's context window is currently occupied.
+_Avoid_: filling bar, progress bar, token bar
+
 **Release**:
 A repository-level delivery event that assigns package versions and makes one or more changed Pi packages available.
 _Avoid_: publish

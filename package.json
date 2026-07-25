@@ -5,7 +5,9 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish",
-    "typecheck": "tsc --noEmit"
+    "dev:pi": "pi",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test packages/*/extensions/*.test.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",

@@ -12,4 +12,4 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 Once done, use /code-review to review the work.
 
-If a ticket was given remember to update the checks as done.
+If a ticket was given remember to update the checks as done and close the ticket
