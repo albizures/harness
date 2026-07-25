@@ -20,6 +20,10 @@ _Avoid_: framework, toolkit
 The bottom UI surface in Pi used for status and session information.
 _Avoid_: bottom bar, status bar
 
+**Context fill bar**:
+A visual indicator in the Pi footer that shows how much of the active model's context window is currently occupied.
+_Avoid_: filling bar, progress bar, token bar
+
 **Release**:
 A repository-level delivery event that assigns package versions and makes one or more changed Pi packages available.
 _Avoid_: publish
