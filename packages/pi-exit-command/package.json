@@ -1,15 +1,23 @@
 {
   "name": "@albizures/pi-exit-command",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tiny Pi package that adds /exit as a quit alias.",
-  "keywords": ["pi-package", "pi", "extension", "exit", "quit"],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "exit",
+    "quit"
+  ],
   "license": "MIT",
   "type": "module",
   "publishConfig": {
     "access": "public"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

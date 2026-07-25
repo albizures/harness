@@ -1,15 +1,23 @@
 {
   "name": "@albizures/pi-footer-status",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi package for customizing the footer status area.",
-  "keywords": ["pi-package", "pi", "extension", "footer", "status"],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "footer",
+    "status"
+  ],
   "license": "MIT",
   "type": "module",
   "publishConfig": {
     "access": "public"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions"
+    ]
   },
   "dependencies": {
     "@earendil-works/pi-tui": "^0.82.0"
