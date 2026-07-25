@@ -15,3 +15,23 @@ _Avoid_: plugin
 **Tiny package**:
 A Pi package with one narrow behavior and minimal surface area. It should avoid configuration, UI, and extra abstractions unless they are required for that behavior.
 _Avoid_: framework, toolkit
+
+**Release**:
+A repository-level delivery event that assigns package versions and makes one or more changed Pi packages available.
+_Avoid_: publish
+
+**Publish**:
+The act of uploading one Pi package version to the package registry.
+_Avoid_: release
+
+**Package version**:
+The version owned by an individual Pi package. Harness packages are versioned independently rather than sharing one repository-wide version.
+_Avoid_: repo version, lockstep version
+
+**Releasable change**:
+A change that affects the installed behavior, public metadata, or compatibility of a published Pi package, and therefore requires a changeset.
+_Avoid_: any change, internal change
+
+**Release PR**:
+An automated pull request that applies pending changesets by updating package versions and changelogs before publishing.
+_Avoid_: manual version bump, publish PR
