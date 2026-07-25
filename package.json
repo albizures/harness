@@ -5,6 +5,7 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "changeset publish",
+    "dev:pi": "pi",
     "typecheck": "tsc --noEmit",
     "test": "node --test packages/*/extensions/*.test.ts"
   },

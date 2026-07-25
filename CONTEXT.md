@@ -20,6 +20,10 @@ _Avoid_: framework, toolkit
 The bottom UI surface in Pi used for status and session information.
 _Avoid_: bottom bar, status bar
 
+**Project-local dev shim**:
+A committed project-local Pi extension under `.pi/extensions/` that loads a package's source extension from the workspace for development smoke testing.
+_Avoid_: test package, local install
+
 **Context fill bar**:
 A visual indicator in the Pi footer that shows how much of the active model's context window is currently occupied.
 _Avoid_: filling bar, progress bar, token bar
