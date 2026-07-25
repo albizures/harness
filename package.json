@@ -1,0 +1,12 @@
+{
+  "name": "@albizures/harness-monorepo",
+  "private": true,
+  "scripts": {
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7"
+  }
+}
