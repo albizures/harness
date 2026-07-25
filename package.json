@@ -4,9 +4,12 @@
   "scripts": {
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7"
+    "@changesets/cli": "^2.29.7",
+    "@earendil-works/pi-coding-agent": "^0.82.0",
+    "typescript": "^7.0.2"
   }
 }
