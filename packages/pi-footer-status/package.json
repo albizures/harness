@@ -1,0 +1,17 @@
+{
+  "name": "@albizures/pi-footer-status",
+  "version": "0.1.0",
+  "description": "Pi package for customizing the footer status area.",
+  "keywords": ["pi-package", "pi", "extension", "footer", "status"],
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

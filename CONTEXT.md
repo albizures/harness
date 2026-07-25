@@ -16,6 +16,10 @@ _Avoid_: plugin
 A Pi package with one narrow behavior and minimal surface area. It should avoid configuration, UI, and extra abstractions unless they are required for that behavior.
 _Avoid_: framework, toolkit
 
+**Pi footer**:
+The bottom UI surface in Pi used for status and session information.
+_Avoid_: bottom bar, status bar
+
 **Release**:
 A repository-level delivery event that assigns package versions and makes one or more changed Pi packages available.
 _Avoid_: publish
