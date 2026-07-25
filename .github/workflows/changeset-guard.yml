@@ -1,0 +1,54 @@
+name: Changeset Guard
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changeset-guard:
+    name: Require changeset for package changes
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-release') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect package changes
+        id: paths
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            packages:
+              - 'packages/**'
+
+      - name: Set up pnpm
+        if: steps.paths.outputs.packages == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node.js
+        if: steps.paths.outputs.packages == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.paths.outputs.packages == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Check changeset status
+        if: steps.paths.outputs.packages == 'true'
+        run: pnpm changeset status --since=origin/main
