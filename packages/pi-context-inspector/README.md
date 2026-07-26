@@ -2,46 +2,35 @@
 
 Inspect estimated Pi context usage by source.
 
-This package is currently a scaffold for the planned **Context Inspector** Pi extension.
-Implementation is intentionally deferred.
-
-## Planned behavior
-
-The extension will add a command-opened, read-only modal/panel:
+## Command
 
 ```txt
 /context-inspector
 ```
 
-The panel will inspect the current active Pi context and show an estimated attribution by source, including buckets such as:
+The command opens a framed, read-only, point-in-time active context snapshot in TUI mode. It collects immediately from the current Pi session, even when Pi is still streaming or running tools.
 
-- system prompt inputs
-- tool definitions/snippets
-- skills
-- context files
-- user messages
-- assistant messages
-- tool results
-- compactions or summaries
+## Report contents
+
+The snapshot shows:
+
+- active model identity and context window
+- Pi's authoritative total context usage and percentage when known
+- an explicit unknown-total state when Pi cannot currently report total tokens
+- estimated source attribution by bucket, such as System prompt, Tool definitions, Context files, Skills, user messages, assistant messages, tool results, and compactions/summaries
+- capped top contributor lists for materially large buckets
+- a framed scrollable TUI overlay with read-only recommendation text for large tool results, context files, and skills
 
 ## Accuracy stance
 
-The panel will use Pi's current context usage as the total and estimate source-level attribution. It is diagnostic, not provider-exact token accounting.
+Pi's active context total is the authoritative number shown by the report. Source-level attribution is estimated from prompt inputs and active session entries; it is diagnostic, not provider-exact token accounting.
 
-## V1 scope
+The report shows contributor names and estimates only, without raw content snippets, and only expands contributor lists for materially large buckets. Tool definitions are estimated from prompt-visible names and snippets, not provider-serialized schemas.
 
-Planned v1 includes:
+## Privacy boundary
 
-- a single scrollable report
-- bucket-level context estimates
-- largest contributors within large buckets
-- read-only recommendations
-- names and estimates only, with no raw content snippets
+The extension reads Pi's already-active prompt inputs and session context entries to compute estimates. It does not inspect provider request payloads, render raw context snippets in the report, or persist report data.
 
-Planned v1 excludes:
+## Out of scope
 
-- exact tokenization
-- provider payload inspection
-- actions such as compaction or tool toggling
-- persistent widgets or footer UI
-- content snippets
+This tiny package intentionally does not provide configuration, persistent widgets, Pi footer UI, exact tokenizer integration, provider payload inspection, or user-triggered cleanup/actions from the report.
