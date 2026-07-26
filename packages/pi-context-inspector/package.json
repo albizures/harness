@@ -1,6 +1,6 @@
 {
   "name": "@albizures/pi-context-inspector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Inspect estimated Pi context usage by source.",
   "keywords": [
     "pi-package",
