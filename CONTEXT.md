@@ -28,6 +28,14 @@ _Avoid_: test package, local install
 A visual indicator in the Pi footer that shows how much of the active model's context window is currently occupied.
 _Avoid_: filling bar, progress bar, token bar
 
+**Context attribution estimate**:
+An approximate breakdown of the active Pi session's context usage by source, such as system prompt inputs, skills, context files, conversation messages, and tool results. It is diagnostic rather than provider-exact accounting.
+_Avoid_: exact token accounting, billing attribution
+
+**Context Inspector**:
+A Pi extension that displays a command-opened, read-only context attribution estimate for the current active Pi context.
+_Avoid_: context analyzer, context accounting
+
 **Release**:
 A repository-level delivery event that assigns package versions and makes one or more changed Pi packages available.
 _Avoid_: publish

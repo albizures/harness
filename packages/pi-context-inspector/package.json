@@ -1,0 +1,28 @@
+{
+  "name": "@albizures/pi-context-inspector",
+  "version": "0.1.0",
+  "description": "Inspect estimated Pi context usage by source.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "context",
+    "inspector"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.82.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
