@@ -75,3 +75,7 @@ _Avoid_: manual version bump, publish PR
 **Changeset guard**:
 A pull request check that requires package-area changes to carry a pending changeset unless the pull request is explicitly exempt from release planning.
 _Avoid_: release check, version check
+
+**Suggested Replies**:
+A Pi package feature that lets the agent present ephemeral reply suggestions that the user can insert into the normal prompt editor as a fast answer.
+_Avoid_: question tool, options selector, choice prompt
