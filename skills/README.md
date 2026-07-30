@@ -30,5 +30,6 @@ Current groups:
 
 - `engineering/` — engineering workflow skills
 - `design/` — design and modeling skills
+- `workflow/` — meta-skills that help users coordinate agent sessions, choose agent flows, or transform work artifacts so agents can operate more effectively
 
 The legacy `.agents/skills/` tree is not the source of truth for this catalog and should not be used for new shared skills.
