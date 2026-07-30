@@ -39,11 +39,11 @@ Rules:
 Suggestions render in a widget above the editor:
 
 ```text
-Suggested replies
-  1. Yes, agree
-  2. Show alternatives
-
-F7/F8 cycle • /suggested-reply <n> insert • Enter submit
+┌──────────────────────────────────────────────────────────┐
+│Suggested replies
+│  1. Yes, agree
+│  2. Show alternatives
+│F7/F8 cycle • /suggested-reply <n> insert • Enter submit
 ```
 
 Selecting a suggestion replaces the whole editor text. The user can edit that text before pressing Enter. Suggestions stay visible until the user submits a normal prompt, a new suggestion set replaces them, or the session/reload lifecycle clears them.

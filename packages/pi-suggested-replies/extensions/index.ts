@@ -12,6 +12,12 @@ export type SuggestedRepliesState = {
   selectedIndex: number;
 };
 
+type SuggestedRepliesWidgetTheme = {
+  fg(color: "borderMuted", text: string): string;
+};
+
+type BorderStyle = (text: string) => string;
+
 const SuggestRepliesParams = {
   type: "object",
   properties: {
@@ -42,8 +48,8 @@ export default function suggestedReplies(pi: ExtensionAPI) {
   };
 
   const refreshWidget = (ctx: Pick<ExtensionContext, "ui">) => {
-    ctx.ui.setWidget(WIDGET_ID, () => ({
-      render: (width: number) => renderSuggestedRepliesWidget(state, width),
+    ctx.ui.setWidget(WIDGET_ID, (_tui?: unknown, theme?: SuggestedRepliesWidgetTheme) => ({
+      render: (width: number) => renderSuggestedRepliesWidget(state, width, (text) => theme?.fg("borderMuted", text) ?? text),
       invalidate() {},
     }));
   };
@@ -158,18 +164,19 @@ export function normalizeSuggestions(suggestions: ReplySuggestion[]): ReplySugge
     .slice(0, MAX_SUGGESTIONS);
 }
 
-export function renderSuggestedRepliesWidget(state: SuggestedRepliesState | undefined, width: number): string[] {
+export function renderSuggestedRepliesWidget(state: SuggestedRepliesState | undefined, width: number, borderStyle: BorderStyle = (text) => text): string[] {
   if (!state || state.suggestions.length === 0) return [];
+  if (width <= 0) return [];
 
-  const lines = ["Suggested replies"];
+  const contentLines = ["Suggested replies"];
   for (let index = 0; index < state.suggestions.length; index += 1) {
     const suggestion = state.suggestions[index]!;
     const marker = index === state.selectedIndex ? "›" : " ";
-    lines.push(`${marker} ${index + 1}. ${suggestion.label}`);
+    contentLines.push(`${marker} ${index + 1}. ${suggestion.label}`);
   }
-  lines.push("F7/F8 cycle • /suggested-reply <n> insert • Enter submit");
+  contentLines.push("F7/F8 cycle • /suggested-reply <n> insert • Enter submit");
 
-  return lines.map((line) => truncatePlainLine(line, width));
+  return [renderTopBorder(width, borderStyle), ...contentLines.map((line) => renderSideBorderLine(line, width, borderStyle))];
 }
 
 export function parseSuggestionNumber(args: string): number | undefined {
@@ -182,6 +189,23 @@ export function parseSuggestionNumber(args: string): number | undefined {
 
 export function wrapIndex(index: number, length: number): number {
   return ((index % length) + length) % length;
+}
+
+function renderTopBorder(width: number, borderStyle: BorderStyle): string {
+  if (width === 1) return borderStyle("┌");
+  return borderStyle(`┌${"─".repeat(width - 2)}┐`);
+}
+
+function renderSideBorderLine(line: string, width: number, borderStyle: BorderStyle): string {
+  if (width < 40) {
+    const contentWidth = width - 1;
+    if (contentWidth <= 0) return "";
+    return `  ${truncatePlainLine(line, contentWidth)}`;
+  }
+
+  const contentWidth = width - 1;
+  if (contentWidth <= 0) return borderStyle("│");
+  return `  ${truncatePlainLine(line, contentWidth)}`;
 }
 
 function truncatePlainLine(line: string, width: number): string {
