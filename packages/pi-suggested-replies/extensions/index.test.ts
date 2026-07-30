@@ -59,7 +59,8 @@ test("tool displays suggestions and returns immediately", async () => {
     { label: "Yes, agree" },
     { label: "Show alternatives" },
   ]);
-  assert.match(widgetFactory().render(120).join("\n"), /Suggested replies\n› 1\. Yes, agree/);
+  assert.match(widgetFactory().render(120).join("\n"), /┌─+┐\n  Suggested replies\n  › 1\. Yes, agree/);
+  assert.match(widgetFactory(undefined, { fg: (_color: "borderMuted", text: string) => `<border>${text}</border>` }).render(120)[0], /^<border>┌─+┐<\/border>$/);
 });
 
 test("normalizes suggestions by trimming, dropping empty labels, and capping at nine", () => {
@@ -84,10 +85,11 @@ test("renders widget with selected marker, one-line suggestions, help text, and 
   }, 32);
 
   assert.deepEqual(lines, [
-    "Suggested replies",
-    "  1. Yes, agree",
-    "› 2. Show alternatives first",
-    "F7/F8 cycle • /suggested-reply …",
+    "┌──────────────────────────────┐",
+    "  Suggested replies",
+    "    1. Yes, agree",
+    "  › 2. Show alternatives first",
+    "  F7/F8 cycle • /suggested-reply…",
   ]);
 });
 
