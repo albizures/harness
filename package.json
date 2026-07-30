@@ -6,6 +6,7 @@
     "version-packages": "changeset version",
     "release": "changeset publish",
     "dev:pi": "pi",
+    "prototype:awf-state-machine": "node prototypes/agent-workflow-state-machine/tui.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test packages/*/extensions/*.test.ts"
   },
