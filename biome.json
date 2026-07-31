@@ -1,0 +1,42 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+	"files": {
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!pnpm-lock.yaml",
+			"!skills-lock.json",
+			"!**/CHANGELOG.md",
+			"!.changeset/*.md"
+		]
+	},
+	"formatter": {
+		"enabled": true
+	},
+	"linter": {
+		"rules": {
+			"style": {
+				"useConsistentArrayType": {
+					"level": "on",
+					"options": {
+						"syntax": "generic"
+					}
+				},
+				"useConsistentTypeDefinitions": {
+					"level": "on",
+					"options": {
+						"style": "type"
+					}
+				},
+				"noMagicNumbers": "error",
+				"useConsistentMethodSignatures": "error",
+				"noNestedTernary": "error",
+				"useForOf": "error",
+				"noDefaultExport": "error"
+			}
+		}
+	},
+	"assist": {
+		"enabled": false
+	}
+}
