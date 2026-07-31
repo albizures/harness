@@ -56,6 +56,45 @@ test("CLI returns a stable validation error envelope for a bad manifest", () => 
 	assert.match(JSON.stringify(envelope.error.details.issues), /wildcard/);
 });
 
+test("CLI smoke path seeds multiple in-memory issues and returns only legally executable ready items", () => {
+	const result = spawnSync(process.execPath, [cliPath.pathname, "ready"], {
+		encoding: "utf8",
+		env: {
+			...process.env,
+			AWF_MEMORY_ISSUES: JSON.stringify([
+				{
+					id: "1",
+					title: "Ready ticket",
+					labels: ["type:ticket", "state:ready", "action:implement"],
+				},
+				{
+					id: "2",
+					title: "Dependency blocked ticket",
+					labels: ["type:ticket", "state:ready", "action:implement"],
+					relationships: { dependencies: ["1"] },
+				},
+				{
+					id: "3",
+					title: "Running ticket",
+					workflow: {
+						kind: "ticket",
+						state: "running",
+						action: "implement",
+						activeRunId: "run-3",
+					},
+				},
+			]),
+		},
+	});
+
+	assert.equal(result.status, 0);
+	assert.equal(result.stderr, "");
+	assert.deepEqual(
+		JSON.parse(result.stdout).data.items.map((item: { id: string }) => item.id),
+		["1"],
+	);
+});
+
 test("CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
 	const started = spawnSync(
 		process.execPath,

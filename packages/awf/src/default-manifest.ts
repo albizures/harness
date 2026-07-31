@@ -21,6 +21,12 @@ export const defaultManifest = defineManifest({
 		},
 	},
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
+	readiness: {
+		filters: [
+			{ kind: "spec", state: "ready", action: "plan" },
+			{ kind: "ticket", state: "ready", action: "implement" },
+		],
+	},
 	kinds: [
 		{
 			id: "spec",

@@ -56,6 +56,7 @@ export type CreateIssueInput = {
 	title: string;
 	body?: string;
 	workflow: Omit<WorkflowProjection, "version" | "hash"> & { version?: number };
+	relationships?: Partial<IssueRelationships>;
 	logs?: Array<Omit<WorkflowLog, "issueId">>;
 };
 
@@ -66,6 +67,7 @@ export type SeedIssueInput =
 			title: string;
 			body?: string;
 			labels: Array<string>;
+			relationships?: Partial<IssueRelationships>;
 			version?: number;
 	  };
 
@@ -79,6 +81,7 @@ export type UpdateIssueInput = {
 export type Tracker = {
 	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	getIssue: (id: string) => Promise<WorkflowIssue>;
+	listIssues: () => Promise<Array<WorkflowIssue>>;
 	updateIssue: (id: string, input: UpdateIssueInput) => Promise<WorkflowIssue>;
 	appendLog: (
 		id: string,
@@ -150,6 +153,7 @@ class InMemoryTracker implements Tracker {
 		for (const issue of seed) {
 			this.storeSeed(issue);
 		}
+		this.backfillSeededRelationshipInverses();
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {
@@ -164,6 +168,10 @@ class InMemoryTracker implements Tracker {
 
 	async getIssue(id: string): Promise<WorkflowIssue> {
 		return cloneIssue(this.requireIssue(id));
+	}
+
+	async listIssues(): Promise<Array<WorkflowIssue>> {
+		return [...this.issues.values()].map(cloneIssue);
 	}
 
 	async updateIssue(
@@ -281,6 +289,32 @@ class InMemoryTracker implements Tracker {
 		}
 		return issue;
 	}
+
+	private backfillSeededRelationshipInverses(): void {
+		for (const issue of this.issues.values()) {
+			if (issue.relationships.parent !== undefined) {
+				pushUnique(
+					this.requireIssue(issue.relationships.parent).relationships.children,
+					issue.id,
+				);
+			}
+			for (const childId of issue.relationships.children) {
+				this.requireIssue(childId).relationships.parent = issue.id;
+			}
+			for (const dependencyId of issue.relationships.dependencies) {
+				pushUnique(
+					this.requireIssue(dependencyId).relationships.dependents,
+					issue.id,
+				);
+			}
+			for (const dependentId of issue.relationships.dependents) {
+				pushUnique(
+					this.requireIssue(dependentId).relationships.dependencies,
+					issue.id,
+				);
+			}
+		}
+	}
 }
 
 type StoredIssue = Omit<WorkflowIssue, "workflow"> & {
@@ -310,6 +344,7 @@ function fromLabels(
 		title: input.title,
 		body: input.body,
 		workflow: { ...fields, version: input.version },
+		relationships: input.relationships,
 	};
 }
 
@@ -355,7 +390,7 @@ function normalizeIssue(input: CreateIssueInput & { id: string }): StoredIssue {
 			...input.workflow,
 			version: input.workflow.version ?? 1,
 		}),
-		relationships: { children: [], dependencies: [], dependents: [] },
+		relationships: normalizeRelationships(input.relationships),
 		artifacts: [],
 		changes: [],
 		logs: (input.logs ?? []).map((log, index) => ({
@@ -363,6 +398,19 @@ function normalizeIssue(input: CreateIssueInput & { id: string }): StoredIssue {
 			issueId: input.id,
 			sequence: log.sequence ?? index + 1,
 		})),
+	};
+}
+
+function normalizeRelationships(
+	relationships: Partial<IssueRelationships> | undefined,
+): IssueRelationships {
+	return {
+		...(relationships?.parent === undefined
+			? {}
+			: { parent: relationships.parent }),
+		children: [...(relationships?.children ?? [])],
+		dependencies: [...(relationships?.dependencies ?? [])],
+		dependents: [...(relationships?.dependents ?? [])],
 	};
 }
 

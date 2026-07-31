@@ -45,6 +45,13 @@ export type ManifestCommand = {
 	output?: JsonSchema;
 };
 
+export type ManifestReadinessFilter = {
+	kind?: Identifier;
+	state?: Identifier;
+	action?: Identifier;
+	reason?: Identifier;
+};
+
 export type ManifestRelationship = {
 	id: Identifier;
 	from: Identifier;
@@ -76,6 +83,9 @@ export type WorkflowManifest = {
 		perIssue: 1;
 		perWorkflow?: number;
 		perKind?: Record<string, number>;
+	};
+	readiness?: {
+		filters: Array<ManifestReadinessFilter>;
 	};
 	kinds: Array<ManifestKind>;
 	commands: Array<ManifestCommand>;
@@ -212,6 +222,8 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			}
 		}
 	}
+
+	validateReadiness(value.readiness, kindIds, states, actions, reasons, issues);
 
 	for (const [index, command] of readArray(
 		value.commands,
@@ -465,6 +477,46 @@ function validateStateRef(
 			`${path}.reason`,
 			"Reason must reference a known reason, null, or be omitted.",
 		);
+	}
+}
+
+function validateReadiness(
+	value: unknown,
+	kindIds: Set<string>,
+	states: Set<string>,
+	actions: Set<string>,
+	reasons: Set<string>,
+	issues: Array<ValidationIssue>,
+): void {
+	if (value === undefined) {
+		return;
+	}
+	if (!isRecord(value)) {
+		issue(issues, "$.readiness", "Readiness metadata must be an object.");
+		return;
+	}
+	for (const [index, filter] of readArray(
+		value.filters,
+		"$.readiness.filters",
+		issues,
+	).entries()) {
+		const path = `$.readiness.filters[${index}]`;
+		if (!isRecord(filter)) {
+			issue(issues, path, "Readiness filter must be an object.");
+			continue;
+		}
+		if (filter.kind !== undefined && !kindIds.has(String(filter.kind))) {
+			issue(issues, `${path}.kind`, "Readiness filter kind must be known.");
+		}
+		if (filter.state !== undefined && !states.has(String(filter.state))) {
+			issue(issues, `${path}.state`, "Readiness filter state must be known.");
+		}
+		if (filter.action !== undefined && !actions.has(String(filter.action))) {
+			issue(issues, `${path}.action`, "Readiness filter action must be known.");
+		}
+		if (filter.reason !== undefined && !reasons.has(String(filter.reason))) {
+			issue(issues, `${path}.reason`, "Readiness filter reason must be known.");
+		}
 	}
 }
 

@@ -28,7 +28,7 @@ const commands: Array<CommandSpec> = [
 	},
 	{
 		name: "ready",
-		usage: "awf ready [--spec <id>]",
+		usage: "awf ready [--spec <id>] [--limit <n>]",
 		description: "Return legally executable work.",
 	},
 	{
@@ -109,6 +109,9 @@ export async function execute(
 	if (args[0] === "logs") {
 		return logsCommand(args[1], tracker);
 	}
+	if (args[0] === "ready") {
+		return readyCommand(parseReadyOptions(args), tracker, manifest);
+	}
 	if (args[0] === "start") {
 		return startCommand(args[1], tracker, manifest);
 	}
@@ -183,22 +186,43 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 	}
 }
 
-const READY_WITH_SPEC_ARGUMENT_COUNT = 3;
-
 function validateReady(args: Array<string>): Envelope | undefined {
-	if (args.length === 1) {
-		return undefined;
-	}
+	const options = parseReadyOptions(args);
 	if (
-		args.length === READY_WITH_SPEC_ARGUMENT_COUNT &&
-		args[1] === "--spec" &&
-		args[2] !== ""
+		options.error === undefined &&
+		options.limit !== undefined &&
+		(!Number.isInteger(options.limit) || options.limit < 1)
 	) {
-		return undefined;
+		return invalidReadyArguments();
 	}
+	return options.error === undefined ? undefined : invalidReadyArguments();
+}
+
+function invalidReadyArguments(): Envelope {
 	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {
-		usage: "awf ready [--spec <id>]",
+		usage: "awf ready [--spec <id>] [--limit <n>]",
 	});
+}
+
+type ReadyOptions = { specId?: string; limit?: number; error?: true };
+
+function parseReadyOptions(args: Array<string>): ReadyOptions {
+	const options: ReadyOptions = {};
+	for (let index = 1; index < args.length; index += 2) {
+		const option = args[index];
+		const value = args[index + 1];
+		if (value === undefined || value === "") {
+			return { error: true };
+		}
+		if (option === "--spec" && options.specId === undefined) {
+			options.specId = value;
+		} else if (option === "--limit" && options.limit === undefined) {
+			options.limit = Number(value);
+		} else {
+			return { error: true };
+		}
+	}
+	return options;
 }
 
 function requirePositionalCount(
@@ -291,6 +315,49 @@ async function getIssueCommand(
 		}
 		throw error;
 	}
+}
+
+async function readyCommand(
+	options: ReadyOptions,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+): Promise<Envelope> {
+	const issues = await tracker.listIssues();
+	const byId = new Map(issues.map((issue) => [issue.id, issue]));
+	const activeIssues = issues.filter(
+		(issue) => issue.workflow.activeRunId !== undefined,
+	);
+	const filters = readinessFilters(manifest);
+	const candidates = issues
+		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
+		.filter((issue) => issue.workflow.activeRunId === undefined)
+		.filter((issue) =>
+			issue.relationships.dependencies.every((id) => isDone(byId.get(id))),
+		)
+		.filter(
+			(issue) =>
+				options.specId === undefined ||
+				issue.relationships.parent === options.specId,
+		)
+		.filter(() => !workflowConcurrencyBlocked(manifest, activeIssues))
+		.filter(
+			(issue) =>
+				!kindConcurrencyBlocked(manifest, activeIssues, issue.workflow.kind),
+		)
+		.sort(compareReadyIssues)
+		.slice(0, options.limit);
+
+	return success({
+		items: candidates.map((issue) => ({
+			id: issue.id,
+			title: issue.title,
+			workflow: cleanWorkflowFields(issue.workflow),
+			suggestedCommand: {
+				argv: ["start", issue.id],
+				display: `awf start ${issue.id}`,
+			},
+		})),
+	});
 }
 
 async function logsCommand(
@@ -471,6 +538,92 @@ type WorkflowFields = {
 function readOption(args: Array<string>, name: string): string | undefined {
 	const index = args.indexOf(name);
 	return index === -1 ? undefined : args[index + 1];
+}
+
+function readinessFilters(
+	manifest: WorkflowManifest,
+): Array<{ kind?: string; state?: string; action?: string; reason?: string }> {
+	if (manifest.readiness !== undefined) {
+		return manifest.readiness.filters;
+	}
+	return manifest.kinds.flatMap((kind) =>
+		kind.transitions
+			.filter((transition) => transition.event === "start")
+			.map((transition) => ({ kind: kind.id, ...transition.from })),
+	);
+}
+
+function matchesReadinessFilters(
+	workflow: WorkflowFields,
+	filters: Array<{
+		kind?: string;
+		state?: string;
+		action?: string;
+		reason?: string;
+	}>,
+): boolean {
+	return filters.some(
+		(filter) =>
+			fieldMatches(filter.kind, workflow.kind) &&
+			fieldMatches(filter.state, workflow.state) &&
+			fieldMatches(filter.action, workflow.action) &&
+			fieldMatches(filter.reason, workflow.reason),
+	);
+}
+
+function fieldMatches(
+	expected: string | undefined,
+	actual: string | undefined,
+): boolean {
+	return expected === undefined || expected === actual;
+}
+
+function isDone(issue: { workflow: WorkflowFields } | undefined): boolean {
+	return issue?.workflow.state === "done";
+}
+
+function workflowConcurrencyBlocked(
+	manifest: WorkflowManifest,
+	activeIssues: Array<{ workflow: WorkflowFields }>,
+): boolean {
+	return (
+		manifest.concurrency.perWorkflow !== undefined &&
+		activeIssues.length >= manifest.concurrency.perWorkflow
+	);
+}
+
+function kindConcurrencyBlocked(
+	manifest: WorkflowManifest,
+	activeIssues: Array<{ workflow: WorkflowFields }>,
+	kind: string,
+): boolean {
+	const limit = manifest.concurrency.perKind?.[kind];
+	return (
+		limit !== undefined &&
+		activeIssues.filter((issue) => issue.workflow.kind === kind).length >= limit
+	);
+}
+
+function compareReadyIssues(
+	left: { id: string; title: string },
+	right: { id: string; title: string },
+): number {
+	return (
+		left.id.localeCompare(right.id, undefined, { numeric: true }) ||
+		left.title.localeCompare(right.title) ||
+		left.id.localeCompare(right.id)
+	);
+}
+
+function cleanWorkflowFields(workflow: WorkflowFields): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries({
+			kind: workflow.kind,
+			state: workflow.state,
+			action: workflow.action,
+			reason: workflow.reason,
+		}).filter(([, value]) => value !== undefined),
+	) as Record<string, string>;
 }
 
 function findTransition(
