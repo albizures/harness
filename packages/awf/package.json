@@ -20,6 +20,7 @@
     "awf": "node ./dist/cli.js"
   },
   "dependencies": {
+    "jiti": "^2.7.0",
     "type-fest": "^5.8.0"
   }
 }

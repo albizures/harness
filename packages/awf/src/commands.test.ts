@@ -3,8 +3,8 @@ import test from "node:test";
 import { execute } from "./commands.ts";
 import { serializeEnvelope } from "./envelope.ts";
 
-test("help returns a stable success envelope", () => {
-  const envelope = execute(["--help"]);
+test("help returns a stable success envelope", async () => {
+  const envelope = await execute(["--help"]);
 
   assert.equal(envelope.ok, true);
   if (!envelope.ok) throw new Error("expected success");
@@ -15,8 +15,8 @@ test("help returns a stable success envelope", () => {
   assert.ok(data.commands.some((command) => command.usage === "awf start <id>"));
 });
 
-test("known but unimplemented v1 commands return a typed error envelope", () => {
-  const envelope = execute(["start", "123"]);
+test("known but unimplemented v1 commands return a typed error envelope", async () => {
+  const envelope = await execute(["start", "123"]);
 
   assert.deepEqual(envelope, {
     ok: false,
@@ -28,8 +28,8 @@ test("known but unimplemented v1 commands return a typed error envelope", () => 
   });
 });
 
-test("invalid arguments return a stable parse error envelope", () => {
-  const envelope = execute(["succeed", "123"]);
+test("invalid arguments return a stable parse error envelope", async () => {
+  const envelope = await execute(["succeed", "123"]);
 
   assert.deepEqual(envelope, {
     ok: false,

@@ -1,4 +1,5 @@
 import { type Envelope, failure, success } from "./envelope.ts";
+import { loadManifest, ManifestValidationError } from "./manifest.ts";
 
 type CommandSpec = {
   name: string;
@@ -13,12 +14,13 @@ const commands: CommandSpec[] = [
   { name: "spec create", usage: "awf spec create --title <title> --content <file>", description: "Create a Spec." },
   { name: "plan apply", usage: "awf plan apply <spec> --input <plan.json>", description: "Apply a plan to a Spec." },
   { name: "handoff", usage: "awf handoff <source> --input <handoff.json>", description: "Create a Handoff." },
+  { name: "manifest validate", usage: "awf manifest validate <file>", description: "Load and validate a workflow manifest." },
   { name: "start", usage: "awf start <id>", description: "Start the current action." },
   { name: "succeed", usage: "awf succeed <id> --run <run>", description: "Mark a run as succeeded." },
   { name: "fail", usage: "awf fail <id> --run <run>", description: "Mark a run as failed." },
 ];
 
-export function execute(args: string[]): Envelope {
+export async function execute(args: string[]): Promise<Envelope> {
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     return success({
       name: "awf",
@@ -34,6 +36,10 @@ export function execute(args: string[]): Envelope {
   const parseError = validateKnownCommand(args);
   if (parseError !== undefined) {
     return parseError;
+  }
+
+  if (args[0] === "manifest" && args[1] === "validate") {
+    return validateManifestCommand(args[2]);
   }
 
   return failure("NOT_IMPLEMENTED", "This workflow command is not implemented yet.", {
@@ -66,6 +72,11 @@ function validateKnownCommand(args: string[]): Envelope | undefined {
         return unknownCommand(args);
       }
       return requirePositionalAndOption(args, "awf plan apply <spec> --input <plan.json>", "--input", 2);
+    case "manifest":
+      if (subcommand !== "validate") {
+        return unknownCommand(args);
+      }
+      return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
     default:
       return unknownCommand(args);
   }
@@ -81,9 +92,9 @@ function validateReady(args: string[]): Envelope | undefined {
   return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", { usage: "awf ready [--spec <id>]" });
 }
 
-function requirePositionalCount(args: string[], count: number, usage: string): Envelope | undefined {
-  const positionals = args.slice(1).filter((arg) => !arg.startsWith("-"));
-  if (positionals.length === count && args.length === count + 1) {
+function requirePositionalCount(args: string[], count: number, usage: string, offset = 1): Envelope | undefined {
+  const positionals = args.slice(offset).filter((arg) => !arg.startsWith("-"));
+  if (positionals.length === count && args.length === offset + count) {
     return undefined;
   }
   
@@ -124,6 +135,22 @@ function requireOptions(args: string[], usage: string, optionNames: string[]): E
   }
 
   return undefined;
+}
+
+async function validateManifestCommand(path: string | undefined): Promise<Envelope> {
+  if (path === undefined) {
+    return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage: "awf manifest validate <file>" });
+  }
+
+  try {
+    const manifest = await loadManifest(path);
+    return success({ manifest: manifest.workflow.id, version: manifest.version, kinds: manifest.kinds.map((kind) => kind.id) });
+  } catch (error) {
+    if (error instanceof ManifestValidationError) {
+      return failure("MANIFEST_VALIDATION_FAILED", "Workflow manifest validation failed.", { issues: error.issues });
+    }
+    return failure("MANIFEST_LOAD_FAILED", "Workflow manifest could not be loaded.", { message: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 function unknownCommand(args: string[]): Envelope {

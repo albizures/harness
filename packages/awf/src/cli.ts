@@ -8,6 +8,6 @@ declare const process: {
   exitCode?: number;
 };
 
-const envelope = execute(process.argv.slice(2));
+const envelope = await execute(process.argv.slice(2));
 process.stdout.write(serializeEnvelope(envelope));
 process.exitCode = envelope.ok ? 0 : 1;
