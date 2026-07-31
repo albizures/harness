@@ -89,7 +89,10 @@ export type Tracker = {
 	) => Promise<WorkflowLog>;
 	readLogs: (id: string) => Promise<Array<WorkflowLog>>;
 	addChild: (parentId: string, childId: string) => Promise<void>;
+	removeChild: (parentId: string, childId: string) => Promise<void>;
 	addDependency: (issueId: string, blockedById: string) => Promise<void>;
+	removeDependency: (issueId: string, blockedById: string) => Promise<void>;
+	deleteIssue: (id: string) => Promise<void>;
 	registerArtifact: (
 		issueId: string,
 		input: Omit<WorkflowArtifact, "id">,
@@ -235,11 +238,50 @@ class InMemoryTracker implements Tracker {
 		pushUnique(parent.relationships.children, childId);
 	}
 
+	async removeChild(parentId: string, childId: string): Promise<void> {
+		const parent = this.requireIssue(parentId);
+		const child = this.requireIssue(childId);
+		parent.relationships.children = parent.relationships.children.filter(
+			(id) => id !== childId,
+		);
+		if (child.relationships.parent === parentId) {
+			delete child.relationships.parent;
+		}
+	}
+
 	async addDependency(issueId: string, blockedById: string): Promise<void> {
 		const issue = this.requireIssue(issueId);
 		const blocker = this.requireIssue(blockedById);
 		pushUnique(issue.relationships.dependencies, blockedById);
 		pushUnique(blocker.relationships.dependents, issueId);
+	}
+
+	async removeDependency(issueId: string, blockedById: string): Promise<void> {
+		const issue = this.requireIssue(issueId);
+		const blocker = this.requireIssue(blockedById);
+		issue.relationships.dependencies = issue.relationships.dependencies.filter(
+			(id) => id !== blockedById,
+		);
+		blocker.relationships.dependents = blocker.relationships.dependents.filter(
+			(id) => id !== issueId,
+		);
+	}
+
+	async deleteIssue(id: string): Promise<void> {
+		const issue = this.requireIssue(id);
+		if (issue.relationships.parent !== undefined) {
+			await this.removeChild(issue.relationships.parent, id);
+		}
+		for (const childId of [...issue.relationships.children]) {
+			await this.removeChild(id, childId);
+		}
+		for (const dependencyId of [...issue.relationships.dependencies]) {
+			await this.removeDependency(id, dependencyId);
+		}
+		for (const dependentId of [...issue.relationships.dependents]) {
+			await this.removeDependency(dependentId, id);
+		}
+		this.issues.delete(id);
 	}
 
 	async registerArtifact(

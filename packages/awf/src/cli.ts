@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { execute } from "./commands.ts";
 import { serializeEnvelope } from "./envelope.ts";
 import {
@@ -14,8 +15,12 @@ declare const process: {
 };
 
 try {
+	const args = process.argv.slice(2);
 	const tracker = createInMemoryTrackerFromEnvironment(process.env);
-	const envelope = await execute(process.argv.slice(2), { tracker });
+	const envelope = await execute(args, {
+		tracker,
+		stdin: readStdinForDashInput(args),
+	});
 	process.stdout.write(serializeEnvelope(envelope));
 	process.exitCode = envelope.ok ? 0 : 1;
 } catch (error) {
@@ -33,4 +38,12 @@ try {
 	} else {
 		throw error;
 	}
+}
+
+function readStdinForDashInput(args: Array<string>): string | undefined {
+	const inputIndex = args.indexOf("--input");
+	if (inputIndex === -1 || args[inputIndex + 1] !== "-") {
+		return undefined;
+	}
+	return readFileSync(0, "utf8");
 }

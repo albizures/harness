@@ -1,6 +1,6 @@
 import { defineManifest } from "./manifest.ts";
 
-const states = ["ready", "running", "blocked", "done"] as const;
+const states = ["ready", "running", "blocked", "done", "need-human"] as const;
 const actions = ["plan", "implement", "none"] as const;
 
 export const defaultManifest = defineManifest({

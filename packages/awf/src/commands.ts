@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { defaultManifest } from "./default-manifest.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
+import type { JsonValue } from "type-fest";
 import {
 	loadManifest,
 	ManifestValidationError,
@@ -37,13 +39,13 @@ const commands: Array<CommandSpec> = [
 		description: "Return immutable workflow logs.",
 	},
 	{
-		name: "spec create",
-		usage: "awf spec create --title <title> --content <file>",
+		name: "create spec",
+		usage: "awf create spec --input <file|->",
 		description: "Create a Spec.",
 	},
 	{
-		name: "plan apply",
-		usage: "awf plan apply <spec> --input <plan.json>",
+		name: "apply plan",
+		usage: "awf apply plan <spec> --input <file|->",
 		description: "Apply a plan to a Spec.",
 	},
 	{
@@ -73,7 +75,11 @@ const commands: Array<CommandSpec> = [
 	},
 ];
 
-export type ExecuteOptions = { tracker?: Tracker; manifest?: WorkflowManifest };
+export type ExecuteOptions = {
+	tracker?: Tracker;
+	manifest?: WorkflowManifest;
+	stdin?: string;
+};
 
 export async function execute(
 	args: Array<string>,
@@ -111,6 +117,23 @@ export async function execute(
 	}
 	if (args[0] === "ready") {
 		return readyCommand(parseReadyOptions(args), tracker, manifest);
+	}
+	if (args[0] === "create" && args[1] === "spec") {
+		return createSpecCommand(
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			options.stdin,
+		);
+	}
+	if (args[0] === "apply" && args[1] === "plan") {
+		return applyPlanCommand(
+			args[2],
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			options.stdin,
+		);
 	}
 	if (args[0] === "start") {
 		return startCommand(args[1], tracker, manifest);
@@ -157,22 +180,23 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 				`awf ${command} <id> --run <run>`,
 				"--run",
 			);
-		case "spec":
-			if (subcommand !== "create") {
-				return unknownCommand(args);
-			}
-			return requireOptions(
-				args,
-				"awf spec create --title <title> --content <file>",
-				["--title", "--content"],
-			);
-		case "plan":
-			if (subcommand !== "apply") {
+		case "create":
+			if (subcommand !== "spec") {
 				return unknownCommand(args);
 			}
 			return requirePositionalAndOption(
 				args,
-				"awf plan apply <spec> --input <plan.json>",
+				"awf create spec --input <file|->",
+				"--input",
+				1,
+			);
+		case "apply":
+			if (subcommand !== "plan") {
+				return unknownCommand(args);
+			}
+			return requirePositionalAndOption(
+				args,
+				"awf apply plan <spec> --input <file|->",
 				"--input",
 				2,
 			);
@@ -262,31 +286,157 @@ function requirePositionalAndOption(
 	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
 }
 
-function requireOptions(
-	args: Array<string>,
-	usage: string,
-	optionNames: Array<string>,
-): Envelope | undefined {
-	if (args.length !== 2 + optionNames.length * 2) {
+async function createSpecCommand(
+	inputPath: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+): Promise<Envelope> {
+	if (inputPath === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage,
+			usage: "awf create spec --input <file|->",
+		});
+	}
+	const kind = manifest.kinds.find((candidate) => candidate.id === "spec");
+	if (kind === undefined) {
+		return failure(
+			"MANIFEST_UNSUPPORTED",
+			"Manifest does not define spec kind.",
+		);
+	}
+	const raw = await readInput(inputPath, stdin);
+	const spec = parseSpecInput(raw);
+	if (spec.content.trim() === "") {
+		return failure("INVALID_SPEC", "Spec content must be non-empty.");
+	}
+	const issue = await tracker.createIssue({
+		title: spec.title,
+		body: spec.content,
+		workflow: { kind: "spec", ...initialWorkflowTarget(kind.initial) },
+	});
+	const log = await tracker.appendLog(issue.id, {
+		type: "spec_created",
+		payload: { input: inputPath },
+	});
+	return success({ issue, log });
+}
+
+async function applyPlanCommand(
+	specId: string | undefined,
+	inputPath: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+): Promise<Envelope> {
+	if (specId === undefined || inputPath === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf apply plan <spec> --input <file|->",
+		});
+	}
+	let spec: Awaited<ReturnType<Tracker["getIssue"]>>;
+	try {
+		spec = await tracker.getIssue(specId);
+	} catch (error) {
+		if (error instanceof IssueNotFoundError) {
+			return failure("NOT_FOUND", error.message, { id: specId });
+		}
+		throw error;
+	}
+	if (spec.workflow.kind !== "spec" || spec.workflow.action !== "plan") {
+		return invalidTransition(specId, "apply-plan");
+	}
+	const raw = await readInput(inputPath, stdin);
+	const plan = parsePlanInput(raw);
+	const validationIssues = validatePlan(plan);
+	if (validationIssues.length > 0) {
+		return failure("INVALID_PLAN", "Plan bundle is invalid.", {
+			issues: validationIssues as JsonValue,
 		});
 	}
 
-	for (const optionName of optionNames) {
-		const optionIndex = args.indexOf(optionName);
-		if (
-			optionIndex === -1 ||
-			args[optionIndex + 1] === undefined ||
-			args[optionIndex + 1] === ""
-		) {
-			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-				usage,
-			});
+	const created: Array<{ key: string; id: string }> = [];
+	const children: Array<string> = [];
+	const dependencies: Array<{ issueId: string; blockedById: string }> = [];
+	try {
+		const ticketKind = manifest.kinds.find((kind) => kind.id === "ticket");
+		if (ticketKind === undefined) {
+			throw new Error("Manifest does not define ticket kind.");
 		}
+		for (const ticket of plan.tickets) {
+			const issue = await tracker.createIssue({
+				title: ticket.title,
+				body: ticket.content,
+				workflow: {
+					kind: "ticket",
+					...initialWorkflowTarget(ticketKind.initial),
+				},
+			});
+			created.push({ key: ticket.key, id: issue.id });
+			await tracker.addChild(specId, issue.id);
+			children.push(issue.id);
+		}
+		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
+		for (const ticket of plan.tickets) {
+			for (const dependencyKey of ticket.dependsOn ?? []) {
+				const issueId = idsByKey.get(ticket.key);
+				const blockedById = idsByKey.get(dependencyKey as string);
+				if (issueId === undefined || blockedById === undefined) {
+					throw new Error(
+						"Plan dependency resolution failed after validation.",
+					);
+				}
+				await tracker.addDependency(issueId, blockedById);
+				dependencies.push({ issueId, blockedById });
+			}
+		}
+		const target = planApplicationTarget(manifest, spec.workflow);
+		if (target === undefined) {
+			throw new Error("Spec has no success transition for plan application.");
+		}
+		const updated = await tracker.updateIssue(specId, {
+			expect: { version: spec.workflow.version, hash: spec.workflow.hash },
+			workflow: { ...workflowTarget(target), activeRunId: undefined },
+		});
+		const log = await tracker.appendLog(specId, {
+			type: "plan_applied",
+			payload: { input: inputPath, tickets: created },
+		});
+		return success({
+			outcome: "SUCCESS",
+			spec: updated,
+			tickets: created,
+			log,
+		});
+	} catch (error) {
+		const rollbackErrors = await rollbackPlanApplication(
+			tracker,
+			specId,
+			spec.workflow,
+			dependencies,
+			children,
+			created.map((ticket) => ticket.id),
+		);
+		if (rollbackErrors.length === 0) {
+			return failure(
+				"PLAN_APPLY_FAILED",
+				"Plan application failed and was rolled back.",
+				{
+					outcome: "ROLLED_BACK",
+					message: error instanceof Error ? error.message : String(error),
+				},
+			);
+		}
+		await escalatePartialRollback(tracker, specId);
+		return failure(
+			"PLAN_APPLY_FAILED",
+			"Plan application failed and rollback was partial.",
+			{
+				outcome: "PARTIAL_ROLLBACK",
+				message: error instanceof Error ? error.message : String(error),
+				rollbackErrors,
+			},
+		);
 	}
-
-	return undefined;
 }
 
 async function getIssueCommand(
@@ -540,6 +690,252 @@ function readOption(args: Array<string>, name: string): string | undefined {
 	return index === -1 ? undefined : args[index + 1];
 }
 
+async function readInput(
+	path: string,
+	stdin: string | undefined,
+): Promise<string> {
+	if (path === "-") {
+		return stdin ?? "";
+	}
+	return readFile(path, "utf8");
+}
+
+type SpecInput = { title: string; content: string };
+type PlanBundle = { tickets: Array<PlanTicket> };
+type PlanTicket = {
+	key: string;
+	title: string;
+	content: string;
+	dependsOn?: Array<unknown>;
+};
+
+function parseSpecInput(raw: string): SpecInput {
+	const parsed = parseJsonObject(raw);
+	if (parsed !== undefined) {
+		const contentValue = parsed.content ?? parsed.body ?? parsed.markdown;
+		const content = typeof contentValue === "string" ? contentValue : raw;
+		return {
+			title:
+				typeof parsed.title === "string" && parsed.title.trim() !== ""
+					? parsed.title
+					: titleFromMarkdown(content),
+			content,
+		};
+	}
+	return { title: titleFromMarkdown(raw), content: raw };
+}
+
+function parsePlanInput(raw: string): PlanBundle {
+	const parsed = parseJsonObject(raw);
+	const tickets = Array.isArray(parsed?.tickets) ? parsed.tickets : [];
+	return {
+		tickets: tickets.map((ticket): PlanTicket => {
+			const record = isRecord(ticket) ? ticket : {};
+			return {
+				key: typeof record.key === "string" ? record.key : "",
+				title: typeof record.title === "string" ? record.title : "",
+				content: readTicketContent(record),
+				...(Array.isArray(record.dependsOn)
+					? { dependsOn: record.dependsOn }
+					: {}),
+			};
+		}),
+	};
+}
+
+function readTicketContent(record: Record<string, unknown>): string {
+	if (typeof record.content === "string") {
+		return record.content;
+	}
+	if (typeof record.body === "string") {
+		return record.body;
+	}
+	return "";
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | undefined {
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		return isRecord(parsed) ? parsed : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function titleFromMarkdown(markdown: string): string {
+	const heading = markdown
+		.split(/\r?\n/u)
+		.map((line) => line.match(/^#\s+(.+)$/u)?.[1]?.trim())
+		.find((title) => title !== undefined && title !== "");
+	return heading ?? "Spec";
+}
+
+function validatePlan(
+	plan: PlanBundle,
+): Array<{ path: string; message: string }> {
+	const issues: Array<{ path: string; message: string }> = [];
+	if (plan.tickets.length === 0) {
+		issues.push({
+			path: "$.tickets",
+			message: "Plan must include at least one ticket.",
+		});
+	}
+	const keys = new Set<string>();
+	for (const [index, ticket] of plan.tickets.entries()) {
+		const path = `$.tickets[${index}]`;
+		if (ticket.key.trim() === "") {
+			issues.push({
+				path: `${path}.key`,
+				message: "Ticket key must be non-empty.",
+			});
+		} else if (keys.has(ticket.key)) {
+			issues.push({
+				path: `${path}.key`,
+				message: "Ticket key must be unique.",
+			});
+		} else {
+			keys.add(ticket.key);
+		}
+		if (ticket.title.trim() === "") {
+			issues.push({
+				path: `${path}.title`,
+				message: "Ticket title must be non-empty.",
+			});
+		}
+		if (ticket.content.trim() === "") {
+			issues.push({
+				path: `${path}.content`,
+				message: "Ticket content must be non-empty.",
+			});
+		}
+	}
+	for (const [index, ticket] of plan.tickets.entries()) {
+		for (const dependency of ticket.dependsOn ?? []) {
+			if (typeof dependency !== "string" || dependency.trim() === "") {
+				issues.push({
+					path: `$.tickets[${index}].dependsOn`,
+					message: "Dependency references must be non-empty strings.",
+				});
+			} else if (!keys.has(dependency)) {
+				issues.push({
+					path: `$.tickets[${index}].dependsOn`,
+					message: `Unknown dependency '${dependency}'.`,
+				});
+			}
+		}
+	}
+	const cycle = findDependencyCycle(plan);
+	if (cycle !== undefined) {
+		issues.push({
+			path: "$.tickets",
+			message: `Dependency graph must be acyclic (${cycle.join(" -> ")}).`,
+		});
+	}
+	return issues;
+}
+
+function findDependencyCycle(plan: PlanBundle): Array<string> | undefined {
+	const byKey = new Map(plan.tickets.map((ticket) => [ticket.key, ticket]));
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	const stack: Array<string> = [];
+	function visit(key: string): Array<string> | undefined {
+		if (visiting.has(key)) {
+			return [...stack.slice(stack.indexOf(key)), key];
+		}
+		if (visited.has(key)) {
+			return undefined;
+		}
+		visiting.add(key);
+		stack.push(key);
+		for (const dependency of byKey.get(key)?.dependsOn ?? []) {
+			if (typeof dependency !== "string" || !byKey.has(dependency)) {
+				continue;
+			}
+			const cycle = visit(dependency);
+			if (cycle !== undefined) {
+				return cycle;
+			}
+		}
+		stack.pop();
+		visiting.delete(key);
+		visited.add(key);
+		return undefined;
+	}
+	for (const key of byKey.keys()) {
+		const cycle = visit(key);
+		if (cycle !== undefined) {
+			return cycle;
+		}
+	}
+	return undefined;
+}
+
+async function rollbackPlanApplication(
+	tracker: Tracker,
+	specId: string,
+	specWorkflow: WorkflowFields,
+	dependencies: Array<{ issueId: string; blockedById: string }>,
+	children: Array<string>,
+	createdIssueIds: Array<string>,
+): Promise<Array<string>> {
+	const errors: Array<string> = [];
+	for (const dependency of [...dependencies].reverse()) {
+		try {
+			await tracker.removeDependency(
+				dependency.issueId,
+				dependency.blockedById,
+			);
+		} catch (error) {
+			errors.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	for (const childId of [...children].reverse()) {
+		try {
+			await tracker.removeChild(specId, childId);
+		} catch (error) {
+			errors.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	for (const issueId of [...createdIssueIds].reverse()) {
+		try {
+			await tracker.deleteIssue(issueId);
+		} catch (error) {
+			errors.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	try {
+		await tracker.updateIssue(specId, {
+			workflow: {
+				state: specWorkflow.state,
+				action: specWorkflow.action,
+				reason: specWorkflow.reason,
+				activeRunId: specWorkflow.activeRunId,
+			},
+		});
+	} catch (error) {
+		errors.push(error instanceof Error ? error.message : String(error));
+	}
+	return errors;
+}
+
+async function escalatePartialRollback(
+	tracker: Tracker,
+	specId: string,
+): Promise<void> {
+	try {
+		await tracker.updateIssue(specId, {
+			workflow: { state: "need-human", action: "none", activeRunId: undefined },
+		});
+	} catch {
+		// Best-effort escalation: the original partial rollback error remains the outcome.
+	}
+}
+
 function readinessFilters(
 	manifest: WorkflowManifest,
 ): Array<{ kind?: string; state?: string; action?: string; reason?: string }> {
@@ -626,6 +1022,25 @@ function cleanWorkflowFields(workflow: WorkflowFields): Record<string, string> {
 	) as Record<string, string>;
 }
 
+function planApplicationTarget(
+	manifest: WorkflowManifest,
+	workflow: WorkflowFields,
+): ManifestTransition["to"] | undefined {
+	const direct = findTransition(manifest, workflow, "succeed");
+	if (direct !== undefined) {
+		return direct.to;
+	}
+	const started = findTransition(manifest, workflow, "start");
+	if (started === undefined) {
+		return undefined;
+	}
+	return findTransition(
+		manifest,
+		{ ...workflow, ...workflowTarget(started.to) },
+		"succeed",
+	)?.to;
+}
+
 function findTransition(
 	manifest: WorkflowManifest,
 	workflow: WorkflowFields,
@@ -687,6 +1102,14 @@ function terminalLogPayload(
 		event,
 		to: cleanTransitionTarget(transition?.to ?? issue.workflow),
 	};
+}
+
+function initialWorkflowTarget(target: {
+	state: string;
+	action?: string;
+	reason?: string | null;
+}): { state: string; action: string; reason?: string } {
+	return { ...workflowTarget(target), action: target.action ?? "none" };
 }
 
 function workflowTarget(target: {
