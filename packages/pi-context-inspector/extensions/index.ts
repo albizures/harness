@@ -264,8 +264,9 @@ export async function showContextInspectorReport(
 
 					const bodyLines = (innerWidth: number): Array<string> => {
 						const bodyWidth = Math.max(1, innerWidth);
-						if (cachedBodyLines && cachedBodyWidth === bodyWidth)
+						if (cachedBodyLines && cachedBodyWidth === bodyWidth) {
 							return cachedBodyLines;
+						}
 						cachedBodyWidth = bodyWidth;
 						cachedBodyLines = displayReport
 							.split("\n")
@@ -411,7 +412,9 @@ function visibleRange(
 	lineCount: number,
 	viewportLines: number,
 ): string {
-	if (lineCount === 0) return "0/0";
+	if (lineCount === 0) {
+		return "0/0";
+	}
 	const start = Math.min(scrollOffset + 1, lineCount);
 	const end = Math.min(scrollOffset + viewportLines, lineCount);
 	return `${start}-${end}/${lineCount}`;
@@ -498,11 +501,12 @@ function estimateToolDefinitionsBucket(
 		([name, snippet]) => contributor(name, snippet),
 	);
 	for (const toolName of activeTools) {
-		if (!snippets[toolName])
+		if (!snippets[toolName]) {
 			contributors.push({
 				name: safeContributorName(toolName),
 				estimatedTokens: estimateTokens(toolName),
 			});
+		}
 	}
 	return bucket("Tool definitions", contributors.filter(isContributor));
 }
@@ -581,7 +585,9 @@ function estimateMessageBuckets(entries: Array<unknown>): Array<ContextBucket> {
 			continue;
 		}
 
-		if (record.type !== "message" || !record.message) continue;
+		if (record.type !== "message" || !record.message) {
+			continue;
+		}
 		estimateAgentMessage(grouped, record.message);
 	}
 
@@ -594,7 +600,9 @@ function estimateAgentMessage(
 	grouped: Map<string, Array<ContextContributor>>,
 	value: unknown,
 ): void {
-	if (!value || typeof value !== "object") return;
+	if (!value || typeof value !== "object") {
+		return;
+	}
 	const message = value as Record<string, unknown>;
 	if (message.role === "user") {
 		addGrouped(
@@ -643,7 +651,9 @@ function addGrouped(
 	name: string,
 	value: ContextContributor | undefined,
 ): void {
-	if (!value) return;
+	if (!value) {
+		return;
+	}
 	const values = grouped.get(name) ?? [];
 	values.push(value);
 	grouped.set(name, values);
@@ -742,7 +752,9 @@ function scaleTokenValues<T extends { tokens: number }>(
 	targetTotal: number,
 	rawTotal: number,
 ): Array<T> {
-	if (rawTotal <= 0) return items.map((item) => ({ ...item, tokens: 0 }));
+	if (rawTotal <= 0) {
+		return items.map((item) => ({ ...item, tokens: 0 }));
+	}
 	const scaled = items.map((item, index) => {
 		const exact = (item.tokens / rawTotal) * targetTotal;
 		const tokens = Math.floor(exact);
@@ -753,7 +765,9 @@ function scaleTokenValues<T extends { tokens: number }>(
 	for (const item of [...scaled].sort(
 		(a, b) => b.remainder - a.remainder || a.index - b.index,
 	)) {
-		if (remaining <= 0) break;
+		if (remaining <= 0) {
+			break;
+		}
 		item.tokens += 1;
 		remaining -= 1;
 	}
@@ -764,7 +778,9 @@ function contributor(
 	name: string,
 	content: string | undefined,
 ): ContextContributor | undefined {
-	if (!content) return undefined;
+	if (!content) {
+		return undefined;
+	}
 	return {
 		name: safeContributorName(name),
 		estimatedTokens: estimateTokens(content),
@@ -796,15 +812,27 @@ function extractSummaryText(entry: Record<string, unknown>): string {
 }
 
 function extractContentText(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
+	if (typeof content === "string") {
+		return content;
+	}
+	if (!Array.isArray(content)) {
+		return "";
+	}
 	return content
 		.map((part) => {
-			if (typeof part === "string") return part;
-			if (!part || typeof part !== "object") return "";
+			if (typeof part === "string") {
+				return part;
+			}
+			if (!part || typeof part !== "object") {
+				return "";
+			}
 			const record = part as Record<string, unknown>;
-			if (typeof record.text === "string") return record.text;
-			if (typeof record.content === "string") return record.content;
+			if (typeof record.text === "string") {
+				return record.text;
+			}
+			if (typeof record.content === "string") {
+				return record.content;
+			}
 			return "";
 		})
 		.filter(Boolean)
@@ -829,12 +857,17 @@ function estimateTokens(text: string): number {
 }
 
 function formatTokens(count: number): string {
-	if (count < TOKEN_UNIT) return count.toString();
-	if (count < TOKEN_UNIT_DECIMAL_LIMIT)
+	if (count < TOKEN_UNIT) {
+		return count.toString();
+	}
+	if (count < TOKEN_UNIT_DECIMAL_LIMIT) {
 		return `${(count / TOKEN_UNIT).toFixed(1)}k`;
-	if (count < MILLION_TOKEN_UNIT)
+	}
+	if (count < MILLION_TOKEN_UNIT) {
 		return `${Math.round(count / TOKEN_UNIT)}k`;
-	if (count < MILLION_TOKEN_DECIMAL_LIMIT)
+	}
+	if (count < MILLION_TOKEN_DECIMAL_LIMIT) {
 		return `${(count / MILLION_TOKEN_UNIT).toFixed(1)}M`;
+	}
 	return `${Math.round(count / MILLION_TOKEN_UNIT)}M`;
 }

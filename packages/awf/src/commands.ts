@@ -1,180 +1,297 @@
 import { type Envelope, failure, success } from "./envelope.ts";
 import { loadManifest, ManifestValidationError } from "./manifest.ts";
-import { CorruptWorkflowProjectionError, IssueNotFoundError, createInMemoryTracker, type Tracker } from "./tracker.ts";
+import {
+	CorruptWorkflowProjectionError,
+	IssueNotFoundError,
+	createInMemoryTracker,
+	type Tracker,
+} from "./tracker.ts";
 
 type CommandSpec = {
-  name: string;
-  usage: string;
-  description: string;
+	name: string;
+	usage: string;
+	description: string;
 };
 
-const commands: CommandSpec[] = [
-  { name: "get", usage: "awf get <id>", description: "Return a workflow entity." },
-  { name: "ready", usage: "awf ready [--spec <id>]", description: "Return legally executable work." },
-  { name: "logs", usage: "awf logs <id>", description: "Return immutable workflow logs." },
-  { name: "spec create", usage: "awf spec create --title <title> --content <file>", description: "Create a Spec." },
-  { name: "plan apply", usage: "awf plan apply <spec> --input <plan.json>", description: "Apply a plan to a Spec." },
-  { name: "handoff", usage: "awf handoff <source> --input <handoff.json>", description: "Create a Handoff." },
-  { name: "manifest validate", usage: "awf manifest validate <file>", description: "Load and validate a workflow manifest." },
-  { name: "start", usage: "awf start <id>", description: "Start the current action." },
-  { name: "succeed", usage: "awf succeed <id> --run <run>", description: "Mark a run as succeeded." },
-  { name: "fail", usage: "awf fail <id> --run <run>", description: "Mark a run as failed." },
+const commands: Array<CommandSpec> = [
+	{
+		name: "get",
+		usage: "awf get <id>",
+		description: "Return a workflow entity.",
+	},
+	{
+		name: "ready",
+		usage: "awf ready [--spec <id>]",
+		description: "Return legally executable work.",
+	},
+	{
+		name: "logs",
+		usage: "awf logs <id>",
+		description: "Return immutable workflow logs.",
+	},
+	{
+		name: "spec create",
+		usage: "awf spec create --title <title> --content <file>",
+		description: "Create a Spec.",
+	},
+	{
+		name: "plan apply",
+		usage: "awf plan apply <spec> --input <plan.json>",
+		description: "Apply a plan to a Spec.",
+	},
+	{
+		name: "handoff",
+		usage: "awf handoff <source> --input <handoff.json>",
+		description: "Create a Handoff.",
+	},
+	{
+		name: "manifest validate",
+		usage: "awf manifest validate <file>",
+		description: "Load and validate a workflow manifest.",
+	},
+	{
+		name: "start",
+		usage: "awf start <id>",
+		description: "Start the current action.",
+	},
+	{
+		name: "succeed",
+		usage: "awf succeed <id> --run <run>",
+		description: "Mark a run as succeeded.",
+	},
+	{
+		name: "fail",
+		usage: "awf fail <id> --run <run>",
+		description: "Mark a run as failed.",
+	},
 ];
 
 export type ExecuteOptions = { tracker?: Tracker };
 
-export async function execute(args: string[], options: ExecuteOptions = {}): Promise<Envelope> {
-  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-    return success({
-      name: "awf",
-      description: "Agent workflow CLI.",
-      commands,
-    });
-  }
+export async function execute(
+	args: Array<string>,
+	options: ExecuteOptions = {},
+): Promise<Envelope> {
+	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+		return success({
+			name: "awf",
+			description: "Agent workflow CLI.",
+			commands,
+		});
+	}
 
-  if (args[0] === "--version" || args[0] === "-v") {
-    return success({ name: "@albizures/awf", version: "0.0.0" });
-  }
+	if (args[0] === "--version" || args[0] === "-v") {
+		return success({ name: "@albizures/awf", version: "0.0.0" });
+	}
 
-  const parseError = validateKnownCommand(args);
-  if (parseError !== undefined) {
-    return parseError;
-  }
+	const parseError = validateKnownCommand(args);
+	if (parseError !== undefined) {
+		return parseError;
+	}
 
-  if (args[0] === "manifest" && args[1] === "validate") {
-    return validateManifestCommand(args[2]);
-  }
+	if (args[0] === "manifest" && args[1] === "validate") {
+		return validateManifestCommand(args[2]);
+	}
 
-  if (args[0] === "get") {
-    return getIssueCommand(args[1], options.tracker ?? createInMemoryTracker());
-  }
+	if (args[0] === "get") {
+		return getIssueCommand(args[1], options.tracker ?? createInMemoryTracker());
+	}
 
-  return failure("NOT_IMPLEMENTED", "This workflow command is not implemented yet.", {
-    command: args.join(" "),
-  });
+	return failure(
+		"NOT_IMPLEMENTED",
+		"This workflow command is not implemented yet.",
+		{
+			command: args.join(" "),
+		},
+	);
 }
 
-function validateKnownCommand(args: string[]): Envelope | undefined {
-  const [command, subcommand] = args;
+function validateKnownCommand(args: Array<string>): Envelope | undefined {
+	const [command, subcommand] = args;
 
-  switch (command) {
-    case "get":
-    case "logs":
-    case "start":
-      return requirePositionalCount(args, 1, `awf ${command} <id>`);
-    case "ready":
-      return validateReady(args);
-    case "handoff":
-      return requirePositionalAndOption(args, "awf handoff <source> --input <handoff.json>", "--input");
-    case "succeed":
-    case "fail":
-      return requirePositionalAndOption(args, `awf ${command} <id> --run <run>`, "--run");
-    case "spec":
-      if (subcommand !== "create") {
-        return unknownCommand(args);
-      }
-      return requireOptions(args, "awf spec create --title <title> --content <file>", ["--title", "--content"]);
-    case "plan":
-      if (subcommand !== "apply") {
-        return unknownCommand(args);
-      }
-      return requirePositionalAndOption(args, "awf plan apply <spec> --input <plan.json>", "--input", 2);
-    case "manifest":
-      if (subcommand !== "validate") {
-        return unknownCommand(args);
-      }
-      return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
-    default:
-      return unknownCommand(args);
-  }
+	switch (command) {
+		case "get":
+		case "logs":
+		case "start":
+			return requirePositionalCount(args, 1, `awf ${command} <id>`);
+		case "ready":
+			return validateReady(args);
+		case "handoff":
+			return requirePositionalAndOption(
+				args,
+				"awf handoff <source> --input <handoff.json>",
+				"--input",
+			);
+		case "succeed":
+		case "fail":
+			return requirePositionalAndOption(
+				args,
+				`awf ${command} <id> --run <run>`,
+				"--run",
+			);
+		case "spec":
+			if (subcommand !== "create") {
+				return unknownCommand(args);
+			}
+			return requireOptions(
+				args,
+				"awf spec create --title <title> --content <file>",
+				["--title", "--content"],
+			);
+		case "plan":
+			if (subcommand !== "apply") {
+				return unknownCommand(args);
+			}
+			return requirePositionalAndOption(
+				args,
+				"awf plan apply <spec> --input <plan.json>",
+				"--input",
+				2,
+			);
+		case "manifest":
+			if (subcommand !== "validate") {
+				return unknownCommand(args);
+			}
+			return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
+		default:
+			return unknownCommand(args);
+	}
 }
 
-function validateReady(args: string[]): Envelope | undefined {
-  if (args.length === 1) {
-    return undefined;
-  }
-  if (args.length === 3 && args[1] === "--spec" && args[2] !== "") {
-    return undefined;
-  }
-  return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", { usage: "awf ready [--spec <id>]" });
+function validateReady(args: Array<string>): Envelope | undefined {
+	if (args.length === 1) {
+		return undefined;
+	}
+	if (args.length === 3 && args[1] === "--spec" && args[2] !== "") {
+		return undefined;
+	}
+	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {
+		usage: "awf ready [--spec <id>]",
+	});
 }
 
-function requirePositionalCount(args: string[], count: number, usage: string, offset = 1): Envelope | undefined {
-  const positionals = args.slice(offset).filter((arg) => !arg.startsWith("-"));
-  if (positionals.length === count && args.length === offset + count) {
-    return undefined;
-  }
-  
-  return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
+function requirePositionalCount(
+	args: Array<string>,
+	count: number,
+	usage: string,
+	offset = 1,
+): Envelope | undefined {
+	const positionals = args.slice(offset).filter((arg) => !arg.startsWith("-"));
+	if (positionals.length === count && args.length === offset + count) {
+		return undefined;
+	}
+
+	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
 }
 
 function requirePositionalAndOption(
-  args: string[],
-  usage: string,
-  optionName: string,
-  prefixPositionals = 1,
+	args: Array<string>,
+	usage: string,
+	optionName: string,
+	prefixPositionals = 1,
 ): Envelope | undefined {
-  const prefix = args.slice(1, 1 + prefixPositionals);
-  const optionIndex = args.indexOf(optionName);
-  if (
-    prefix.every((arg) => arg !== undefined && arg !== "" && !arg.startsWith("-")) &&
-    optionIndex === 1 + prefixPositionals &&
-    args[optionIndex + 1] !== undefined &&
-    args[optionIndex + 1] !== "" &&
-    args.length === optionIndex + 2
-  ) {
-    return undefined;
-  }
+	const prefix = args.slice(1, 1 + prefixPositionals);
+	const optionIndex = args.indexOf(optionName);
+	if (
+		prefix.every(
+			(arg) => arg !== undefined && arg !== "" && !arg.startsWith("-"),
+		) &&
+		optionIndex === 1 + prefixPositionals &&
+		args[optionIndex + 1] !== undefined &&
+		args[optionIndex + 1] !== "" &&
+		args.length === optionIndex + 2
+	) {
+		return undefined;
+	}
 
-  return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
+	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
 }
 
-function requireOptions(args: string[], usage: string, optionNames: string[]): Envelope | undefined {
-  if (args.length !== 2 + optionNames.length * 2) {
-    return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
-  }
+function requireOptions(
+	args: Array<string>,
+	usage: string,
+	optionNames: Array<string>,
+): Envelope | undefined {
+	if (args.length !== 2 + optionNames.length * 2) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage,
+		});
+	}
 
-  for (const optionName of optionNames) {
-    const optionIndex = args.indexOf(optionName);
-    if (optionIndex === -1 || args[optionIndex + 1] === undefined || args[optionIndex + 1] === "") {
-      return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
-    }
-  }
+	for (const optionName of optionNames) {
+		const optionIndex = args.indexOf(optionName);
+		if (
+			optionIndex === -1 ||
+			args[optionIndex + 1] === undefined ||
+			args[optionIndex + 1] === ""
+		) {
+			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+				usage,
+			});
+		}
+	}
 
-  return undefined;
+	return undefined;
 }
 
-async function getIssueCommand(id: string | undefined, tracker: Tracker): Promise<Envelope> {
-  if (id === undefined) {
-    return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage: "awf get <id>" });
-  }
+async function getIssueCommand(
+	id: string | undefined,
+	tracker: Tracker,
+): Promise<Envelope> {
+	if (id === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf get <id>",
+		});
+	}
 
-  try {
-    const issue = await tracker.getIssue(id);
-    return success({ issue });
-  } catch (error) {
-    if (error instanceof IssueNotFoundError) return failure("NOT_FOUND", error.message, { id });
-    if (error instanceof CorruptWorkflowProjectionError) return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });
-    throw error;
-  }
+	try {
+		const issue = await tracker.getIssue(id);
+		return success({ issue });
+	} catch (error) {
+		if (error instanceof IssueNotFoundError) {
+			return failure("NOT_FOUND", error.message, { id });
+		}
+		if (error instanceof CorruptWorkflowProjectionError) {
+			return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });
+		}
+		throw error;
+	}
 }
 
-async function validateManifestCommand(path: string | undefined): Promise<Envelope> {
-  if (path === undefined) {
-    return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage: "awf manifest validate <file>" });
-  }
+async function validateManifestCommand(
+	path: string | undefined,
+): Promise<Envelope> {
+	if (path === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf manifest validate <file>",
+		});
+	}
 
-  try {
-    const manifest = await loadManifest(path);
-    return success({ manifest: manifest.workflow.id, version: manifest.version, kinds: manifest.kinds.map((kind) => kind.id) });
-  } catch (error) {
-    if (error instanceof ManifestValidationError) {
-      return failure("MANIFEST_VALIDATION_FAILED", "Workflow manifest validation failed.", { issues: error.issues });
-    }
-    return failure("MANIFEST_LOAD_FAILED", "Workflow manifest could not be loaded.", { message: error instanceof Error ? error.message : String(error) });
-  }
+	try {
+		const manifest = await loadManifest(path);
+		return success({
+			manifest: manifest.workflow.id,
+			version: manifest.version,
+			kinds: manifest.kinds.map((kind) => kind.id),
+		});
+	} catch (error) {
+		if (error instanceof ManifestValidationError) {
+			return failure(
+				"MANIFEST_VALIDATION_FAILED",
+				"Workflow manifest validation failed.",
+				{ issues: error.issues },
+			);
+		}
+		return failure(
+			"MANIFEST_LOAD_FAILED",
+			"Workflow manifest could not be loaded.",
+			{ message: error instanceof Error ? error.message : String(error) },
+		);
+	}
 }
 
-function unknownCommand(args: string[]): Envelope {
-  return failure("UNKNOWN_COMMAND", "Unknown command.", { command: args.join(" ") });
+function unknownCommand(args: Array<string>): Envelope {
+	return failure("UNKNOWN_COMMAND", "Unknown command.", {
+		command: args.join(" "),
+	});
 }

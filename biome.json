@@ -32,7 +32,8 @@
 				"useConsistentMethodSignatures": "error",
 				"noNestedTernary": "error",
 				"useForOf": "error",
-				"noDefaultExport": "error"
+				"noDefaultExport": "error",
+				"useBlockStatements": "error"
 			}
 		}
 	},

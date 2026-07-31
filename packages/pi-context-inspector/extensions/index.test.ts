@@ -233,7 +233,9 @@ test("showContextInspectorReport opens a read-only scrollable TUI overlay", asyn
 	component.handleInput("\x1b[A");
 	assert.match(component.render(80).join("\n"), /│ report line 1\s+│/);
 
-	for (let i = 0; i < 100; i += 1) component.handleInput("\x1b[B");
+	for (let i = 0; i < 100; i += 1) {
+		component.handleInput("\x1b[B");
+	}
 	const lastPageRender = component.render(80).join("\n");
 	assert.match(
 		lastPageRender,
