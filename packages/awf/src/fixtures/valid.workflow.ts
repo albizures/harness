@@ -3,7 +3,7 @@ import { defineManifest } from "../manifest.ts";
 const states = ["ready", "running", "blocked", "done"] as const;
 const actions = ["plan", "implement", "none"] as const;
 
-export default defineManifest({
+export const manifest = defineManifest({
 	version: "v1",
 	workflow: { id: "agent-development" },
 	vocabulary: {

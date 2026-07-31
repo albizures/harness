@@ -158,11 +158,17 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 	}
 }
 
+const READY_WITH_SPEC_ARGUMENT_COUNT = 3;
+
 function validateReady(args: Array<string>): Envelope | undefined {
 	if (args.length === 1) {
 		return undefined;
 	}
-	if (args.length === 3 && args[1] === "--spec" && args[2] !== "") {
+	if (
+		args.length === READY_WITH_SPEC_ARGUMENT_COUNT &&
+		args[1] === "--spec" &&
+		args[2] !== ""
+	) {
 		return undefined;
 	}
 	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {

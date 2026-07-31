@@ -1,6 +1,6 @@
-import { defineManifest } from "../manifest.ts";
+import { defineManifest, type WorkflowManifest } from "../manifest.ts";
 
-export default defineManifest({
+export const manifest = defineManifest({
 	version: "v1",
 	workflow: { id: "bad-workflow" },
 	vocabulary: {
@@ -51,4 +51,4 @@ export default defineManifest({
 			projection: { type: "invalid" },
 		},
 	],
-} as any);
+} as unknown as WorkflowManifest);

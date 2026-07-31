@@ -661,14 +661,14 @@ function rejectExecutableData(
 		);
 	}
 	if (Array.isArray(value)) {
-		value.forEach((item, index) =>
-			rejectExecutableData(item, `${path}[${index}]`, issues),
-		);
+		for (const [index, item] of value.entries()) {
+			rejectExecutableData(item, `${path}[${index}]`, issues);
+		}
 	}
 	if (isRecord(value)) {
-		Object.entries(value).forEach(([key, item]) =>
-			rejectExecutableData(item, `${path}.${key}`, issues),
-		);
+		for (const [key, item] of Object.entries(value)) {
+			rejectExecutableData(item, `${path}.${key}`, issues);
+		}
 	}
 }
 
@@ -678,9 +678,9 @@ function rejectHookKeys(
 	issues: Array<ValidationIssue>,
 ): void {
 	if (Array.isArray(value)) {
-		value.forEach((item, index) =>
-			rejectHookKeys(item, `${path}[${index}]`, issues),
-		);
+		for (const [index, item] of value.entries()) {
+			rejectHookKeys(item, `${path}[${index}]`, issues);
+		}
 	}
 	if (!isRecord(value)) {
 		return;
