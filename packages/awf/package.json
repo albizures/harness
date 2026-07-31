@@ -1,0 +1,25 @@
+{
+  "name": "@albizures/awf",
+  "version": "0.0.0",
+  "description": "Agent workflow CLI shell.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "awf": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test src/*.test.ts",
+    "awf": "node ./dist/cli.js"
+  },
+  "dependencies": {
+    "type-fest": "^5.8.0"
+  }
+}
