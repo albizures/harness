@@ -1,3 +1,5 @@
+// biome-ignore-all lint/style/noMagicNumbers: Test literals describe expected rendering behavior.
+// biome-ignore-all lint/suspicious/noExplicitAny: Tests use partial extension API fixtures.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";

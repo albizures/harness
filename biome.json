@@ -14,7 +14,27 @@
 		"enabled": true
 	},
 	"linter": {
-		"enabled": true
+		"rules": {
+			"style": {
+				"useConsistentArrayType": {
+					"level": "on",
+					"options": {
+						"syntax": "generic"
+					}
+				},
+				"useConsistentTypeDefinitions": {
+					"level": "on",
+					"options": {
+						"style": "type"
+					}
+				},
+				"noMagicNumbers": "error",
+				"useConsistentMethodSignatures": "error",
+				"noNestedTernary": "error",
+				"useForOf": "error",
+				"noDefaultExport": "error"
+			}
+		}
 	},
 	"assist": {
 		"enabled": false

@@ -20,6 +20,12 @@ const MATERIAL_BUCKET_TOKEN_THRESHOLD = 1000;
 const OVERLAY_SCROLL_STEP_LINES = 1;
 const OVERLAY_PAGE_STEP_LINES = 10;
 const OVERLAY_BODY_VIEWPORT_LINES = 24;
+const PERCENT_SCALE = 100;
+const FRAME_HORIZONTAL_PADDING = 4;
+const TOKEN_UNIT = 1000;
+const TOKEN_UNIT_DECIMAL_LIMIT = 10000;
+const MILLION_TOKEN_UNIT = 1000000;
+const MILLION_TOKEN_DECIMAL_LIMIT = 10000000;
 
 type ContextInspectorModel = {
 	id: string;
@@ -34,7 +40,7 @@ export type ContextInspectorInputs = {
 	contextUsage?: ContextUsage;
 	systemPrompt: string;
 	systemPromptOptions: BuildSystemPromptOptions;
-	entries: unknown[];
+	entries: Array<unknown>;
 };
 
 export type ContextContributor = {
@@ -46,14 +52,15 @@ export type ContextBucket = {
 	name: string;
 	estimatedTokens: number;
 	sharePercent: number;
-	contributors: ContextContributor[];
+	contributors: Array<ContextContributor>;
 };
 
 export type ContextAttributionEstimate = {
 	estimatedTotalTokens: number;
-	buckets: ContextBucket[];
+	buckets: Array<ContextBucket>;
 };
 
+// biome-ignore lint/style/noDefaultExport: Pi extension modules are loaded through default exports.
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand(COMMAND_NAME, {
 		description: COMMAND_DESCRIPTION,
@@ -118,7 +125,9 @@ export function estimateContextAttribution(
 		.map((bucket) => ({
 			...bucket,
 			sharePercent:
-				denominator > 0 ? (bucket.estimatedTokens / denominator) * 100 : 0,
+				denominator > 0
+					? (bucket.estimatedTokens / denominator) * PERCENT_SCALE
+					: 0,
 		}))
 		.sort((a, b) => b.estimatedTokens - a.estimatedTokens);
 
@@ -251,9 +260,9 @@ export async function showContextInspectorReport(
 							: report.renderTui((value) => theme.fg("accent", value));
 					let scrollOffset = 0;
 					let cachedBodyWidth: number | undefined;
-					let cachedBodyLines: string[] | undefined;
+					let cachedBodyLines: Array<string> | undefined;
 
-					const bodyLines = (innerWidth: number): string[] => {
+					const bodyLines = (innerWidth: number): Array<string> => {
 						const bodyWidth = Math.max(1, innerWidth);
 						if (cachedBodyLines && cachedBodyWidth === bodyWidth)
 							return cachedBodyLines;
@@ -279,7 +288,7 @@ export async function showContextInspectorReport(
 					};
 
 					return {
-						render(width: number): string[] {
+						render(width: number): Array<string> {
 							const innerWidth = framedContentWidth(width);
 							const title = theme.fg("accent", theme.bold("Context Inspector"));
 							const lines = bodyLines(innerWidth);
@@ -384,7 +393,7 @@ export async function showContextInspectorReport(
 
 function scrollableLineCount(
 	report: string,
-	renderedLines: string[] | undefined,
+	renderedLines: Array<string> | undefined,
 ): number {
 	return renderedLines?.length ?? report.split("\n").length;
 }
@@ -409,7 +418,7 @@ function visibleRange(
 }
 
 function framedContentWidth(width: number): number {
-	return Math.max(1, width - 4);
+	return Math.max(1, width - FRAME_HORIZONTAL_PADDING);
 }
 
 function frameBorderLine(
@@ -498,7 +507,7 @@ function estimateToolDefinitionsBucket(
 	return bucket("Tool definitions", contributors.filter(isContributor));
 }
 
-function activeToolNames(options: BuildSystemPromptOptions): string[] {
+function activeToolNames(options: BuildSystemPromptOptions): Array<string> {
 	return options.selectedTools ?? ["read", "bash", "edit", "write"];
 }
 
@@ -541,11 +550,11 @@ function estimateSkillsBucket(
 	);
 }
 
-function estimateMessageBuckets(entries: unknown[]): ContextBucket[] {
-	const grouped = new Map<string, ContextContributor[]>();
+function estimateMessageBuckets(entries: Array<unknown>): Array<ContextBucket> {
+	const grouped = new Map<string, Array<ContextContributor>>();
 
 	for (const entry of entries) {
-		const record = entry as Record<string, any>;
+		const record = entry as Record<string, unknown>;
 		if (record.type === "branch_summary" || record.type === "compaction") {
 			addGrouped(
 				grouped,
@@ -582,11 +591,11 @@ function estimateMessageBuckets(entries: unknown[]): ContextBucket[] {
 }
 
 function estimateAgentMessage(
-	grouped: Map<string, ContextContributor[]>,
+	grouped: Map<string, Array<ContextContributor>>,
 	value: unknown,
 ): void {
 	if (!value || typeof value !== "object") return;
-	const message = value as Record<string, any>;
+	const message = value as Record<string, unknown>;
 	if (message.role === "user") {
 		addGrouped(
 			grouped,
@@ -630,7 +639,7 @@ function estimateAgentMessage(
 }
 
 function addGrouped(
-	grouped: Map<string, ContextContributor[]>,
+	grouped: Map<string, Array<ContextContributor>>,
 	name: string,
 	value: ContextContributor | undefined,
 ): void {
@@ -642,7 +651,7 @@ function addGrouped(
 
 function bucket(
 	name: string,
-	contributors: ContextContributor[],
+	contributors: Array<ContextContributor>,
 ): ContextBucket {
 	const sortedContributors = [...contributors].sort(
 		(a, b) => b.estimatedTokens - a.estimatedTokens,
@@ -664,11 +673,11 @@ function isMaterialBucket(bucket: ContextBucket): boolean {
 
 function renderReadOnlyRecommendations(
 	attribution: ContextAttributionEstimate,
-): string[] {
+): Array<string> {
 	const buckets = new Map(
 		attribution.buckets.map((bucket) => [bucket.name, bucket]),
 	);
-	const recommendations: string[] = [];
+	const recommendations: Array<string> = [];
 
 	if (isMaterialBucketName(buckets, "Tool results")) {
 		recommendations.push(
@@ -702,10 +711,10 @@ function knownTotalTokens(usage: ContextUsage | undefined): number | undefined {
 }
 
 function scaleBuckets(
-	buckets: ContextBucket[],
+	buckets: Array<ContextBucket>,
 	authoritativeTotal: number,
 	rawTotal: number,
-): ContextBucket[] {
+): Array<ContextBucket> {
 	const scaledBuckets = scaleTokenValues(
 		buckets.map((bucket) => ({
 			name: bucket.name,
@@ -729,10 +738,10 @@ function scaleBuckets(
 }
 
 function scaleTokenValues<T extends { tokens: number }>(
-	items: T[],
+	items: Array<T>,
 	targetTotal: number,
 	rawTotal: number,
-): T[] {
+): Array<T> {
 	if (rawTotal <= 0) return items.map((item) => ({ ...item, tokens: 0 }));
 	const scaled = items.map((item, index) => {
 		const exact = (item.tokens / rawTotal) * targetTotal;
@@ -782,7 +791,7 @@ function toolResultLabel(toolName: unknown): string {
 	return typeof toolName === "string" ? toolName : "tool result";
 }
 
-function extractSummaryText(entry: Record<string, any>): string {
+function extractSummaryText(entry: Record<string, unknown>): string {
 	return typeof entry.summary === "string" ? entry.summary : "";
 }
 
@@ -820,9 +829,12 @@ function estimateTokens(text: string): number {
 }
 
 function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-	return `${Math.round(count / 1000000)}M`;
+	if (count < TOKEN_UNIT) return count.toString();
+	if (count < TOKEN_UNIT_DECIMAL_LIMIT)
+		return `${(count / TOKEN_UNIT).toFixed(1)}k`;
+	if (count < MILLION_TOKEN_UNIT)
+		return `${Math.round(count / TOKEN_UNIT)}k`;
+	if (count < MILLION_TOKEN_DECIMAL_LIMIT)
+		return `${(count / MILLION_TOKEN_UNIT).toFixed(1)}M`;
+	return `${Math.round(count / MILLION_TOKEN_UNIT)}M`;
 }

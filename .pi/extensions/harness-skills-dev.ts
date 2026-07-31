@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-function discoverSkillDirectories(root: string): string[] {
+function discoverSkillDirectories(root: string): Array<string> {
 	if (!existsSync(root)) {
 		return [];
 	}
@@ -24,6 +24,7 @@ function discoverSkillDirectories(root: string): string[] {
 		.sort();
 }
 
+// biome-ignore lint/style/noDefaultExport: Pi extension modules are loaded through default exports.
 export default function (pi: ExtensionAPI) {
 	pi.on("resources_discover", async (event) => {
 		const skillCatalogPath = join(event.cwd, "skills");

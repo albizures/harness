@@ -5,18 +5,19 @@ import type {
 
 export const MAX_SUGGESTIONS = 9;
 export const WIDGET_ID = "suggested-replies";
+const COMPACT_LAYOUT_WIDTH = 40;
 
 export type ReplySuggestion = {
 	label: string;
 };
 
 export type SuggestedRepliesState = {
-	suggestions: ReplySuggestion[];
+	suggestions: Array<ReplySuggestion>;
 	selectedIndex: number;
 };
 
 type SuggestedRepliesWidgetTheme = {
-	fg(color: "borderMuted", text: string): string;
+	fg: (color: "borderMuted", text: string) => string;
 };
 
 type BorderStyle = (text: string) => string;
@@ -46,6 +47,7 @@ const SuggestRepliesParams = {
 	required: ["suggestions"],
 } as const;
 
+// biome-ignore lint/style/noDefaultExport: Pi extension modules are loaded through default exports.
 export default function suggestedReplies(pi: ExtensionAPI) {
 	let state: SuggestedRepliesState | undefined;
 
@@ -71,7 +73,7 @@ export default function suggestedReplies(pi: ExtensionAPI) {
 
 	const showSuggestions = (
 		ctx: Pick<ExtensionContext, "ui">,
-		suggestions: ReplySuggestion[],
+		suggestions: Array<ReplySuggestion>,
 	) => {
 		state = {
 			suggestions: normalizeSuggestions(suggestions),
@@ -87,8 +89,10 @@ export default function suggestedReplies(pi: ExtensionAPI) {
 		if (!state) return false;
 		if (index < 0 || index >= state.suggestions.length) return false;
 
+		const suggestion = state.suggestions[index];
+		if (!suggestion) return false;
 		state.selectedIndex = index;
-		ctx.ui.setEditorText(state.suggestions[index]!.label);
+		ctx.ui.setEditorText(suggestion.label);
 		refreshWidget(ctx);
 		return true;
 	};
@@ -211,8 +215,8 @@ export default function suggestedReplies(pi: ExtensionAPI) {
 }
 
 export function normalizeSuggestions(
-	suggestions: ReplySuggestion[],
-): ReplySuggestion[] {
+	suggestions: Array<ReplySuggestion>,
+): Array<ReplySuggestion> {
 	return suggestions
 		.map((suggestion) => ({ label: suggestion.label.trim() }))
 		.filter((suggestion) => suggestion.label.length > 0)
@@ -223,13 +227,12 @@ export function renderSuggestedRepliesWidget(
 	state: SuggestedRepliesState | undefined,
 	width: number,
 	borderStyle: BorderStyle = (text) => text,
-): string[] {
+): Array<string> {
 	if (!state || state.suggestions.length === 0) return [];
 	if (width <= 0) return [];
 
 	const contentLines = ["Suggested replies"];
-	for (let index = 0; index < state.suggestions.length; index += 1) {
-		const suggestion = state.suggestions[index]!;
+	for (const [index, suggestion] of state.suggestions.entries()) {
 		const marker = index === state.selectedIndex ? "›" : " ";
 		contentLines.push(`${marker} ${index + 1}. ${suggestion.label}`);
 	}
@@ -266,7 +269,7 @@ function renderSideBorderLine(
 	width: number,
 	borderStyle: BorderStyle,
 ): string {
-	if (width < 40) {
+	if (width < COMPACT_LAYOUT_WIDTH) {
 		const contentWidth = width - 1;
 		if (contentWidth <= 0) return "";
 		return `  ${truncatePlainLine(line, contentWidth)}`;

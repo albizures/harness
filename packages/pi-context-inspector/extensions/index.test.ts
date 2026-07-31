@@ -1,3 +1,6 @@
+// biome-ignore-all lint/style/noMagicNumbers: Test literals describe expected token estimates and layouts.
+// biome-ignore-all lint/suspicious/noExplicitAny: Tests use partial extension API fixtures.
+// biome-ignore-all lint/style/noNonNullAssertion: Tests assert fixtures contain these buckets.
 import assert from "node:assert/strict";
 import test from "node:test";
 import extension, {
@@ -292,7 +295,7 @@ test("showContextInspectorReport falls back to a compact notification when full 
 	});
 
 	await showContextInspectorReport(ctx, {
-		plain: "# Context Inspector\n" + "verbose body ".repeat(200),
+		plain: `# Context Inspector\n${"verbose body ".repeat(200)}`,
 		renderTui: () => {
 			throw new Error("fallback should not render TUI report");
 		},
@@ -537,7 +540,7 @@ test("System prompt attribution excludes prompt sources with dedicated buckets",
 			byName["Context files"].estimatedTokens,
 	);
 	assert.ok(
-		byName["System prompt"].estimatedTokens < byName["Skills"].estimatedTokens,
+		byName["System prompt"].estimatedTokens < byName.Skills.estimatedTokens,
 	);
 	assert.deepEqual(
 		byName["System prompt"].contributors.map((item) => item.name).sort(),
@@ -554,15 +557,15 @@ test("System prompt bucket is omitted when all prompt text belongs to dedicated 
 	const inputs = collectContextInspectorInputs(
 		makeCommandContext({
 			getSystemPrompt: () =>
-				["tool " + marker, "context " + marker, "skill " + marker].join("\n"),
+				[`tool ${marker}`, `context ${marker}`, `skill ${marker}`].join("\n"),
 			getSystemPromptOptions: () => ({
 				cwd: "/repo",
 				selectedTools: ["read"],
-				toolSnippets: { read: "tool " + marker },
+				toolSnippets: { read: `tool ${marker}` },
 				contextFiles: [
-					{ path: "/repo/CONTEXT.md", content: "context " + marker },
+					{ path: "/repo/CONTEXT.md", content: `context ${marker}` },
 				],
-				skills: [{ name: "implement", content: "skill " + marker }],
+				skills: [{ name: "implement", content: `skill ${marker}` }],
 			}),
 			sessionManager: { buildContextEntries: () => [] },
 		}),
@@ -870,11 +873,11 @@ test("rendered contributor lists are capped at five and shown only for materiall
 	);
 
 	assert.match(report, /- Context files: ~\d/);
-	assert.match(report, /  - \/repo\/context-1\.md: ~\d/);
-	assert.match(report, /  - \/repo\/context-5\.md: ~\d/);
-	assert.doesNotMatch(report, /  - \/repo\/context-6\.md: ~\d/);
+	assert.match(report, / {2}- \/repo\/context-1\.md: ~\d/);
+	assert.match(report, / {2}- \/repo\/context-5\.md: ~\d/);
+	assert.doesNotMatch(report, / {2}- \/repo\/context-6\.md: ~\d/);
 	assert.match(report, /- User messages: ~4 tokens/);
-	assert.doesNotMatch(report, /  - user message:/);
+	assert.doesNotMatch(report, / {2}- user message:/);
 });
 
 test("recommendations are read-only plain text for large context files, skills, and tool results", () => {

@@ -10,12 +10,19 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 const BAR_WIDTH = 20;
 const WARNING_PERCENT = 70;
 const ERROR_PERCENT = 90;
+const MAX_PERCENT = 100;
+const FULL_BAR_PERCENT = 99.5;
+const TOKEN_UNIT = 1000;
+const TOKEN_UNIT_DECIMAL_LIMIT = 10000;
+const MILLION_TOKEN_UNIT = 1000000;
+const MILLION_TOKEN_DECIMAL_LIMIT = 10000000;
+const COST_FRACTION_DIGITS = 3;
 
 type ThemeColor = "accent" | "dim" | "error" | "warning";
 
 type FooterTheme = {
-	fg(color: ThemeColor | string, text: string): string;
-	bold(text: string): string;
+	fg: (color: ThemeColor, text: string) => string;
+	bold: (text: string) => string;
 };
 
 type FooterModel = {
@@ -35,7 +42,7 @@ type FooterState = {
 	thinkingLevel?: string;
 	contextUsage?: ContextUsage;
 	entries: ExtensionContext["sessionManager"] extends {
-		getEntries(): infer Entries;
+		getEntries: () => infer Entries;
 	}
 		? Entries
 		: never;
@@ -61,6 +68,7 @@ type UsageTotals = {
 	cost: number;
 };
 
+// biome-ignore lint/style/noDefaultExport: Pi extension modules are loaded through default exports.
 export default function (pi: ExtensionAPI) {
 	let requestRender: (() => void) | undefined;
 
@@ -77,7 +85,7 @@ export default function (pi: ExtensionAPI) {
 					requestRender = undefined;
 				},
 				invalidate() {},
-				render(width: number): string[] {
+				render(width: number): Array<string> {
 					return renderFooter(
 						collectFooterState(
 							ctx,
@@ -140,7 +148,7 @@ export function renderFooter(
 	state: FooterState,
 	theme: FooterTheme,
 	width: number,
-): string[] {
+): Array<string> {
 	const usage = getUsageStats(state.entries);
 	const contextUsage = state.contextUsage;
 	const contextWindow =
@@ -155,7 +163,7 @@ export function renderFooter(
 	if (state.gitBranch) pwd = `${pwd} (${state.gitBranch})`;
 	if (state.sessionName) pwd = `${pwd} • ${state.sessionName}`;
 
-	const statsParts: string[] = [];
+	const statsParts: Array<string> = [];
 	if (usage.totals.input)
 		statsParts.push(`↑${formatTokens(usage.totals.input)}`);
 	if (usage.totals.output)
@@ -172,7 +180,7 @@ export function renderFooter(
 	}
 	if (usage.totals.cost || state.usingSubscription) {
 		statsParts.push(
-			`$${usage.totals.cost.toFixed(3)}${state.usingSubscription ? " (sub)" : ""}`,
+			`$${usage.totals.cost.toFixed(COST_FRACTION_DIGITS)}${state.usingSubscription ? " (sub)" : ""}`,
 		);
 	}
 
@@ -283,19 +291,19 @@ export function renderContextFillBar(
 		);
 	}
 
-	const clampedPercent = Math.max(0, Math.min(100, usage.percent));
-	let filled = Math.round((clampedPercent / 100) * BAR_WIDTH);
+	const clampedPercent = Math.max(0, Math.min(MAX_PERCENT, usage.percent));
+	let filled = Math.round((clampedPercent / MAX_PERCENT) * BAR_WIDTH);
 	if (clampedPercent > 0) filled = Math.max(1, filled);
-	if (clampedPercent >= 99.5) filled = BAR_WIDTH;
+	if (clampedPercent >= FULL_BAR_PERCENT) filled = BAR_WIDTH;
 
 	const filledCells = "█".repeat(filled);
 	const emptyCells = "░".repeat(BAR_WIDTH - filled);
-	const severityColor =
-		clampedPercent > ERROR_PERCENT
-			? "error"
-			: clampedPercent > WARNING_PERCENT
-				? "warning"
-				: "accent";
+	let severityColor: ThemeColor = "accent";
+	if (clampedPercent > ERROR_PERCENT) {
+		severityColor = "error";
+	} else if (clampedPercent > WARNING_PERCENT) {
+		severityColor = "warning";
+	}
 	const numeric = `${usage.percent.toFixed(1)}%/${formatTokens(usage.contextWindow)}`;
 	const line = `context ${theme.fg(severityColor, filledCells)}${theme.fg("dim", emptyCells)} ${theme.fg(severityColor, numeric)}`;
 	return truncateToWidth(line, width, theme.fg("dim", "..."));
@@ -337,7 +345,9 @@ function getUsageStats(entries: FooterState["entries"]): {
 			const promptTokens =
 				(usage.input ?? 0) + cacheRead + (usage.cacheWrite ?? 0);
 			latestCacheHitRate =
-				promptTokens > 0 ? (cacheRead / promptTokens) * 100 : undefined;
+				promptTokens > 0
+					? (cacheRead / promptTokens) * MAX_PERCENT
+					: undefined;
 		}
 	}
 
@@ -385,11 +395,14 @@ function sanitizeStatusText(text: string): string {
 }
 
 export function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-	return `${Math.round(count / 1000000)}M`;
+	if (count < TOKEN_UNIT) return count.toString();
+	if (count < TOKEN_UNIT_DECIMAL_LIMIT)
+		return `${(count / TOKEN_UNIT).toFixed(1)}k`;
+	if (count < MILLION_TOKEN_UNIT)
+		return `${Math.round(count / TOKEN_UNIT)}k`;
+	if (count < MILLION_TOKEN_DECIMAL_LIMIT)
+		return `${(count / MILLION_TOKEN_UNIT).toFixed(1)}M`;
+	return `${Math.round(count / MILLION_TOKEN_UNIT)}M`;
 }
 
 export function formatCwdForFooter(

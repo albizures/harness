@@ -1,3 +1,5 @@
+// biome-ignore-all lint/style/noMagicNumbers: Test literals describe expected widget and parser behavior.
+// biome-ignore-all lint/suspicious/noExplicitAny: Tests use partial extension API fixtures.
 import assert from "node:assert/strict";
 import test from "node:test";
 import extension, {
@@ -10,9 +12,9 @@ import extension, {
 } from "./index.ts";
 
 test("registers suggested replies tool, commands, and shortcuts", () => {
-	const tools: any[] = [];
-	const commands: string[] = [];
-	const shortcuts: string[] = [];
+	const tools: Array<any> = [];
+	const commands: Array<string> = [];
+	const shortcuts: Array<string> = [];
 
 	extension({
 		on() {},
@@ -72,7 +74,7 @@ test("tool displays suggestions and returns immediately", async () => {
 	]);
 	assert.match(
 		widgetFactory().render(120).join("\n"),
-		/┌─+┐\n  Suggested replies\n  › 1\. Yes, agree/,
+		/┌─+┐\n {2}Suggested replies\n {2}› 1\. Yes, agree/,
 	);
 	assert.match(
 		widgetFactory(undefined, {
@@ -183,7 +185,7 @@ test("function key shortcuts cycle suggestions and replace editor text", async (
 		},
 	} as any);
 
-	const inserted: string[] = [];
+	const inserted: Array<string> = [];
 	const ctx = {
 		ui: {
 			setWidget() {},
@@ -200,8 +202,8 @@ test("function key shortcuts cycle suggestions and replace editor text", async (
 		undefined,
 		ctx,
 	);
-	await shortcutHandlers["f8"](ctx);
-	await shortcutHandlers["f7"](ctx);
+	await shortcutHandlers.f8(ctx);
+	await shortcutHandlers.f7(ctx);
 
 	assert.deepEqual(inserted, ["Second", "First"]);
 });
