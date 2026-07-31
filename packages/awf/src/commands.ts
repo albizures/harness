@@ -1,5 +1,6 @@
 import { type Envelope, failure, success } from "./envelope.ts";
 import { loadManifest, ManifestValidationError } from "./manifest.ts";
+import { CorruptWorkflowProjectionError, IssueNotFoundError, createInMemoryTracker, type Tracker } from "./tracker.ts";
 
 type CommandSpec = {
   name: string;
@@ -20,7 +21,9 @@ const commands: CommandSpec[] = [
   { name: "fail", usage: "awf fail <id> --run <run>", description: "Mark a run as failed." },
 ];
 
-export async function execute(args: string[]): Promise<Envelope> {
+export type ExecuteOptions = { tracker?: Tracker };
+
+export async function execute(args: string[], options: ExecuteOptions = {}): Promise<Envelope> {
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     return success({
       name: "awf",
@@ -40,6 +43,10 @@ export async function execute(args: string[]): Promise<Envelope> {
 
   if (args[0] === "manifest" && args[1] === "validate") {
     return validateManifestCommand(args[2]);
+  }
+
+  if (args[0] === "get") {
+    return getIssueCommand(args[1], options.tracker ?? createInMemoryTracker());
   }
 
   return failure("NOT_IMPLEMENTED", "This workflow command is not implemented yet.", {
@@ -135,6 +142,21 @@ function requireOptions(args: string[], usage: string, optionNames: string[]): E
   }
 
   return undefined;
+}
+
+async function getIssueCommand(id: string | undefined, tracker: Tracker): Promise<Envelope> {
+  if (id === undefined) {
+    return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage: "awf get <id>" });
+  }
+
+  try {
+    const issue = await tracker.getIssue(id);
+    return success({ issue });
+  } catch (error) {
+    if (error instanceof IssueNotFoundError) return failure("NOT_FOUND", error.message, { id });
+    if (error instanceof CorruptWorkflowProjectionError) return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });
+    throw error;
+  }
 }
 
 async function validateManifestCommand(path: string | undefined): Promise<Envelope> {
