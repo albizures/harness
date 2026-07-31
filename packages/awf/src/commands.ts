@@ -1,5 +1,12 @@
+import { randomUUID } from "node:crypto";
+import { defaultManifest } from "./default-manifest.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
-import { loadManifest, ManifestValidationError } from "./manifest.ts";
+import {
+	loadManifest,
+	ManifestValidationError,
+	type ManifestTransition,
+	type WorkflowManifest,
+} from "./manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
@@ -66,7 +73,7 @@ const commands: Array<CommandSpec> = [
 	},
 ];
 
-export type ExecuteOptions = { tracker?: Tracker };
+export type ExecuteOptions = { tracker?: Tracker; manifest?: WorkflowManifest };
 
 export async function execute(
 	args: Array<string>,
@@ -93,8 +100,26 @@ export async function execute(
 		return validateManifestCommand(args[2]);
 	}
 
+	const tracker = options.tracker ?? createInMemoryTracker();
+	const manifest = options.manifest ?? defaultManifest;
+
 	if (args[0] === "get") {
-		return getIssueCommand(args[1], options.tracker ?? createInMemoryTracker());
+		return getIssueCommand(args[1], tracker);
+	}
+	if (args[0] === "logs") {
+		return logsCommand(args[1], tracker);
+	}
+	if (args[0] === "start") {
+		return startCommand(args[1], tracker, manifest);
+	}
+	if (args[0] === "succeed" || args[0] === "fail") {
+		return terminalCommand(
+			args[0],
+			args[1],
+			readOption(args, "--run"),
+			tracker,
+			manifest,
+		);
 	}
 
 	return failure(
@@ -252,7 +277,11 @@ async function getIssueCommand(
 
 	try {
 		const issue = await tracker.getIssue(id);
-		return success({ issue });
+		const logs = await tracker.readLogs(id);
+		return success({
+			issue,
+			runs: deriveRuns(issue.workflow.activeRunId, logs),
+		});
 	} catch (error) {
 		if (error instanceof IssueNotFoundError) {
 			return failure("NOT_FOUND", error.message, { id });
@@ -261,6 +290,141 @@ async function getIssueCommand(
 			return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });
 		}
 		throw error;
+	}
+}
+
+async function logsCommand(
+	id: string | undefined,
+	tracker: Tracker,
+): Promise<Envelope> {
+	if (id === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf logs <id>",
+		});
+	}
+
+	try {
+		return success({ logs: await tracker.readLogs(id) });
+	} catch (error) {
+		if (error instanceof IssueNotFoundError) {
+			return failure("NOT_FOUND", error.message, { id });
+		}
+		throw error;
+	}
+}
+
+async function startCommand(
+	id: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+): Promise<Envelope> {
+	if (id === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf start <id>",
+		});
+	}
+
+	try {
+		const issue = await tracker.getIssue(id);
+		const transition = findTransition(manifest, issue.workflow, "start");
+		if (transition === undefined) {
+			return invalidTransition(id, "start");
+		}
+		const runId = `run-${randomUUID()}`;
+		const updated = await tracker.updateIssue(id, {
+			expect: {
+				version: issue.workflow.version,
+				hash: issue.workflow.hash,
+			},
+			workflow: { ...workflowTarget(transition.to), activeRunId: runId },
+		});
+		const log = await tracker.appendLog(id, {
+			type: "action_started",
+			runId,
+			payload: { event: "start", to: cleanTransitionTarget(transition.to) },
+		});
+		return success({ issue: updated, run: { id: runId }, log });
+	} catch (error) {
+		return lifecycleError(id, error);
+	}
+}
+
+async function terminalCommand(
+	event: "succeed" | "fail",
+	id: string | undefined,
+	runId: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+): Promise<Envelope> {
+	if (id === undefined || runId === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: `awf ${event} <id> --run <run>`,
+		});
+	}
+
+	try {
+		const logs = await tracker.readLogs(id);
+		const terminalPayload = terminalLogPayload(
+			manifest,
+			await tracker.getIssue(id),
+			event,
+		);
+		const existing = logs.find(
+			(log) => log.runId === runId && isTerminalLog(log.type),
+		);
+		const logType = terminalLogType(event);
+		if (existing !== undefined) {
+			if (
+				existing.type === logType &&
+				stableStringify(existing.payload) === stableStringify(terminalPayload)
+			) {
+				const issue = await tracker.getIssue(id);
+				return success({
+					issue,
+					run: { id: runId, status: event },
+					log: existing,
+				});
+			}
+			return failure(
+				"CONFLICTING_TERMINAL_OUTCOME",
+				"Workflow run already has a different terminal outcome.",
+				{ id, runId },
+			);
+		}
+
+		const issue = await tracker.getIssue(id);
+		if (issue.workflow.activeRunId !== runId) {
+			return failure(
+				"RUN_MISMATCH",
+				"Command run id does not match the active workflow run.",
+				{
+					id,
+					...(issue.workflow.activeRunId === undefined
+						? {}
+						: { activeRunId: issue.workflow.activeRunId }),
+					runId,
+				},
+			);
+		}
+		const transition = findTransition(manifest, issue.workflow, event);
+		if (transition === undefined) {
+			return invalidTransition(id, event);
+		}
+		const updated = await tracker.updateIssue(id, {
+			expect: {
+				version: issue.workflow.version,
+				hash: issue.workflow.hash,
+			},
+			workflow: { ...workflowTarget(transition.to), activeRunId: undefined },
+		});
+		const log = await tracker.appendLog(id, {
+			type: logType,
+			runId,
+			payload: { event, to: cleanTransitionTarget(transition.to) },
+		});
+		return success({ issue: updated, run: { id: runId, status: event }, log });
+	} catch (error) {
+		return lifecycleError(id, error);
 	}
 }
 
@@ -294,6 +458,159 @@ async function validateManifestCommand(
 			{ message: error instanceof Error ? error.message : String(error) },
 		);
 	}
+}
+
+type WorkflowFields = {
+	kind: string;
+	state: string;
+	action?: string;
+	reason?: string;
+	activeRunId?: string;
+};
+
+function readOption(args: Array<string>, name: string): string | undefined {
+	const index = args.indexOf(name);
+	return index === -1 ? undefined : args[index + 1];
+}
+
+function findTransition(
+	manifest: WorkflowManifest,
+	workflow: WorkflowFields,
+	event: string,
+): ManifestTransition | undefined {
+	const kind = manifest.kinds.find(
+		(candidate) => candidate.id === workflow.kind,
+	);
+	return kind?.transitions.find(
+		(transition) =>
+			transition.event === event && fieldsMatch(transition.from, workflow),
+	);
+}
+
+function fieldsMatch(
+	from: ManifestTransition["from"],
+	workflow: WorkflowFields,
+): boolean {
+	return (
+		from.state === workflow.state &&
+		from.action === workflow.action &&
+		from.reason === workflow.reason
+	);
+}
+
+function invalidTransition(id: string, event: string): Envelope {
+	return failure(
+		"INVALID_TRANSITION",
+		"No manifest transition matches the current workflow fields for this event.",
+		{ id, event },
+	);
+}
+
+function lifecycleError(id: string, error: unknown): Envelope {
+	if (error instanceof IssueNotFoundError) {
+		return failure("NOT_FOUND", error.message, { id });
+	}
+	if (error instanceof CorruptWorkflowProjectionError) {
+		return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });
+	}
+	throw error;
+}
+
+function terminalLogType(event: "succeed" | "fail"): string {
+	return event === "succeed" ? "action_succeeded" : "action_failed";
+}
+
+function isTerminalLog(type: string): boolean {
+	return type === "action_succeeded" || type === "action_failed";
+}
+
+function terminalLogPayload(
+	manifest: WorkflowManifest,
+	issue: { workflow: WorkflowFields },
+	event: "succeed" | "fail",
+): unknown {
+	const transition = findTransition(manifest, issue.workflow, event);
+	return {
+		event,
+		to: cleanTransitionTarget(transition?.to ?? issue.workflow),
+	};
+}
+
+function workflowTarget(target: {
+	state: string;
+	action?: string;
+	reason?: string | null;
+}): { state: string; action?: string; reason?: string } {
+	return {
+		state: target.state,
+		...(target.action === undefined ? {} : { action: target.action }),
+		...(target.reason === undefined || target.reason === null
+			? {}
+			: { reason: target.reason }),
+	};
+}
+
+function cleanTransitionTarget(target: {
+	state: string;
+	action?: string;
+	reason?: string | null;
+}): Record<string, string | null> {
+	return Object.fromEntries(
+		Object.entries({
+			state: target.state,
+			action: target.action,
+			reason: target.reason,
+		}).filter(([, value]) => value !== undefined),
+	) as Record<string, string | null>;
+}
+
+function deriveRuns(
+	activeRunId: string | undefined,
+	logs: Array<{ type: string; runId?: string }>,
+): {
+	activeRunId?: string;
+	attempts: Array<{ runId: string; status: string }>;
+} {
+	const attempts = new Map<string, { runId: string; status: string }>();
+	for (const log of logs) {
+		if (log.runId === undefined) {
+			continue;
+		}
+		if (!attempts.has(log.runId)) {
+			attempts.set(log.runId, { runId: log.runId, status: "unknown" });
+		}
+		const attempt = attempts.get(log.runId);
+		if (attempt === undefined) {
+			continue;
+		}
+		if (log.type === "action_started") {
+			attempt.status = "running";
+		}
+		if (log.type === "action_succeeded") {
+			attempt.status = "succeeded";
+		}
+		if (log.type === "action_failed") {
+			attempt.status = "failed";
+		}
+	}
+	if (activeRunId !== undefined && !attempts.has(activeRunId)) {
+		attempts.set(activeRunId, { runId: activeRunId, status: "running" });
+	}
+	return { activeRunId, attempts: [...attempts.values()] };
+}
+
+function stableStringify(value: unknown): string {
+	if (Array.isArray(value)) {
+		return `[${value.map(stableStringify).join(",")}]`;
+	}
+	if (value !== null && typeof value === "object") {
+		return `{${Object.entries(value)
+			.filter(([, child]) => child !== undefined)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`)
+			.join(",")}}`;
+	}
+	return JSON.stringify(value);
 }
 
 function unknownCommand(args: Array<string>): Envelope {

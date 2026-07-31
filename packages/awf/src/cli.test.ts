@@ -56,6 +56,87 @@ test("CLI returns a stable validation error envelope for a bad manifest", () => 
 	assert.match(JSON.stringify(envelope.error.details.issues), /wildcard/);
 });
 
+test("CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
+	const started = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "start", "42"],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				AWF_MEMORY_ISSUES: JSON.stringify([
+					{
+						id: "42",
+						title: "Implement lifecycle",
+						labels: ["type:ticket", "state:ready", "action:implement"],
+					},
+				]),
+			},
+		},
+	);
+
+	assert.equal(started.status, 0);
+	assert.equal(started.stderr, "");
+	const startEnvelope = JSON.parse(started.stdout);
+	assert.equal(startEnvelope.ok, true);
+	const runId = startEnvelope.data.run.id;
+	const succeeded = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "succeed", "42", "--run", runId],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				AWF_MEMORY_ISSUES: JSON.stringify([
+					{
+						id: "42",
+						title: "Implement lifecycle",
+						workflow: {
+							kind: "ticket",
+							state: "running",
+							action: "implement",
+							activeRunId: runId,
+						},
+						logs: [startEnvelope.data.log],
+					},
+				]),
+			},
+		},
+	);
+
+	assert.equal(succeeded.status, 0);
+	assert.equal(succeeded.stderr, "");
+	const succeedEnvelope = JSON.parse(succeeded.stdout);
+	assert.equal(succeedEnvelope.ok, true);
+	const logged = spawnSync(process.execPath, [cliPath.pathname, "logs", "42"], {
+		encoding: "utf8",
+		env: {
+			...process.env,
+			AWF_MEMORY_ISSUES: JSON.stringify([
+				{
+					id: "42",
+					title: "Implement lifecycle",
+					workflow: {
+						kind: "ticket",
+						state: "done",
+						action: "none",
+					},
+					logs: [startEnvelope.data.log, succeedEnvelope.data.log],
+				},
+			]),
+		},
+	});
+
+	assert.equal(logged.status, 0);
+	assert.equal(logged.stderr, "");
+	const logsEnvelope = JSON.parse(logged.stdout);
+	assert.equal(logsEnvelope.ok, true);
+	assert.deepEqual(
+		logsEnvelope.data.logs.map((log: { type: string }) => log.type),
+		["action_started", "action_succeeded"],
+	);
+});
+
 test("CLI writes error envelopes to stdout and exits non-zero", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "unknown"], {
 		encoding: "utf8",

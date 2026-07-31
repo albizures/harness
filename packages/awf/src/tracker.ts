@@ -56,6 +56,7 @@ export type CreateIssueInput = {
 	title: string;
 	body?: string;
 	workflow: Omit<WorkflowProjection, "version" | "hash"> & { version?: number };
+	logs?: Array<Omit<WorkflowLog, "issueId">>;
 };
 
 export type SeedIssueInput =
@@ -357,7 +358,11 @@ function normalizeIssue(input: CreateIssueInput & { id: string }): StoredIssue {
 		relationships: { children: [], dependencies: [], dependents: [] },
 		artifacts: [],
 		changes: [],
-		logs: [],
+		logs: (input.logs ?? []).map((log, index) => ({
+			...log,
+			issueId: input.id,
+			sequence: log.sequence ?? index + 1,
+		})),
 	};
 }
 
