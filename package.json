@@ -1,17 +1,22 @@
 {
-  "name": "@albizures/harness-monorepo",
-  "private": true,
-  "scripts": {
-    "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "changeset publish",
-    "dev:pi": "pi",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test packages/*/extensions/*.test.ts"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.29.7",
-    "@earendil-works/pi-coding-agent": "^0.83.0",
-    "typescript": "^7.0.2"
-  }
+	"name": "@albizures/harness-monorepo",
+	"private": true,
+	"scripts": {
+		"changeset": "changeset",
+		"version-packages": "changeset version",
+		"release": "changeset publish",
+		"dev:pi": "pi",
+		"check": "biome check .",
+		"lint": "biome lint .",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"typecheck": "tsc --noEmit",
+		"test": "node --test packages/*/extensions/*.test.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.6",
+		"@changesets/cli": "^2.29.7",
+		"@earendil-works/pi-coding-agent": "^0.83.0",
+		"typescript": "^7.0.2"
+	}
 }
