@@ -1,25 +1,25 @@
 {
-  "name": "@albizures/pi-suggested-replies",
-  "version": "0.2.0",
-  "description": "Pi package that lets agents offer suggested replies for quick insertion into the prompt editor.",
-  "keywords": [
-    "pi-package",
-    "pi",
-    "extension",
-    "suggested-replies",
-    "quick-replies"
-  ],
-  "license": "MIT",
-  "type": "module",
-  "publishConfig": {
-    "access": "public"
-  },
-  "pi": {
-    "extensions": [
-      "./extensions"
-    ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
-  }
+	"name": "@albizures/pi-suggested-replies",
+	"version": "0.2.0",
+	"description": "Pi package that lets agents offer suggested replies for quick insertion into the prompt editor.",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"extension",
+		"suggested-replies",
+		"quick-replies"
+	],
+	"license": "MIT",
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"pi": {
+		"extensions": [
+			"./extensions"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	}
 }

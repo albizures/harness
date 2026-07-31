@@ -3,31 +3,36 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 function discoverSkillDirectories(root: string): string[] {
-  if (!existsSync(root)) {
-    return [];
-  }
+	if (!existsSync(root)) {
+		return [];
+	}
 
-  const entries = readdirSync(root, { withFileTypes: true });
+	const entries = readdirSync(root, { withFileTypes: true });
 
-  if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
-    return [root];
-  }
+	if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
+		return [root];
+	}
 
-  return entries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
-    .flatMap((entry) => discoverSkillDirectories(join(root, entry.name)))
-    .sort();
+	return entries
+		.filter(
+			(entry) =>
+				entry.isDirectory() &&
+				!entry.name.startsWith(".") &&
+				entry.name !== "node_modules",
+		)
+		.flatMap((entry) => discoverSkillDirectories(join(root, entry.name)))
+		.sort();
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.on("resources_discover", async (event) => {
-    const skillCatalogPath = join(event.cwd, "skills");
-    const skillPaths = discoverSkillDirectories(skillCatalogPath);
+	pi.on("resources_discover", async (event) => {
+		const skillCatalogPath = join(event.cwd, "skills");
+		const skillPaths = discoverSkillDirectories(skillCatalogPath);
 
-    if (skillPaths.length === 0) {
-      return;
-    }
+		if (skillPaths.length === 0) {
+			return;
+		}
 
-    return { skillPaths };
-  });
+		return { skillPaths };
+	});
 }
