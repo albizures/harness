@@ -46,13 +46,29 @@ export function hasWorkflowProjectionLabels(
 	return labels.some((label) => isWorkflowProjectionLabel(manifest, label));
 }
 
+export function assertNoMalformedWorkflowProjectionLabels(
+	manifest: WorkflowManifest,
+	number: number,
+	labels: Array<string>,
+): void {
+	const malformed = labels.find(
+		(label) =>
+			isWorkflowOwnedReservedLabel(manifest, label) &&
+			!isWorkflowProjectionLabel(manifest, label),
+	);
+	if (malformed !== undefined) {
+		throw needsReconciliation(
+			String(number),
+			`has malformed reserved workflow label '${malformed}'`,
+		);
+	}
+}
+
 export function isWorkflowProjectionLabel(
 	manifest: WorkflowManifest,
 	label: string,
 ): boolean {
-	return WORKFLOW_LABEL_FIELDS.some((field) =>
-		label.startsWith(reservedPrefix(manifest, field)),
-	);
+	return reservedLabelPattern(manifest).test(label);
 }
 
 export function labelsForProjection(
@@ -82,6 +98,7 @@ export function projectionFromLabels(
 	number: number,
 	labels: Array<string>,
 ): Pick<WorkflowProjection, "kind" | "state" | "action" | "reason"> {
+	assertNoMalformedWorkflowProjectionLabels(manifest, number, labels);
 	const kindValues = valuesForReservedLabel(manifest, labels, "kind");
 	if (kindValues.length !== 1 || kindValues[0] === "") {
 		throw needsReconciliation(
@@ -149,12 +166,31 @@ function valuesForReservedLabel(
 		.map((label) => label.slice(prefix.length));
 }
 
+function reservedLabelPattern(manifest: WorkflowManifest): RegExp {
+	return new RegExp(
+		`^${escapeRegExp(reservedPrefix(manifest))}(${WORKFLOW_LABEL_FIELDS.join("|")}):[^:]+$`,
+		"u",
+	);
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
 function labelFor(
 	manifest: WorkflowManifest,
 	field: WorkflowLabelField,
 	value: string,
 ): string {
 	return `${reservedPrefix(manifest, field)}${value}`;
+}
+
+function isWorkflowOwnedReservedLabel(
+	manifest: WorkflowManifest,
+	label: string,
+): boolean {
+	const root = `${manifest.github.reservedPrefix}:${manifest.workflow.id}`;
+	return label === root || label.startsWith(`${root}:`);
 }
 
 function reservedPrefix(
@@ -184,20 +220,26 @@ export function parseMachineComment(
 ): unknown | undefined {
 	const expected = parseMarkerLine(marker);
 	const lineBreak = body.indexOf("\n");
-	if (lineBreak === -1) {
-		return undefined;
-	}
-	const firstLine = body.slice(0, lineBreak);
+	const firstLine = lineBreak === -1 ? body : body.slice(0, lineBreak);
 	const actual = parseOptionalMarkerLine(firstLine);
 	if (actual === undefined) {
+		if (isReservedMachineMarker(firstLine, expected.workflowId)) {
+			throw new CorruptWorkflowProjectionError(
+				"NEED_RECONCILIATION: malformed machine comment marker.",
+			);
+		}
 		return undefined;
 	}
-	if (
-		actual.type !== expected.type ||
-		actual.version !== expected.version ||
-		actual.workflowId !== expected.workflowId
-	) {
+	if (actual.workflowId !== expected.workflowId) {
 		return undefined;
+	}
+	if (actual.type !== expected.type) {
+		return undefined;
+	}
+	if (actual.version !== expected.version || lineBreak === -1) {
+		throw new CorruptWorkflowProjectionError(
+			"NEED_RECONCILIATION: malformed machine comment marker.",
+		);
 	}
 	const json = body.slice(lineBreak + 1);
 	try {
@@ -250,6 +292,19 @@ function parseOptionalMarkerLine(
 		version: Number(version),
 		workflowId: workflowId ?? "",
 	};
+}
+
+function isReservedMachineMarker(
+	firstLine: string,
+	workflowId: string,
+): boolean {
+	return (
+		firstLine.startsWith("<!-- awf:") &&
+		firstLine.endsWith(" -->") &&
+		(firstLine.includes(` ${workflowId} `) ||
+			firstLine.includes(` ${workflowId} -->`) ||
+			firstLine.startsWith(`<!-- awf:${workflowId}:`))
+	);
 }
 
 export function metadataFromProjection(

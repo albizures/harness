@@ -98,11 +98,11 @@ test("projects optional reasons and removes stale canonical labels on update", a
 	]);
 });
 
-test("listIssues ignores non-current reserved GitHub labels", async () => {
+test("listIssues requires reconciliation for malformed reserved GitHub labels", async () => {
 	const api = createMockGitHubApi();
 	await api.createIssue({
-		title: "Reserved but not workflow current fields",
-		labels: ["awf:agent-development:projection"],
+		title: "Reserved but malformed workflow label",
+		labels: ["awf:agent-development"],
 	});
 	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
 	await tracker.createIssue({
@@ -110,10 +110,7 @@ test("listIssues ignores non-current reserved GitHub labels", async () => {
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
 
-	assert.deepEqual(
-		(await tracker.listIssues()).map((candidate) => candidate.id),
-		["2"],
-	);
+	await assert.rejects(tracker.listIssues(), /NEED_RECONCILIATION/);
 });
 
 test("appends logs as strict machine comments", async () => {
@@ -175,12 +172,14 @@ test("uses native hierarchy and dependency capabilities", async () => {
 
 test("listIssues ignores unrelated GitHub issues without workflow projection labels", async () => {
 	const api = createMockGitHubApi();
-	await api.createIssue({ title: "Regular issue", labels: [] });
+	await api.createIssue({ title: "Regular issue", labels: ["project:awf"] });
 	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
 	await tracker.createIssue({
 		title: "Workflow issue",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
+
+	api.issue(1).comments.push({ id: 99, body: "Human note about awf labels" });
 
 	assert.deepEqual(
 		(await tracker.listIssues()).map((issue) => issue.id),
@@ -222,6 +221,27 @@ test("machine-comment corruption requires reconciliation", async () => {
 	api.issue(1).comments[0].body =
 		"<!-- awf:current v1 agent-development -->\nnot-json";
 
+	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+});
+
+test("malformed canonical and legacy workflow-owned machine comments require reconciliation", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
+	await tracker.createIssue({
+		title: "Implement adapter",
+		workflow: { kind: "ticket", state: "ready", action: "implement" },
+	});
+
+	api.issue(1).comments.push({
+		id: 100,
+		body: "<!-- awf:log v2 agent-development -->\n{}",
+	});
+	await assert.rejects(tracker.readLogs("1"), /NEED_RECONCILIATION/);
+
+	api.issue(1).comments[1].body = "<!-- awf:agent-development:log -->\n{}";
+	await assert.rejects(tracker.readLogs("1"), /NEED_RECONCILIATION/);
+
+	api.issue(1).comments[1].body = "<!-- awf:current v1 agent-development -->";
 	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
 });
 

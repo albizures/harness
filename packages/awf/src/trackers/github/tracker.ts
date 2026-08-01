@@ -30,6 +30,7 @@ import {
 import type { GitHubTrackerApi, GitHubTrackerIssue } from "./index.ts";
 import {
 	hasWorkflowProjectionLabels,
+	assertNoMalformedWorkflowProjectionLabels,
 	isWorkflowProjectionLabel,
 	labelsForProjection,
 	projectionFromLabels,
@@ -285,6 +286,11 @@ export class GitHubTracker implements TrackerAdapter {
 	async listIssues(): Promise<Array<WorkflowIssue>> {
 		const issues: Array<WorkflowIssue> = [];
 		for (const issue of await this.api.listIssues()) {
+			assertNoMalformedWorkflowProjectionLabels(
+				this.manifest,
+				issue.number,
+				issue.labels,
+			);
 			if (!hasWorkflowProjectionLabels(this.manifest, issue.labels)) {
 				continue;
 			}
