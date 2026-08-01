@@ -45,6 +45,7 @@ export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
 
 export type ManifestCommand = {
 	id: Identifier;
+	cli?: { verb: "create" | "apply"; target: Identifier };
 	target: { kind: Identifier; action: Identifier };
 	input?: PayloadSchema;
 	output?: PayloadSchema;
@@ -57,6 +58,12 @@ export type ManifestReadinessFilter = {
 	state?: Identifier;
 	action?: Identifier;
 	reason?: Identifier;
+};
+
+export type ManifestNamedReadinessFilter = {
+	name: Identifier;
+	kind: Identifier;
+	relationship: "parent";
 };
 
 export type ManifestRelationship = {
@@ -93,6 +100,7 @@ export type WorkflowManifest = {
 	};
 	readiness?: {
 		filters: Array<ManifestReadinessFilter>;
+		namedFilters?: Array<ManifestNamedReadinessFilter>;
 	};
 	kinds: Array<ManifestKind>;
 	commands: Array<ManifestCommand>;
@@ -231,6 +239,15 @@ const manifestSchema = z.strictObject({
 					reason: z.string().optional(),
 				}),
 			),
+			namedFilters: z
+				.array(
+					z.strictObject({
+						name: z.string(),
+						kind: z.string(),
+						relationship: z.literal("parent"),
+					}),
+				)
+				.optional(),
 		})
 		.optional(),
 	kinds: z.array(
@@ -251,6 +268,12 @@ const manifestSchema = z.strictObject({
 	commands: z.array(
 		z.strictObject({
 			id: z.string(),
+			cli: z
+				.strictObject({
+					verb: z.enum(["create", "apply"]),
+					target: z.string(),
+				})
+				.optional(),
 			target: z.strictObject({ kind: z.string(), action: z.string() }),
 			input: payloadZodSchemaSchema.optional(),
 			output: payloadZodSchemaSchema.optional(),
@@ -402,6 +425,8 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 
 	validateReadiness(value.readiness, kindIds, states, actions, reasons, issues);
 
+	const commandIds = new Set<string>();
+	const commandDeclarations = new Set<string>();
 	for (const [index, command] of readArray(
 		value.commands,
 		"$.commands",
@@ -413,6 +438,8 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			kindIds,
 			actions,
 			kindActions,
+			commandIds,
+			commandDeclarations,
 			issues,
 		);
 	}
@@ -710,6 +737,7 @@ function validateReadiness(
 		issue(issues, "$.readiness", "Readiness metadata must be an object.");
 		return;
 	}
+	const filterDeclarations = new Set<string>();
 	for (const [index, filter] of readArray(
 		value.filters,
 		"$.readiness.filters",
@@ -732,6 +760,50 @@ function validateReadiness(
 		if (filter.reason !== undefined && !reasons.has(String(filter.reason))) {
 			issue(issues, `${path}.reason`, "Readiness filter reason must be known.");
 		}
+		const key = [filter.kind, filter.state, filter.action, filter.reason]
+			.map((part) => String(part ?? "*"))
+			.join("/");
+		if (filterDeclarations.has(key)) {
+			issue(issues, path, `Duplicate readiness filter declaration '${key}'.`);
+		}
+		filterDeclarations.add(key);
+	}
+	const namedFilterNames = new Set<string>();
+	for (const [index, filter] of readArray(
+		value.namedFilters ?? [],
+		"$.readiness.namedFilters",
+		issues,
+	).entries()) {
+		const path = `$.readiness.namedFilters[${index}]`;
+		if (!isRecord(filter)) {
+			issue(issues, path, "Named readiness filter must be an object.");
+			continue;
+		}
+		validateId(filter.name, `${path}.name`, issues);
+		if (typeof filter.name === "string") {
+			if (namedFilterNames.has(filter.name)) {
+				issue(
+					issues,
+					`${path}.name`,
+					`Duplicate readiness filter name '${filter.name}'.`,
+				);
+			}
+			namedFilterNames.add(filter.name);
+		}
+		if (typeof filter.kind !== "string" || !kindIds.has(filter.kind)) {
+			issue(
+				issues,
+				`${path}.kind`,
+				"Named readiness filter kind must be known.",
+			);
+		}
+		if (filter.relationship !== "parent") {
+			issue(
+				issues,
+				`${path}.relationship`,
+				"Named readiness filter relationship must be parent.",
+			);
+		}
 	}
 }
 
@@ -741,13 +813,47 @@ function validateCommand(
 	kindIds: Set<string>,
 	actions: Set<string>,
 	kindActions: Map<string, Set<string>>,
+	commandIds: Set<string>,
+	commandDeclarations: Set<string>,
 	issues: Array<ValidationIssue>,
 ): void {
 	if (!isRecord(value)) {
 		issue(issues, path, "Command must be an object.");
 		return;
 	}
-	validateId(value.id, `${path}.id`, issues);
+	validateUniqueId(value.id, path, commandIds, issues);
+	if (value.cli !== undefined) {
+		if (!isRecord(value.cli)) {
+			issue(
+				issues,
+				`${path}.cli`,
+				"Command CLI declaration must be an object.",
+			);
+		} else {
+			if (value.cli.verb !== "create" && value.cli.verb !== "apply") {
+				issue(
+					issues,
+					`${path}.cli.verb`,
+					"Command CLI verb must be create or apply.",
+				);
+			}
+			validateId(value.cli.target, `${path}.cli.target`, issues);
+			if (
+				typeof value.cli.verb === "string" &&
+				typeof value.cli.target === "string"
+			) {
+				const declaration = `${value.cli.verb} ${value.cli.target}`;
+				if (commandDeclarations.has(declaration)) {
+					issue(
+						issues,
+						`${path}.cli`,
+						`Duplicate command target declaration '${declaration}'.`,
+					);
+				}
+				commandDeclarations.add(declaration);
+			}
+		}
+	}
 	if (!isRecord(value.target)) {
 		issue(issues, `${path}.target`, "Command target must be an object.");
 	} else {

@@ -46,6 +46,41 @@ test("create spec creates a bundled workflow Spec from Markdown input", async ()
 	);
 });
 
+test("create targets dispatch through manifest CLI declarations", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest: WorkflowManifest = {
+		...defaultManifest,
+		commands: defaultManifest.commands.map((command) =>
+			command.id === "spec-create"
+				? { ...command, cli: { verb: "create", target: "brief" } }
+				: command,
+		),
+	};
+
+	const envelope = await execute(["create", "brief", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: "# Manifest target\n",
+	});
+
+	assert.equal(envelope.ok, true);
+	assert.equal(
+		(envelope as { ok: true; data: CreateSpecData }).data.issue.title,
+		"Manifest target",
+	);
+
+	const unknown = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: "# Not declared\n",
+	});
+	assert.equal(unknown.ok, false);
+	assert.equal(
+		unknown.ok ? undefined : unknown.error.code,
+		"UNKNOWN_COMMAND_TARGET",
+	);
+});
+
 test("create spec validates the bundled manifest-declared input before mutating", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = manifestWithCommandSchema("spec-create", {
@@ -130,6 +165,108 @@ test("create handoff rejects invalid manifest-declared input before mutating", a
 	assert.deepEqual(await tracker.readLogs("ticket-1"), []);
 });
 
+test("apply targets dispatch through manifest CLI declarations", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-1",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			},
+		],
+	});
+	const manifest: WorkflowManifest = {
+		...defaultManifest,
+		commands: defaultManifest.commands.map((command) =>
+			command.id === "plan-apply"
+				? { ...command, cli: { verb: "apply", target: "roadmap" } }
+				: command,
+		),
+	};
+
+	const envelope = await execute(
+		["apply", "roadmap", "spec-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({
+				tickets: [{ key: "a", title: "A", content: "Do A." }],
+			}),
+		},
+	);
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(
+		(await tracker.readLogs("spec-1")).map((log) => log.type),
+		["plan_applied"],
+	);
+
+	const unknownTracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-2",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			},
+		],
+	});
+	const unknown = await execute(["apply", "plan", "spec-2", "--input", "-"], {
+		tracker: unknownTracker,
+		manifest,
+		stdin: JSON.stringify({
+			tickets: [{ key: "b", title: "B", content: "Do B." }],
+		}),
+	});
+
+	assert.equal(unknown.ok, false);
+	assert.equal(
+		unknown.ok ? undefined : unknown.error.code,
+		"UNKNOWN_COMMAND_TARGET",
+	);
+	assert.deepEqual(
+		(await unknownTracker.listIssues()).map((issue) => issue.id),
+		["spec-2"],
+	);
+	assert.deepEqual(await unknownTracker.readLogs("spec-2"), []);
+});
+
+test("apply plan requires the active manifest plan apply declaration before mutating", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-1",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			},
+		],
+	});
+	const manifest: WorkflowManifest = {
+		...defaultManifest,
+		commands: defaultManifest.commands.map((command) =>
+			command.id === "plan-apply" ? { ...command, cli: undefined } : command,
+		),
+	};
+
+	const envelope = await execute(["apply", "plan", "spec-1", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: JSON.stringify({
+			tickets: [{ key: "a", title: "A", content: "Do A." }],
+		}),
+	});
+
+	assert.equal(envelope.ok, false);
+	assert.equal(
+		envelope.ok ? undefined : envelope.error.code,
+		"UNKNOWN_COMMAND_TARGET",
+	);
+	assert.deepEqual(
+		(await tracker.listIssues()).map((issue) => issue.id),
+		["spec-1"],
+	);
+	assert.deepEqual(await tracker.readLogs("spec-1"), []);
+});
+
 test("apply plan creates tickets, relationships, dependencies, logs application, and advances the Spec", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-plan-"));
 	const plan = join(dir, "plan.json");
@@ -182,7 +319,9 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 	assert.deepEqual((await tracker.getIssue("2")).relationships.dependencies, [
 		"1",
 	]);
-	const ready = await execute(["ready", "--spec", "spec-1"], { tracker });
+	const ready = await execute(["ready", "--filter", "spec=spec-1"], {
+		tracker,
+	});
 	assert.equal(ready.ok, true);
 	if (!ready.ok) {
 		throw new Error("expected success");

@@ -186,6 +186,91 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 	assert.equal(invalid.error.issues.length, invalidArtifactReferenceCount);
 });
 
+test("validates manifest-declared CLI targets and named readiness filters", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "command-declarations" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["implement"],
+			reasons: [],
+			events: ["start"],
+		},
+		github: {
+			labelPrefixes: {
+				kind: "type:",
+				state: "state:",
+				action: "action:",
+				reason: "reason:",
+			},
+		},
+		concurrency: { perIssue: 1 },
+		readiness: {
+			filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+			namedFilters: [{ name: "spec", kind: "ticket", relationship: "parent" }],
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "type:ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [],
+			},
+		],
+		commands: [
+			{
+				id: "ticket-create",
+				cli: { verb: "create", target: "ticket" },
+				target: { kind: "ticket", action: "implement" },
+			},
+		],
+	});
+
+	assert.deepEqual(validateManifest(manifest), []);
+
+	const invalid = {
+		...manifest,
+		readiness: {
+			filters: [
+				{ kind: "ticket", state: "ready", action: "implement" },
+				{ kind: "ticket", state: "ready", action: "implement" },
+			],
+			namedFilters: [
+				{ name: "spec", kind: "missing", relationship: "parent" },
+				{ name: "spec", kind: "ticket", relationship: "parent" },
+			],
+		},
+		commands: [
+			...manifest.commands,
+			{
+				id: "ticket-create",
+				cli: { verb: "create", target: "ticket" },
+				target: { kind: "missing", action: "implement" },
+			},
+			{
+				id: "bad-target",
+				cli: { verb: "apply", target: "Bad Target" },
+				target: { kind: "ticket", action: "missing" },
+			},
+		],
+	};
+
+	const messages = validateManifest(invalid)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	assert.match(
+		messages,
+		/Duplicate command target declaration 'create ticket'/,
+	);
+	assert.match(messages, /Duplicate id 'ticket-create'/);
+	assert.match(messages, /Identifier must use lowercase/);
+	assert.match(messages, /Command target kind must reference a known kind/);
+	assert.match(messages, /Command target action must reference a known action/);
+	assert.match(messages, /Duplicate readiness filter declaration/);
+	assert.match(messages, /Duplicate readiness filter name 'spec'/);
+	assert.match(messages, /Named readiness filter kind must be known/);
+});
+
 test("rejects non-declarative hooks, wildcards, unknown references, and malformed schemas", () => {
 	const issues = validateManifest({
 		version: "v1",

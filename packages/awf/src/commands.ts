@@ -8,6 +8,7 @@ import {
 	ManifestValidationError,
 	validateManifest,
 	type ManifestCommand,
+	type ManifestNamedReadinessFilter,
 	type PayloadZodSchema,
 	type ManifestTransition,
 	type WorkflowManifest,
@@ -25,10 +26,24 @@ type CommandSpec = {
 	description: string;
 };
 
+type HelpReadinessFilterSpec = {
+	kind?: string;
+	state?: string;
+	action?: string;
+	reason?: string;
+};
+
+type HelpNamedReadinessFilterSpec = {
+	name: string;
+	kind: string;
+	relationship: "parent";
+	usage: string;
+};
+
 const maxReconcileArgumentCount = 3;
 const createHandoffArgumentCount = 6;
 
-const commands: Array<CommandSpec> = [
+const runtimeCommands: Array<CommandSpec> = [
 	{
 		name: "get",
 		usage: "awf get <id>",
@@ -36,7 +51,7 @@ const commands: Array<CommandSpec> = [
 	},
 	{
 		name: "ready",
-		usage: "awf ready [--spec <id>] [--limit <n>]",
+		usage: "awf ready [--filter <name=value>] [--limit <n>]",
 		description: "Return legally executable work.",
 	},
 	{
@@ -49,26 +64,6 @@ const commands: Array<CommandSpec> = [
 		usage: "awf reconcile <id> [--apply]",
 		description:
 			"Diagnose workflow projection/log drift and apply safe repairs.",
-	},
-	{
-		name: "create spec",
-		usage: "awf create spec --input <file|->",
-		description: "Create a Spec.",
-	},
-	{
-		name: "apply plan",
-		usage: "awf apply plan <spec> --input <file|->",
-		description: "Apply a plan to a Spec.",
-	},
-	{
-		name: "create handoff",
-		usage: "awf create handoff --source <issue> --input <handoff.json>",
-		description: "Create a Handoff artifact.",
-	},
-	{
-		name: "handoff",
-		usage: "awf handoff <source> --input <handoff.json>",
-		description: "Alias for create handoff.",
 	},
 	{
 		name: "manifest validate",
@@ -102,11 +97,13 @@ export async function execute(
 	args: Array<string>,
 	options: ExecuteOptions = {},
 ): Promise<Envelope> {
+	const manifest = options.manifest ?? defaultManifest;
 	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
 		return success({
 			name: "awf",
 			description: "Agent workflow CLI.",
-			commands,
+			commands: helpCommands(manifest),
+			readiness: helpReadiness(manifest),
 		});
 	}
 
@@ -124,7 +121,6 @@ export async function execute(
 	}
 
 	const tracker = options.tracker ?? createInMemoryTracker();
-	const manifest = options.manifest ?? defaultManifest;
 	const manifestIssues = validateManifest(manifest);
 	if (manifestIssues.length > 0) {
 		return failure(
@@ -146,40 +142,8 @@ export async function execute(
 	if (args[0] === "ready") {
 		return readyCommand(parseReadyOptions(args), tracker, manifest);
 	}
-	if (args[0] === "create" && args[1] === "spec") {
-		return createSpecCommand(
-			readOption(args, "--input"),
-			tracker,
-			manifest,
-			options.stdin,
-		);
-	}
-	if (args[0] === "create" && args[1] === "handoff") {
-		return createHandoffCommand(
-			readOption(args, "--source"),
-			readOption(args, "--input"),
-			tracker,
-			manifest,
-			options.stdin,
-		);
-	}
-	if (args[0] === "handoff") {
-		return createHandoffCommand(
-			args[1],
-			readOption(args, "--input"),
-			tracker,
-			manifest,
-			options.stdin,
-		);
-	}
-	if (args[0] === "apply" && args[1] === "plan") {
-		return applyPlanCommand(
-			args[2],
-			readOption(args, "--input"),
-			tracker,
-			manifest,
-			options.stdin,
-		);
+	if (args[0] === "create" || args[0] === "apply") {
+		return manifestCommand(args, tracker, manifest, options.stdin);
 	}
 	if (args[0] === "start") {
 		return startCommand(args[1], tracker, manifest);
@@ -205,6 +169,104 @@ export async function execute(
 	);
 }
 
+async function manifestCommand(
+	args: Array<string>,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+): Promise<Envelope> {
+	const verb = args[0] as "create" | "apply";
+	const target = args[1];
+	const command = workflowCommandByCli(manifest, verb, target);
+	if (command === undefined) {
+		return failure(
+			"UNKNOWN_COMMAND_TARGET",
+			"Workflow command target is not declared by the manifest.",
+			{
+				command: `${verb} ${target}`,
+			},
+		);
+	}
+	if (command.id === "spec-create") {
+		return createSpecCommand(
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			stdin,
+			command,
+		);
+	}
+	if (command.id === "handoff-create") {
+		return createHandoffCommand(
+			readOption(args, "--source"),
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			stdin,
+			command,
+		);
+	}
+	if (command.id === "plan-apply") {
+		return applyPlanCommand(
+			args[2],
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			stdin,
+			command,
+		);
+	}
+	return failure(
+		"MANIFEST_UNSUPPORTED",
+		"Workflow command target has no runtime executor.",
+		{
+			command: `${verb} ${target}`,
+			id: command.id,
+		},
+	);
+}
+
+function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
+	return [
+		...runtimeCommands,
+		...manifest.commands.flatMap((command) => {
+			if (command.cli === undefined) {
+				return [];
+			}
+			return [
+				{
+					name: `${command.cli.verb} ${command.cli.target}`,
+					usage: manifestCommandUsage(command),
+					description: `Run manifest command '${command.id}'.`,
+				},
+			];
+		}),
+	];
+}
+
+function manifestCommandUsage(command: ManifestCommand): string {
+	if (command.cli?.verb === "apply") {
+		return `awf apply ${command.cli.target} <issue> --input <file|->`;
+	}
+	if (command.id === "handoff-create") {
+		return `awf create ${command.cli?.target ?? "handoff"} --source <issue> --input <file|->`;
+	}
+	return `awf create ${command.cli?.target ?? "target"} --input <file|->`;
+}
+
+function helpReadiness(manifest: WorkflowManifest): {
+	filters: Array<HelpReadinessFilterSpec>;
+	namedFilters: Array<HelpNamedReadinessFilterSpec>;
+} {
+	return {
+		filters: readinessFilters(manifest).map((filter) => ({ ...filter })),
+		namedFilters: (manifest.readiness?.namedFilters ?? []).map((filter) => ({
+			...filter,
+			usage: `awf ready --filter ${filter.name}=<${filter.kind}>`,
+		})),
+	};
+}
+
 function validateKnownCommand(args: Array<string>): Envelope | undefined {
 	const [command, subcommand] = args;
 
@@ -217,38 +279,13 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 			return validateReconcile(args);
 		case "ready":
 			return validateReady(args);
-		case "handoff":
-			return requirePositionalAndOption(
-				args,
-				"awf handoff <source> --input <handoff.json>",
-				"--input",
-			);
 		case "succeed":
 		case "fail":
 			return validateTerminalArguments(args, command);
 		case "create":
-			if (subcommand === "spec") {
-				return requirePositionalAndOption(
-					args,
-					"awf create spec --input <file|->",
-					"--input",
-					1,
-				);
-			}
-			if (subcommand === "handoff") {
-				return validateCreateHandoff(args);
-			}
-			return unknownCommand(args);
+			return validateManifestCommandArguments(args, "create");
 		case "apply":
-			if (subcommand !== "plan") {
-				return unknownCommand(args);
-			}
-			return requirePositionalAndOption(
-				args,
-				"awf apply plan <spec> --input <file|->",
-				"--input",
-				2,
-			);
+			return validateManifestCommandArguments(args, "apply");
 		case "manifest":
 			if (subcommand !== "validate") {
 				return unknownCommand(args);
@@ -271,30 +308,57 @@ function validateReady(args: Array<string>): Envelope | undefined {
 	return options.error === undefined ? undefined : invalidReadyArguments();
 }
 
-function validateCreateHandoff(args: Array<string>): Envelope | undefined {
-	const usage = "awf create handoff --source <issue> --input <handoff.json>";
-	const source = readOption(args, "--source");
-	const input = readOption(args, "--input");
-	const allowed = new Set([
-		"create",
-		"handoff",
-		"--source",
-		"--input",
-		...(source === undefined ? [] : [source]),
-		...(input === undefined ? [] : [input]),
-	]);
-	if (
-		source !== undefined &&
-		source !== "" &&
-		!source.startsWith("-") &&
-		input !== undefined &&
-		input !== "" &&
-		args.length === createHandoffArgumentCount &&
-		args.every((arg) => allowed.has(arg))
-	) {
-		return undefined;
+function validateManifestCommandArguments(
+	args: Array<string>,
+	verb: "create" | "apply",
+): Envelope | undefined {
+	const target = args[1];
+	if (target === undefined || target === "" || target.startsWith("-")) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: `awf ${verb} <target> ...`,
+		});
 	}
-	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
+	if (verb === "create") {
+		if (args.includes("--source")) {
+			const usage = `awf create ${target} --source <issue> --input <file|->`;
+			const source = readOption(args, "--source");
+			const input = readOption(args, "--input");
+			const allowed = new Set([
+				"create",
+				target,
+				"--source",
+				"--input",
+				...(source === undefined ? [] : [source]),
+				...(input === undefined ? [] : [input]),
+			]);
+			if (
+				source !== undefined &&
+				source !== "" &&
+				!source.startsWith("-") &&
+				input !== undefined &&
+				input !== "" &&
+				args.length === createHandoffArgumentCount &&
+				args.every((arg) => allowed.has(arg))
+			) {
+				return undefined;
+			}
+			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+				usage,
+			});
+		}
+		return requirePositionalAndOption(
+			args,
+			`awf create ${target} --input <file|->`,
+			"--input",
+			1,
+		);
+	}
+	return requirePositionalAndOption(
+		args,
+		`awf apply ${target} <issue> --input <file|->`,
+		"--input",
+		2,
+	);
 }
 
 function validateReconcile(args: Array<string>): Envelope | undefined {
@@ -318,7 +382,7 @@ function validateReconcile(args: Array<string>): Envelope | undefined {
 
 function invalidReadyArguments(): Envelope {
 	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {
-		usage: "awf ready [--spec <id>] [--limit <n>]",
+		usage: "awf ready [--filter <name=value>] [--limit <n>]",
 	});
 }
 
@@ -352,25 +416,46 @@ function validateTerminalArguments(
 	return undefined;
 }
 
-type ReadyOptions = { specId?: string; limit?: number; error?: true };
+type ReadyOptions = {
+	filters: Array<{ name: string; value: string }>;
+	limit?: number;
+	error?: true;
+};
 
 function parseReadyOptions(args: Array<string>): ReadyOptions {
-	const options: ReadyOptions = {};
+	const options: ReadyOptions = { filters: [] };
 	for (let index = 1; index < args.length; index += 2) {
 		const option = args[index];
 		const value = args[index + 1];
 		if (value === undefined || value === "") {
-			return { error: true };
+			return { filters: [], error: true };
 		}
-		if (option === "--spec" && options.specId === undefined) {
-			options.specId = value;
+		if (option === "--filter") {
+			const parsed = parseNamedFilter(value);
+			if (parsed === undefined) {
+				return { filters: [], error: true };
+			}
+			options.filters.push(parsed);
 		} else if (option === "--limit" && options.limit === undefined) {
 			options.limit = Number(value);
 		} else {
-			return { error: true };
+			return { filters: [], error: true };
 		}
 	}
 	return options;
+}
+
+function parseNamedFilter(
+	value: string,
+): { name: string; value: string } | undefined {
+	const separator = value.indexOf("=");
+	if (separator <= 0 || separator === value.length - 1) {
+		return undefined;
+	}
+	return {
+		name: value.slice(0, separator),
+		value: value.slice(separator + 1),
+	};
 }
 
 function requirePositionalCount(
@@ -415,6 +500,7 @@ async function createSpecCommand(
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
+	commandOverride?: ManifestCommand,
 ): Promise<Envelope> {
 	if (inputPath === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -429,7 +515,7 @@ async function createSpecCommand(
 		);
 	}
 	const raw = await readInput(inputPath, stdin);
-	const command = workflowCommand(manifest, "spec-create");
+	const command = commandOverride ?? workflowCommand(manifest, "spec-create");
 	const inputValidation = validateWorkflowCommandInput(command, { spec: raw });
 	if (inputValidation !== undefined) {
 		return inputValidation;
@@ -461,6 +547,7 @@ async function createHandoffCommand(
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
+	commandOverride?: ManifestCommand,
 ): Promise<Envelope> {
 	if (sourceId === undefined || inputPath === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -475,7 +562,8 @@ async function createHandoffCommand(
 	if (!parsed.ok) {
 		return parsed;
 	}
-	const command = workflowCommand(manifest, "handoff-create");
+	const command =
+		commandOverride ?? workflowCommand(manifest, "handoff-create");
 	const payload = parsePayloadValue(parsed.data, command?.input, "$input");
 	if (payload.issues.length > 0) {
 		return failure(
@@ -523,6 +611,7 @@ async function applyPlanCommand(
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
+	commandOverride?: ManifestCommand,
 ): Promise<Envelope> {
 	if (specId === undefined || inputPath === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -537,7 +626,7 @@ async function applyPlanCommand(
 	if (!parsedInput.ok) {
 		return parsedInput;
 	}
-	const command = workflowCommand(manifest, "plan-apply");
+	const command = commandOverride ?? workflowCommand(manifest, "plan-apply");
 	const inputValidation = validateWorkflowCommandInput(
 		command,
 		parsedInput.data,
@@ -689,12 +778,25 @@ async function readyCommand(
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 ): Promise<Envelope> {
+	const namedFilterDeclarationValidation =
+		validateNamedReadinessFilterDeclarations(options.filters, manifest);
+	if (namedFilterDeclarationValidation !== undefined) {
+		return namedFilterDeclarationValidation;
+	}
 	const issues = await tracker.listIssues();
 	const byId = new Map(issues.map((issue) => [issue.id, issue]));
 	const activeIssues = issues.filter(
 		(issue) => issue.workflow.activeRunId !== undefined,
 	);
 	const filters = readinessFilters(manifest);
+	const namedFilterValidation = validateNamedReadinessFilterValues(
+		options.filters,
+		manifest,
+		byId,
+	);
+	if (namedFilterValidation !== undefined) {
+		return namedFilterValidation;
+	}
 	const candidates = issues
 		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
 		.filter((issue) => issue.workflow.activeRunId === undefined)
@@ -702,10 +804,8 @@ async function readyCommand(
 			issue.relationships.dependencies.every((id) => isDone(byId.get(id))),
 		)
 		.filter((issue) => specPostTicketGateIsOpen(issue, byId))
-		.filter(
-			(issue) =>
-				options.specId === undefined ||
-				issue.relationships.parent === options.specId,
+		.filter((issue) =>
+			matchesNamedReadinessFilters(issue, options.filters, manifest),
 		)
 		.filter(() => !workflowConcurrencyBlocked(manifest, activeIssues))
 		.filter(
@@ -1176,6 +1276,16 @@ function workflowCommand(
 	return manifest.commands.find((command) => command.id === id);
 }
 
+function workflowCommandByCli(
+	manifest: WorkflowManifest,
+	verb: "create" | "apply",
+	target: string | undefined,
+): ManifestCommand | undefined {
+	return manifest.commands.find(
+		(command) => command.cli?.verb === verb && command.cli.target === target,
+	);
+}
+
 function validateWorkflowCommandInput(
 	command: ManifestCommand | undefined,
 	value: JsonValue,
@@ -1641,6 +1751,85 @@ function fieldMatches(
 	actual: string | undefined,
 ): boolean {
 	return expected === undefined || expected === actual;
+}
+
+function validateNamedReadinessFilterDeclarations(
+	filters: Array<{ name: string; value: string }>,
+	manifest: WorkflowManifest,
+): Envelope | undefined {
+	for (const filter of filters) {
+		if (namedReadinessFilter(manifest, filter.name) === undefined) {
+			return failure(
+				"INVALID_READY_FILTER",
+				"Readiness filter is not declared by the manifest.",
+				{
+					filter: filter.name,
+				},
+			);
+		}
+	}
+	return undefined;
+}
+
+function validateNamedReadinessFilterValues(
+	filters: Array<{ name: string; value: string }>,
+	manifest: WorkflowManifest,
+	byId: Map<string, { workflow: WorkflowFields }>,
+): Envelope | undefined {
+	for (const filter of filters) {
+		const declaration = namedReadinessFilter(manifest, filter.name);
+		if (declaration === undefined) {
+			continue;
+		}
+		const issue = byId.get(filter.value);
+		if (issue === undefined) {
+			return failure(
+				"INVALID_READY_FILTER",
+				"Readiness filter value does not resolve to a workflow issue.",
+				{
+					filter: filter.name,
+					value: filter.value,
+				},
+			);
+		}
+		if (issue.workflow.kind !== declaration.kind) {
+			return failure(
+				"INVALID_READY_FILTER",
+				"Readiness filter value has the wrong workflow kind.",
+				{
+					filter: filter.name,
+					value: filter.value,
+					expectedKind: declaration.kind,
+					actualKind: issue.workflow.kind,
+				},
+			);
+		}
+	}
+	return undefined;
+}
+
+function matchesNamedReadinessFilters(
+	issue: { relationships: { parent?: string } },
+	filters: Array<{ name: string; value: string }>,
+	manifest: WorkflowManifest,
+): boolean {
+	return filters.every((filter) => {
+		const declaration = namedReadinessFilter(manifest, filter.name);
+		return (
+			declaration !== undefined &&
+			declaration.relationship === "parent" &&
+			issue.relationships.parent === filter.value
+		);
+	});
+}
+
+function namedReadinessFilter(
+	manifest: WorkflowManifest,
+	name: string,
+): ManifestNamedReadinessFilter | undefined {
+	return manifest.readiness?.namedFilters?.find(
+		(filter) => filter.name === name,
+	);
 }
 
 function isDone(issue: { workflow: WorkflowFields } | undefined): boolean {

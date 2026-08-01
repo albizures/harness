@@ -111,6 +111,7 @@ export const defaultManifest = defineManifest({
 			{ kind: "ticket", state: "ready", action: "fix" },
 			{ kind: "ticket", state: "ready", action: "merge" },
 		],
+		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
 	},
 	kinds: [
 		{
@@ -229,18 +230,21 @@ export const defaultManifest = defineManifest({
 	commands: [
 		{
 			id: "spec-create",
+			cli: { verb: "create", target: "spec" },
 			target: { kind: "spec", action: "plan" },
 			input: specCreateInput,
 			output: specCreateOutput,
 		},
 		{
 			id: "plan-apply",
+			cli: { verb: "apply", target: "plan" },
 			target: { kind: "spec", action: "plan" },
 			input: planApplyInput,
 			output: planApplyOutput,
 		},
 		{
 			id: "handoff-create",
+			cli: { verb: "create", target: "handoff" },
 			target: { kind: "ticket", action: "review" },
 			input: handoffCreateInput,
 			output: handoffCreateOutput,

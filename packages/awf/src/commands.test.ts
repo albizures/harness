@@ -3,7 +3,7 @@ import test from "node:test";
 import { execute } from "./commands.ts";
 import { serializeEnvelope } from "./envelope.ts";
 import { defineManifest, type WorkflowManifest } from "./manifest.ts";
-import { createInMemoryTracker } from "./tracker.ts";
+import { createInMemoryTracker, type Tracker } from "./tracker.ts";
 
 test("help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
@@ -23,6 +23,60 @@ test("help returns a stable success envelope", async () => {
 	assert.ok(
 		data.commands.some((command) => command.usage === "awf start <id>"),
 	);
+});
+
+test("help combines runtime commands with manifest CLI targets and readiness filters", async () => {
+	const envelope = await execute(["--help"], {
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			commands: [
+				{
+					id: "ticket-create",
+					cli: { verb: "create", target: "ticket" },
+					target: { kind: "ticket", action: "implement" },
+				},
+				{
+					id: "plan-apply",
+					cli: { verb: "apply", target: "brief" },
+					target: { kind: "ticket", action: "implement" },
+				},
+			],
+		},
+	});
+
+	assert.equal(envelope.ok, true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	const data = envelope.data as {
+		commands: Array<{ usage: string }>;
+		readiness: {
+			filters: Array<{ kind?: string; state?: string; action?: string }>;
+			namedFilters: Array<{ name: string; usage: string }>;
+		};
+	};
+	assert.ok(data.commands.some((command) => command.usage === "awf get <id>"));
+	assert.ok(
+		data.commands.some(
+			(command) => command.usage === "awf create ticket --input <file|->",
+		),
+	);
+	assert.ok(
+		data.commands.some(
+			(command) => command.usage === "awf apply brief <issue> --input <file|->",
+		),
+	);
+	assert.deepEqual(data.readiness.filters, [
+		{ kind: "ticket", state: "ready", action: "implement" },
+	]);
+	assert.deepEqual(data.readiness.namedFilters, [
+		{
+			name: "spec",
+			kind: "spec",
+			relationship: "parent",
+			usage: "awf ready --filter spec=<spec>",
+		},
+	]);
 });
 
 test("runtime commands reject unsupported workflow manifest relationship projection types", async () => {
@@ -166,7 +220,7 @@ test("ready excludes candidates blocked by manifest concurrency limits", async (
 	assert.deepEqual(envelope.data, { items: [] });
 });
 
-test("ready returns deterministic ordering, supports --limit 1, and --spec filtering", async () => {
+test("ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -190,7 +244,7 @@ test("ready returns deterministic ordering, supports --limit 1, and --spec filte
 	await tracker.addChild("spec-1", "1");
 
 	const envelope = await execute(
-		["ready", "--spec", "spec-1", "--limit", "1"],
+		["ready", "--filter", "spec=spec-1", "--limit", "1"],
 		{
 			tracker,
 			manifest: defaultTicketOnlyReadyManifest,
@@ -207,6 +261,39 @@ test("ready returns deterministic ordering, supports --limit 1, and --spec filte
 		),
 		["1"],
 	);
+});
+
+test("unknown readiness filter names are rejected before tracker reads", async () => {
+	const envelope = await execute(["ready", "--filter", "milestone=spec-1"], {
+		tracker: createNoTouchTracker(),
+		manifest: defaultTicketOnlyReadyManifest,
+	});
+
+	assert.deepEqual(envelope, {
+		ok: false,
+		error: {
+			code: "INVALID_READY_FILTER",
+			message: "Readiness filter is not declared by the manifest.",
+			details: { filter: "milestone" },
+		},
+	});
+});
+
+test("unknown manifest command targets are rejected before tracker mutation", async () => {
+	const envelope = await execute(["create", "ticket", "--input", "-"], {
+		tracker: createNoTouchTracker(),
+		manifest: defaultTicketOnlyReadyManifest,
+		stdin: "# Ticket\n",
+	});
+
+	assert.deepEqual(envelope, {
+		ok: false,
+		error: {
+			code: "UNKNOWN_COMMAND_TARGET",
+			message: "Workflow command target is not declared by the manifest.",
+			details: { command: "create ticket" },
+		},
+	});
 });
 
 test("start moves a ready issue to running, stores one active run, and appends an action_started log", async () => {
@@ -644,6 +731,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 	readiness: {
 		filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
 	},
 	kinds: [
 		{
@@ -683,6 +771,27 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	],
 	commands: [],
 });
+
+function createNoTouchTracker(): Tracker {
+	const touched = () => {
+		throw new Error("tracker should not be touched");
+	};
+	return {
+		createIssue: touched,
+		getIssue: touched,
+		listIssues: touched,
+		updateIssue: touched,
+		appendLog: touched,
+		readLogs: touched,
+		addChild: touched,
+		removeChild: touched,
+		addDependency: touched,
+		removeDependency: touched,
+		deleteIssue: touched,
+		registerArtifact: touched,
+		registerChange: touched,
+	};
+}
 
 test("invalid arguments return a stable parse error envelope", async () => {
 	const envelope = await execute(["succeed", "123"]);
