@@ -6,8 +6,9 @@ import type { JsonValue } from "type-fest";
 import {
 	loadManifest,
 	ManifestValidationError,
-	type ArtifactKind,
-	type JsonSchema,
+	validateManifest,
+	type ManifestCommand,
+	type PayloadZodSchema,
 	type ManifestTransition,
 	type WorkflowManifest,
 } from "./manifest.ts";
@@ -25,6 +26,7 @@ type CommandSpec = {
 };
 
 const maxReconcileArgumentCount = 3;
+const createHandoffArgumentCount = 6;
 
 const commands: Array<CommandSpec> = [
 	{
@@ -59,9 +61,14 @@ const commands: Array<CommandSpec> = [
 		description: "Apply a plan to a Spec.",
 	},
 	{
+		name: "create handoff",
+		usage: "awf create handoff --source <issue> --input <handoff.json>",
+		description: "Create a Handoff artifact.",
+	},
+	{
 		name: "handoff",
 		usage: "awf handoff <source> --input <handoff.json>",
-		description: "Create a Handoff.",
+		description: "Alias for create handoff.",
 	},
 	{
 		name: "manifest validate",
@@ -118,6 +125,14 @@ export async function execute(
 
 	const tracker = options.tracker ?? createInMemoryTracker();
 	const manifest = options.manifest ?? defaultManifest;
+	const manifestIssues = validateManifest(manifest);
+	if (manifestIssues.length > 0) {
+		return failure(
+			"MANIFEST_VALIDATION_FAILED",
+			"Workflow manifest validation failed.",
+			{ issues: manifestIssues },
+		);
+	}
 
 	if (args[0] === "get") {
 		return getIssueCommand(args[1], tracker);
@@ -133,6 +148,24 @@ export async function execute(
 	}
 	if (args[0] === "create" && args[1] === "spec") {
 		return createSpecCommand(
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			options.stdin,
+		);
+	}
+	if (args[0] === "create" && args[1] === "handoff") {
+		return createHandoffCommand(
+			readOption(args, "--source"),
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			options.stdin,
+		);
+	}
+	if (args[0] === "handoff") {
+		return createHandoffCommand(
+			args[1],
 			readOption(args, "--input"),
 			tracker,
 			manifest,
@@ -194,15 +227,18 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 		case "fail":
 			return validateTerminalArguments(args, command);
 		case "create":
-			if (subcommand !== "spec") {
-				return unknownCommand(args);
+			if (subcommand === "spec") {
+				return requirePositionalAndOption(
+					args,
+					"awf create spec --input <file|->",
+					"--input",
+					1,
+				);
 			}
-			return requirePositionalAndOption(
-				args,
-				"awf create spec --input <file|->",
-				"--input",
-				1,
-			);
+			if (subcommand === "handoff") {
+				return validateCreateHandoff(args);
+			}
+			return unknownCommand(args);
 		case "apply":
 			if (subcommand !== "plan") {
 				return unknownCommand(args);
@@ -233,6 +269,32 @@ function validateReady(args: Array<string>): Envelope | undefined {
 		return invalidReadyArguments();
 	}
 	return options.error === undefined ? undefined : invalidReadyArguments();
+}
+
+function validateCreateHandoff(args: Array<string>): Envelope | undefined {
+	const usage = "awf create handoff --source <issue> --input <handoff.json>";
+	const source = readOption(args, "--source");
+	const input = readOption(args, "--input");
+	const allowed = new Set([
+		"create",
+		"handoff",
+		"--source",
+		"--input",
+		...(source === undefined ? [] : [source]),
+		...(input === undefined ? [] : [input]),
+	]);
+	if (
+		source !== undefined &&
+		source !== "" &&
+		!source.startsWith("-") &&
+		input !== undefined &&
+		input !== "" &&
+		args.length === createHandoffArgumentCount &&
+		args.every((arg) => allowed.has(arg))
+	) {
+		return undefined;
+	}
+	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
 }
 
 function validateReconcile(args: Array<string>): Envelope | undefined {
@@ -367,6 +429,11 @@ async function createSpecCommand(
 		);
 	}
 	const raw = await readInput(inputPath, stdin);
+	const command = workflowCommand(manifest, "spec-create");
+	const inputValidation = validateWorkflowCommandInput(command, { spec: raw });
+	if (inputValidation !== undefined) {
+		return inputValidation;
+	}
 	const spec = parseSpecInput(raw);
 	if (spec.content.trim() === "") {
 		return failure("INVALID_SPEC", "Spec content must be non-empty.");
@@ -380,7 +447,74 @@ async function createSpecCommand(
 		type: "spec_created",
 		payload: { input: inputPath },
 	});
-	return success({ issue, log });
+	const data = { issue, log };
+	const outputValidation = validateWorkflowCommandOutput(command, data);
+	if (outputValidation !== undefined) {
+		return outputValidation;
+	}
+	return success(data);
+}
+
+async function createHandoffCommand(
+	sourceId: string | undefined,
+	inputPath: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+): Promise<Envelope> {
+	if (sourceId === undefined || inputPath === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf create handoff --source <issue> --input <handoff.json>",
+		});
+	}
+	const raw = await readInput(inputPath, stdin);
+	const parsed = parseJsonInput(
+		raw,
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	const command = workflowCommand(manifest, "handoff-create");
+	const payload = parsePayloadValue(parsed.data, command?.input, "$input");
+	if (payload.issues.length > 0) {
+		return failure(
+			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+			"Workflow command input is invalid.",
+			{
+				...(command === undefined ? {} : { command: command.id }),
+				issues: payload.issues,
+			},
+		);
+	}
+	if (!isRecord(payload.value) || typeof payload.value.handoff !== "string") {
+		return failure(
+			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+			"Workflow command input is invalid.",
+			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
+		);
+	}
+
+	try {
+		await tracker.getIssue(sourceId);
+		const artifact = await tracker.registerArtifact(sourceId, {
+			kind: "handoff",
+			uri: payload.value.handoff,
+			name: "Handoff",
+		});
+		const log = await tracker.appendLog(sourceId, {
+			type: "handoff_created",
+			payload: { input: payload.value as JsonValue, artifact },
+		});
+		const data = { source: sourceId, artifact, log };
+		const outputValidation = validateWorkflowCommandOutput(command, data);
+		if (outputValidation !== undefined) {
+			return outputValidation;
+		}
+		return success(data);
+	} catch (error) {
+		return lifecycleError(sourceId, error);
+	}
 }
 
 async function applyPlanCommand(
@@ -395,6 +529,23 @@ async function applyPlanCommand(
 			usage: "awf apply plan <spec> --input <file|->",
 		});
 	}
+	const raw = await readInput(inputPath, stdin);
+	const parsedInput = parseJsonInput(
+		raw,
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	if (!parsedInput.ok) {
+		return parsedInput;
+	}
+	const command = workflowCommand(manifest, "plan-apply");
+	const inputValidation = validateWorkflowCommandInput(
+		command,
+		parsedInput.data,
+	);
+	if (inputValidation !== undefined) {
+		return inputValidation;
+	}
+
 	let spec: Awaited<ReturnType<Tracker["getIssue"]>>;
 	try {
 		spec = await tracker.getIssue(specId);
@@ -407,7 +558,6 @@ async function applyPlanCommand(
 	if (spec.workflow.kind !== "spec" || spec.workflow.action !== "plan") {
 		return invalidTransition(specId, "apply-plan");
 	}
-	const raw = await readInput(inputPath, stdin);
 	const plan = parsePlanInput(raw);
 	const validationIssues = validatePlan(plan);
 	if (validationIssues.length > 0) {
@@ -463,12 +613,17 @@ async function applyPlanCommand(
 			type: "plan_applied",
 			payload: { input: inputPath, tickets: created },
 		});
-		return success({
+		const data = {
 			outcome: "SUCCESS",
 			spec: updated,
 			tickets: created,
 			log,
-		});
+		};
+		const outputValidation = validateWorkflowCommandOutput(command, data);
+		if (outputValidation !== undefined) {
+			return outputValidation;
+		}
+		return success(data);
 	} catch (error) {
 		const rollbackErrors = await rollbackPlanApplication(
 			tracker,
@@ -915,12 +1070,13 @@ async function terminalCommand(
 				usage: `awf ${event} <id> --run <run> --input <file|->`,
 			});
 		}
-		const terminalInput = parsedInput?.data ?? {};
-		const validationIssues = validateJsonValue(
-			terminalInput,
+		const payload = parsePayloadValue(
+			parsedInput?.data ?? {},
 			transition.input,
 			"$",
 		);
+		const validationIssues = [...payload.issues];
+		const terminalInput = payload.value as JsonValue;
 		const semanticIssue = validateBundledTerminalInput(
 			issue,
 			event,
@@ -954,7 +1110,7 @@ async function terminalCommand(
 			runId,
 			payload: {
 				event,
-				...(parsedInput === undefined ? {} : { input: parsedInput.data }),
+				...(parsedInput === undefined ? {} : { input: terminalInput }),
 				to: cleanTransitionTarget(transition.to),
 			},
 		});
@@ -1011,6 +1167,49 @@ type WorkflowFields = {
 function readOption(args: Array<string>, name: string): string | undefined {
 	const index = args.indexOf(name);
 	return index === -1 ? undefined : args[index + 1];
+}
+
+function workflowCommand(
+	manifest: WorkflowManifest,
+	id: string,
+): ManifestCommand | undefined {
+	return manifest.commands.find((command) => command.id === id);
+}
+
+function validateWorkflowCommandInput(
+	command: ManifestCommand | undefined,
+	value: JsonValue,
+): Envelope | undefined {
+	const result = parsePayloadValue(value, command?.input, "$input");
+	if (result.issues.length === 0) {
+		return undefined;
+	}
+	return failure(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+		"Workflow command input is invalid.",
+		{
+			...(command === undefined ? {} : { command: command.id }),
+			issues: result.issues,
+		},
+	);
+}
+
+function validateWorkflowCommandOutput(
+	command: ManifestCommand | undefined,
+	value: JsonValue,
+): Envelope | undefined {
+	const result = parsePayloadValue(value, command?.output, "$output");
+	if (result.issues.length === 0) {
+		return undefined;
+	}
+	return failure(
+		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
+		"Workflow command output is invalid.",
+		{
+			...(command === undefined ? {} : { command: command.id }),
+			issues: result.issues,
+		},
+	);
 }
 
 async function readInput(
@@ -1103,125 +1302,44 @@ function parseJsonInput(
 
 type RuntimeValidationIssue = { path: string; message: string };
 
-function validateJsonValue(
+type ParsedPayload = {
+	value: unknown;
+	issues: Array<RuntimeValidationIssue>;
+};
+
+function parsePayloadValue(
 	value: unknown,
-	schema: JsonSchema | undefined,
+	schema: PayloadZodSchema | undefined,
 	path: string,
-): Array<RuntimeValidationIssue> {
+): ParsedPayload {
 	if (schema === undefined) {
-		return [];
+		return { value, issues: [] };
 	}
-	const issues: Array<RuntimeValidationIssue> = [];
-	validateSchemaValue(value, schema, path, issues);
-	return issues;
+	const result = schema.safeParse(value);
+	if (result.success) {
+		return { value: result.data, issues: [] };
+	}
+	return {
+		value,
+		issues: result.error.issues.map((issue) => ({
+			path: formatPayloadPath(path, issue.path),
+			message: issue.message,
+		})),
+	};
 }
 
-function validateSchemaValue(
-	value: unknown,
-	schema: JsonSchema,
-	path: string,
-	issues: Array<RuntimeValidationIssue>,
-): void {
-	if (schema.type === "object") {
-		if (!isRecord(value)) {
-			issues.push({ path, message: "Value must be an object." });
-			return;
-		}
-		for (const required of schema.required ?? []) {
-			if (value[required] === undefined) {
-				issues.push({
-					path: `${path}.${required}`,
-					message: "Value is required.",
-				});
-			}
-		}
-		if (schema.additionalProperties === false) {
-			const properties = new Set(Object.keys(schema.properties ?? {}));
-			for (const key of Object.keys(value)) {
-				if (!properties.has(key)) {
-					issues.push({
-						path: `${path}.${key}`,
-						message: "Property is not allowed.",
-					});
-				}
-			}
-		}
-		for (const [key, child] of Object.entries(schema.properties ?? {})) {
-			if (value[key] !== undefined) {
-				validateSchemaValue(value[key], child, `${path}.${key}`, issues);
-			}
-		}
-		return;
+function formatPayloadPath(
+	root: string,
+	path: ReadonlyArray<PropertyKey>,
+): string {
+	let formatted = root;
+	for (const part of path) {
+		formatted =
+			typeof part === "number"
+				? `${formatted}[${part}]`
+				: `${formatted}.${String(part)}`;
 	}
-	if (schema.type === "array") {
-		if (!Array.isArray(value)) {
-			issues.push({ path, message: "Value must be an array." });
-			return;
-		}
-		for (const [index, item] of value.entries()) {
-			validateSchemaValue(item, schema.items, `${path}[${index}]`, issues);
-		}
-		return;
-	}
-	if (!matchesPrimitiveType(value, schema.type)) {
-		issues.push({ path, message: `Value must be ${schema.type}.` });
-		return;
-	}
-	if (schema.type === "string" && schema.artifact !== undefined) {
-		const message = validateArtifactReference(String(value), schema.artifact);
-		if (message !== undefined) {
-			issues.push({ path, message });
-		}
-	}
-}
-
-function matchesPrimitiveType(
-	value: unknown,
-	type: JsonSchema["type"],
-): boolean {
-	switch (type) {
-		case "string":
-			return typeof value === "string";
-		case "number":
-			return typeof value === "number" && Number.isFinite(value);
-		case "integer":
-			return Number.isInteger(value);
-		case "boolean":
-			return typeof value === "boolean";
-		case "null":
-			return value === null;
-		default:
-			return true;
-	}
-}
-
-function validateArtifactReference(
-	value: string,
-	kind: ArtifactKind,
-): string | undefined {
-	if (value.trim() === "") {
-		return "Artifact reference must be non-empty.";
-	}
-	switch (kind) {
-		case "pull-request":
-			return /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/u.test(value)
-				? undefined
-				: "Pull request artifact must be a GitHub pull request URL.";
-		case "url":
-			return /^https?:\/\//u.test(value)
-				? undefined
-				: "URL artifact must be http(s).";
-		case "file":
-			return !/^https?:\/\//u.test(value) && !value.startsWith("/")
-				? undefined
-				: "File artifact must be a relative path.";
-		case "git-ref":
-			return /\s/u.test(value)
-				? "Git ref artifact must not contain whitespace."
-				: undefined;
-		default:
-			return undefined;
-	}
+	return formatted;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1488,7 +1606,15 @@ function readinessFilters(
 	return manifest.kinds.flatMap((kind) =>
 		kind.transitions
 			.filter((transition) => transition.event === "start")
-			.map((transition) => ({ kind: kind.id, ...transition.from })),
+			.map((transition) => ({
+				kind: kind.id,
+				state: transition.from.state,
+				action: transition.from.action,
+				...(transition.from.reason === undefined ||
+				transition.from.reason === null
+					? {}
+					: { reason: transition.from.reason }),
+			})),
 	);
 }
 

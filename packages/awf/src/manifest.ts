@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
+import { z } from "zod";
 
 export type Identifier = string;
 export type ArtifactKind =
@@ -13,41 +14,43 @@ export type ArtifactKind =
 	| "git-ref"
 	| "handoff"
 	| "finding";
-export type JsonSchema =
-	| { type: "string"; artifact?: ArtifactKind }
-	| { type: "number" | "integer" | "boolean" | "null" }
-	| { type: "array"; items: JsonSchema }
-	| {
-			type: "object";
-			properties?: Readonly<Record<string, JsonSchema>>;
-			required?: ReadonlyArray<string>;
-			additionalProperties?: boolean;
-	  };
+export type PayloadZodSchema = z.ZodType<unknown>;
+export type PayloadSchema = PayloadZodSchema;
+
+type ManifestStateReference = {
+	state: Identifier;
+	action?: Identifier;
+	reason?: Identifier | null;
+};
 
 export type ManifestTransition = {
-	from: { state: Identifier; action?: Identifier; reason?: Identifier };
+	from: ManifestStateReference;
 	event: Identifier;
-	input?: JsonSchema;
-	to: { state: Identifier; action?: Identifier; reason?: Identifier | null };
+	input?: PayloadSchema;
+	to: ManifestStateReference;
 };
+
+export type ManifestTransitionDefinition = ManifestTransition;
 
 export type ManifestKind = {
 	id: Identifier;
 	label: string;
-	initial: {
-		state: Identifier;
-		action?: Identifier;
-		reason?: Identifier | null;
-	};
+	initial: ManifestStateReference;
 	transitions: Array<ManifestTransition>;
+};
+
+export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
+	transitions: Array<ManifestTransitionDefinition>;
 };
 
 export type ManifestCommand = {
 	id: Identifier;
 	target: { kind: Identifier; action: Identifier };
-	input?: JsonSchema;
-	output?: JsonSchema;
+	input?: PayloadSchema;
+	output?: PayloadSchema;
 };
+
+export type ManifestCommandDefinition = ManifestCommand;
 
 export type ManifestReadinessFilter = {
 	kind?: Identifier;
@@ -61,7 +64,7 @@ export type ManifestRelationship = {
 	from: Identifier;
 	to: Identifier;
 	projection: {
-		type: "parent-child" | "dependency" | "link";
+		type: "parent-child" | "dependency";
 		direction?: "outbound" | "inbound";
 	};
 };
@@ -96,6 +99,14 @@ export type WorkflowManifest = {
 	relationships?: Array<ManifestRelationship>;
 };
 
+export type WorkflowManifestDefinition = Omit<
+	WorkflowManifest,
+	"kinds" | "commands"
+> & {
+	kinds: Array<ManifestKindDefinition>;
+	commands: Array<ManifestCommandDefinition>;
+};
+
 export type ValidationIssue = { path: string; message: string };
 
 export class ManifestValidationError extends Error {
@@ -108,10 +119,169 @@ export class ManifestValidationError extends Error {
 	}
 }
 
-export function defineManifest<const T extends WorkflowManifest>(
-	manifest: T,
-): T {
+const artifactMetadataKey = "awfArtifact";
+
+export const artifacts = {
+	string: () => z.string(),
+	object: <const T extends z.ZodRawShape>(shape: T) => z.strictObject(shape),
+	array: <T extends PayloadZodSchema>(item: T) => z.array(item),
+	url: () => artifactString("url"),
+	file: () => artifactString("file"),
+	issue: () => artifactString("issue"),
+	pullRequest: () => artifactString("pull-request"),
+	gitRef: () => artifactString("git-ref"),
+	inlineMarkdown: () => nonEmptyArtifactString("markdown"),
+	markdown: () => nonEmptyArtifactString("markdown"),
+	inline: () => nonEmptyArtifactString("inline"),
+	handoff: () => nonEmptyArtifactString("handoff"),
+	finding: () => nonEmptyArtifactString("finding"),
+};
+
+export function validateArtifactReferenceValue(
+	value: string,
+	kind: ArtifactKind,
+): string | undefined {
+	if (value.trim() === "") {
+		return "Artifact reference must be non-empty.";
+	}
+	switch (kind) {
+		case "pull-request":
+			return /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/u.test(value)
+				? undefined
+				: "Pull request artifact must be a GitHub pull request URL.";
+		case "url":
+			return /^https?:\/\//u.test(value)
+				? undefined
+				: "URL artifact must be http(s).";
+		case "issue":
+			return /^#\d+$/u.test(value) ||
+				/^[a-z][a-z0-9-]*-\d+$/u.test(value) ||
+				/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/issues\/\d+$/u.test(value)
+				? undefined
+				: "Issue artifact must be a GitHub issue reference.";
+		case "file":
+			return !/^https?:\/\//u.test(value) && !value.startsWith("/")
+				? undefined
+				: "File artifact must be a relative path.";
+		case "git-ref":
+			return /\s/u.test(value)
+				? "Git ref artifact must not contain whitespace."
+				: undefined;
+		default:
+			return undefined;
+	}
+}
+
+function artifactString(kind: ArtifactKind): z.ZodString {
+	return z
+		.string()
+		.trim()
+		.superRefine((value, context) => {
+			const message = validateArtifactReferenceValue(value, kind);
+			if (message !== undefined) {
+				context.addIssue({ code: "custom", message });
+			}
+		})
+		.meta({ [artifactMetadataKey]: kind });
+}
+
+function nonEmptyArtifactString(kind: ArtifactKind): z.ZodString {
+	return artifactString(kind);
+}
+
+const payloadZodSchemaSchema = z.custom<PayloadZodSchema>(isPayloadZodSchema, {
+	message: "Payload schema must be a Zod schema.",
+});
+
+const stateReferenceSchema = z.strictObject({
+	state: z.string(),
+	action: z.string().optional(),
+	reason: z.string().nullable().optional(),
+});
+
+const manifestSchema = z.strictObject({
+	version: z.literal("v1"),
+	workflow: z.strictObject({ id: z.string() }),
+	vocabulary: z.strictObject({
+		states: z.array(z.string()),
+		actions: z.array(z.string()),
+		reasons: z.array(z.string()).optional(),
+		events: z.array(z.string()),
+	}),
+	github: z.strictObject({
+		labelPrefixes: z.strictObject({
+			kind: z.string().min(1),
+			state: z.string().min(1),
+			action: z.string().min(1),
+			reason: z.string().min(1),
+		}),
+	}),
+	concurrency: z.strictObject({
+		perIssue: z.literal(1),
+		perWorkflow: z.number().int().positive().optional(),
+		perKind: z.record(z.string(), z.number().int().positive()).optional(),
+	}),
+	readiness: z
+		.strictObject({
+			filters: z.array(
+				z.strictObject({
+					kind: z.string().optional(),
+					state: z.string().optional(),
+					action: z.string().optional(),
+					reason: z.string().optional(),
+				}),
+			),
+		})
+		.optional(),
+	kinds: z.array(
+		z.strictObject({
+			id: z.string(),
+			label: z.string().min(1),
+			initial: stateReferenceSchema,
+			transitions: z.array(
+				z.strictObject({
+					from: stateReferenceSchema,
+					event: z.string(),
+					input: payloadZodSchemaSchema.optional(),
+					to: stateReferenceSchema,
+				}),
+			),
+		}),
+	),
+	commands: z.array(
+		z.strictObject({
+			id: z.string(),
+			target: z.strictObject({ kind: z.string(), action: z.string() }),
+			input: payloadZodSchemaSchema.optional(),
+			output: payloadZodSchemaSchema.optional(),
+		}),
+	),
+	relationships: z
+		.array(
+			z.strictObject({
+				id: z.string(),
+				from: z.string(),
+				to: z.string(),
+				projection: z.strictObject({
+					type: z.enum(["parent-child", "dependency"], {
+						error:
+							"Relationship projection type must be parent-child or dependency.",
+					}),
+					direction: z.enum(["outbound", "inbound"]).optional(),
+				}),
+			}),
+		)
+		.optional(),
+});
+
+export function defineManifest(
+	manifest: WorkflowManifestDefinition,
+): WorkflowManifest {
 	return manifest;
+}
+
+function isPayloadZodSchema(value: unknown): value is PayloadZodSchema {
+	return value instanceof z.ZodType;
 }
 
 export async function loadManifest(
@@ -134,10 +304,13 @@ export async function loadManifest(
 }
 
 export function validateManifest(value: unknown): Array<ValidationIssue> {
-	const issues: Array<ValidationIssue> = [];
+	const issues: Array<ValidationIssue> = zodValidationIssues(value);
 
 	if (!isRecord(value)) {
-		return [{ path: "$", message: "Manifest must be an object." }];
+		return uniqueIssues([
+			...issues,
+			{ path: "$", message: "Manifest must be an object." },
+		]);
 	}
 
 	rejectExecutableData(value, "$", issues);
@@ -257,7 +430,42 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 		);
 	}
 
-	return issues;
+	return uniqueIssues(issues);
+}
+
+function zodValidationIssues(value: unknown): Array<ValidationIssue> {
+	const result = manifestSchema.safeParse(value);
+	if (result.success) {
+		return [];
+	}
+	return result.error.issues.map((issue) => ({
+		path: formatZodPath(issue.path),
+		message: issue.message,
+	}));
+}
+
+function formatZodPath(path: ReadonlyArray<PropertyKey>): string {
+	let formatted = "$";
+	for (const part of path) {
+		if (typeof part === "number") {
+			formatted = `${formatted}[${part}]`;
+		} else {
+			formatted = `${formatted}.${String(part)}`;
+		}
+	}
+	return formatted;
+}
+
+function uniqueIssues(issues: Array<ValidationIssue>): Array<ValidationIssue> {
+	const seen = new Set<string>();
+	return issues.filter((issue) => {
+		const key = `${issue.path}\0${issue.message}`;
+		if (seen.has(key)) {
+			return false;
+		}
+		seen.add(key);
+		return true;
+	});
 }
 
 function extractManifest(loaded: unknown): WorkflowManifest {
@@ -429,7 +637,7 @@ function validateTransition(
 		);
 	}
 	if (value.input !== undefined) {
-		validateJsonSchema(value.input, `${path}.input`, issues);
+		validatePayloadZodSchema(value.input, `${path}.input`, issues);
 	}
 }
 
@@ -574,10 +782,10 @@ function validateCommand(
 		}
 	}
 	if (value.input !== undefined) {
-		validateJsonSchema(value.input, `${path}.input`, issues);
+		validatePayloadZodSchema(value.input, `${path}.input`, issues);
 	}
 	if (value.output !== undefined) {
-		validateJsonSchema(value.output, `${path}.output`, issues);
+		validatePayloadZodSchema(value.output, `${path}.output`, issues);
 	}
 }
 
@@ -616,15 +824,11 @@ function validateRelationship(
 		);
 		return;
 	}
-	if (
-		!["parent-child", "dependency", "link"].includes(
-			String(value.projection.type),
-		)
-	) {
+	if (!["parent-child", "dependency"].includes(String(value.projection.type))) {
 		issue(
 			issues,
 			`${path}.projection.type`,
-			"Relationship projection type is invalid.",
+			"Relationship projection type must be parent-child or dependency.",
 		);
 	}
 	if (
@@ -640,78 +844,13 @@ function validateRelationship(
 	}
 }
 
-function validateJsonSchema(
+function validatePayloadZodSchema(
 	value: unknown,
 	path: string,
 	issues: Array<ValidationIssue>,
 ): void {
-	if (!isRecord(value)) {
-		issue(issues, path, "Command schema must be an object.");
-		return;
-	}
-	const type = value.type;
-	if (
-		![
-			"string",
-			"number",
-			"integer",
-			"boolean",
-			"null",
-			"array",
-			"object",
-		].includes(String(type))
-	) {
-		issue(issues, `${path}.type`, "Command schema type is invalid.");
-		return;
-	}
-	if (
-		value.artifact !== undefined &&
-		(type !== "string" ||
-			![
-				"markdown",
-				"inline",
-				"file",
-				"issue",
-				"pull-request",
-				"url",
-				"git-ref",
-				"handoff",
-				"finding",
-			].includes(String(value.artifact)))
-	) {
-		issue(
-			issues,
-			`${path}.artifact`,
-			"Artifact reference declarations must be string schemas with a known artifact kind.",
-		);
-	}
-	if (type === "array") {
-		validateJsonSchema(value.items, `${path}.items`, issues);
-	}
-	if (type === "object") {
-		if (value.properties !== undefined && !isRecord(value.properties)) {
-			issue(
-				issues,
-				`${path}.properties`,
-				"Object schema properties must be an object.",
-			);
-		}
-		if (isRecord(value.properties)) {
-			for (const [key, child] of Object.entries(value.properties)) {
-				validateJsonSchema(child, `${path}.properties.${key}`, issues);
-			}
-		}
-		if (
-			value.required !== undefined &&
-			(!Array.isArray(value.required) ||
-				value.required.some((item) => typeof item !== "string"))
-		) {
-			issue(
-				issues,
-				`${path}.required`,
-				"Object schema required must be an array of property names.",
-			);
-		}
+	if (!isPayloadZodSchema(value)) {
+		issue(issues, path, "Payload schema must be a Zod schema.");
 	}
 }
 
@@ -720,6 +859,9 @@ function rejectExecutableData(
 	path: string,
 	issues: Array<ValidationIssue>,
 ): void {
+	if (isPayloadZodSchema(value)) {
+		return;
+	}
 	if (typeof value === "function") {
 		issue(
 			issues,
@@ -744,6 +886,9 @@ function rejectHookKeys(
 	path: string,
 	issues: Array<ValidationIssue>,
 ): void {
+	if (isPayloadZodSchema(value)) {
+		return;
+	}
 	if (Array.isArray(value)) {
 		for (const [index, item] of value.entries()) {
 			rejectHookKeys(item, `${path}[${index}]`, issues);

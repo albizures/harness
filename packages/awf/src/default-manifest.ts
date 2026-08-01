@@ -1,4 +1,5 @@
-import { defineManifest } from "./manifest.ts";
+import { z } from "zod";
+import { artifacts, defineManifest } from "./manifest.ts";
 
 const states = ["ready", "running", "blocked", "done", "need-human"] as const;
 const actions = [
@@ -11,65 +12,76 @@ const actions = [
 	"none",
 ] as const;
 
-const ticketImplementationInput = {
-	type: "object",
-	required: ["implementationPr"],
-	properties: {
-		implementationPr: { type: "string", artifact: "pull-request" },
-	},
-	additionalProperties: false,
-} as const;
+const ticketImplementationInput = artifacts.object({
+	implementationPr: artifacts.pullRequest(),
+});
 
-const reviewApprovedInput = {
-	type: "object",
-	required: ["verdict"],
-	properties: { verdict: { type: "string" } },
-	additionalProperties: false,
-} as const;
+const reviewApprovedInput = artifacts.object({
+	verdict: z.string(),
+});
 
-const reviewChangesInput = {
-	type: "object",
-	required: ["verdict", "findings"],
-	properties: {
-		verdict: { type: "string" },
-		findings: { type: "array", items: { type: "string", artifact: "finding" } },
-	},
-	additionalProperties: false,
-} as const;
+const reviewChangesInput = artifacts.object({
+	verdict: z.string(),
+	findings: artifacts.array(artifacts.finding()),
+});
 
-const fixInput = {
-	type: "object",
-	required: ["summary"],
-	properties: { summary: { type: "string" } },
-	additionalProperties: false,
-} as const;
+const fixInput = artifacts.object({
+	summary: z.string(),
+});
 
-const integrationPassedInput = {
-	type: "object",
-	required: ["verdict", "specPr"],
-	properties: {
-		verdict: { type: "string" },
-		specPr: { type: "string", artifact: "pull-request" },
-	},
-	additionalProperties: false,
-} as const;
+const integrationPassedInput = artifacts.object({
+	verdict: z.string(),
+	specPr: artifacts.pullRequest(),
+});
 
-const integrationChangesNeededInput = {
-	type: "object",
-	required: ["verdict", "findings"],
-	properties: {
-		verdict: { type: "string" },
-		findings: { type: "array", items: { type: "string", artifact: "finding" } },
-	},
-	additionalProperties: false,
-} as const;
+const integrationChangesNeededInput = artifacts.object({
+	verdict: z.string(),
+	findings: artifacts.array(artifacts.finding()),
+});
 
-const mergeInput = {
-	type: "object",
-	required: ["merged"],
-	properties: { merged: { type: "boolean" } },
-	additionalProperties: false,
-} as const;
+const mergeInput = artifacts.object({
+	merged: z.boolean(),
+});
+
+const specCreateInput = artifacts.object({
+	spec: artifacts.markdown(),
+});
+
+const specCreateOutput = z.looseObject({
+	issue: z.looseObject({ id: z.string() }),
+});
+
+const planTicketInput = artifacts.object({
+	key: z.string(),
+	title: z.string(),
+	content: z.string(),
+	dependsOn: z.array(z.string()).optional(),
+});
+
+const planApplyInput = artifacts.object({
+	tickets: artifacts.array(planTicketInput),
+});
+
+const planApplyOutput = z.looseObject({
+	tickets: artifacts.array(
+		artifacts.object({
+			key: z.string(),
+			id: z.string(),
+		}),
+	),
+});
+
+const handoffCreateInput = artifacts.object({
+	handoff: artifacts.handoff(),
+});
+
+const handoffCreateOutput = z.looseObject({
+	artifact: z.looseObject({
+		id: z.string(),
+		kind: z.literal("handoff"),
+		uri: artifacts.handoff(),
+	}),
+});
 
 export const defaultManifest = defineManifest({
 	version: "v1",
@@ -216,23 +228,22 @@ export const defaultManifest = defineManifest({
 	],
 	commands: [
 		{
+			id: "spec-create",
+			target: { kind: "spec", action: "plan" },
+			input: specCreateInput,
+			output: specCreateOutput,
+		},
+		{
 			id: "plan-apply",
 			target: { kind: "spec", action: "plan" },
-			input: {
-				type: "object",
-				required: ["plan"],
-				properties: { plan: { type: "string", artifact: "file" } },
-				additionalProperties: false,
-			},
-			output: {
-				type: "object",
-				properties: {
-					tickets: {
-						type: "array",
-						items: { type: "string", artifact: "issue" },
-					},
-				},
-			},
+			input: planApplyInput,
+			output: planApplyOutput,
+		},
+		{
+			id: "handoff-create",
+			target: { kind: "ticket", action: "review" },
+			input: handoffCreateInput,
+			output: handoffCreateOutput,
 		},
 	],
 	relationships: [

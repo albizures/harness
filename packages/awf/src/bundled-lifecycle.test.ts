@@ -149,7 +149,60 @@ test("Spec integration changes-needed returns to ready plan", async () => {
 	assert.equal(issue.workflow.action, "plan");
 });
 
-test("required action artifact validation rejects malformed PRs and replacement PRs", async () => {
+test("required action artifact validation rejects malformed JSON and PRs before tracker mutation", async () => {
+	for (const [stdin, expectedIssues] of [
+		["{not json", undefined],
+		[
+			JSON.stringify({ implementationPr: "not-a-pr" }),
+			[
+				{
+					path: "$.implementationPr",
+					message: "Pull request artifact must be a GitHub pull request URL.",
+				},
+			],
+		],
+	] as const) {
+		const tracker = createInMemoryTracker({
+			issues: [
+				{
+					id: "t",
+					title: "T",
+					workflow: {
+						kind: "ticket",
+						state: "running",
+						action: "implement",
+						activeRunId: "r",
+					},
+				},
+			],
+		});
+
+		const malformed = await execute(
+			["succeed", "t", "--run", "r", "--input", "-"],
+			{ tracker, stdin },
+		);
+		assert.equal(malformed.ok, false);
+		assert.equal(
+			malformed.ok ? undefined : malformed.error.code,
+			"INVALID_ACTION_INPUT",
+		);
+		if (expectedIssues !== undefined) {
+			assert.deepEqual(malformed.ok ? undefined : malformed.error.details, {
+				issues: expectedIssues,
+			});
+		}
+		const workflow = (await tracker.getIssue("t")).workflow;
+		assert.equal(workflow.kind, "ticket");
+		assert.equal(workflow.state, "running");
+		assert.equal(workflow.action, "implement");
+		assert.equal(workflow.activeRunId, "r");
+		assert.equal(workflow.version, 1);
+		assert.deepEqual(await tracker.readLogs("t"), []);
+		assert.deepEqual((await tracker.getIssue("t")).artifacts, []);
+	}
+});
+
+test("terminal commands pass parsed artifact references into runtime behavior", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -165,15 +218,37 @@ test("required action artifact validation rejects malformed PRs and replacement 
 		],
 	});
 
-	const malformed = await execute(
+	const parsedPrNumber = 4;
+	const envelope = await execute(
 		["succeed", "t", "--run", "r", "--input", "-"],
-		{ tracker, stdin: JSON.stringify({ implementationPr: "not-a-pr" }) },
+		{
+			tracker,
+			stdin: JSON.stringify({ implementationPr: `  ${pr(parsedPrNumber)}  ` }),
+		},
 	);
-	assert.equal(malformed.ok, false);
-	assert.equal(
-		malformed.ok ? undefined : malformed.error.code,
-		"INVALID_ACTION_INPUT",
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(
+		(await tracker.getIssue("t")).artifacts.map((artifact) => artifact.uri),
+		[pr(parsedPrNumber)],
 	);
+});
+
+test("required action artifact validation rejects replacement PRs", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "t",
+				title: "T",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					activeRunId: "r",
+				},
+			},
+		],
+	});
 
 	const existingPrNumber = 4;
 	const replacementPrNumber = 5;

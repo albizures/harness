@@ -9,11 +9,12 @@ export {
 } from "./envelope.ts";
 export {
 	ManifestValidationError,
+	artifacts,
 	defineManifest,
 	loadManifest,
 	validateManifest,
 	type ArtifactKind,
-	type JsonSchema,
+	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,
 } from "./manifest.ts";

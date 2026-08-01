@@ -9,6 +9,8 @@ const validManifestPath = new URL(
 ).pathname;
 const badManifestPath = new URL("./fixtures/bad.workflow.ts", import.meta.url)
 	.pathname;
+const linkManifestPath = new URL("./fixtures/link.workflow.ts", import.meta.url)
+	.pathname;
 
 function serializeCliSmokeInput(input: unknown): string {
 	return typeof input === "string" ? input : JSON.stringify(input);
@@ -43,6 +45,28 @@ test("CLI smoke path loads a fixture manifest and returns a JSON success envelop
 			kinds: ["spec", "ticket"],
 		},
 	});
+});
+
+test("CLI returns a stable validation error envelope for a generic link projection", () => {
+	const result = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "manifest", "validate", linkManifestPath],
+		{ encoding: "utf8" },
+	);
+
+	assert.equal(result.status, 1);
+	assert.equal(result.stderr, "");
+	const envelope = JSON.parse(result.stdout);
+	assert.equal(envelope.ok, false);
+	assert.equal(envelope.error.code, "MANIFEST_VALIDATION_FAILED");
+	assert.equal(
+		envelope.error.details.issues.at(-1).path,
+		"$.relationships[2].projection.type",
+	);
+	assert.match(
+		envelope.error.details.issues.at(-1).message,
+		/parent-child or dependency/,
+	);
 });
 
 test("CLI returns a stable validation error envelope for a bad manifest", () => {

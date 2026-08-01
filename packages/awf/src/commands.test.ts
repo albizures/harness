@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { execute } from "./commands.ts";
 import { serializeEnvelope } from "./envelope.ts";
-import { defineManifest } from "./manifest.ts";
+import { defineManifest, type WorkflowManifest } from "./manifest.ts";
 import { createInMemoryTracker } from "./tracker.ts";
 
 test("help returns a stable success envelope", async () => {
@@ -23,6 +23,39 @@ test("help returns a stable success envelope", async () => {
 	assert.ok(
 		data.commands.some((command) => command.usage === "awf start <id>"),
 	);
+});
+
+test("runtime commands reject unsupported workflow manifest relationship projection types", async () => {
+	const envelope = await execute(["ready"], {
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			relationships: [
+				{
+					id: "generic-link",
+					from: "ticket",
+					to: "ticket",
+					projection: { type: "link" },
+				},
+			],
+		} as unknown as WorkflowManifest,
+	});
+
+	assert.deepEqual(envelope, {
+		ok: false,
+		error: {
+			code: "MANIFEST_VALIDATION_FAILED",
+			message: "Workflow manifest validation failed.",
+			details: {
+				issues: [
+					{
+						path: "$.relationships[0].projection.type",
+						message:
+							"Relationship projection type must be parent-child or dependency.",
+					},
+				],
+			},
+		},
+	});
 });
 
 test("ready returns legal executable work after dependency, concurrency, active-run, and manifest filters", async () => {
