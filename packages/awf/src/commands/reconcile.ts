@@ -169,10 +169,9 @@ function projectionErrorCode(
 	labels: Array<string> | undefined,
 ): string {
 	if (labels !== undefined) {
-		for (const prefix of ["type", "state", "action", "reason"]) {
-			const count = labels.filter((label) =>
-				label.startsWith(`${prefix}:`),
-			).length;
+		for (const field of ["kind", "state", "action", "reason"]) {
+			const currentField = new RegExp(`^awf:[^:]+:${field}:`, "u");
+			const count = labels.filter((label) => currentField.test(label)).length;
 			if (count > 1) {
 				return "DUPLICATE_CURRENT_FIELDS";
 			}

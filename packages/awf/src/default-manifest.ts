@@ -92,14 +92,7 @@ export const defaultManifest = defineManifest({
 		reasons: ["dependencies"],
 		events: ["start", "succeed", "fail"],
 	},
-	github: {
-		labelPrefixes: {
-			kind: "type:",
-			state: "state:",
-			action: "action:",
-			reason: "reason:",
-		},
-	},
+	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 	readiness: {
 		filters: [
@@ -116,7 +109,7 @@ export const defaultManifest = defineManifest({
 	kinds: [
 		{
 			id: "spec",
-			label: "type:spec",
+			label: "Spec",
 			initial: { state: "ready", action: "plan" },
 			transitions: [
 				{
@@ -166,7 +159,7 @@ export const defaultManifest = defineManifest({
 		},
 		{
 			id: "ticket",
-			label: "type:ticket",
+			label: "Ticket",
 			initial: { state: "ready", action: "implement" },
 			transitions: [
 				{

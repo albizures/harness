@@ -93,12 +93,20 @@ test("CLI smoke path seeds multiple in-memory issues and returns only legally ex
 				{
 					id: "1",
 					title: "Ready ticket",
-					labels: ["type:ticket", "state:ready", "action:implement"],
+					labels: [
+						"awf:agent-development:kind:ticket",
+						"awf:agent-development:state:ready",
+						"awf:agent-development:action:implement",
+					],
 				},
 				{
 					id: "2",
 					title: "Dependency blocked ticket",
-					labels: ["type:ticket", "state:ready", "action:implement"],
+					labels: [
+						"awf:agent-development:kind:ticket",
+						"awf:agent-development:state:ready",
+						"awf:agent-development:action:implement",
+					],
 					relationships: { dependencies: ["1"] },
 				},
 				{
@@ -210,7 +218,11 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 					{
 						id: "42",
 						title: "Implement lifecycle",
-						labels: ["type:ticket", "state:ready", "action:implement"],
+						labels: [
+							"awf:agent-development:kind:ticket",
+							"awf:agent-development:state:ready",
+							"awf:agent-development:action:implement",
+						],
 					},
 				]),
 			},

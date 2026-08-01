@@ -39,11 +39,7 @@ export function hasWorkflowProjectionLabels(
 	manifest: WorkflowManifest,
 	labels: Array<string>,
 ): boolean {
-	return labels.some(
-		(label) =>
-			manifest.kinds.some((kind) => kind.label === label) ||
-			label.startsWith(`awf:${manifest.workflow.id}:`),
-	);
+	return labels.some((label) => label.startsWith(reservedPrefix(manifest)));
 }
 
 export function labelsForProjection(
@@ -59,7 +55,7 @@ export function labelsForProjection(
 		);
 	}
 	return [
-		kind.label,
+		labelFor(manifest, "kind", kind.id),
 		labelFor(manifest, "state", projection.state),
 		labelFor(manifest, "action", projection.action),
 		...(projection.reason === undefined
@@ -73,17 +69,24 @@ export function projectionFromLabels(
 	number: number,
 	labels: Array<string>,
 ): Pick<WorkflowProjection, "kind" | "state" | "action" | "reason"> {
-	const kindLabels = manifest.kinds.filter((kind) =>
-		labels.includes(kind.label),
-	);
-	if (kindLabels.length !== 1) {
+	const kindValues = valuesForReservedLabel(manifest, labels, "kind");
+	if (kindValues.length !== 1 || kindValues[0] === "") {
 		throw needsReconciliation(
 			String(number),
 			"issue must have exactly one workflow kind label",
 		);
 	}
+	const kind = manifest.kinds.find(
+		(candidate) => candidate.id === kindValues[0],
+	);
+	if (kind === undefined) {
+		throw needsReconciliation(
+			String(number),
+			"issue has unknown workflow kind label",
+		);
+	}
 	return {
-		kind: kindLabels[0]?.id ?? "",
+		kind: kind.id,
 		state: readSingleReservedLabel(manifest, labels, "state", number),
 		action: readSingleReservedLabel(manifest, labels, "action", number),
 		reason: readOptionalReservedLabel(manifest, labels, "reason", number),
@@ -125,7 +128,7 @@ function readOptionalReservedLabel(
 function valuesForReservedLabel(
 	manifest: WorkflowManifest,
 	labels: Array<string>,
-	field: "state" | "action" | "reason",
+	field: "kind" | "state" | "action" | "reason",
 ): Array<string> {
 	const prefix = reservedPrefix(manifest, field);
 	return labels
@@ -135,7 +138,7 @@ function valuesForReservedLabel(
 
 function labelFor(
 	manifest: WorkflowManifest,
-	field: "state" | "action" | "reason",
+	field: "kind" | "state" | "action" | "reason",
 	value: string,
 ): string {
 	return `${reservedPrefix(manifest, field)}${value}`;
@@ -143,17 +146,18 @@ function labelFor(
 
 function reservedPrefix(
 	manifest: WorkflowManifest,
-	field: "state" | "action" | "reason",
+	field?: "kind" | "state" | "action" | "reason",
 ): string {
-	return `awf:${manifest.workflow.id}:${field}:`;
+	const prefix = `${manifest.github.reservedPrefix}:${manifest.workflow.id}:`;
+	return field === undefined ? prefix : `${prefix}${field}:`;
 }
 
 export function projectionMarker(manifest: WorkflowManifest): string {
-	return `awf:${manifest.workflow.id}:projection`;
+	return `${manifest.github.reservedPrefix}:${manifest.workflow.id}:projection`;
 }
 
 export function logMarker(manifest: WorkflowManifest): string {
-	return `awf:${manifest.workflow.id}:log`;
+	return `${manifest.github.reservedPrefix}:${manifest.workflow.id}:log`;
 }
 
 export function machineComment(marker: string, payload: unknown): string {
@@ -197,7 +201,9 @@ export function metadataFromProjection(
 	};
 }
 
-export function isProjectionMetadata(value: unknown): value is ProjectionMetadata {
+export function isProjectionMetadata(
+	value: unknown,
+): value is ProjectionMetadata {
 	if (!isRecord(value) || !isRecord(value.workflow)) {
 		return false;
 	}
@@ -254,7 +260,9 @@ export function withHash(
 	return { ...withoutHash, hash: hashProjection(withoutHash) };
 }
 
-export function hashProjection(projection: Omit<WorkflowProjection, "hash">): string {
+export function hashProjection(
+	projection: Omit<WorkflowProjection, "hash">,
+): string {
 	return createHash("sha256").update(stableStringify(projection)).digest("hex");
 }
 
@@ -332,7 +340,9 @@ export function cloneJson(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
 }
 
-export function asObject(value: JsonValue | undefined): Record<string, JsonValue> {
+export function asObject(
+	value: JsonValue | undefined,
+): Record<string, JsonValue> {
 	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
 		return value as Record<string, JsonValue>;
 	}

@@ -88,12 +88,7 @@ export type WorkflowManifest = {
 		events: Array<Identifier>;
 	};
 	github: {
-		labelPrefixes: {
-			kind: string;
-			state: string;
-			action: string;
-			reason: string;
-		};
+		reservedPrefix: string;
 	};
 	concurrency: {
 		perIssue: 1;
@@ -118,8 +113,9 @@ export type WorkflowManifest = {
 
 export type WorkflowManifestDefinition = Omit<
 	WorkflowManifest,
-	"kinds" | "commands"
+	"github" | "kinds" | "commands"
 > & {
+	github?: { reservedPrefix?: string };
 	kinds: Array<ManifestKindDefinition>;
 	commands: Array<ManifestCommandDefinition>;
 };
@@ -230,14 +226,11 @@ const manifestSchema = z.strictObject({
 		reasons: z.array(z.string()).optional(),
 		events: z.array(z.string()),
 	}),
-	github: z.strictObject({
-		labelPrefixes: z.strictObject({
-			kind: z.string().min(1),
-			state: z.string().min(1),
-			action: z.string().min(1),
-			reason: z.string().min(1),
-		}),
-	}),
+	github: z
+		.strictObject({
+			reservedPrefix: z.string().min(1).optional(),
+		})
+		.optional(),
 	concurrency: z.strictObject({
 		perIssue: z.literal(1),
 		perWorkflow: z.number().int().positive().optional(),
@@ -340,7 +333,7 @@ const manifestSchema = z.strictObject({
 export function defineManifest(
 	manifest: WorkflowManifestDefinition,
 ): WorkflowManifest {
-	return manifest;
+	return normalizeManifest(manifest);
 }
 
 function isPayloadZodSchema(value: unknown): value is PayloadZodSchema {
@@ -363,7 +356,7 @@ export async function loadManifest(
 	if (issues.length > 0) {
 		throw new ManifestValidationError(issues);
 	}
-	return manifest;
+	return normalizeManifest(manifest);
 }
 
 export function validateManifest(value: unknown): Array<ValidationIssue> {
@@ -535,11 +528,22 @@ function uniqueIssues(issues: Array<ValidationIssue>): Array<ValidationIssue> {
 	});
 }
 
-function extractManifest(loaded: unknown): WorkflowManifest {
+function extractManifest(loaded: unknown): WorkflowManifestDefinition {
 	if (isRecord(loaded) && "manifest" in loaded) {
-		return loaded.manifest as WorkflowManifest;
+		return loaded.manifest as WorkflowManifestDefinition;
 	}
-	return loaded as WorkflowManifest;
+	return loaded as WorkflowManifestDefinition;
+}
+
+function normalizeManifest(
+	manifest: WorkflowManifestDefinition,
+): WorkflowManifest {
+	return {
+		...manifest,
+		github: { reservedPrefix: manifest.github?.reservedPrefix ?? "awf" },
+		kinds: manifest.kinds,
+		commands: manifest.commands,
+	};
 }
 
 function validateIdentifier(
@@ -609,25 +613,22 @@ function readIdentifierSet(
 }
 
 function validateGithub(value: unknown, issues: Array<ValidationIssue>): void {
-	if (!isRecord(value) || !isRecord(value.labelPrefixes)) {
-		issue(
-			issues,
-			"$.github.labelPrefixes",
-			"GitHub label prefix metadata is required.",
-		);
+	if (value === undefined) {
 		return;
 	}
-	for (const key of ["kind", "state", "action", "reason"] as const) {
-		if (
-			typeof value.labelPrefixes[key] !== "string" ||
-			value.labelPrefixes[key] === ""
-		) {
-			issue(
-				issues,
-				`$.github.labelPrefixes.${key}`,
-				"Label prefix must be a non-empty string.",
-			);
-		}
+	if (!isRecord(value)) {
+		issue(issues, "$.github", "GitHub metadata must be an object.");
+		return;
+	}
+	if (
+		value.reservedPrefix !== undefined &&
+		(typeof value.reservedPrefix !== "string" || value.reservedPrefix === "")
+	) {
+		issue(
+			issues,
+			"$.github.reservedPrefix",
+			"Reserved prefix must be a non-empty string.",
+		);
 	}
 }
 

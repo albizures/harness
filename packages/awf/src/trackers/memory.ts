@@ -593,7 +593,7 @@ function fromLabels(
 		);
 	}
 	const fields = {
-		kind: readSingleLabel(input.labels, "type", input.id),
+		kind: readSingleLabel(input.labels, "kind", input.id),
 		state: readSingleLabel(input.labels, "state", input.id),
 		action: readSingleLabel(input.labels, "action", input.id),
 		reason: readOptionalSingleLabel(input.labels, "reason", input.id),
@@ -612,9 +612,7 @@ function readSingleLabel(
 	prefix: string,
 	id: string,
 ): string {
-	const values = labels
-		.filter((label) => label.startsWith(`${prefix}:`))
-		.map((label) => label.slice(prefix.length + 1));
+	const values = workflowLabelValues(labels, prefix);
 	if (values.length !== 1 || values[0] === "") {
 		throw new CorruptWorkflowProjectionError(
 			`Issue '${id}' has corrupt ${prefix} projection data.`,
@@ -628,15 +626,30 @@ function readOptionalSingleLabel(
 	prefix: string,
 	id: string,
 ): string | undefined {
-	const values = labels
-		.filter((label) => label.startsWith(`${prefix}:`))
-		.map((label) => label.slice(prefix.length + 1));
+	const values = workflowLabelValues(labels, prefix);
 	if (values.length > 1 || values.some((value) => value === "")) {
 		throw new CorruptWorkflowProjectionError(
 			`Issue '${id}' has corrupt ${prefix} projection data.`,
 		);
 	}
 	return values[0];
+}
+
+function workflowLabelValues(
+	labels: Array<string>,
+	field: string,
+): Array<string> {
+	const canonical = new RegExp(`^awf:[^:]+:${field}:(.*)$`, "u");
+	const values = labels
+		.map((label) => canonical.exec(label)?.[1])
+		.filter((value): value is string => value !== undefined);
+	if (values.length > 0) {
+		return values;
+	}
+	const legacyField = field === "kind" ? "type" : field;
+	return labels
+		.filter((label) => label.startsWith(`${legacyField}:`))
+		.map((label) => label.slice(legacyField.length + 1));
 }
 
 function normalizeIssue(input: CreateIssueInput & { id: string }): StoredIssue {

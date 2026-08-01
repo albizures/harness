@@ -23,8 +23,8 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 
 	assert.deepEqual(api.issue(1).labels.sort(), [
 		"awf:agent-development:action:implement",
+		"awf:agent-development:kind:ticket",
 		"awf:agent-development:state:ready",
-		"type:ticket",
 	]);
 	assert.equal(api.issue(1).comments.length, 1);
 	assert.equal(issue.workflow.kind, "ticket");
@@ -37,8 +37,8 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 
 	assert.deepEqual(api.issue(1).labels.sort(), [
 		"awf:agent-development:action:implement",
+		"awf:agent-development:kind:ticket",
 		"awf:agent-development:state:running",
-		"type:ticket",
 	]);
 	const updated = await tracker.getIssue("1");
 	assert.equal(updated.workflow.activeRunId, "run-1");
@@ -182,7 +182,9 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 	// repository with GitHub sub-issues/dependencies enabled and gh authenticated.
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
-	const { createGhCliGitHubTracker } = await import("./trackers/github/index.ts");
+	const { createGhCliGitHubTracker } = await import(
+		"./trackers/github/index.ts"
+	);
 	const [owner, name] = repo.split("/");
 	assert.ok(owner);
 	assert.ok(name);

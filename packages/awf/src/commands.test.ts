@@ -1193,12 +1193,20 @@ test("reconcile reports malformed logs and corrupt current metadata", async () =
 			{
 				id: "dupe",
 				title: "Bad labels",
-				labels: ["type:ticket", "type:spec", "state:ready", "action:implement"],
+				labels: [
+					"awf:agent-development:kind:ticket",
+					"awf:agent-development:kind:spec",
+					"awf:agent-development:state:ready",
+					"awf:agent-development:action:implement",
+				],
 			},
 			{
 				id: "missing",
 				title: "Missing labels",
-				labels: ["type:ticket", "state:ready"],
+				labels: [
+					"awf:agent-development:kind:ticket",
+					"awf:agent-development:state:ready",
+				],
 			},
 		],
 	});
@@ -1277,14 +1285,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 		actions: ["plan", "implement", "none"],
 		events: ["start", "succeed"],
 	},
-	github: {
-		labelPrefixes: {
-			kind: "type:",
-			state: "state:",
-			action: "action:",
-			reason: "reason:",
-		},
-	},
+	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 	readiness: {
 		filters: [{ kind: "ticket", state: "ready", action: "implement" }],
@@ -1293,7 +1294,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	kinds: [
 		{
 			id: "spec",
-			label: "type:spec",
+			label: "Spec",
 			initial: { state: "ready", action: "plan" },
 			transitions: [
 				{
@@ -1310,7 +1311,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 		},
 		{
 			id: "ticket",
-			label: "type:ticket",
+			label: "Ticket",
 			initial: { state: "ready", action: "implement" },
 			transitions: [
 				{

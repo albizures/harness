@@ -132,7 +132,12 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 			{
 				id: "1",
 				title: "Bad",
-				labels: ["type:ticket", "type:spec", "state:ready", "action:implement"],
+				labels: [
+					"awf:agent-development:kind:ticket",
+					"awf:agent-development:kind:spec",
+					"awf:agent-development:state:ready",
+					"awf:agent-development:action:implement",
+				],
 			},
 		],
 	});
@@ -141,7 +146,16 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 		CorruptWorkflowProjectionError,
 	);
 	const missing = createInMemoryTracker({
-		issues: [{ id: "2", title: "Bad", labels: ["type:ticket", "state:ready"] }],
+		issues: [
+			{
+				id: "2",
+				title: "Bad",
+				labels: [
+					"awf:agent-development:kind:ticket",
+					"awf:agent-development:state:ready",
+				],
+			},
+		],
 	});
 	await assert.rejects(
 		() => missing.getIssue("2"),
@@ -150,7 +164,13 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 	assert.throws(
 		() =>
 			createInMemoryTracker({
-				issues: [{ id: "3", title: "Bad", labels: "type:ticket" } as never],
+				issues: [
+					{
+						id: "3",
+						title: "Bad",
+						labels: "awf:agent-development:kind:ticket",
+					} as never,
+				],
 			}),
 		CorruptWorkflowProjectionError,
 	);

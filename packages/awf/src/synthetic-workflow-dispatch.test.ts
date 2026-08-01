@@ -13,14 +13,7 @@ const syntheticManifest = defineManifest({
 		actions: ["refine", "promote", "none"],
 		events: ["start", "succeed"],
 	},
-	github: {
-		labelPrefixes: {
-			kind: "kind:",
-			state: "state:",
-			action: "action:",
-			reason: "reason:",
-		},
-	},
+	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4 },
 	readiness: {
 		filters: [{ kind: "idea", state: "ready", action: "promote" }],

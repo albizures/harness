@@ -13,7 +13,11 @@ test("CLI smoke path reads a seeded in-memory workflow issue with a stable get e
 				{
 					id: "42",
 					title: "Implement tracker",
-					labels: ["type:ticket", "state:ready", "action:implement"],
+					labels: [
+						"awf:agent-development:kind:ticket",
+						"awf:agent-development:state:ready",
+						"awf:agent-development:action:implement",
+					],
 				},
 			]),
 		},

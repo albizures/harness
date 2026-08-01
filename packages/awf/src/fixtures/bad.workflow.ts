@@ -9,19 +9,12 @@ export const manifest = defineManifest({
 		reasons: [],
 		events: ["start"],
 	},
-	github: {
-		labelPrefixes: {
-			kind: "type:",
-			state: "state:",
-			action: "action:",
-			reason: "reason:",
-		},
-	},
+	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1 },
 	kinds: [
 		{
 			id: "ticket",
-			label: "type:ticket",
+			label: "Ticket",
 			initial: { state: "ready", action: "implement" },
 			transitions: [
 				{

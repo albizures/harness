@@ -49,7 +49,7 @@ test("rejects loaded TypeScript workflow manifests with Zod-owned shape errors",
 	});
 });
 
-test("defineManifest gives TypeScript authoring ergonomics and keeps Zod payload schemas as runtime contracts", () => {
+test("defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",
 		workflow: { id: "tiny" },
@@ -59,19 +59,11 @@ test("defineManifest gives TypeScript authoring ergonomics and keeps Zod payload
 			reasons: [],
 			events: ["start"],
 		},
-		github: {
-			labelPrefixes: {
-				kind: "type:",
-				state: "state:",
-				action: "action:",
-				reason: "reason:",
-			},
-		},
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
 				id: "ticket",
-				label: "type:ticket",
+				label: "Ticket",
 				initial: { state: "ready", action: "implement" },
 				transitions: [
 					{
@@ -92,6 +84,7 @@ test("defineManifest gives TypeScript authoring ergonomics and keeps Zod payload
 	});
 
 	assert.deepEqual(validateManifest(manifest), []);
+	assert.equal(manifest.github.reservedPrefix, "awf");
 	assert.equal(typeof manifest.kinds[0]?.transitions[0]?.event, "string");
 	assert.equal(manifest.commands[0]?.input instanceof z.ZodType, true);
 	assert.deepEqual(
@@ -122,19 +115,12 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 			reasons: [],
 			events: ["succeed"],
 		},
-		github: {
-			labelPrefixes: {
-				kind: "type:",
-				state: "state:",
-				action: "action:",
-				reason: "reason:",
-			},
-		},
+		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
 				id: "ticket",
-				label: "type:ticket",
+				label: "Ticket",
 				initial: { state: "ready", action: "implement" },
 				transitions: [],
 			},
@@ -196,14 +182,7 @@ test("validates manifest-declared CLI targets and named readiness filters", () =
 			reasons: [],
 			events: ["start"],
 		},
-		github: {
-			labelPrefixes: {
-				kind: "type:",
-				state: "state:",
-				action: "action:",
-				reason: "reason:",
-			},
-		},
+		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		readiness: {
 			filters: [{ kind: "ticket", state: "ready", action: "implement" }],
@@ -212,7 +191,7 @@ test("validates manifest-declared CLI targets and named readiness filters", () =
 		kinds: [
 			{
 				id: "ticket",
-				label: "type:ticket",
+				label: "Ticket",
 				initial: { state: "ready", action: "implement" },
 				transitions: [],
 			},
@@ -281,19 +260,12 @@ test("rejects non-declarative hooks, wildcards, unknown references, and malforme
 			reasons: [],
 			events: ["start"],
 		},
-		github: {
-			labelPrefixes: {
-				kind: "type:",
-				state: "state:",
-				action: "action:",
-				reason: "reason:",
-			},
-		},
+		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
 				id: "ticket",
-				label: "type:ticket",
+				label: "Ticket",
 				initial: { state: "ready", action: "implement" },
 				transitions: [
 					{
