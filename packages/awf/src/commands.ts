@@ -16,6 +16,8 @@ import {
 import {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
+	NeedReconciliationError,
+	ProjectionConflictError,
 	createInMemoryTracker,
 	type Tracker,
 } from "./tracker.ts";
@@ -581,21 +583,30 @@ async function createGenericWorkflowIssueCommand(
 	if (inputValidation !== undefined) {
 		return inputValidation;
 	}
-	const issue = await tracker.createIssue({
-		title: genericIssueTitle(parsed.data, command.cli?.target ?? kind.id),
-		body: genericIssueBody(parsed.data, raw),
-		workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
-	});
-	const log = await tracker.appendLog(issue.id, {
-		type: `${command.id}_created`,
-		payload: { input: parsed.data },
-	});
-	const data = { issue, log };
-	const outputValidation = validateWorkflowCommandOutput(command, data);
-	if (outputValidation !== undefined) {
-		return outputValidation;
+	try {
+		const { issue, log } = await tracker.createWorkflowIssue({
+			title: genericIssueTitle(parsed.data, command.cli?.target ?? kind.id),
+			body: genericIssueBody(parsed.data, raw),
+			workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
+			initialLog: {
+				type: `${command.id}_created`,
+				payload: { input: parsed.data },
+			},
+		});
+		if (log === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: creation log was not recorded.",
+			);
+		}
+		const data = { issue, log };
+		const outputValidation = validateWorkflowCommandOutput(command, data);
+		if (outputValidation !== undefined) {
+			return outputValidation;
+		}
+		return success(data);
+	} catch (error) {
+		return lifecycleError("new", error);
 	}
-	return success(data);
 }
 
 async function applyGenericWorkflowCommand(
@@ -674,21 +685,30 @@ async function createSpecCommand(
 	if (spec.content.trim() === "") {
 		return failure("INVALID_SPEC", "Spec content must be non-empty.");
 	}
-	const issue = await tracker.createIssue({
-		title: spec.title,
-		body: spec.content,
-		workflow: { kind: "spec", ...initialWorkflowTarget(kind.initial) },
-	});
-	const log = await tracker.appendLog(issue.id, {
-		type: "spec_created",
-		payload: { input: inputPath },
-	});
-	const data = { issue, log };
-	const outputValidation = validateWorkflowCommandOutput(command, data);
-	if (outputValidation !== undefined) {
-		return outputValidation;
+	try {
+		const { issue, log } = await tracker.createWorkflowIssue({
+			title: spec.title,
+			body: spec.content,
+			workflow: { kind: "spec", ...initialWorkflowTarget(kind.initial) },
+			initialLog: {
+				type: "spec_created",
+				payload: { input: inputPath },
+			},
+		});
+		if (log === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: creation log was not recorded.",
+			);
+		}
+		const data = { issue, log };
+		const outputValidation = validateWorkflowCommandOutput(command, data);
+		if (outputValidation !== undefined) {
+			return outputValidation;
+		}
+		return success(data);
+	} catch (error) {
+		return lifecycleError("new", error);
 	}
-	return success(data);
 }
 
 async function createHandoffCommand(
@@ -735,15 +755,27 @@ async function createHandoffCommand(
 
 	try {
 		await tracker.getIssue(sourceId);
-		const artifact = await tracker.registerArtifact(sourceId, {
-			kind: "handoff",
+		const artifactInput = {
+			kind: "handoff" as const,
 			uri: payload.value.handoff,
 			name: "Handoff",
+		};
+		const { artifacts, log } = await tracker.recordArtifacts(sourceId, {
+			artifacts: [artifactInput],
+			log: {
+				type: "handoff_created",
+				payload: {
+					input: payload.value as JsonValue,
+					artifact: artifactInput,
+				},
+			},
 		});
-		const log = await tracker.appendLog(sourceId, {
-			type: "handoff_created",
-			payload: { input: payload.value as JsonValue, artifact },
-		});
+		const artifact = artifacts[0];
+		if (artifact === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: handoff artifact was not recorded.",
+			);
+		}
 		const data = { source: sourceId, artifact, log };
 		const outputValidation = validateWorkflowCommandOutput(command, data);
 		if (outputValidation !== undefined) {
@@ -1232,17 +1264,18 @@ async function startCommand(
 			return invalidTransition(id, "start");
 		}
 		const runId = `run-${randomUUID()}`;
-		const updated = await tracker.updateIssue(id, {
+		const { issue: updated, log } = await tracker.startRun(id, {
 			expect: {
 				version: issue.workflow.version,
 				hash: issue.workflow.hash,
 			},
-			workflow: { ...workflowTarget(transition.to), activeRunId: runId },
-		});
-		const log = await tracker.appendLog(id, {
-			type: "action_started",
 			runId,
-			payload: { event: "start", to: cleanTransitionTarget(transition.to) },
+			workflow: workflowTarget(transition.to),
+			log: {
+				type: "action_started",
+				runId,
+				payload: { event: "start", to: cleanTransitionTarget(transition.to) },
+			},
 		});
 		return success({ issue: updated, run: { id: runId }, log });
 	} catch (error) {
@@ -1362,33 +1395,29 @@ async function terminalCommand(
 		if (target === undefined) {
 			return invalidTransition(id, event);
 		}
-		const updated = await tracker.updateIssue(id, {
+		const result = await tracker.completeRun(id, {
 			expect: {
 				version: issue.workflow.version,
 				hash: issue.workflow.hash,
 			},
-			workflow: { ...target, activeRunId: undefined },
-		});
-		const artifacts = await registerBundledArtifacts(
-			tracker,
-			id,
-			issue.workflow,
-			terminalInput,
-		);
-		const log = await tracker.appendLog(id, {
-			type: logType,
 			runId,
-			payload: {
-				event,
-				...(parsedInput === undefined ? {} : { input: terminalInput }),
-				to: target,
+			workflow: target,
+			artifacts: bundledArtifactInputs(issue.workflow, terminalInput),
+			log: {
+				type: logType,
+				runId,
+				payload: {
+					event,
+					...(parsedInput === undefined ? {} : { input: terminalInput }),
+					to: target,
+				},
 			},
 		});
-		await progressParentSpecAfterTicketDone(tracker, issue, updated);
+		await progressParentSpecAfterTicketDone(tracker, issue, result.issue);
 		return success({
-			issue: artifacts.length > 0 ? await tracker.getIssue(id) : updated,
+			issue: result.issue,
 			run: { id: runId, status: event },
-			log,
+			log: result.log,
 		});
 	} catch (error) {
 		return lifecycleError(id, error);
@@ -1434,7 +1463,8 @@ async function escalateCommand(
 			return policyViolation(id, "escalation", issue.workflow.action);
 		}
 		const from = cleanCurrentTarget(issue.workflow);
-		const updated = await tracker.updateIssue(id, {
+		const to = { state: "need-human", action: "none" };
+		const { issue: updated, log } = await tracker.escalateWorkflow(id, {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
 			workflow: {
 				state: "need-human",
@@ -1442,15 +1472,14 @@ async function escalateCommand(
 				reason: undefined,
 				activeRunId: undefined,
 			},
-		});
-		const to = { state: "need-human", action: "none" };
-		const log = await tracker.appendLog(id, {
-			type: "human_intervention_needed",
-			payload: {
-				event: "escalate",
-				input: parsedInput.data as JsonValue,
-				from,
-				to,
+			log: {
+				type: "human_intervention_needed",
+				payload: {
+					event: "escalate",
+					input: parsedInput.data as JsonValue,
+					from,
+					to,
+				},
 			},
 		});
 		return success({ issue: updated, log });
@@ -1484,7 +1513,7 @@ async function resumeCommand(
 		) {
 			return policyViolation(id, "resume", action);
 		}
-		const updated = await tracker.updateIssue(id, {
+		const { issue: updated, log } = await tracker.resumeWorkflow(id, {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
 			workflow: {
 				state: "ready",
@@ -1492,10 +1521,10 @@ async function resumeCommand(
 				reason: undefined,
 				activeRunId: undefined,
 			},
-		});
-		const log = await tracker.appendLog(id, {
-			type: "action_resumed",
-			payload: { event: "resume", to: { state: "ready", action } },
+			log: {
+				type: "action_resumed",
+				payload: { event: "resume", to: { state: "ready", action } },
+			},
 		});
 		return success({ issue: updated, log });
 	} catch (error) {
@@ -1808,41 +1837,36 @@ function validateBundledTerminalInput(
 	return undefined;
 }
 
-async function registerBundledArtifacts(
-	tracker: Tracker,
-	issueId: string,
+function bundledArtifactInputs(
 	workflow: WorkflowFields,
 	input: JsonValue,
-): Promise<Array<unknown>> {
+): Array<{ kind: "pull-request"; uri: string; name: string }> {
 	if (!isRecord(input)) {
 		return [];
 	}
-	const artifacts: Array<unknown> = [];
+	const artifacts: Array<{ kind: "pull-request"; uri: string; name: string }> =
+		[];
 	if (
 		workflow.kind === "ticket" &&
 		workflow.action === "implement" &&
 		typeof input.implementationPr === "string"
 	) {
-		artifacts.push(
-			await tracker.registerArtifact(issueId, {
-				kind: "pull-request",
-				uri: input.implementationPr,
-				name: "Implementation PR",
-			}),
-		);
+		artifacts.push({
+			kind: "pull-request",
+			uri: input.implementationPr,
+			name: "Implementation PR",
+		});
 	}
 	if (
 		workflow.kind === "spec" &&
 		workflow.action === "integration-test" &&
 		typeof input.specPr === "string"
 	) {
-		artifacts.push(
-			await tracker.registerArtifact(issueId, {
-				kind: "pull-request",
-				uri: input.specPr,
-				name: "Spec PR",
-			}),
-		);
+		artifacts.push({
+			kind: "pull-request",
+			uri: input.specPr,
+			name: "Spec PR",
+		});
 	}
 	return artifacts;
 }
@@ -2354,6 +2378,14 @@ function invalidTransition(id: string, event: string): Envelope {
 function lifecycleError(id: string, error: unknown): Envelope {
 	if (error instanceof IssueNotFoundError) {
 		return failure("NOT_FOUND", error.message, { id });
+	}
+	if (
+		error instanceof NeedReconciliationError ||
+		error instanceof ProjectionConflictError ||
+		(error instanceof CorruptWorkflowProjectionError &&
+			error.message.includes("NEED_RECONCILIATION"))
+	) {
+		return failure("NEED_RECONCILIATION", error.message, { id });
 	}
 	if (error instanceof CorruptWorkflowProjectionError) {
 		return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });

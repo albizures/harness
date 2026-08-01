@@ -9,7 +9,17 @@ import {
 	type CreateIssueInput,
 	type IssueRelationships,
 	type Tracker,
+	type TrackerApplyPlanIntent,
+	type TrackerApplyPlanResult,
+	type TrackerCompleteRunIntent,
+	type TrackerCreateWorkflowIssueIntent,
+	type TrackerEscalateIntent,
 	type TrackerIssueInspection,
+	type TrackerRecordArtifactsIntent,
+	type TrackerRecordArtifactsResult,
+	type TrackerRelationshipIntent,
+	type TrackerResumeIntent,
+	type TrackerStartRunIntent,
 	type UpdateIssueInput,
 	type WorkflowArtifact,
 	type WorkflowChange,
@@ -121,6 +131,139 @@ class GitHubTracker implements Tracker {
 	constructor(api: GitHubTrackerApi, manifest: WorkflowManifest) {
 		this.api = api;
 		this.manifest = manifest;
+	}
+
+	async createWorkflowIssue(
+		input: TrackerCreateWorkflowIssueIntent,
+	): Promise<{ issue: WorkflowIssue; log?: WorkflowLog }> {
+		const issue = await this.createIssue(input);
+		const log =
+			input.initialLog === undefined
+				? undefined
+				: await this.appendLog(issue.id, input.initialLog);
+		return {
+			issue: log === undefined ? issue : await this.getIssue(issue.id),
+			log,
+		};
+	}
+
+	async startRun(
+		id: string,
+		input: TrackerStartRunIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const issue = await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: { ...input.workflow, activeRunId: input.runId },
+		});
+		const log = await this.appendLog(id, input.log);
+		return { issue, log };
+	}
+
+	async completeRun(
+		id: string,
+		input: TrackerCompleteRunIntent,
+	): Promise<TrackerRecordArtifactsResult> {
+		await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: { ...input.workflow, activeRunId: undefined },
+		});
+		return this.recordArtifacts(id, input);
+	}
+
+	async recordArtifacts(
+		id: string,
+		input: TrackerRecordArtifactsIntent,
+	): Promise<TrackerRecordArtifactsResult> {
+		const artifacts: Array<WorkflowArtifact> = [];
+		for (const artifact of input.artifacts ?? []) {
+			artifacts.push(await this.registerArtifact(id, artifact));
+		}
+		const changes: Array<WorkflowChange> = [];
+		for (const change of input.changes ?? []) {
+			changes.push(await this.registerChange(id, change));
+		}
+		const log = await this.appendLog(id, input.log);
+		return {
+			issue: await this.getIssue(id),
+			log,
+			artifacts,
+			changes,
+		};
+	}
+
+	async escalateWorkflow(
+		id: string,
+		input: TrackerEscalateIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const issue = await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: input.workflow,
+		});
+		const log = await this.appendLog(id, input.log);
+		return { issue, log };
+	}
+
+	async resumeWorkflow(
+		id: string,
+		input: TrackerResumeIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const issue = await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: input.workflow,
+		});
+		const log = await this.appendLog(id, input.log);
+		return { issue, log };
+	}
+
+	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {
+		if (input.type === "add-child") {
+			await this.addChild(input.parentId, input.childId);
+		} else if (input.type === "remove-child") {
+			await this.removeChild(input.parentId, input.childId);
+		} else if (input.type === "add-dependency") {
+			await this.addDependency(input.issueId, input.blockedById);
+		} else {
+			await this.removeDependency(input.issueId, input.blockedById);
+		}
+	}
+
+	async applyPlan(
+		input: TrackerApplyPlanIntent,
+	): Promise<TrackerApplyPlanResult> {
+		const tickets: Array<{ key: string; id: string }> = [];
+		for (const ticket of input.tickets) {
+			const issue = await this.createIssue({
+				title: ticket.title,
+				body: ticket.body,
+				workflow: ticket.workflow,
+			});
+			tickets.push({ key: ticket.key, id: issue.id });
+			await this.addChild(input.specId, issue.id);
+		}
+		const idsByKey = new Map(tickets.map((ticket) => [ticket.key, ticket.id]));
+		for (const ticket of input.tickets) {
+			const issueId = idsByKey.get(ticket.key);
+			if (issueId === undefined) {
+				throw new ProjectionConflictError(
+					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+				);
+			}
+			for (const dependencyKey of ticket.dependsOn ?? []) {
+				const blockedById = idsByKey.get(dependencyKey);
+				if (blockedById === undefined) {
+					throw new ProjectionConflictError(
+						"NEED_RECONCILIATION: plan dependency resolution failed.",
+					);
+				}
+				await this.addDependency(issueId, blockedById);
+			}
+		}
+		const spec = await this.updateIssue(input.specId, {
+			expect: input.expect,
+			workflow: input.specWorkflow,
+		});
+		const log = await this.appendLog(input.specId, input.log);
+		return { spec, tickets, log };
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {

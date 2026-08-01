@@ -569,6 +569,157 @@ test("unknown manifest command targets are rejected before tracker mutation", as
 	});
 });
 
+test("create spec records one high-level tracker intent with initial current fields and log", async () => {
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		createWorkflowIssue: async (input) => {
+			intents.push("createWorkflowIssue");
+			assert.equal(input.title, "Build lifecycle intents");
+			assert.equal(input.workflow.kind, "spec");
+			assert.equal(input.workflow.state, "ready");
+			assert.equal(input.workflow.action, "plan");
+			assert.equal(input.initialLog?.type, "spec_created");
+			return {
+				issue: {
+					id: "1",
+					title: input.title,
+					body: input.body,
+					workflow: {
+						...input.workflow,
+						version: 1,
+						hash: "hash",
+					},
+					relationships: {
+						children: [],
+						dependencies: [],
+						dependents: [],
+					},
+					artifacts: [],
+					changes: [],
+				},
+				log: {
+					...input.initialLog,
+					issueId: "1",
+					sequence: 1,
+					type: input.initialLog?.type ?? "missing",
+				},
+			};
+		},
+	};
+
+	const envelope = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		stdin: "# Build lifecycle intents\n\nUse Tracker intents.",
+	});
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(intents, ["createWorkflowIssue"]);
+});
+
+test("create handoff records artifact and log through one tracker intent", async () => {
+	const seed = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+		],
+	});
+	const issue = await seed.getIssue("123");
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		getIssue: async (id) => {
+			assert.equal(id, "123");
+			return issue;
+		},
+		recordArtifacts: async (id, input) => {
+			intents.push("recordArtifacts");
+			assert.equal(id, "123");
+			assert.deepEqual(input.artifacts, [
+				{
+					kind: "handoff",
+					uri: "handoff.md",
+					name: "Handoff",
+				},
+			]);
+			assert.equal(input.log.type, "handoff_created");
+			return {
+				issue,
+				artifacts: [
+					{
+						id: "artifact-1",
+						kind: "handoff",
+						uri: "handoff.md",
+						name: "Handoff",
+					},
+				],
+				changes: [],
+				log: { ...input.log, issueId: id, sequence: 1 },
+			};
+		},
+	};
+
+	const envelope = await execute(
+		["create", "handoff", "--source", "123", "--input", "-"],
+		{ tracker, stdin: JSON.stringify({ handoff: "handoff.md" }) },
+	);
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(intents, ["recordArtifacts"]);
+});
+
+test("start records one high-level tracker intent instead of low-level writes", async () => {
+	const seed = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	const issue = await seed.getIssue("123");
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		getIssue: async (id) => {
+			assert.equal(id, "123");
+			return issue;
+		},
+		startRun: async (id, input) => {
+			intents.push("startRun");
+			assert.equal(id, "123");
+			assert.deepEqual(input.expect, {
+				version: issue.workflow.version,
+				hash: issue.workflow.hash,
+			});
+			assert.equal(input.workflow.state, "running");
+			assert.equal(input.workflow.action, "implement");
+			assert.equal(input.log.type, "action_started");
+			assert.equal(input.log.runId, input.runId);
+			return {
+				issue: {
+					...issue,
+					workflow: {
+						...issue.workflow,
+						state: "running",
+						activeRunId: input.runId,
+					},
+				},
+				log: { ...input.log, issueId: id, sequence: 1 },
+			};
+		},
+	};
+
+	const envelope = await execute(["start", "123"], { tracker });
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(intents, ["startRun"]);
+});
+
 test("start moves a ready issue to running, stores one active run, and appends an action_started log", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -1198,6 +1349,14 @@ function createNoTouchTracker(): Tracker {
 		throw new Error("tracker should not be touched");
 	};
 	return {
+		createWorkflowIssue: touched,
+		startRun: touched,
+		completeRun: touched,
+		recordArtifacts: touched,
+		escalateWorkflow: touched,
+		resumeWorkflow: touched,
+		changeRelationship: touched,
+		applyPlan: touched,
 		createIssue: touched,
 		getIssue: touched,
 		listIssues: touched,

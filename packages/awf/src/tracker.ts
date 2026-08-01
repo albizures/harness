@@ -78,6 +78,77 @@ export type UpdateIssueInput = {
 	workflow?: Partial<Omit<WorkflowProjection, "version" | "hash">>;
 };
 
+export type TrackerProjectionExpectation = NonNullable<
+	UpdateIssueInput["expect"]
+>;
+
+export type TrackerCreateWorkflowIssueIntent = CreateIssueInput & {
+	initialLog?: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerStartRunIntent = {
+	expect: TrackerProjectionExpectation;
+	runId: string;
+	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	log: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerCompleteRunIntent = {
+	expect: TrackerProjectionExpectation;
+	runId: string;
+	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	artifacts?: Array<Omit<WorkflowArtifact, "id">>;
+	changes?: Array<Omit<WorkflowChange, "id">>;
+	log: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerRecordArtifactsIntent = {
+	artifacts?: Array<Omit<WorkflowArtifact, "id">>;
+	changes?: Array<Omit<WorkflowChange, "id">>;
+	log: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerRecordArtifactsResult = {
+	issue: WorkflowIssue;
+	log: WorkflowLog;
+	artifacts: Array<WorkflowArtifact>;
+	changes: Array<WorkflowChange>;
+};
+
+export type TrackerEscalateIntent = {
+	expect: TrackerProjectionExpectation;
+	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	log: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerResumeIntent = TrackerEscalateIntent;
+
+export type TrackerRelationshipIntent =
+	| { type: "add-child"; parentId: string; childId: string }
+	| { type: "remove-child"; parentId: string; childId: string }
+	| { type: "add-dependency"; issueId: string; blockedById: string }
+	| { type: "remove-dependency"; issueId: string; blockedById: string };
+
+export type TrackerApplyPlanIntent = {
+	specId: string;
+	expect: TrackerProjectionExpectation;
+	specWorkflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	tickets: Array<{
+		key: string;
+		title: string;
+		body?: string;
+		workflow: CreateIssueInput["workflow"];
+		dependsOn?: Array<string>;
+	}>;
+	log: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerApplyPlanResult = {
+	spec: WorkflowIssue;
+	tickets: Array<{ key: string; id: string }>;
+	log: WorkflowLog;
+};
+
 export type TrackerIssueInspection = {
 	issue?: WorkflowIssue;
 	logs: Array<unknown>;
@@ -86,6 +157,31 @@ export type TrackerIssueInspection = {
 };
 
 export type Tracker = {
+	createWorkflowIssue: (
+		input: TrackerCreateWorkflowIssueIntent,
+	) => Promise<{ issue: WorkflowIssue; log?: WorkflowLog }>;
+	startRun: (
+		id: string,
+		input: TrackerStartRunIntent,
+	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
+	completeRun: (
+		id: string,
+		input: TrackerCompleteRunIntent,
+	) => Promise<TrackerRecordArtifactsResult>;
+	recordArtifacts: (
+		id: string,
+		input: TrackerRecordArtifactsIntent,
+	) => Promise<TrackerRecordArtifactsResult>;
+	escalateWorkflow: (
+		id: string,
+		input: TrackerEscalateIntent,
+	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
+	resumeWorkflow: (
+		id: string,
+		input: TrackerResumeIntent,
+	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
+	changeRelationship: (input: TrackerRelationshipIntent) => Promise<void>;
+	applyPlan: (input: TrackerApplyPlanIntent) => Promise<TrackerApplyPlanResult>;
 	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	getIssue: (id: string) => Promise<WorkflowIssue>;
 	listIssues: () => Promise<Array<WorkflowIssue>>;
@@ -117,6 +213,15 @@ export class ProjectionConflictError extends Error {
 	) {
 		super(message);
 		this.name = "ProjectionConflictError";
+	}
+}
+
+export class NeedReconciliationError extends Error {
+	constructor(
+		message = "NEED_RECONCILIATION: tracker intent verification failed.",
+	) {
+		super(message);
+		this.name = "NeedReconciliationError";
 	}
 }
 
@@ -165,6 +270,139 @@ class InMemoryTracker implements Tracker {
 			this.storeSeed(issue);
 		}
 		this.backfillSeededRelationshipInverses();
+	}
+
+	async createWorkflowIssue(
+		input: TrackerCreateWorkflowIssueIntent,
+	): Promise<{ issue: WorkflowIssue; log?: WorkflowLog }> {
+		const issue = await this.createIssue(input);
+		const log =
+			input.initialLog === undefined
+				? undefined
+				: await this.appendLog(issue.id, input.initialLog);
+		return {
+			issue: log === undefined ? issue : await this.getIssue(issue.id),
+			log,
+		};
+	}
+
+	async startRun(
+		id: string,
+		input: TrackerStartRunIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const issue = await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: { ...input.workflow, activeRunId: input.runId },
+		});
+		const log = await this.appendLog(id, input.log);
+		return { issue, log };
+	}
+
+	async completeRun(
+		id: string,
+		input: TrackerCompleteRunIntent,
+	): Promise<TrackerRecordArtifactsResult> {
+		await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: { ...input.workflow, activeRunId: undefined },
+		});
+		return this.recordArtifacts(id, input);
+	}
+
+	async recordArtifacts(
+		id: string,
+		input: TrackerRecordArtifactsIntent,
+	): Promise<TrackerRecordArtifactsResult> {
+		const artifacts = [];
+		for (const artifact of input.artifacts ?? []) {
+			artifacts.push(await this.registerArtifact(id, artifact));
+		}
+		const changes = [];
+		for (const change of input.changes ?? []) {
+			changes.push(await this.registerChange(id, change));
+		}
+		const log = await this.appendLog(id, input.log);
+		return {
+			issue: await this.getIssue(id),
+			log,
+			artifacts,
+			changes,
+		};
+	}
+
+	async escalateWorkflow(
+		id: string,
+		input: TrackerEscalateIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const issue = await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: input.workflow,
+		});
+		const log = await this.appendLog(id, input.log);
+		return { issue, log };
+	}
+
+	async resumeWorkflow(
+		id: string,
+		input: TrackerResumeIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const issue = await this.updateIssue(id, {
+			expect: input.expect,
+			workflow: input.workflow,
+		});
+		const log = await this.appendLog(id, input.log);
+		return { issue, log };
+	}
+
+	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {
+		if (input.type === "add-child") {
+			await this.addChild(input.parentId, input.childId);
+		} else if (input.type === "remove-child") {
+			await this.removeChild(input.parentId, input.childId);
+		} else if (input.type === "add-dependency") {
+			await this.addDependency(input.issueId, input.blockedById);
+		} else {
+			await this.removeDependency(input.issueId, input.blockedById);
+		}
+	}
+
+	async applyPlan(
+		input: TrackerApplyPlanIntent,
+	): Promise<TrackerApplyPlanResult> {
+		const created: Array<{ key: string; id: string }> = [];
+		for (const ticket of input.tickets) {
+			const issue = await this.createIssue({
+				title: ticket.title,
+				body: ticket.body,
+				workflow: ticket.workflow,
+			});
+			created.push({ key: ticket.key, id: issue.id });
+			await this.addChild(input.specId, issue.id);
+		}
+		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
+		for (const ticket of input.tickets) {
+			const issueId = idsByKey.get(ticket.key);
+			if (issueId === undefined) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+				);
+			}
+			for (const dependencyKey of ticket.dependsOn ?? []) {
+				const blockedById = idsByKey.get(dependencyKey);
+				if (blockedById === undefined) {
+					throw new NeedReconciliationError(
+						"NEED_RECONCILIATION: plan dependency resolution failed.",
+					);
+				}
+				await this.addDependency(issueId, blockedById);
+			}
+		}
+		const spec = await this.updateIssue(input.specId, {
+			expect: input.expect,
+			workflow: input.specWorkflow,
+		});
+		const log = await this.appendLog(input.specId, input.log);
+		return { spec, tickets: created, log };
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {

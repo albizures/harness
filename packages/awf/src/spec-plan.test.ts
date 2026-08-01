@@ -565,6 +565,14 @@ function pickWorkflow(workflow: {
 
 function failingTracker(base: Tracker, overrides: Partial<Tracker>): Tracker {
 	return {
+		createWorkflowIssue: base.createWorkflowIssue.bind(base),
+		startRun: base.startRun.bind(base),
+		completeRun: base.completeRun.bind(base),
+		recordArtifacts: base.recordArtifacts.bind(base),
+		escalateWorkflow: base.escalateWorkflow.bind(base),
+		resumeWorkflow: base.resumeWorkflow.bind(base),
+		changeRelationship: base.changeRelationship.bind(base),
+		applyPlan: base.applyPlan.bind(base),
 		createIssue: base.createIssue.bind(base),
 		getIssue: base.getIssue.bind(base),
 		listIssues: base.listIssues.bind(base),
