@@ -65,6 +65,8 @@ awf logs <issue>
 awf start <issue>
 awf succeed <issue> --run <run> --input <file|->
 awf fail <issue> --run <run> --input <file|->
+awf escalate <issue> --input <file|->
+awf resume <issue> --action <action>
 awf create <target> --input <file|->
 awf apply <target> [subject] --input <file|->
 awf reconcile <issue> [--apply]
@@ -103,7 +105,7 @@ Normal commands use Current workflow fields to decide executability. They do not
 
 `start` is atomic from the Workflow runtime perspective: it sets state/action to running, stores exactly one active run id, and appends the matching action-started Workflow log. Partial evidence is reconciliation input, not a successful start.
 
-`succeed` and `fail` validate the active run id, validate the structured input against the current transition schema, record required artifacts or failure details, append the terminal Workflow log, and advance through the manifest's exact transition. Retrying the same terminal operation is idempotent only when the payload is identical; a different payload or terminal outcome is an error.
+`succeed` validates the active run id, validates structured input against the current transition schema, records required artifacts, appends the terminal Workflow log, and advances through the manifest's exact transition. `fail` validates the active run id, records failure details, appends the terminal Workflow log, and by default returns a running action to the same `ready/<action>` retry target; manifests may still define explicit failure transitions or constrain retry policy. Retrying the same terminal operation is idempotent only when the payload is identical; a different payload or terminal outcome is an error.
 
 `ready` is read-only. It returns legally executable Workflow issues in deterministic order from explicit state plus live gates. Dependency and concurrency blocking are computed readiness results, not durable Current workflow fields.
 

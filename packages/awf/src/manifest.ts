@@ -76,6 +76,8 @@ export type ManifestRelationship = {
 	};
 };
 
+export type LifecyclePolicyTarget = { kind: Identifier; action: Identifier };
+
 export type WorkflowManifest = {
 	version: "v1";
 	workflow: { id: Identifier };
@@ -101,6 +103,13 @@ export type WorkflowManifest = {
 	readiness?: {
 		filters: Array<ManifestReadinessFilter>;
 		namedFilters?: Array<ManifestNamedReadinessFilter>;
+	};
+	lifecycle?: {
+		retry?: { allow?: Array<LifecyclePolicyTarget> };
+		escalation?: { allow?: Array<LifecyclePolicyTarget> };
+		resume?: {
+			allow?: Array<{ kind: Identifier; actions: Array<Identifier> }>;
+		};
 	};
 	kinds: Array<ManifestKind>;
 	commands: Array<ManifestCommand>;
@@ -207,6 +216,11 @@ const stateReferenceSchema = z.strictObject({
 	reason: z.string().nullable().optional(),
 });
 
+const lifecyclePolicyTargetSchema = z.strictObject({
+	kind: z.string(),
+	action: z.string(),
+});
+
 const manifestSchema = z.strictObject({
 	version: z.literal("v1"),
 	workflow: z.strictObject({ id: z.string() }),
@@ -247,6 +261,32 @@ const manifestSchema = z.strictObject({
 						relationship: z.literal("parent"),
 					}),
 				)
+				.optional(),
+		})
+		.optional(),
+	lifecycle: z
+		.strictObject({
+			retry: z
+				.strictObject({
+					allow: z.array(lifecyclePolicyTargetSchema).optional(),
+				})
+				.optional(),
+			escalation: z
+				.strictObject({
+					allow: z.array(lifecyclePolicyTargetSchema).optional(),
+				})
+				.optional(),
+			resume: z
+				.strictObject({
+					allow: z
+						.array(
+							z.strictObject({
+								kind: z.string(),
+								actions: z.array(z.string()),
+							}),
+						)
+						.optional(),
+				})
 				.optional(),
 		})
 		.optional(),

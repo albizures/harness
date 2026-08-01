@@ -267,7 +267,7 @@ test("apply plan requires the active manifest plan apply declaration before muta
 	assert.deepEqual(await tracker.readLogs("spec-1"), []);
 });
 
-test("apply plan creates tickets, relationships, dependencies, logs application, and advances the Spec", async () => {
+test("apply plan creates tickets, relationships, dependencies, logs application, and leaves the Spec unschedulable", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-plan-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -313,7 +313,7 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 	assert.deepEqual(pickWorkflow(spec.workflow), {
 		kind: "spec",
 		state: "ready",
-		action: "integration-test",
+		action: "none",
 	});
 	assert.deepEqual(spec.relationships.children, ["1", "2"]);
 	assert.deepEqual((await tracker.getIssue("2")).relationships.dependencies, [
@@ -401,10 +401,7 @@ test("apply plan reports manifest-invalid command output instead of returning su
 		envelope.ok ? undefined : envelope.error.code,
 		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
 	);
-	assert.equal(
-		(await tracker.getIssue("spec-1")).workflow.action,
-		"integration-test",
-	);
+	assert.equal((await tracker.getIssue("spec-1")).workflow.action, "none");
 	assert.deepEqual(
 		(await tracker.readLogs("spec-1")).map((log) => log.type),
 		["plan_applied"],

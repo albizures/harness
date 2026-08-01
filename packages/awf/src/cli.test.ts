@@ -370,13 +370,20 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 	);
 	ticketIssue = completed.issue;
 	assert.equal(ticketIssue.workflow.state, "done");
+	const specReadyForIntegration = {
+		...specAfterPlan,
+		workflow: { ...specAfterPlan.workflow, action: "integration-test" },
+	};
 
-	started = runCli(["start", specAfterPlan.id], [specAfterPlan, ticketIssue]);
+	started = runCli(
+		["start", specAfterPlan.id],
+		[specReadyForIntegration, ticketIssue],
+	);
 	completed = runCli(
 		["succeed", specAfterPlan.id, "--run", started.run.id, "--input", "-"],
 		[
 			{
-				...specAfterPlan,
+				...specReadyForIntegration,
 				workflow: started.issue.workflow,
 				logs: [started.log],
 			},

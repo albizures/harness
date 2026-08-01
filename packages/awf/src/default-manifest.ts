@@ -127,12 +127,12 @@ export const defaultManifest = defineManifest({
 				{
 					from: { state: "ready", action: "plan" },
 					event: "succeed",
-					to: { state: "ready", action: "integration-test" },
+					to: { state: "ready", action: "none" },
 				},
 				{
 					from: { state: "running", action: "plan" },
 					event: "succeed",
-					to: { state: "ready", action: "integration-test" },
+					to: { state: "ready", action: "none" },
 				},
 				{
 					from: { state: "ready", action: "integration-test" },

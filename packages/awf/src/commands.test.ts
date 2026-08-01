@@ -301,6 +301,36 @@ test("ready reports dependency-gated Tickets as blocked context while keeping du
 	);
 });
 
+test("ready excludes ready/none Specs as unschedulable waiting work", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec",
+				title: "Waiting spec",
+				workflow: { kind: "spec", state: "ready", action: "none" },
+			},
+			{
+				id: "ticket",
+				title: "Ready ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], { tracker });
+
+	assert.equal(envelope.ok, true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	assert.deepEqual(
+		(envelope.data as { items: Array<{ id: string }> }).items.map(
+			(item) => item.id,
+		),
+		["ticket"],
+	);
+});
+
 test("ready excludes candidates blocked by manifest concurrency limits", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -614,16 +644,16 @@ test("succeed applies the manifest terminal transition for the active run", asyn
 	);
 });
 
-test("failed Ticket implementation returns to ready implement without durable blocked fields", async () => {
+test("failed running actions retry the same ready action by default", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
-				title: "Implement lifecycle",
+				title: "Merge lifecycle",
 				workflow: {
 					kind: "ticket",
 					state: "running",
-					action: "implement",
+					action: "merge",
 					activeRunId: "run-1",
 				},
 			},
@@ -634,7 +664,10 @@ test("failed Ticket implementation returns to ready implement without durable bl
 		["fail", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
-			stdin: JSON.stringify({ reason: "dependencies" }),
+			stdin: JSON.stringify({
+				verdict: "changes-requested",
+				findings: ["bug"],
+			}),
 		},
 	);
 
@@ -651,7 +684,123 @@ test("failed Ticket implementation returns to ready implement without durable bl
 			action: data.issue.workflow.action,
 			reason: data.issue.workflow.reason,
 		},
-		{ state: "ready", action: "implement", reason: undefined },
+		{ state: "ready", action: "merge", reason: undefined },
+	);
+	assert.deepEqual((await tracker.readLogs("123"))[0]?.payload, {
+		event: "fail",
+		input: { verdict: "changes-requested", findings: ["bug"] },
+		to: { state: "ready", action: "merge" },
+	});
+});
+
+test("explicit escalation moves work to need-human none and logs the reason", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Escalate lifecycle",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+		],
+	});
+
+	const envelope = await execute(["escalate", "123", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({ reason: "review requires product decision" }),
+	});
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(
+		(await tracker.getIssue("123")).workflow.state,
+		"need-human",
+	);
+	assert.deepEqual((await tracker.getIssue("123")).workflow.action, "none");
+	assert.deepEqual((await tracker.readLogs("123"))[0]?.payload, {
+		event: "escalate",
+		input: { reason: "review requires product decision" },
+		from: { state: "ready", action: "review" },
+		to: { state: "need-human", action: "none" },
+	});
+});
+
+test("explicit resume chooses a valid next ready action", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Resume lifecycle",
+				workflow: { kind: "ticket", state: "need-human", action: "none" },
+			},
+		],
+	});
+
+	const envelope = await execute(["resume", "123", "--action", "fix"], {
+		tracker,
+	});
+
+	assert.equal(envelope.ok, true);
+	const issue = await tracker.getIssue("123");
+	assert.equal(issue.workflow.state, "ready");
+	assert.equal(issue.workflow.action, "fix");
+});
+
+test("manifest lifecycle policy constrains retry escalation and resume", async () => {
+	const manifest = {
+		...defaultManifest,
+		lifecycle: {
+			retry: { allow: [{ kind: "ticket", action: "implement" }] },
+			escalation: { allow: [{ kind: "ticket", action: "implement" }] },
+			resume: { allow: [{ kind: "ticket", actions: ["implement"] }] },
+		},
+	};
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Constrained",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "merge",
+					activeRunId: "run-1",
+				},
+			},
+			{
+				id: "human",
+				title: "Human",
+				workflow: { kind: "ticket", state: "need-human", action: "none" },
+			},
+		],
+	});
+
+	assert.equal(
+		(
+			await execute(["fail", "123", "--run", "run-1", "--input", "-"], {
+				tracker,
+				manifest,
+				stdin: "{}",
+			})
+		).ok,
+		false,
+	);
+	assert.equal(
+		(
+			await execute(["escalate", "123", "--input", "-"], {
+				tracker,
+				manifest,
+				stdin: JSON.stringify({ reason: "blocked" }),
+			})
+		).ok,
+		false,
+	);
+	assert.equal(
+		(
+			await execute(["resume", "human", "--action", "fix"], {
+				tracker,
+				manifest,
+			})
+		).ok,
+		false,
 	);
 });
 

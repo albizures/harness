@@ -85,6 +85,16 @@ const runtimeCommands: Array<CommandSpec> = [
 		usage: "awf fail <id> --run <run> --input <file|->",
 		description: "Mark a run as failed.",
 	},
+	{
+		name: "escalate",
+		usage: "awf escalate <id> --input <file|->",
+		description: "Move work to need-human/none with a human-readable reason.",
+	},
+	{
+		name: "resume",
+		usage: "awf resume <id> --action <action>",
+		description: "Resume need-human work at a valid ready action.",
+	},
 ];
 
 export type ExecuteOptions = {
@@ -157,6 +167,23 @@ export async function execute(
 			tracker,
 			manifest,
 			options.stdin,
+		);
+	}
+	if (args[0] === "escalate") {
+		return escalateCommand(
+			args[1],
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			options.stdin,
+		);
+	}
+	if (args[0] === "resume") {
+		return resumeCommand(
+			args[1],
+			readOption(args, "--action"),
+			tracker,
+			manifest,
 		);
 	}
 
@@ -290,6 +317,20 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 		case "succeed":
 		case "fail":
 			return validateTerminalArguments(args, command);
+		case "escalate":
+			return requirePositionalAndOption(
+				args,
+				"awf escalate <id> --input <file|->",
+				"--input",
+				1,
+			);
+		case "resume":
+			return requirePositionalAndOption(
+				args,
+				"awf resume <id> --action <action>",
+				"--action",
+				1,
+			);
 		case "create":
 			return validateManifestCommandArguments(args, "create");
 		case "apply":
@@ -1275,17 +1316,27 @@ async function terminalCommand(
 			);
 		}
 		const transition = findTransition(manifest, issue.workflow, event);
-		if (transition === undefined) {
+		const retryTarget =
+			event === "fail" && transition === undefined
+				? defaultRetryTarget(issue.workflow)
+				: undefined;
+		if (transition === undefined && retryTarget === undefined) {
 			return invalidTransition(id, event);
 		}
-		if (transition.input !== undefined && parsedInput === undefined) {
+		if (
+			retryTarget !== undefined &&
+			!retryPolicyAllows(manifest, issue.workflow)
+		) {
+			return policyViolation(id, "retry", issue.workflow.action);
+		}
+		if (transition?.input !== undefined && parsedInput === undefined) {
 			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
 				usage: `awf ${event} <id> --run <run> --input <file|->`,
 			});
 		}
 		const payload = parsePayloadValue(
 			parsedInput?.data ?? {},
-			transition.input,
+			transition?.input,
 			"$",
 		);
 		const validationIssues = [...payload.issues];
@@ -1305,12 +1356,18 @@ async function terminalCommand(
 				{ issues: validationIssues },
 			);
 		}
+		const target =
+			retryTarget ??
+			(transition === undefined ? undefined : workflowTarget(transition.to));
+		if (target === undefined) {
+			return invalidTransition(id, event);
+		}
 		const updated = await tracker.updateIssue(id, {
 			expect: {
 				version: issue.workflow.version,
 				hash: issue.workflow.hash,
 			},
-			workflow: { ...workflowTarget(transition.to), activeRunId: undefined },
+			workflow: { ...target, activeRunId: undefined },
 		});
 		const artifacts = await registerBundledArtifacts(
 			tracker,
@@ -1324,14 +1381,123 @@ async function terminalCommand(
 			payload: {
 				event,
 				...(parsedInput === undefined ? {} : { input: terminalInput }),
-				to: cleanTransitionTarget(transition.to),
+				to: target,
 			},
 		});
+		await progressParentSpecAfterTicketDone(tracker, issue, updated);
 		return success({
 			issue: artifacts.length > 0 ? await tracker.getIssue(id) : updated,
 			run: { id: runId, status: event },
 			log,
 		});
+	} catch (error) {
+		return lifecycleError(id, error);
+	}
+}
+
+async function escalateCommand(
+	id: string | undefined,
+	inputPath: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+): Promise<Envelope> {
+	if (id === undefined || inputPath === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf escalate <id> --input <file|->",
+		});
+	}
+	try {
+		const parsedInput = parseJsonInput(
+			await readInput(inputPath, stdin),
+			"INVALID_ACTION_INPUT",
+		);
+		if (parsedInput.ok === false) {
+			return parsedInput;
+		}
+		if (
+			!isRecord(parsedInput.data) ||
+			typeof parsedInput.data.reason !== "string" ||
+			parsedInput.data.reason.trim() === ""
+		) {
+			return failure("INVALID_ACTION_INPUT", "Escalation input is invalid.", {
+				issues: [
+					{
+						path: "$.reason",
+						message: "Escalation reason must be a non-empty string.",
+					},
+				],
+			});
+		}
+		const issue = await tracker.getIssue(id);
+		if (!escalationPolicyAllows(manifest, issue.workflow)) {
+			return policyViolation(id, "escalation", issue.workflow.action);
+		}
+		const from = cleanCurrentTarget(issue.workflow);
+		const updated = await tracker.updateIssue(id, {
+			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
+			workflow: {
+				state: "need-human",
+				action: "none",
+				reason: undefined,
+				activeRunId: undefined,
+			},
+		});
+		const to = { state: "need-human", action: "none" };
+		const log = await tracker.appendLog(id, {
+			type: "human_intervention_needed",
+			payload: {
+				event: "escalate",
+				input: parsedInput.data as JsonValue,
+				from,
+				to,
+			},
+		});
+		return success({ issue: updated, log });
+	} catch (error) {
+		return lifecycleError(id, error);
+	}
+}
+
+async function resumeCommand(
+	id: string | undefined,
+	action: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+): Promise<Envelope> {
+	if (id === undefined || action === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf resume <id> --action <action>",
+		});
+	}
+	try {
+		const issue = await tracker.getIssue(id);
+		if (
+			issue.workflow.state !== "need-human" ||
+			issue.workflow.action !== "none"
+		) {
+			return invalidTransition(id, "resume");
+		}
+		if (
+			!isReadyAction(manifest, issue.workflow.kind, action) ||
+			!resumePolicyAllows(manifest, issue.workflow.kind, action)
+		) {
+			return policyViolation(id, "resume", action);
+		}
+		const updated = await tracker.updateIssue(id, {
+			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
+			workflow: {
+				state: "ready",
+				action,
+				reason: undefined,
+				activeRunId: undefined,
+			},
+		});
+		const log = await tracker.appendLog(id, {
+			type: "action_resumed",
+			payload: { event: "resume", to: { state: "ready", action } },
+		});
+		return success({ issue: updated, log });
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
@@ -1843,6 +2009,41 @@ async function escalatePartialRollback(
 	}
 }
 
+async function progressParentSpecAfterTicketDone(
+	tracker: Tracker,
+	previous: Awaited<ReturnType<Tracker["getIssue"]>>,
+	updated: Awaited<ReturnType<Tracker["getIssue"]>>,
+): Promise<void> {
+	const parentId = previous.relationships.parent;
+	if (
+		previous.workflow.kind !== "ticket" ||
+		updated.workflow.state !== "done" ||
+		updated.workflow.action !== "none" ||
+		parentId === undefined
+	) {
+		return;
+	}
+	const parent = await tracker.getIssue(parentId);
+	if (
+		parent.workflow.kind !== "spec" ||
+		parent.workflow.state !== "ready" ||
+		parent.workflow.action !== "none" ||
+		parent.relationships.children.length === 0
+	) {
+		return;
+	}
+	const children = await Promise.all(
+		parent.relationships.children.map((childId) => tracker.getIssue(childId)),
+	);
+	if (!children.every((child) => isDone(child))) {
+		return;
+	}
+	await tracker.updateIssue(parentId, {
+		expect: { version: parent.workflow.version, hash: parent.workflow.hash },
+		workflow: { state: "ready", action: "integration-test" },
+	});
+}
+
 function readinessFilters(
 	manifest: WorkflowManifest,
 ): Array<{ kind?: string; state?: string; action?: string; reason?: string }> {
@@ -2212,6 +2413,101 @@ function cleanTransitionTarget(target: {
 			reason: target.reason,
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string | null>;
+}
+
+function cleanCurrentTarget(target: {
+	state: string;
+	action: string;
+	reason?: string;
+}): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries({
+			state: target.state,
+			action: target.action,
+			reason: target.reason,
+		}).filter(([, value]) => value !== undefined),
+	) as Record<string, string>;
+}
+
+function defaultRetryTarget(workflow: {
+	state: string;
+	action: string;
+}): { state: string; action: string } | undefined {
+	if (workflow.state !== "running" || workflow.action === "none") {
+		return undefined;
+	}
+	return { state: "ready", action: workflow.action };
+}
+
+function retryPolicyAllows(
+	manifest: WorkflowManifest,
+	workflow: { kind: string; action: string },
+): boolean {
+	return targetPolicyAllows(
+		manifest.lifecycle?.retry?.allow,
+		workflow.kind,
+		workflow.action,
+	);
+}
+
+function escalationPolicyAllows(
+	manifest: WorkflowManifest,
+	workflow: { kind: string; action: string },
+): boolean {
+	return targetPolicyAllows(
+		manifest.lifecycle?.escalation?.allow,
+		workflow.kind,
+		workflow.action,
+	);
+}
+
+function targetPolicyAllows(
+	allow: Array<{ kind: string; action: string }> | undefined,
+	kind: string,
+	action: string,
+): boolean {
+	return (
+		allow === undefined ||
+		allow.some((target) => target.kind === kind && target.action === action)
+	);
+}
+
+function resumePolicyAllows(
+	manifest: WorkflowManifest,
+	kind: string,
+	action: string,
+): boolean {
+	const allow = manifest.lifecycle?.resume?.allow;
+	return (
+		allow === undefined ||
+		allow.some(
+			(target) => target.kind === kind && target.actions.includes(action),
+		)
+	);
+}
+
+function isReadyAction(
+	manifest: WorkflowManifest,
+	kind: string,
+	action: string,
+): boolean {
+	return manifest.kinds.some(
+		(manifestKind) =>
+			manifestKind.id === kind &&
+			manifestKind.transitions.some(
+				(transition) =>
+					transition.from.state === "ready" &&
+					transition.from.action === action,
+			),
+	);
+}
+
+function policyViolation(id: string, policy: string, action: string): Envelope {
+	return failure(
+		"LIFECYCLE_POLICY_VIOLATION",
+		"Lifecycle policy does not allow this transition.",
+		{ id, policy, action },
+	);
 }
 
 function deriveRuns(
