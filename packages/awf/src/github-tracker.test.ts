@@ -191,15 +191,28 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 		repo: name,
 		manifest: defaultManifest,
 	});
-	const created = await execute(["create-spec", "Smoke spec"], { tracker });
+	const created = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		stdin: "# Smoke spec\n",
+	});
 	assert.equal(created.ok, true);
-	const id = created.ok ? String(created.data.issue.id) : "";
+	const createdData = created.data as { issue: { id: string } };
+	const id = createdData.issue.id;
 	assert.equal((await execute(["get", id], { tracker })).ok, true);
 	const started = await execute(["start", id], { tracker });
 	assert.equal(started.ok, true);
-	const runId = started.ok ? String(started.data.runId) : "";
+	const startedData = started.data as { run: { id: string } };
+	const runId = startedData.run.id;
 	assert.equal((await execute(["logs", id], { tracker })).ok, true);
-	assert.equal((await execute(["succeed", id, runId], { tracker })).ok, true);
+	assert.equal(
+		(
+			await execute(["succeed", id, "--run", runId, "--input", "-"], {
+				tracker,
+				stdin: JSON.stringify({ tickets: [] }),
+			})
+		).ok,
+		true,
+	);
 });
 
 function createMockGitHubApi(
