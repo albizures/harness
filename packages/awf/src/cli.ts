@@ -2,10 +2,8 @@
 import { readFileSync } from "node:fs";
 import { execute } from "./commands.ts";
 import { serializeEnvelope } from "./envelope.ts";
-import {
-	CorruptWorkflowProjectionError,
-	createInMemoryTrackerFromEnvironment,
-} from "./tracker.ts";
+import { CorruptWorkflowProjectionError } from "./tracker.ts";
+import { createInMemoryTrackerFromEnvironment } from "./trackers/memory.ts";
 
 declare const process: {
 	argv: Array<string>;

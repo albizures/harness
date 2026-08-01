@@ -4,7 +4,8 @@ import { execute } from "./commands.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import { serializeEnvelope } from "./envelope.ts";
 import { defineManifest, type WorkflowManifest } from "./manifest.ts";
-import { createInMemoryTracker, type Tracker } from "./tracker.ts";
+import type { Tracker } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 
 test("help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);

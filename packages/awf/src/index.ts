@@ -25,14 +25,12 @@ export {
 	type GitHubTrackerApi,
 	type GitHubTrackerCapabilities,
 	type GitHubTrackerIssue,
-} from "./github-tracker.ts";
+} from "./trackers/github/index.ts";
 export {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
 	NeedReconciliationError,
 	ProjectionConflictError,
-	createInMemoryTracker,
-	createInMemoryTrackerFromEnvironment,
 	type CreateIssueInput,
 	type IssueRelationships,
 	type Tracker,
@@ -54,3 +52,7 @@ export {
 	type WorkflowLog,
 	type WorkflowProjection,
 } from "./tracker.ts";
+export {
+	createInMemoryTracker,
+	createInMemoryTrackerFromEnvironment,
+} from "./trackers/memory.ts";

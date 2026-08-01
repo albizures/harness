@@ -1,7 +1,8 @@
 import { defaultManifest } from "./default-manifest.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
 import { validateManifest, type WorkflowManifest } from "./manifest.ts";
-import { createInMemoryTracker, type Tracker } from "./tracker.ts";
+import type { Tracker } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 import {
 	parseReadyOptions,
 	validateKnownCommand,

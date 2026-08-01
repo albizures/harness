@@ -3,7 +3,7 @@ import test from "node:test";
 import { z } from "zod";
 import { execute } from "./commands.ts";
 import { defineManifest } from "./manifest.ts";
-import { createInMemoryTracker } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 
 const syntheticManifest = defineManifest({
 	version: "v1",

@@ -3,8 +3,8 @@ import test from "node:test";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
-	createInMemoryTracker,
 } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 
 test("conditional updates advance the projection version and reject stale expectations", async () => {
 	const tracker = createInMemoryTracker();

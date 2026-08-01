@@ -3,9 +3,9 @@ import test from "node:test";
 import {
 	NeedReconciliationError,
 	ProjectionConflictError,
-	createInMemoryTracker,
 	type Tracker,
 } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 
 test("adapter conformance: intent writes reject stale projection preconditions", async () => {
 	const tracker = createInMemoryTracker({

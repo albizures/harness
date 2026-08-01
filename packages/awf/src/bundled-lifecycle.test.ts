@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execute } from "./commands.ts";
-import { createInMemoryTracker, type Tracker } from "./tracker.ts";
+import type { Tracker } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 

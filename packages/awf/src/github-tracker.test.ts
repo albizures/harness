@@ -7,7 +7,7 @@ import {
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
-} from "./github-tracker.ts";
+} from "./trackers/github/index.ts";
 import { CorruptWorkflowProjectionError } from "./tracker.ts";
 
 const PROJECT_COMMENT_AND_TWO_LOGS = 3;
@@ -182,7 +182,7 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 	// repository with GitHub sub-issues/dependencies enabled and gh authenticated.
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
-	const { createGhCliGitHubTracker } = await import("./github-tracker.ts");
+	const { createGhCliGitHubTracker } = await import("./trackers/github/index.ts");
 	const [owner, name] = repo.split("/");
 	assert.ok(owner);
 	assert.ok(name);

@@ -9,11 +9,11 @@ import { defaultManifest } from "./default-manifest.ts";
 import type { WorkflowManifest } from "./manifest.ts";
 import {
 	NeedReconciliationError,
-	createInMemoryTracker,
 	type Tracker,
 	type TrackerAdapter,
 	type WorkflowIssue,
 } from "./tracker.ts";
+import { createInMemoryTracker } from "./trackers/memory.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = { outcome: string; tickets: Array<{ key: string }> };
