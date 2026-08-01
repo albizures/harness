@@ -1,7 +1,75 @@
 import { defineManifest } from "./manifest.ts";
 
 const states = ["ready", "running", "blocked", "done", "need-human"] as const;
-const actions = ["plan", "implement", "none"] as const;
+const actions = [
+	"plan",
+	"implement",
+	"review",
+	"fix",
+	"merge",
+	"integration-test",
+	"none",
+] as const;
+
+const ticketImplementationInput = {
+	type: "object",
+	required: ["implementationPr"],
+	properties: {
+		implementationPr: { type: "string", artifact: "pull-request" },
+	},
+	additionalProperties: false,
+} as const;
+
+const reviewApprovedInput = {
+	type: "object",
+	required: ["verdict"],
+	properties: { verdict: { type: "string" } },
+	additionalProperties: false,
+} as const;
+
+const reviewChangesInput = {
+	type: "object",
+	required: ["verdict", "findings"],
+	properties: {
+		verdict: { type: "string" },
+		findings: { type: "array", items: { type: "string", artifact: "finding" } },
+	},
+	additionalProperties: false,
+} as const;
+
+const fixInput = {
+	type: "object",
+	required: ["summary"],
+	properties: { summary: { type: "string" } },
+	additionalProperties: false,
+} as const;
+
+const integrationPassedInput = {
+	type: "object",
+	required: ["verdict", "specPr"],
+	properties: {
+		verdict: { type: "string" },
+		specPr: { type: "string", artifact: "pull-request" },
+	},
+	additionalProperties: false,
+} as const;
+
+const integrationChangesNeededInput = {
+	type: "object",
+	required: ["verdict", "findings"],
+	properties: {
+		verdict: { type: "string" },
+		findings: { type: "array", items: { type: "string", artifact: "finding" } },
+	},
+	additionalProperties: false,
+} as const;
+
+const mergeInput = {
+	type: "object",
+	required: ["merged"],
+	properties: { merged: { type: "boolean" } },
+	additionalProperties: false,
+} as const;
 
 export const defaultManifest = defineManifest({
 	version: "v1",
@@ -24,7 +92,12 @@ export const defaultManifest = defineManifest({
 	readiness: {
 		filters: [
 			{ kind: "spec", state: "ready", action: "plan" },
+			{ kind: "spec", state: "ready", action: "integration-test" },
+			{ kind: "spec", state: "ready", action: "merge" },
 			{ kind: "ticket", state: "ready", action: "implement" },
+			{ kind: "ticket", state: "ready", action: "review" },
+			{ kind: "ticket", state: "ready", action: "fix" },
+			{ kind: "ticket", state: "ready", action: "merge" },
 		],
 	},
 	kinds: [
@@ -39,8 +112,41 @@ export const defaultManifest = defineManifest({
 					to: { state: "running", action: "plan" },
 				},
 				{
+					from: { state: "ready", action: "plan" },
+					event: "succeed",
+					to: { state: "ready", action: "integration-test" },
+				},
+				{
 					from: { state: "running", action: "plan" },
 					event: "succeed",
+					to: { state: "ready", action: "integration-test" },
+				},
+				{
+					from: { state: "ready", action: "integration-test" },
+					event: "start",
+					to: { state: "running", action: "integration-test" },
+				},
+				{
+					from: { state: "running", action: "integration-test" },
+					event: "succeed",
+					input: integrationPassedInput,
+					to: { state: "ready", action: "merge" },
+				},
+				{
+					from: { state: "running", action: "integration-test" },
+					event: "fail",
+					input: integrationChangesNeededInput,
+					to: { state: "ready", action: "plan" },
+				},
+				{
+					from: { state: "ready", action: "merge" },
+					event: "start",
+					to: { state: "running", action: "merge" },
+				},
+				{
+					from: { state: "running", action: "merge" },
+					event: "succeed",
+					input: mergeInput,
 					to: { state: "done", action: "none" },
 				},
 			],
@@ -58,6 +164,46 @@ export const defaultManifest = defineManifest({
 				{
 					from: { state: "running", action: "implement" },
 					event: "succeed",
+					input: ticketImplementationInput,
+					to: { state: "ready", action: "review" },
+				},
+				{
+					from: { state: "ready", action: "review" },
+					event: "start",
+					to: { state: "running", action: "review" },
+				},
+				{
+					from: { state: "running", action: "review" },
+					event: "succeed",
+					input: reviewApprovedInput,
+					to: { state: "ready", action: "merge" },
+				},
+				{
+					from: { state: "running", action: "review" },
+					event: "fail",
+					input: reviewChangesInput,
+					to: { state: "ready", action: "fix" },
+				},
+				{
+					from: { state: "ready", action: "fix" },
+					event: "start",
+					to: { state: "running", action: "fix" },
+				},
+				{
+					from: { state: "running", action: "fix" },
+					event: "succeed",
+					input: fixInput,
+					to: { state: "ready", action: "review" },
+				},
+				{
+					from: { state: "ready", action: "merge" },
+					event: "start",
+					to: { state: "running", action: "merge" },
+				},
+				{
+					from: { state: "running", action: "merge" },
+					event: "succeed",
+					input: mergeInput,
 					to: { state: "done", action: "none" },
 				},
 				{

@@ -10,6 +10,10 @@ const validManifestPath = new URL(
 const badManifestPath = new URL("./fixtures/bad.workflow.ts", import.meta.url)
 	.pathname;
 
+function serializeCliSmokeInput(input: unknown): string {
+	return typeof input === "string" ? input : JSON.stringify(input);
+}
+
 test("CLI writes success envelopes to stdout", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "--help"], {
 		encoding: "utf8",
@@ -121,9 +125,12 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 	const runId = startEnvelope.data.run.id;
 	const succeeded = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "succeed", "42", "--run", runId],
+		[cliPath.pathname, "succeed", "42", "--run", runId, "--input", "-"],
 		{
 			encoding: "utf8",
+			input: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
 			env: {
 				...process.env,
 				AWF_MEMORY_ISSUES: JSON.stringify([
@@ -157,8 +164,8 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 					title: "Implement lifecycle",
 					workflow: {
 						kind: "ticket",
-						state: "done",
-						action: "none",
+						state: "ready",
+						action: "review",
 					},
 					logs: [startEnvelope.data.log, succeedEnvelope.data.log],
 				},
@@ -174,6 +181,135 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		logsEnvelope.data.logs.map((log: { type: string }) => log.type),
 		["action_started", "action_succeeded"],
 	);
+});
+
+test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
+	const runCli = (
+		args: Array<string>,
+		issues: Array<unknown>,
+		input?: unknown,
+	) => {
+		const stdin =
+			input === undefined ? undefined : serializeCliSmokeInput(input);
+		const result = spawnSync(process.execPath, [cliPath.pathname, ...args], {
+			encoding: "utf8",
+			input: stdin,
+			env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
+		});
+		assert.equal(result.status, 0, result.stdout || result.stderr);
+		assert.equal(result.stderr, "");
+		const envelope = JSON.parse(result.stdout);
+		assert.equal(envelope.ok, true, result.stdout);
+		return envelope.data;
+	};
+
+	const created = runCli(
+		["create", "spec", "--input", "-"],
+		[],
+		"# Tiny spec\n",
+	);
+	const planned = runCli(
+		["apply", "plan", created.issue.id, "--input", "-"],
+		[created.issue],
+		{ tickets: [{ key: "one", title: "One", content: "Do one thing." }] },
+	);
+	const specAfterPlan = planned.spec;
+	const ticket = {
+		id: planned.tickets[0].id,
+		title: "One",
+		body: "Do one thing.",
+		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		relationships: { parent: specAfterPlan.id },
+	};
+
+	let started = runCli(["start", ticket.id], [specAfterPlan, ticket]);
+	let completed = runCli(
+		["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+		[
+			specAfterPlan,
+			{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
+		],
+		{ implementationPr: "https://github.com/albizures/harness/pull/39" },
+	);
+	let ticketIssue = completed.issue;
+	let ticketLogs = [started.log, completed.log];
+
+	started = runCli(
+		["start", ticket.id],
+		[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
+	);
+	completed = runCli(
+		["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+		[
+			specAfterPlan,
+			{
+				...ticketIssue,
+				workflow: started.issue.workflow,
+				logs: [...ticketLogs, started.log],
+			},
+		],
+		{ verdict: "approved" },
+	);
+	ticketIssue = completed.issue;
+	ticketLogs = [...ticketLogs, started.log, completed.log];
+
+	started = runCli(
+		["start", ticket.id],
+		[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
+	);
+	completed = runCli(
+		["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+		[
+			specAfterPlan,
+			{
+				...ticketIssue,
+				workflow: started.issue.workflow,
+				logs: [...ticketLogs, started.log],
+			},
+		],
+		{ merged: true },
+	);
+	ticketIssue = completed.issue;
+	assert.equal(ticketIssue.workflow.state, "done");
+
+	started = runCli(["start", specAfterPlan.id], [specAfterPlan, ticketIssue]);
+	completed = runCli(
+		["succeed", specAfterPlan.id, "--run", started.run.id, "--input", "-"],
+		[
+			{
+				...specAfterPlan,
+				workflow: started.issue.workflow,
+				logs: [started.log],
+			},
+			ticketIssue,
+		],
+		{
+			verdict: "passed",
+			specPr: "https://github.com/albizures/harness/pull/40",
+		},
+	);
+	let specIssue = completed.issue;
+	const specLogs = [started.log, completed.log];
+
+	started = runCli(
+		["start", specIssue.id],
+		[{ ...specIssue, logs: specLogs }, ticketIssue],
+	);
+	completed = runCli(
+		["succeed", specIssue.id, "--run", started.run.id, "--input", "-"],
+		[
+			{
+				...specIssue,
+				workflow: started.issue.workflow,
+				logs: [...specLogs, started.log],
+			},
+			ticketIssue,
+		],
+		{ merged: true },
+	);
+	specIssue = completed.issue;
+	assert.equal(specIssue.workflow.state, "done");
+	assert.equal(specIssue.workflow.action, "none");
 });
 
 test("CLI writes error envelopes to stdout and exits non-zero", () => {

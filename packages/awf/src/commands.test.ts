@@ -223,9 +223,15 @@ test("succeed applies the manifest terminal transition for the active run", asyn
 		],
 	});
 
-	const envelope = await execute(["succeed", "123", "--run", "run-1"], {
-		tracker,
-	});
+	const envelope = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
+		},
+	);
 
 	assert.equal(envelope.ok, true);
 	if (!envelope.ok) {
@@ -236,8 +242,8 @@ test("succeed applies the manifest terminal transition for the active run", asyn
 			workflow: { state: string; action: string; activeRunId?: string };
 		};
 	};
-	assert.equal(data.issue.workflow.state, "done");
-	assert.equal(data.issue.workflow.action, "none");
+	assert.equal(data.issue.workflow.state, "ready");
+	assert.equal(data.issue.workflow.action, "review");
 	assert.equal(data.issue.workflow.activeRunId, undefined);
 	assert.deepEqual(
 		(await tracker.readLogs("123")).map((log) => log.type),
@@ -261,9 +267,13 @@ test("fail applies the manifest terminal transition with its reason", async () =
 		],
 	});
 
-	const envelope = await execute(["fail", "123", "--run", "run-1"], {
-		tracker,
-	});
+	const envelope = await execute(
+		["fail", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({ reason: "dependencies" }),
+		},
+	);
 
 	assert.equal(envelope.ok, true);
 	if (!envelope.ok) {
@@ -313,7 +323,12 @@ test("lifecycle commands reject invalid manifest transitions and run mismatches"
 		},
 	});
 	assert.deepEqual(
-		await execute(["succeed", "running", "--run", "other"], { tracker }),
+		await execute(["succeed", "running", "--run", "other", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
+		}),
 		{
 			ok: false,
 			error: {
@@ -341,13 +356,20 @@ test("terminal retries are idempotent for identical outcomes and reject conflict
 		payload: { event: "succeed", to: { state: "done", action: "none" } },
 	});
 
-	const retry = await execute(["succeed", "123", "--run", "run-1"], {
-		tracker,
-	});
+	const retry = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({ merged: true }),
+		},
+	);
 	assert.equal(retry.ok, true);
 	assert.equal((await tracker.readLogs("123")).length, 1);
 	assert.deepEqual(
-		await execute(["fail", "123", "--run", "run-1"], { tracker }),
+		await execute(["fail", "123", "--run", "run-1", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ merged: true }),
+		}),
 		{
 			ok: false,
 			error: {
@@ -454,7 +476,7 @@ test("invalid arguments return a stable parse error envelope", async () => {
 		error: {
 			code: "INVALID_ARGUMENTS",
 			message: "Invalid command arguments.",
-			details: { usage: "awf succeed <id> --run <run>" },
+			details: { usage: "awf succeed <id> --run <run> --input <file|->" },
 		},
 	});
 });

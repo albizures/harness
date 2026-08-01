@@ -6,6 +6,8 @@ import type { JsonValue } from "type-fest";
 import {
 	loadManifest,
 	ManifestValidationError,
+	type ArtifactKind,
+	type JsonSchema,
 	type ManifestTransition,
 	type WorkflowManifest,
 } from "./manifest.ts";
@@ -65,12 +67,12 @@ const commands: Array<CommandSpec> = [
 	},
 	{
 		name: "succeed",
-		usage: "awf succeed <id> --run <run>",
+		usage: "awf succeed <id> --run <run> --input <file|->",
 		description: "Mark a run as succeeded.",
 	},
 	{
 		name: "fail",
-		usage: "awf fail <id> --run <run>",
+		usage: "awf fail <id> --run <run> --input <file|->",
 		description: "Mark a run as failed.",
 	},
 ];
@@ -143,8 +145,10 @@ export async function execute(
 			args[0],
 			args[1],
 			readOption(args, "--run"),
+			readOption(args, "--input"),
 			tracker,
 			manifest,
+			options.stdin,
 		);
 	}
 
@@ -175,11 +179,7 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 			);
 		case "succeed":
 		case "fail":
-			return requirePositionalAndOption(
-				args,
-				`awf ${command} <id> --run <run>`,
-				"--run",
-			);
+			return validateTerminalArguments(args, command);
 		case "create":
 			if (subcommand !== "spec") {
 				return unknownCommand(args);
@@ -226,6 +226,36 @@ function invalidReadyArguments(): Envelope {
 	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {
 		usage: "awf ready [--spec <id>] [--limit <n>]",
 	});
+}
+
+function validateTerminalArguments(
+	args: Array<string>,
+	command: string,
+): Envelope | undefined {
+	const minimumTerminalArgumentCount = 4;
+	const terminalArgumentCountWithInput = 6;
+	const usage = `awf ${command} <id> --run <run> --input <file|->`;
+	if (args[1] === undefined || args[1] === "" || args[1].startsWith("-")) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage,
+		});
+	}
+	const run = readOption(args, "--run");
+	const input = readOption(args, "--input");
+	const allowed = new Set([command, args[1], "--run", run, "--input", input]);
+	if (
+		run === undefined ||
+		run === "" ||
+		(input !== undefined && input === "") ||
+		(input === undefined && args.length !== minimumTerminalArgumentCount) ||
+		(input !== undefined && args.length !== terminalArgumentCountWithInput) ||
+		args.some((arg) => !allowed.has(arg))
+	) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage,
+		});
+	}
+	return undefined;
 }
 
 type ReadyOptions = { specId?: string; limit?: number; error?: true };
@@ -484,6 +514,7 @@ async function readyCommand(
 		.filter((issue) =>
 			issue.relationships.dependencies.every((id) => isDone(byId.get(id))),
 		)
+		.filter((issue) => specPostTicketGateIsOpen(issue, byId))
 		.filter(
 			(issue) =>
 				options.specId === undefined ||
@@ -570,22 +601,29 @@ async function terminalCommand(
 	event: "succeed" | "fail",
 	id: string | undefined,
 	runId: string | undefined,
+	inputPath: string | undefined,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
+	stdin: string | undefined,
 ): Promise<Envelope> {
 	if (id === undefined || runId === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf ${event} <id> --run <run>`,
+			usage: `awf ${event} <id> --run <run> --input <file|->`,
 		});
 	}
 
 	try {
+		const parsedInput =
+			inputPath === undefined
+				? undefined
+				: parseJsonInput(
+						await readInput(inputPath, stdin),
+						"INVALID_ACTION_INPUT",
+					);
+		if (parsedInput?.ok === false) {
+			return parsedInput;
+		}
 		const logs = await tracker.readLogs(id);
-		const terminalPayload = terminalLogPayload(
-			manifest,
-			await tracker.getIssue(id),
-			event,
-		);
 		const existing = logs.find(
 			(log) => log.runId === runId && isTerminalLog(log.type),
 		);
@@ -593,7 +631,8 @@ async function terminalCommand(
 		if (existing !== undefined) {
 			if (
 				existing.type === logType &&
-				stableStringify(existing.payload) === stableStringify(terminalPayload)
+				(parsedInput === undefined ||
+					terminalLogInputMatches(existing.payload, parsedInput.data))
 			) {
 				const issue = await tracker.getIssue(id);
 				return success({
@@ -627,6 +666,32 @@ async function terminalCommand(
 		if (transition === undefined) {
 			return invalidTransition(id, event);
 		}
+		if (transition.input !== undefined && parsedInput === undefined) {
+			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+				usage: `awf ${event} <id> --run <run> --input <file|->`,
+			});
+		}
+		const terminalInput = parsedInput?.data ?? {};
+		const validationIssues = validateJsonValue(
+			terminalInput,
+			transition.input,
+			"$",
+		);
+		const semanticIssue = validateBundledTerminalInput(
+			issue,
+			event,
+			terminalInput,
+		);
+		if (semanticIssue !== undefined) {
+			validationIssues.push(semanticIssue);
+		}
+		if (validationIssues.length > 0) {
+			return failure(
+				"INVALID_ACTION_INPUT",
+				"Action completion input is invalid.",
+				{ issues: validationIssues },
+			);
+		}
 		const updated = await tracker.updateIssue(id, {
 			expect: {
 				version: issue.workflow.version,
@@ -634,12 +699,26 @@ async function terminalCommand(
 			},
 			workflow: { ...workflowTarget(transition.to), activeRunId: undefined },
 		});
+		const artifacts = await registerBundledArtifacts(
+			tracker,
+			id,
+			issue.workflow,
+			terminalInput,
+		);
 		const log = await tracker.appendLog(id, {
 			type: logType,
 			runId,
-			payload: { event, to: cleanTransitionTarget(transition.to) },
+			payload: {
+				event,
+				...(parsedInput === undefined ? {} : { input: parsedInput.data }),
+				to: cleanTransitionTarget(transition.to),
+			},
 		});
-		return success({ issue: updated, run: { id: runId, status: event }, log });
+		return success({
+			issue: artifacts.length > 0 ? await tracker.getIssue(id) : updated,
+			run: { id: runId, status: event },
+			log,
+		});
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
@@ -762,6 +841,145 @@ function parseJsonObject(raw: string): Record<string, unknown> | undefined {
 	}
 }
 
+function parseJsonInput(
+	raw: string,
+	code: string,
+): Envelope & ({ ok: true; data: JsonValue } | { ok: false }) {
+	try {
+		return success(JSON.parse(raw) as JsonValue) as Envelope & {
+			ok: true;
+			data: JsonValue;
+		};
+	} catch (error) {
+		return failure(code, "Input must be valid JSON.", {
+			message: error instanceof Error ? error.message : String(error),
+		}) as Envelope & { ok: false };
+	}
+}
+
+type RuntimeValidationIssue = { path: string; message: string };
+
+function validateJsonValue(
+	value: unknown,
+	schema: JsonSchema | undefined,
+	path: string,
+): Array<RuntimeValidationIssue> {
+	if (schema === undefined) {
+		return [];
+	}
+	const issues: Array<RuntimeValidationIssue> = [];
+	validateSchemaValue(value, schema, path, issues);
+	return issues;
+}
+
+function validateSchemaValue(
+	value: unknown,
+	schema: JsonSchema,
+	path: string,
+	issues: Array<RuntimeValidationIssue>,
+): void {
+	if (schema.type === "object") {
+		if (!isRecord(value)) {
+			issues.push({ path, message: "Value must be an object." });
+			return;
+		}
+		for (const required of schema.required ?? []) {
+			if (value[required] === undefined) {
+				issues.push({
+					path: `${path}.${required}`,
+					message: "Value is required.",
+				});
+			}
+		}
+		if (schema.additionalProperties === false) {
+			const properties = new Set(Object.keys(schema.properties ?? {}));
+			for (const key of Object.keys(value)) {
+				if (!properties.has(key)) {
+					issues.push({
+						path: `${path}.${key}`,
+						message: "Property is not allowed.",
+					});
+				}
+			}
+		}
+		for (const [key, child] of Object.entries(schema.properties ?? {})) {
+			if (value[key] !== undefined) {
+				validateSchemaValue(value[key], child, `${path}.${key}`, issues);
+			}
+		}
+		return;
+	}
+	if (schema.type === "array") {
+		if (!Array.isArray(value)) {
+			issues.push({ path, message: "Value must be an array." });
+			return;
+		}
+		for (const [index, item] of value.entries()) {
+			validateSchemaValue(item, schema.items, `${path}[${index}]`, issues);
+		}
+		return;
+	}
+	if (!matchesPrimitiveType(value, schema.type)) {
+		issues.push({ path, message: `Value must be ${schema.type}.` });
+		return;
+	}
+	if (schema.type === "string" && schema.artifact !== undefined) {
+		const message = validateArtifactReference(String(value), schema.artifact);
+		if (message !== undefined) {
+			issues.push({ path, message });
+		}
+	}
+}
+
+function matchesPrimitiveType(
+	value: unknown,
+	type: JsonSchema["type"],
+): boolean {
+	switch (type) {
+		case "string":
+			return typeof value === "string";
+		case "number":
+			return typeof value === "number" && Number.isFinite(value);
+		case "integer":
+			return Number.isInteger(value);
+		case "boolean":
+			return typeof value === "boolean";
+		case "null":
+			return value === null;
+		default:
+			return true;
+	}
+}
+
+function validateArtifactReference(
+	value: string,
+	kind: ArtifactKind,
+): string | undefined {
+	if (value.trim() === "") {
+		return "Artifact reference must be non-empty.";
+	}
+	switch (kind) {
+		case "pull-request":
+			return /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/u.test(value)
+				? undefined
+				: "Pull request artifact must be a GitHub pull request URL.";
+		case "url":
+			return /^https?:\/\//u.test(value)
+				? undefined
+				: "URL artifact must be http(s).";
+		case "file":
+			return !/^https?:\/\//u.test(value) && !value.startsWith("/")
+				? undefined
+				: "File artifact must be a relative path.";
+		case "git-ref":
+			return /\s/u.test(value)
+				? "Git ref artifact must not contain whitespace."
+				: undefined;
+		default:
+			return undefined;
+	}
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -772,6 +990,87 @@ function titleFromMarkdown(markdown: string): string {
 		.map((line) => line.match(/^#\s+(.+)$/u)?.[1]?.trim())
 		.find((title) => title !== undefined && title !== "");
 	return heading ?? "Spec";
+}
+
+function validateBundledTerminalInput(
+	issue: Awaited<ReturnType<Tracker["getIssue"]>>,
+	event: "succeed" | "fail",
+	input: JsonValue,
+): RuntimeValidationIssue | undefined {
+	if (!isRecord(input)) {
+		return undefined;
+	}
+	if (
+		issue.workflow.kind === "ticket" &&
+		issue.workflow.action === "implement" &&
+		event === "succeed" &&
+		issue.artifacts.some((artifact) => artifact.kind === "pull-request")
+	) {
+		return {
+			path: "$.implementationPr",
+			message: "Ticket already has an implementation pull request artifact.",
+		};
+	}
+	if (
+		issue.workflow.kind === "ticket" &&
+		issue.workflow.action === "review" &&
+		input.verdict !== (event === "succeed" ? "approved" : "changes-requested")
+	) {
+		return {
+			path: "$.verdict",
+			message: "Review verdict does not match the terminal event.",
+		};
+	}
+	if (
+		issue.workflow.kind === "spec" &&
+		issue.workflow.action === "integration-test" &&
+		input.verdict !== (event === "succeed" ? "passed" : "changes-needed")
+	) {
+		return {
+			path: "$.verdict",
+			message: "Integration verdict does not match the terminal event.",
+		};
+	}
+	return undefined;
+}
+
+async function registerBundledArtifacts(
+	tracker: Tracker,
+	issueId: string,
+	workflow: WorkflowFields,
+	input: JsonValue,
+): Promise<Array<unknown>> {
+	if (!isRecord(input)) {
+		return [];
+	}
+	const artifacts: Array<unknown> = [];
+	if (
+		workflow.kind === "ticket" &&
+		workflow.action === "implement" &&
+		typeof input.implementationPr === "string"
+	) {
+		artifacts.push(
+			await tracker.registerArtifact(issueId, {
+				kind: "pull-request",
+				uri: input.implementationPr,
+				name: "Implementation PR",
+			}),
+		);
+	}
+	if (
+		workflow.kind === "spec" &&
+		workflow.action === "integration-test" &&
+		typeof input.specPr === "string"
+	) {
+		artifacts.push(
+			await tracker.registerArtifact(issueId, {
+				kind: "pull-request",
+				uri: input.specPr,
+				name: "Spec PR",
+			}),
+		);
+	}
+	return artifacts;
 }
 
 function validatePlan(
@@ -978,6 +1277,25 @@ function isDone(issue: { workflow: WorkflowFields } | undefined): boolean {
 	return issue?.workflow.state === "done";
 }
 
+function specPostTicketGateIsOpen(
+	issue: {
+		workflow: WorkflowFields;
+		relationships: { children: Array<string> };
+	},
+	byId: Map<string, { workflow: WorkflowFields }>,
+): boolean {
+	if (
+		issue.workflow.kind !== "spec" ||
+		issue.workflow.action !== "integration-test"
+	) {
+		return true;
+	}
+	return (
+		issue.relationships.children.length > 0 &&
+		issue.relationships.children.every((id) => isDone(byId.get(id)))
+	);
+}
+
 function workflowConcurrencyBlocked(
 	manifest: WorkflowManifest,
 	activeIssues: Array<{ workflow: WorkflowFields }>,
@@ -1092,16 +1410,14 @@ function isTerminalLog(type: string): boolean {
 	return type === "action_succeeded" || type === "action_failed";
 }
 
-function terminalLogPayload(
-	manifest: WorkflowManifest,
-	issue: { workflow: WorkflowFields },
-	event: "succeed" | "fail",
-): unknown {
-	const transition = findTransition(manifest, issue.workflow, event);
-	return {
-		event,
-		to: cleanTransitionTarget(transition?.to ?? issue.workflow),
-	};
+function terminalLogInputMatches(
+	payload: JsonValue | undefined,
+	input: JsonValue,
+): boolean {
+	if (!isRecord(payload) || payload.input === undefined) {
+		return true;
+	}
+	return stableStringify(payload.input) === stableStringify(input);
 }
 
 function initialWorkflowTarget(target: {

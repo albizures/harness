@@ -87,8 +87,8 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 	const spec = await tracker.getIssue("spec-1");
 	assert.deepEqual(pickWorkflow(spec.workflow), {
 		kind: "spec",
-		state: "done",
-		action: "none",
+		state: "ready",
+		action: "integration-test",
 	});
 	assert.deepEqual(spec.relationships.children, ["1", "2"]);
 	assert.deepEqual((await tracker.getIssue("2")).relationships.dependencies, [

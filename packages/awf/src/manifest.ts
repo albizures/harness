@@ -5,25 +5,29 @@ import { createJiti } from "jiti";
 export type Identifier = string;
 export type ArtifactKind =
 	| "markdown"
+	| "inline"
 	| "file"
 	| "issue"
 	| "pull-request"
 	| "url"
-	| "git-ref";
+	| "git-ref"
+	| "handoff"
+	| "finding";
 export type JsonSchema =
 	| { type: "string"; artifact?: ArtifactKind }
 	| { type: "number" | "integer" | "boolean" | "null" }
 	| { type: "array"; items: JsonSchema }
 	| {
 			type: "object";
-			properties?: Record<string, JsonSchema>;
-			required?: Array<string>;
+			properties?: Readonly<Record<string, JsonSchema>>;
+			required?: ReadonlyArray<string>;
 			additionalProperties?: boolean;
 	  };
 
 export type ManifestTransition = {
 	from: { state: Identifier; action?: Identifier; reason?: Identifier };
 	event: Identifier;
+	input?: JsonSchema;
 	to: { state: Identifier; action?: Identifier; reason?: Identifier | null };
 };
 
@@ -424,6 +428,9 @@ function validateTransition(
 			"Transition event must reference a known event and cannot be a wildcard.",
 		);
 	}
+	if (value.input !== undefined) {
+		validateJsonSchema(value.input, `${path}.input`, issues);
+	}
 }
 
 function validateStateRef(
@@ -660,9 +667,17 @@ function validateJsonSchema(
 	if (
 		value.artifact !== undefined &&
 		(type !== "string" ||
-			!["markdown", "file", "issue", "pull-request", "url", "git-ref"].includes(
-				String(value.artifact),
-			))
+			![
+				"markdown",
+				"inline",
+				"file",
+				"issue",
+				"pull-request",
+				"url",
+				"git-ref",
+				"handoff",
+				"finding",
+			].includes(String(value.artifact)))
 	) {
 		issue(
 			issues,
