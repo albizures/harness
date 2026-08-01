@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { artifacts, defineManifest } from "./manifest.ts";
 
-const states = ["ready", "running", "blocked", "done", "need-human"] as const;
+const states = ["ready", "running", "done", "need-human"] as const;
 const actions = [
 	"plan",
 	"implement",
@@ -222,7 +222,7 @@ export const defaultManifest = defineManifest({
 				{
 					from: { state: "running", action: "implement" },
 					event: "fail",
-					to: { state: "blocked", action: "implement", reason: "dependencies" },
+					to: { state: "ready", action: "implement" },
 				},
 			],
 		},

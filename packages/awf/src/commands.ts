@@ -216,13 +216,21 @@ async function manifestCommand(
 			command,
 		);
 	}
-	return failure(
-		"MANIFEST_UNSUPPORTED",
-		"Workflow command target has no runtime executor.",
-		{
-			command: `${verb} ${target}`,
-			id: command.id,
-		},
+	if (verb === "create") {
+		return createGenericWorkflowIssueCommand(
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			stdin,
+			command,
+		);
+	}
+	return applyGenericWorkflowCommand(
+		args[2],
+		readOption(args, "--input"),
+		tracker,
+		stdin,
+		command,
 	);
 }
 
@@ -493,6 +501,107 @@ function requirePositionalAndOption(
 	}
 
 	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
+}
+
+async function createGenericWorkflowIssueCommand(
+	inputPath: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+	command: ManifestCommand,
+): Promise<Envelope> {
+	if (inputPath === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`,
+		});
+	}
+	const kind = manifest.kinds.find(
+		(candidate) => candidate.id === command.target.kind,
+	);
+	if (kind === undefined) {
+		return failure(
+			"MANIFEST_UNSUPPORTED",
+			"Manifest command kind is unknown.",
+			{
+				command: command.id,
+				kind: command.target.kind,
+			},
+		);
+	}
+	const raw = await readInput(inputPath, stdin);
+	const parsed = parseJsonInput(
+		raw,
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	const inputValidation = validateWorkflowCommandInput(command, parsed.data);
+	if (inputValidation !== undefined) {
+		return inputValidation;
+	}
+	const issue = await tracker.createIssue({
+		title: genericIssueTitle(parsed.data, command.cli?.target ?? kind.id),
+		body: genericIssueBody(parsed.data, raw),
+		workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
+	});
+	const log = await tracker.appendLog(issue.id, {
+		type: `${command.id}_created`,
+		payload: { input: parsed.data },
+	});
+	const data = { issue, log };
+	const outputValidation = validateWorkflowCommandOutput(command, data);
+	if (outputValidation !== undefined) {
+		return outputValidation;
+	}
+	return success(data);
+}
+
+async function applyGenericWorkflowCommand(
+	issueId: string | undefined,
+	inputPath: string | undefined,
+	tracker: Tracker,
+	stdin: string | undefined,
+	command: ManifestCommand,
+): Promise<Envelope> {
+	if (issueId === undefined || inputPath === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: `awf apply ${command.cli?.target ?? command.target.action} <issue> --input <file|->`,
+		});
+	}
+	const raw = await readInput(inputPath, stdin);
+	const parsed = parseJsonInput(
+		raw,
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	const inputValidation = validateWorkflowCommandInput(command, parsed.data);
+	if (inputValidation !== undefined) {
+		return inputValidation;
+	}
+	try {
+		const issue = await tracker.getIssue(issueId);
+		if (
+			issue.workflow.kind !== command.target.kind ||
+			issue.workflow.action !== command.target.action
+		) {
+			return invalidTransition(issueId, command.id);
+		}
+		const log = await tracker.appendLog(issueId, {
+			type: `${command.id}_applied`,
+			payload: { input: parsed.data },
+		});
+		const data = { issue, log, outcome: "APPLIED" };
+		const outputValidation = validateWorkflowCommandOutput(command, data);
+		if (outputValidation !== undefined) {
+			return outputValidation;
+		}
+		return success(data);
+	} catch (error) {
+		return lifecycleError(issueId, error);
+	}
 }
 
 async function createSpecCommand(
@@ -797,34 +906,38 @@ async function readyCommand(
 	if (namedFilterValidation !== undefined) {
 		return namedFilterValidation;
 	}
-	const candidates = issues
+	const readyLike = issues
 		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
 		.filter((issue) => issue.workflow.activeRunId === undefined)
-		.filter((issue) =>
-			issue.relationships.dependencies.every((id) => isDone(byId.get(id))),
-		)
 		.filter((issue) => specPostTicketGateIsOpen(issue, byId))
 		.filter((issue) =>
 			matchesNamedReadinessFilters(issue, options.filters, manifest),
-		)
-		.filter(() => !workflowConcurrencyBlocked(manifest, activeIssues))
-		.filter(
-			(issue) =>
-				!kindConcurrencyBlocked(manifest, activeIssues, issue.workflow.kind),
-		)
+		);
+	const readiness = readyLike.map((issue) => ({
+		issue,
+		blocking: readinessBlocking(issue, byId, manifest, activeIssues),
+	}));
+	const candidates = readiness
+		.filter((item) => item.blocking.length === 0)
+		.map((item) => item.issue)
 		.sort(compareReadyIssues)
 		.slice(0, options.limit);
+	const blocked = readiness
+		.filter((item) => item.blocking.length > 0)
+		.sort((left, right) => compareReadyIssues(left.issue, right.issue));
 
 	return success({
-		items: candidates.map((issue) => ({
-			id: issue.id,
-			title: issue.title,
-			workflow: cleanWorkflowFields(issue.workflow),
-			suggestedCommand: {
-				argv: ["start", issue.id],
-				display: `awf start ${issue.id}`,
-			},
-		})),
+		items: candidates.map(readyItem),
+		...(blocked.length === 0
+			? {}
+			: {
+					blocked: blocked.map(({ issue, blocking }) => ({
+						id: issue.id,
+						title: issue.title,
+						workflow: cleanWorkflowFields(issue.workflow),
+						blocking,
+					})),
+				}),
 	});
 }
 
@@ -1394,6 +1507,29 @@ function parseJsonObject(raw: string): Record<string, unknown> | undefined {
 	}
 }
 
+function genericIssueTitle(input: JsonValue, fallback: string): string {
+	if (
+		isRecord(input) &&
+		typeof input.title === "string" &&
+		input.title.trim() !== ""
+	) {
+		return input.title;
+	}
+	return fallback;
+}
+
+function genericIssueBody(input: JsonValue, raw: string): string {
+	if (isRecord(input)) {
+		if (typeof input.body === "string") {
+			return input.body;
+		}
+		if (typeof input.content === "string") {
+			return input.content;
+		}
+	}
+	return raw;
+}
+
 function parseJsonInput(
 	raw: string,
 	code: string,
@@ -1832,6 +1968,91 @@ function namedReadinessFilter(
 	);
 }
 
+function readyItem(issue: {
+	id: string;
+	title: string;
+	workflow: WorkflowFields;
+}) {
+	return {
+		id: issue.id,
+		title: issue.title,
+		workflow: cleanWorkflowFields(issue.workflow),
+		suggestedCommand: {
+			argv: ["start", issue.id],
+			display: `awf start ${issue.id}`,
+		},
+	};
+}
+
+function readinessBlocking(
+	issue: {
+		workflow: WorkflowFields;
+		relationships: { dependencies: Array<string> };
+	},
+	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+	manifest: WorkflowManifest,
+	activeIssues: Array<{ workflow: WorkflowFields }>,
+): Array<Record<string, JsonValue>> {
+	return [
+		...dependencyBlocking(issue, byId),
+		...concurrencyBlocking(issue.workflow.kind, manifest, activeIssues),
+	];
+}
+
+function dependencyBlocking(
+	issue: { relationships: { dependencies: Array<string> } },
+	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+): Array<Record<string, JsonValue>> {
+	const blockedBy: Array<Record<string, JsonValue>> = [];
+	for (const id of issue.relationships.dependencies) {
+		const dependency = byId.get(id);
+		if (isDone(dependency)) {
+			continue;
+		}
+		blockedBy.push(
+			dependency === undefined
+				? { id, missing: true }
+				: {
+						id: dependency.id,
+						title: dependency.title,
+						workflow: cleanWorkflowFields(dependency.workflow),
+					},
+		);
+	}
+	return blockedBy.length === 0 ? [] : [{ gate: "dependency", blockedBy }];
+}
+
+function concurrencyBlocking(
+	kind: string,
+	manifest: WorkflowManifest,
+	activeIssues: Array<{ workflow: WorkflowFields }>,
+): Array<Record<string, JsonValue>> {
+	const blocking: Array<Record<string, JsonValue>> = [];
+	const workflowLimit = manifest.concurrency.perWorkflow;
+	if (workflowLimit !== undefined && activeIssues.length >= workflowLimit) {
+		blocking.push({
+			gate: "concurrency",
+			scope: "workflow",
+			limit: workflowLimit,
+			active: activeIssues.length,
+		});
+	}
+	const kindLimit = manifest.concurrency.perKind?.[kind];
+	const activeForKind = activeIssues.filter(
+		(issue) => issue.workflow.kind === kind,
+	).length;
+	if (kindLimit !== undefined && activeForKind >= kindLimit) {
+		blocking.push({
+			gate: "concurrency",
+			scope: "kind",
+			kind,
+			limit: kindLimit,
+			active: activeForKind,
+		});
+	}
+	return blocking;
+}
+
 function isDone(issue: { workflow: WorkflowFields } | undefined): boolean {
 	return issue?.workflow.state === "done";
 }
@@ -1852,28 +2073,6 @@ function specPostTicketGateIsOpen(
 	return (
 		issue.relationships.children.length > 0 &&
 		issue.relationships.children.every((id) => isDone(byId.get(id)))
-	);
-}
-
-function workflowConcurrencyBlocked(
-	manifest: WorkflowManifest,
-	activeIssues: Array<{ workflow: WorkflowFields }>,
-): boolean {
-	return (
-		manifest.concurrency.perWorkflow !== undefined &&
-		activeIssues.length >= manifest.concurrency.perWorkflow
-	);
-}
-
-function kindConcurrencyBlocked(
-	manifest: WorkflowManifest,
-	activeIssues: Array<{ workflow: WorkflowFields }>,
-	kind: string,
-): boolean {
-	const limit = manifest.concurrency.perKind?.[kind];
-	return (
-		limit !== undefined &&
-		activeIssues.filter((issue) => issue.workflow.kind === kind).length >= limit
 	);
 }
 

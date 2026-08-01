@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execute } from "./commands.ts";
+import { defaultManifest } from "./default-manifest.ts";
 import { serializeEnvelope } from "./envelope.ts";
 import { defineManifest, type WorkflowManifest } from "./manifest.ts";
 import { createInMemoryTracker, type Tracker } from "./tracker.ts";
@@ -15,7 +16,7 @@ test("help returns a stable success envelope", async () => {
 	const data = envelope.data as {
 		name: string;
 		description: string;
-		commands: Array<{ usage: string }>;
+		commands: Array<{ name: string; usage: string }>;
 	};
 	assert.equal(data.name, "awf");
 	assert.equal(data.description, "Agent workflow CLI.");
@@ -23,6 +24,30 @@ test("help returns a stable success envelope", async () => {
 	assert.ok(
 		data.commands.some((command) => command.usage === "awf start <id>"),
 	);
+	assert.ok(
+		data.commands.some(
+			(command) =>
+				command.usage ===
+				"awf create handoff --source <issue> --input <file|->",
+		),
+	);
+	assert.ok(data.commands.every((command) => command.name !== "handoff"));
+	assert.ok(
+		data.commands.every((command) => !command.usage.startsWith("awf handoff")),
+	);
+});
+
+test("fixed handoff runtime command is not publicly accepted", async () => {
+	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);
+
+	assert.deepEqual(envelope, {
+		ok: false,
+		error: {
+			code: "UNKNOWN_COMMAND",
+			message: "Unknown command.",
+			details: { command: "handoff ticket-1 --input -" },
+		},
+	});
 });
 
 test("help combines runtime commands with manifest CLI targets and readiness filters", async () => {
@@ -181,7 +206,99 @@ test("ready returns legal executable work after dependency, concurrency, active-
 				suggestedCommand: { argv: ["start", "10"], display: "awf start 10" },
 			},
 		],
+		blocked: [
+			{
+				id: "20",
+				title: "Dependency blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				blocking: [
+					{
+						gate: "dependency",
+						blockedBy: [
+							{
+								id: "10",
+								title: "Ready ticket",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "implement",
+								},
+							},
+						],
+					},
+				],
+			},
+		],
 	});
+});
+
+test("ready reports dependency-gated Tickets as blocked context while keeping durable fields ready", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "blocker",
+				title: "Open blocker",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+			{
+				id: "blocked",
+				title: "Blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	await tracker.addDependency("blocked", "blocker");
+
+	const envelope = await execute(["ready"], { tracker });
+
+	assert.equal(envelope.ok, true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	assert.deepEqual(envelope.data, {
+		items: [
+			{
+				id: "blocker",
+				title: "Open blocker",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+				suggestedCommand: {
+					argv: ["start", "blocker"],
+					display: "awf start blocker",
+				},
+			},
+		],
+		blocked: [
+			{
+				id: "blocked",
+				title: "Blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				blocking: [
+					{
+						gate: "dependency",
+						blockedBy: [
+							{
+								id: "blocker",
+								title: "Open blocker",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "review",
+								},
+							},
+						],
+					},
+				],
+			},
+		],
+	});
+	assert.deepEqual(
+		cleanTestWorkflow((await tracker.getIssue("blocked")).workflow),
+		{
+			kind: "ticket",
+			state: "ready",
+			action: "implement",
+		},
+	);
 });
 
 test("ready excludes candidates blocked by manifest concurrency limits", async () => {
@@ -217,7 +334,25 @@ test("ready excludes candidates blocked by manifest concurrency limits", async (
 	if (!envelope.ok) {
 		throw new Error("expected success");
 	}
-	assert.deepEqual(envelope.data, { items: [] });
+	assert.deepEqual(envelope.data, {
+		items: [],
+		blocked: [
+			{
+				id: "ready",
+				title: "Ready ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "kind",
+						kind: "ticket",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
 });
 
 test("ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
@@ -263,6 +398,52 @@ test("ready returns deterministic ordering, supports --limit 1, and manifest-nam
 	);
 });
 
+test("ready accepts repeated manifest-named filters", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-1",
+				title: "Spec 1",
+				workflow: { kind: "spec", state: "done", action: "none" },
+			},
+			{
+				id: "ticket-1",
+				title: "Ticket 1",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	await tracker.addChild("spec-1", "ticket-1");
+
+	const envelope = await execute(
+		["ready", "--filter", "spec=spec-1", "--filter", "parent-spec=spec-1"],
+		{
+			tracker,
+			manifest: {
+				...defaultTicketOnlyReadyManifest,
+				readiness: {
+					filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+					namedFilters: [
+						{ name: "spec", kind: "spec", relationship: "parent" },
+						{ name: "parent-spec", kind: "spec", relationship: "parent" },
+					],
+				},
+			},
+		},
+	);
+
+	assert.equal(envelope.ok, true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	assert.deepEqual(
+		(envelope.data as { items: Array<{ id: string }> }).items.map(
+			(item) => item.id,
+		),
+		["ticket-1"],
+	);
+});
+
 test("unknown readiness filter names are rejected before tracker reads", async () => {
 	const envelope = await execute(["ready", "--filter", "milestone=spec-1"], {
 		tracker: createNoTouchTracker(),
@@ -277,6 +458,68 @@ test("unknown readiness filter names are rejected before tracker reads", async (
 			details: { filter: "milestone" },
 		},
 	});
+});
+
+test("malformed readiness filter expressions return a clear parse error", async () => {
+	const envelope = await execute(["ready", "--filter", "spec"], {
+		tracker: createNoTouchTracker(),
+		manifest: defaultTicketOnlyReadyManifest,
+	});
+
+	assert.deepEqual(envelope, {
+		ok: false,
+		error: {
+			code: "INVALID_ARGUMENTS",
+			message: "Invalid arguments for ready.",
+			details: { usage: "awf ready [--filter <name=value>] [--limit <n>]" },
+		},
+	});
+});
+
+test("invalid readiness filter values report the value problem", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ticket-1",
+				title: "Ticket 1",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+
+	assert.deepEqual(
+		await execute(["ready", "--filter", "spec=missing"], {
+			tracker,
+			manifest: defaultTicketOnlyReadyManifest,
+		}),
+		{
+			ok: false,
+			error: {
+				code: "INVALID_READY_FILTER",
+				message: "Readiness filter value does not resolve to a workflow issue.",
+				details: { filter: "spec", value: "missing" },
+			},
+		},
+	);
+	assert.deepEqual(
+		await execute(["ready", "--filter", "spec=ticket-1"], {
+			tracker,
+			manifest: defaultTicketOnlyReadyManifest,
+		}),
+		{
+			ok: false,
+			error: {
+				code: "INVALID_READY_FILTER",
+				message: "Readiness filter value has the wrong workflow kind.",
+				details: {
+					filter: "spec",
+					value: "ticket-1",
+					expectedKind: "spec",
+					actualKind: "ticket",
+				},
+			},
+		},
+	);
 });
 
 test("unknown manifest command targets are rejected before tracker mutation", async () => {
@@ -371,7 +614,7 @@ test("succeed applies the manifest terminal transition for the active run", asyn
 	);
 });
 
-test("fail applies the manifest terminal transition with its reason", async () => {
+test("failed Ticket implementation returns to ready implement without durable blocked fields", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -408,7 +651,20 @@ test("fail applies the manifest terminal transition with its reason", async () =
 			action: data.issue.workflow.action,
 			reason: data.issue.workflow.reason,
 		},
-		{ state: "blocked", action: "implement", reason: "dependencies" },
+		{ state: "ready", action: "implement", reason: undefined },
+	);
+});
+
+test("bundled workflow vocabulary and transitions do not include durable blocked", () => {
+	assert.ok(!defaultManifest.vocabulary.states.includes("blocked"));
+	assert.ok(
+		defaultManifest.kinds.every((kind) =>
+			kind.transitions.every(
+				(transition) =>
+					transition.from.state !== "blocked" &&
+					transition.to.state !== "blocked",
+			),
+		),
 	);
 });
 
@@ -771,6 +1027,22 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	],
 	commands: [],
 });
+
+function cleanTestWorkflow(workflow: {
+	kind: string;
+	state: string;
+	action?: string;
+	reason?: string;
+}): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries({
+			kind: workflow.kind,
+			state: workflow.state,
+			action: workflow.action,
+			reason: workflow.reason,
+		}).filter(([, value]) => value !== undefined),
+	) as Record<string, string>;
+}
 
 function createNoTouchTracker(): Tracker {
 	const touched = () => {
