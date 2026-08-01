@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { JsonValue } from "type-fest";
 import type { WorkflowManifest } from "./manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
+	NeedReconciliationError,
 	ProjectionConflictError,
 	type CreateIssueInput,
 	type IssueRelationships,
@@ -218,12 +220,16 @@ class GitHubTracker implements Tracker {
 	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {
 		if (input.type === "add-child") {
 			await this.addChild(input.parentId, input.childId);
+			await this.verifyChild(input.parentId, input.childId, true);
 		} else if (input.type === "remove-child") {
 			await this.removeChild(input.parentId, input.childId);
+			await this.verifyChild(input.parentId, input.childId, false);
 		} else if (input.type === "add-dependency") {
 			await this.addDependency(input.issueId, input.blockedById);
+			await this.verifyDependency(input.issueId, input.blockedById, true);
 		} else {
 			await this.removeDependency(input.issueId, input.blockedById);
+			await this.verifyDependency(input.issueId, input.blockedById, false);
 		}
 	}
 
@@ -231,39 +237,66 @@ class GitHubTracker implements Tracker {
 		input: TrackerApplyPlanIntent,
 	): Promise<TrackerApplyPlanResult> {
 		const tickets: Array<{ key: string; id: string }> = [];
-		for (const ticket of input.tickets) {
-			const issue = await this.createIssue({
-				title: ticket.title,
-				body: ticket.body,
-				workflow: ticket.workflow,
-			});
-			tickets.push({ key: ticket.key, id: issue.id });
-			await this.addChild(input.specId, issue.id);
-		}
-		const idsByKey = new Map(tickets.map((ticket) => [ticket.key, ticket.id]));
-		for (const ticket of input.tickets) {
-			const issueId = idsByKey.get(ticket.key);
-			if (issueId === undefined) {
-				throw new ProjectionConflictError(
-					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
-				);
+		try {
+			for (const ticket of input.tickets) {
+				const issue = await this.createIssue({
+					title: ticket.title,
+					body: ticket.body,
+					workflow: ticket.workflow,
+				});
+				tickets.push({ key: ticket.key, id: issue.id });
+				await this.changeRelationship({
+					type: "add-child",
+					parentId: input.specId,
+					childId: issue.id,
+				});
 			}
-			for (const dependencyKey of ticket.dependsOn ?? []) {
-				const blockedById = idsByKey.get(dependencyKey);
-				if (blockedById === undefined) {
-					throw new ProjectionConflictError(
-						"NEED_RECONCILIATION: plan dependency resolution failed.",
+			const idsByKey = new Map(
+				tickets.map((ticket) => [ticket.key, ticket.id]),
+			);
+			for (const ticket of input.tickets) {
+				const issueId = idsByKey.get(ticket.key);
+				if (issueId === undefined) {
+					throw new NeedReconciliationError(
+						"NEED_RECONCILIATION: plan ticket creation could not be verified.",
 					);
 				}
-				await this.addDependency(issueId, blockedById);
+				for (const dependencyKey of ticket.dependsOn ?? []) {
+					const blockedById = idsByKey.get(dependencyKey);
+					if (blockedById === undefined) {
+						throw new NeedReconciliationError(
+							"NEED_RECONCILIATION: plan dependency resolution failed.",
+						);
+					}
+					await this.changeRelationship({
+						type: "add-dependency",
+						issueId,
+						blockedById,
+					});
+				}
 			}
+			await this.updateIssue(input.specId, {
+				expect: input.expect,
+				workflow: input.specWorkflow,
+			});
+			const log = await this.appendLog(input.specId, {
+				...input.log,
+				payload: { ...asObject(input.log.payload), tickets },
+			});
+			await this.verifyPlanApplication(input.specId, tickets, input.tickets);
+			return { spec: await this.getIssue(input.specId), tickets, log };
+		} catch (error) {
+			if (
+				error instanceof NeedReconciliationError ||
+				error instanceof ProjectionConflictError ||
+				error instanceof IssueNotFoundError
+			) {
+				throw error;
+			}
+			throw new NeedReconciliationError(
+				`NEED_RECONCILIATION: plan application intent failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
-		const spec = await this.updateIssue(input.specId, {
-			expect: input.expect,
-			workflow: input.specWorkflow,
-		});
-		const log = await this.appendLog(input.specId, input.log);
-		return { spec, tickets, log };
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {
@@ -603,6 +636,85 @@ class GitHubTracker implements Tracker {
 			await this.api.addLabels(number, add);
 		}
 	}
+
+	private async verifyChild(
+		parentId: string,
+		childId: string,
+		expected: boolean,
+	): Promise<void> {
+		const [parent, child] = await Promise.all([
+			this.getIssue(parentId),
+			this.getIssue(childId),
+		]);
+		const present =
+			parent.relationships.children.includes(childId) &&
+			child.relationships.parent === parentId;
+		if (present !== expected) {
+			throw needsReconciliation(
+				parentId,
+				`child relationship to '${childId}' could not be verified`,
+			);
+		}
+	}
+
+	private async verifyDependency(
+		issueId: string,
+		blockedById: string,
+		expected: boolean,
+	): Promise<void> {
+		const [issue, blocker] = await Promise.all([
+			this.getIssue(issueId),
+			this.getIssue(blockedById),
+		]);
+		const present =
+			issue.relationships.dependencies.includes(blockedById) &&
+			blocker.relationships.dependents.includes(issueId);
+		if (present !== expected) {
+			throw needsReconciliation(
+				issueId,
+				`dependency relationship to '${blockedById}' could not be verified`,
+			);
+		}
+	}
+
+	private async verifyPlanApplication(
+		specId: string,
+		tickets: Array<{ key: string; id: string }>,
+		inputs: TrackerApplyPlanIntent["tickets"],
+	): Promise<void> {
+		const spec = await this.getIssue(specId);
+		for (const ticket of tickets) {
+			if (!spec.relationships.children.includes(ticket.id)) {
+				throw needsReconciliation(
+					specId,
+					"plan child relationships could not be verified",
+				);
+			}
+		}
+		const idsByKey = new Map(tickets.map((ticket) => [ticket.key, ticket.id]));
+		for (const input of inputs) {
+			const issueId = idsByKey.get(input.key);
+			if (issueId === undefined) {
+				throw needsReconciliation(
+					specId,
+					"plan ticket creation could not be verified",
+				);
+			}
+			const issue = await this.getIssue(issueId);
+			for (const dependencyKey of input.dependsOn ?? []) {
+				const blockedById = idsByKey.get(dependencyKey);
+				if (
+					blockedById === undefined ||
+					!issue.relationships.dependencies.includes(blockedById)
+				) {
+					throw needsReconciliation(
+						specId,
+						"plan dependency relationships could not be verified",
+					);
+				}
+			}
+		}
+	}
 }
 
 type ProjectionMetadata = {
@@ -907,6 +1019,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cloneJson(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
+}
+
+function asObject(value: JsonValue | undefined): Record<string, JsonValue> {
+	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+		return value as Record<string, JsonValue>;
+	}
+	return {};
 }
 
 class GhCliGitHubTrackerApi implements GitHubTrackerApi {

@@ -8,6 +8,7 @@ import { execute } from "./commands.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import type { WorkflowManifest } from "./manifest.ts";
 import {
+	NeedReconciliationError,
 	createInMemoryTracker,
 	type Tracker,
 	type WorkflowIssue,
@@ -444,8 +445,60 @@ test("apply plan rejects invalid bundles before mutating the tracker", async () 
 	assert.deepEqual(await tracker.readLogs("spec-1"), []);
 });
 
-test("apply plan rolls back created tickets when a later mutation fails", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "awf-rollback-"));
+test("apply plan dispatches the bundle as one tracker-owned workflow intent", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "awf-one-intent-"));
+	const plan = join(dir, "plan.json");
+	await writeFile(
+		plan,
+		JSON.stringify({
+			tickets: [{ key: "a", title: "A", content: "A" }],
+		}),
+		"utf8",
+	);
+	const base = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-1",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			},
+		],
+	});
+	let applyPlanCalls = 0;
+	const tracker: Tracker = failingTracker(base, {
+		applyPlan: async (input) => {
+			applyPlanCalls += 1;
+			assert.equal(input.specId, "spec-1");
+			assert.deepEqual(
+				input.tickets.map((ticket) => ticket.key),
+				["a"],
+			);
+			return base.applyPlan(input);
+		},
+		createIssue: async () => {
+			throw new Error("runtime must not create plan tickets directly");
+		},
+		addChild: async () => {
+			throw new Error("runtime must not create relationships directly");
+		},
+		addDependency: async () => {
+			throw new Error("runtime must not create dependencies directly");
+		},
+		appendLog: async () => {
+			throw new Error("runtime must not log plan application directly");
+		},
+	});
+
+	const envelope = await execute(["apply", "plan", "spec-1", "--input", plan], {
+		tracker,
+	});
+
+	assert.equal(envelope.ok, true);
+	assert.equal(applyPlanCalls, 1);
+});
+
+test("apply plan reports need-reconciliation instead of rolling back partial adapter drift", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "awf-reconcile-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
 		plan,
@@ -464,8 +517,16 @@ test("apply plan rolls back created tickets when a later mutation fails", async 
 		],
 	});
 	const tracker: Tracker = failingTracker(base, {
-		appendLog: async () => {
-			throw new Error("log failed");
+		applyPlan: async () => {
+			const ticket = await base.createIssue({
+				title: "A",
+				body: "A",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			});
+			await base.addChild("spec-1", ticket.id);
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: adapter projection mismatch.",
+			);
 		},
 	});
 
@@ -475,61 +536,20 @@ test("apply plan rolls back created tickets when a later mutation fails", async 
 
 	assert.equal(envelope.ok, false);
 	assert.equal(
-		envelope.ok ? undefined : envelope.error.details?.outcome,
-		"ROLLED_BACK",
+		envelope.ok ? undefined : envelope.error.code,
+		"NEED_RECONCILIATION",
 	);
 	assert.deepEqual(
 		(await base.listIssues()).map((issue) => issue.id),
-		["spec-1"],
+		["spec-1", "1"],
 	);
+	assert.deepEqual((await base.getIssue("spec-1")).relationships.children, [
+		"1",
+	]);
 	assert.deepEqual(pickWorkflow((await base.getIssue("spec-1")).workflow), {
 		kind: "spec",
 		state: "ready",
 		action: "plan",
-	});
-});
-
-test("apply plan escalates to need-human/none when rollback is partial", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "awf-partial-"));
-	const plan = join(dir, "plan.json");
-	await writeFile(
-		plan,
-		JSON.stringify({
-			tickets: [{ key: "a", title: "A", content: "A" }],
-		}),
-		"utf8",
-	);
-	const base = createInMemoryTracker({
-		issues: [
-			{
-				id: "spec-1",
-				title: "Spec",
-				workflow: { kind: "spec", state: "ready", action: "plan" },
-			},
-		],
-	});
-	const tracker: Tracker = failingTracker(base, {
-		appendLog: async () => {
-			throw new Error("log failed");
-		},
-		deleteIssue: async () => {
-			throw new Error("delete failed");
-		},
-	});
-
-	const envelope = await execute(["apply", "plan", "spec-1", "--input", plan], {
-		tracker,
-	});
-
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.details?.outcome,
-		"PARTIAL_ROLLBACK",
-	);
-	assert.deepEqual(pickWorkflow((await base.getIssue("spec-1")).workflow), {
-		kind: "spec",
-		state: "need-human",
-		action: "none",
 	});
 });
 

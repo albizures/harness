@@ -1,8 +1,32 @@
 import type { JsonValue } from "type-fest";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
-import { IssueNotFoundError, NeedReconciliationError, type Tracker } from "../tracker.ts";
-import { escalatePartialRollback, genericIssueBody, genericIssueTitle, initialWorkflowTarget, invalidTransition, isRecord, lifecycleError, parseJsonInput, parsePlanInput, parseSpecInput, parsePayloadValue, planApplicationTarget, readInput, readTicketContent, rollbackPlanApplication, validatePlan, validateWorkflowCommandInput, validateWorkflowCommandOutput, workflowCommand, workflowCommandByCli, readOption, workflowTarget } from "./shared.ts";
+import {
+	IssueNotFoundError,
+	NeedReconciliationError,
+	type Tracker,
+} from "../tracker.ts";
+import {
+	genericIssueBody,
+	genericIssueTitle,
+	initialWorkflowTarget,
+	invalidTransition,
+	isRecord,
+	lifecycleError,
+	parseJsonInput,
+	parsePlanInput,
+	parseSpecInput,
+	parsePayloadValue,
+	planApplicationTarget,
+	readInput,
+	validatePlan,
+	validateWorkflowCommandInput,
+	validateWorkflowCommandOutput,
+	workflowCommand,
+	workflowCommandByCli,
+	readOption,
+	workflowTarget,
+} from "./shared.ts";
 
 export async function manifestCommand(
 	args: Array<string>,
@@ -359,58 +383,43 @@ export async function applyPlanCommand(
 		});
 	}
 
-	const created: Array<{ key: string; id: string }> = [];
-	const children: Array<string> = [];
-	const dependencies: Array<{ issueId: string; blockedById: string }> = [];
+	const ticketKind = manifest.kinds.find((kind) => kind.id === "ticket");
+	if (ticketKind === undefined) {
+		return failure(
+			"MANIFEST_UNSUPPORTED",
+			"Manifest does not define ticket kind.",
+		);
+	}
+	const target = planApplicationTarget(manifest, spec.workflow);
+	if (target === undefined) {
+		return invalidTransition(specId, "apply-plan");
+	}
+
 	try {
-		const ticketKind = manifest.kinds.find((kind) => kind.id === "ticket");
-		if (ticketKind === undefined) {
-			throw new Error("Manifest does not define ticket kind.");
-		}
-		for (const ticket of plan.tickets) {
-			const issue = await tracker.createIssue({
+		const applied = await tracker.applyPlan({
+			specId,
+			expect: { version: spec.workflow.version, hash: spec.workflow.hash },
+			specWorkflow: { ...workflowTarget(target), activeRunId: undefined },
+			tickets: plan.tickets.map((ticket) => ({
+				key: ticket.key,
 				title: ticket.title,
 				body: ticket.content,
 				workflow: {
 					kind: "ticket",
 					...initialWorkflowTarget(ticketKind.initial),
 				},
-			});
-			created.push({ key: ticket.key, id: issue.id });
-			await tracker.addChild(specId, issue.id);
-			children.push(issue.id);
-		}
-		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
-		for (const ticket of plan.tickets) {
-			for (const dependencyKey of ticket.dependsOn ?? []) {
-				const issueId = idsByKey.get(ticket.key);
-				const blockedById = idsByKey.get(dependencyKey as string);
-				if (issueId === undefined || blockedById === undefined) {
-					throw new Error(
-						"Plan dependency resolution failed after validation.",
-					);
-				}
-				await tracker.addDependency(issueId, blockedById);
-				dependencies.push({ issueId, blockedById });
-			}
-		}
-		const target = planApplicationTarget(manifest, spec.workflow);
-		if (target === undefined) {
-			throw new Error("Spec has no success transition for plan application.");
-		}
-		const updated = await tracker.updateIssue(specId, {
-			expect: { version: spec.workflow.version, hash: spec.workflow.hash },
-			workflow: { ...workflowTarget(target), activeRunId: undefined },
-		});
-		const log = await tracker.appendLog(specId, {
-			type: "plan_applied",
-			payload: { input: inputPath, tickets: created },
+				dependsOn: ticket.dependsOn as Array<string> | undefined,
+			})),
+			log: {
+				type: "plan_applied",
+				payload: { input: inputPath },
+			},
 		});
 		const data = {
 			outcome: "SUCCESS",
-			spec: updated,
-			tickets: created,
-			log,
+			spec: applied.spec,
+			tickets: applied.tickets,
+			log: applied.log,
 		};
 		const outputValidation = validateWorkflowCommandOutput(command, data);
 		if (outputValidation !== undefined) {
@@ -418,33 +427,6 @@ export async function applyPlanCommand(
 		}
 		return success(data);
 	} catch (error) {
-		const rollbackErrors = await rollbackPlanApplication(
-			tracker,
-			specId,
-			spec.workflow,
-			dependencies,
-			children,
-			created.map((ticket) => ticket.id),
-		);
-		if (rollbackErrors.length === 0) {
-			return failure(
-				"PLAN_APPLY_FAILED",
-				"Plan application failed and was rolled back.",
-				{
-					outcome: "ROLLED_BACK",
-					message: error instanceof Error ? error.message : String(error),
-				},
-			);
-		}
-		await escalatePartialRollback(tracker, specId);
-		return failure(
-			"PLAN_APPLY_FAILED",
-			"Plan application failed and rollback was partial.",
-			{
-				outcome: "PARTIAL_ROLLBACK",
-				message: error instanceof Error ? error.message : String(error),
-				rollbackErrors,
-			},
-		);
+		return lifecycleError(specId, error);
 	}
 }

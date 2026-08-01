@@ -357,12 +357,16 @@ class InMemoryTracker implements Tracker {
 	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {
 		if (input.type === "add-child") {
 			await this.addChild(input.parentId, input.childId);
+			this.verifyChild(input.parentId, input.childId, true);
 		} else if (input.type === "remove-child") {
 			await this.removeChild(input.parentId, input.childId);
+			this.verifyChild(input.parentId, input.childId, false);
 		} else if (input.type === "add-dependency") {
 			await this.addDependency(input.issueId, input.blockedById);
+			this.verifyDependency(input.issueId, input.blockedById, true);
 		} else {
 			await this.removeDependency(input.issueId, input.blockedById);
+			this.verifyDependency(input.issueId, input.blockedById, false);
 		}
 	}
 
@@ -370,39 +374,65 @@ class InMemoryTracker implements Tracker {
 		input: TrackerApplyPlanIntent,
 	): Promise<TrackerApplyPlanResult> {
 		const created: Array<{ key: string; id: string }> = [];
-		for (const ticket of input.tickets) {
-			const issue = await this.createIssue({
-				title: ticket.title,
-				body: ticket.body,
-				workflow: ticket.workflow,
-			});
-			created.push({ key: ticket.key, id: issue.id });
-			await this.addChild(input.specId, issue.id);
-		}
-		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
-		for (const ticket of input.tickets) {
-			const issueId = idsByKey.get(ticket.key);
-			if (issueId === undefined) {
-				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
-				);
+		try {
+			for (const ticket of input.tickets) {
+				const issue = await this.createIssue({
+					title: ticket.title,
+					body: ticket.body,
+					workflow: ticket.workflow,
+				});
+				created.push({ key: ticket.key, id: issue.id });
+				await this.changeRelationship({
+					type: "add-child",
+					parentId: input.specId,
+					childId: issue.id,
+				});
 			}
-			for (const dependencyKey of ticket.dependsOn ?? []) {
-				const blockedById = idsByKey.get(dependencyKey);
-				if (blockedById === undefined) {
+			const idsByKey = new Map(
+				created.map((ticket) => [ticket.key, ticket.id]),
+			);
+			for (const ticket of input.tickets) {
+				const issueId = idsByKey.get(ticket.key);
+				if (issueId === undefined) {
 					throw new NeedReconciliationError(
-						"NEED_RECONCILIATION: plan dependency resolution failed.",
+						"NEED_RECONCILIATION: plan ticket creation could not be verified.",
 					);
 				}
-				await this.addDependency(issueId, blockedById);
+				for (const dependencyKey of ticket.dependsOn ?? []) {
+					const blockedById = idsByKey.get(dependencyKey);
+					if (blockedById === undefined) {
+						throw new NeedReconciliationError(
+							"NEED_RECONCILIATION: plan dependency resolution failed.",
+						);
+					}
+					await this.changeRelationship({
+						type: "add-dependency",
+						issueId,
+						blockedById,
+					});
+				}
 			}
+			await this.updateIssue(input.specId, {
+				expect: input.expect,
+				workflow: input.specWorkflow,
+			});
+			const log = await this.appendLog(input.specId, {
+				...input.log,
+				payload: { ...asObject(input.log.payload), tickets: created },
+			});
+			await this.verifyPlanApplication(input.specId, created, input.tickets);
+			return { spec: await this.getIssue(input.specId), tickets: created, log };
+		} catch (error) {
+			if (
+				error instanceof NeedReconciliationError ||
+				error instanceof ProjectionConflictError
+			) {
+				throw error;
+			}
+			throw new NeedReconciliationError(
+				`NEED_RECONCILIATION: plan application intent failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
-		const spec = await this.updateIssue(input.specId, {
-			expect: input.expect,
-			workflow: input.specWorkflow,
-		});
-		const log = await this.appendLog(input.specId, input.log);
-		return { spec, tickets: created, log };
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {
@@ -630,6 +660,76 @@ class InMemoryTracker implements Tracker {
 			}
 		}
 	}
+
+	private verifyChild(
+		parentId: string,
+		childId: string,
+		expected: boolean,
+	): void {
+		const parent = this.requireHealthyIssue(parentId);
+		const child = this.requireHealthyIssue(childId);
+		const present =
+			parent.relationships.children.includes(childId) &&
+			child.relationships.parent === parentId;
+		if (present !== expected) {
+			throw new NeedReconciliationError(
+				`NEED_RECONCILIATION: child relationship '${parentId}' -> '${childId}' could not be verified.`,
+			);
+		}
+	}
+
+	private verifyDependency(
+		issueId: string,
+		blockedById: string,
+		expected: boolean,
+	): void {
+		const issue = this.requireHealthyIssue(issueId);
+		const blocker = this.requireHealthyIssue(blockedById);
+		const present =
+			issue.relationships.dependencies.includes(blockedById) &&
+			blocker.relationships.dependents.includes(issueId);
+		if (present !== expected) {
+			throw new NeedReconciliationError(
+				`NEED_RECONCILIATION: dependency relationship '${issueId}' -> '${blockedById}' could not be verified.`,
+			);
+		}
+	}
+
+	private async verifyPlanApplication(
+		specId: string,
+		created: Array<{ key: string; id: string }>,
+		tickets: TrackerApplyPlanIntent["tickets"],
+	): Promise<void> {
+		const spec = await this.getIssue(specId);
+		for (const ticket of created) {
+			if (!spec.relationships.children.includes(ticket.id)) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: plan child relationships could not be verified.",
+				);
+			}
+		}
+		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
+		for (const ticket of tickets) {
+			const issueId = idsByKey.get(ticket.key);
+			if (issueId === undefined) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+				);
+			}
+			const issue = await this.getIssue(issueId);
+			for (const dependencyKey of ticket.dependsOn ?? []) {
+				const blockedById = idsByKey.get(dependencyKey);
+				if (
+					blockedById === undefined ||
+					!issue.relationships.dependencies.includes(blockedById)
+				) {
+					throw new NeedReconciliationError(
+						"NEED_RECONCILIATION: plan dependency relationships could not be verified.",
+					);
+				}
+			}
+		}
+	}
 }
 
 type StoredIssue = Omit<WorkflowIssue, "workflow"> & {
@@ -826,6 +926,13 @@ function requireHealthy(issue: StoredIssue): StoredIssue {
 
 function cloneJson(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
+}
+
+function asObject(value: JsonValue | undefined): Record<string, JsonValue> {
+	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+		return value as Record<string, JsonValue>;
+	}
+	return {};
 }
 
 function pushUnique(values: Array<string>, value: string): void {
