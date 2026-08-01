@@ -127,31 +127,24 @@ test("artifact and change registrations are returned with the normalized issue",
 });
 
 test("duplicate or malformed workflow projection fields are corruption", async () => {
-	assert.throws(
-		() =>
-			createInMemoryTracker({
-				issues: [
-					{
-						id: "1",
-						title: "Bad",
-						labels: [
-							"type:ticket",
-							"type:spec",
-							"state:ready",
-							"action:implement",
-						],
-					},
-				],
-			}),
+	const duplicate = createInMemoryTracker({
+		issues: [
+			{
+				id: "1",
+				title: "Bad",
+				labels: ["type:ticket", "type:spec", "state:ready", "action:implement"],
+			},
+		],
+	});
+	await assert.rejects(
+		() => duplicate.getIssue("1"),
 		CorruptWorkflowProjectionError,
 	);
-	assert.throws(
-		() =>
-			createInMemoryTracker({
-				issues: [
-					{ id: "2", title: "Bad", labels: ["type:ticket", "state:ready"] },
-				],
-			}),
+	const missing = createInMemoryTracker({
+		issues: [{ id: "2", title: "Bad", labels: ["type:ticket", "state:ready"] }],
+	});
+	await assert.rejects(
+		() => missing.getIssue("2"),
 		CorruptWorkflowProjectionError,
 	);
 	assert.throws(

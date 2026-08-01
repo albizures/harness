@@ -24,6 +24,8 @@ type CommandSpec = {
 	description: string;
 };
 
+const maxReconcileArgumentCount = 3;
+
 const commands: Array<CommandSpec> = [
 	{
 		name: "get",
@@ -39,6 +41,12 @@ const commands: Array<CommandSpec> = [
 		name: "logs",
 		usage: "awf logs <id>",
 		description: "Return immutable workflow logs.",
+	},
+	{
+		name: "reconcile",
+		usage: "awf reconcile <id> [--apply]",
+		description:
+			"Diagnose workflow projection/log drift and apply safe repairs.",
 	},
 	{
 		name: "create spec",
@@ -117,6 +125,9 @@ export async function execute(
 	if (args[0] === "logs") {
 		return logsCommand(args[1], tracker);
 	}
+	if (args[0] === "reconcile") {
+		return reconcileCommand(args[1], args.includes("--apply"), tracker);
+	}
 	if (args[0] === "ready") {
 		return readyCommand(parseReadyOptions(args), tracker, manifest);
 	}
@@ -169,6 +180,8 @@ function validateKnownCommand(args: Array<string>): Envelope | undefined {
 		case "logs":
 		case "start":
 			return requirePositionalCount(args, 1, `awf ${command} <id>`);
+		case "reconcile":
+			return validateReconcile(args);
 		case "ready":
 			return validateReady(args);
 		case "handoff":
@@ -220,6 +233,25 @@ function validateReady(args: Array<string>): Envelope | undefined {
 		return invalidReadyArguments();
 	}
 	return options.error === undefined ? undefined : invalidReadyArguments();
+}
+
+function validateReconcile(args: Array<string>): Envelope | undefined {
+	const usage = "awf reconcile <id> [--apply]";
+	if (args[1] === undefined || args[1] === "" || args[1].startsWith("-")) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage,
+		});
+	}
+	const allowed = new Set(["reconcile", args[1], "--apply"]);
+	if (
+		args.length > maxReconcileArgumentCount ||
+		args.some((arg) => !allowed.has(arg))
+	) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage,
+		});
+	}
+	return undefined;
 }
 
 function invalidReadyArguments(): Envelope {
@@ -559,6 +591,218 @@ async function logsCommand(
 		}
 		throw error;
 	}
+}
+
+type ReconciliationDiagnostic = {
+	code: string;
+	severity: "drift" | "corruption";
+	message: string;
+	repair: "safe" | "need-human" | "none";
+	runId?: string;
+	applied?: boolean;
+};
+
+async function reconcileCommand(
+	id: string | undefined,
+	apply: boolean,
+	tracker: Tracker,
+): Promise<Envelope> {
+	if (id === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf reconcile <id> [--apply]",
+		});
+	}
+
+	try {
+		const inspection = await inspectWorkflowIssue(tracker, id);
+		const diagnostics = diagnoseReconciliation(inspection);
+		const hasCorruption = diagnostics.some(
+			(diagnostic) => diagnostic.severity === "corruption",
+		);
+		const safeRepair = hasCorruption
+			? undefined
+			: diagnostics.find((diagnostic) => diagnostic.repair === "safe");
+		let repairedIssue = inspection.issue;
+		if (apply && safeRepair !== undefined && inspection.issue !== undefined) {
+			const workflow = safeRepairWorkflow(safeRepair);
+			if (workflow !== undefined) {
+				repairedIssue = await tracker.updateIssue(id, {
+					expect: {
+						version: inspection.issue.workflow.version,
+						hash: inspection.issue.workflow.hash,
+					},
+					workflow,
+				});
+				safeRepair.applied = true;
+			}
+		}
+		return success({
+			id,
+			mode: apply ? "apply" : "check",
+			status: diagnostics.length === 0 ? "clean" : "diagnosed",
+			diagnostics,
+			...(repairedIssue === undefined ? {} : { issue: repairedIssue }),
+		});
+	} catch (error) {
+		if (error instanceof IssueNotFoundError) {
+			return failure("NOT_FOUND", error.message, { id });
+		}
+		throw error;
+	}
+}
+
+async function inspectWorkflowIssue(
+	tracker: Tracker,
+	id: string,
+): Promise<{
+	issue?: Awaited<ReturnType<Tracker["getIssue"]>>;
+	logs: Array<unknown>;
+	labels?: Array<string>;
+	projectionError?: string;
+}> {
+	if (tracker.inspectIssue !== undefined) {
+		return tracker.inspectIssue(id);
+	}
+	return {
+		issue: await tracker.getIssue(id),
+		logs: await tracker.readLogs(id),
+	};
+}
+
+function diagnoseReconciliation(inspection: {
+	issue?: Awaited<ReturnType<Tracker["getIssue"]>>;
+	logs: Array<unknown>;
+	labels?: Array<string>;
+	projectionError?: string;
+}): Array<ReconciliationDiagnostic> {
+	const diagnostics: Array<ReconciliationDiagnostic> = [];
+	if (inspection.projectionError !== undefined) {
+		diagnostics.push({
+			code: projectionErrorCode(inspection.projectionError, inspection.labels),
+			severity: "corruption",
+			message: inspection.projectionError,
+			repair: "none",
+		});
+	}
+	for (const [index, log] of inspection.logs.entries()) {
+		if (!isWorkflowLogShape(log, index + 1)) {
+			diagnostics.push({
+				code: "MALFORMED_WORKFLOW_LOG",
+				severity: "corruption",
+				message: `Workflow log at sequence ${index + 1} is malformed.`,
+				repair: "none",
+			});
+		}
+	}
+	if (inspection.issue === undefined) {
+		return diagnostics;
+	}
+	const validLogs = inspection.logs.filter(
+		(
+			log,
+		): log is {
+			sequence: number;
+			issueId: string;
+			type: string;
+			runId?: string;
+		} => isWorkflowLogShape(log),
+	);
+	const runStates = deriveRuns(
+		inspection.issue.workflow.activeRunId,
+		validLogs,
+	);
+	const openRuns = runStates.attempts.filter(
+		(attempt) => attempt.status === "running",
+	);
+	if (
+		inspection.issue.workflow.activeRunId === undefined &&
+		openRuns.length === 1
+	) {
+		diagnostics.push({
+			code: "MISSING_ACTIVE_RUN",
+			severity: "drift",
+			message: `Current fields are missing active run '${openRuns[0]?.runId}'.`,
+			repair: "safe",
+			runId: openRuns[0]?.runId,
+		});
+	}
+	if (
+		inspection.issue.workflow.activeRunId === undefined &&
+		openRuns.length > 1
+	) {
+		diagnostics.push({
+			code: "AMBIGUOUS_ACTIVE_RUN",
+			severity: "drift",
+			message: "Multiple log-derived runs could be active.",
+			repair: "need-human",
+		});
+	}
+	const active = inspection.issue.workflow.activeRunId;
+	if (active !== undefined) {
+		const terminal = validLogs.find(
+			(log) => log.runId === active && isTerminalLog(log.type),
+		);
+		if (terminal !== undefined) {
+			diagnostics.push({
+				code: "TERMINAL_RUN_STILL_ACTIVE",
+				severity: "drift",
+				message: `Active run '${active}' already has a terminal log.`,
+				repair:
+					inspection.issue.workflow.state === "running" ? "need-human" : "safe",
+			});
+		}
+	}
+	return diagnostics;
+}
+
+function projectionErrorCode(
+	_message: string,
+	labels: Array<string> | undefined,
+): string {
+	if (labels !== undefined) {
+		for (const prefix of ["type", "state", "action", "reason"]) {
+			const count = labels.filter((label) =>
+				label.startsWith(`${prefix}:`),
+			).length;
+			if (count > 1) {
+				return "DUPLICATE_CURRENT_FIELDS";
+			}
+		}
+	}
+	return "MISSING_CURRENT_METADATA";
+}
+
+function isWorkflowLogShape(
+	log: unknown,
+	expectedSequence?: number,
+): log is { sequence: number; issueId: string; type: string; runId?: string } {
+	return (
+		isRecord(log) &&
+		typeof log.sequence === "number" &&
+		Number.isInteger(log.sequence) &&
+		(expectedSequence === undefined || log.sequence === expectedSequence) &&
+		typeof log.issueId === "string" &&
+		log.issueId !== "" &&
+		typeof log.type === "string" &&
+		log.type !== "" &&
+		(log.runId === undefined ||
+			(typeof log.runId === "string" && log.runId !== ""))
+	);
+}
+
+function safeRepairWorkflow(
+	diagnostic: ReconciliationDiagnostic,
+): { activeRunId?: string } | undefined {
+	if (diagnostic.code === "TERMINAL_RUN_STILL_ACTIVE") {
+		return { activeRunId: undefined };
+	}
+	if (
+		diagnostic.code === "MISSING_ACTIVE_RUN" &&
+		diagnostic.runId !== undefined
+	) {
+		return { activeRunId: diagnostic.runId };
+	}
+	return undefined;
 }
 
 async function startCommand(

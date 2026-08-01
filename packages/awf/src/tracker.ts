@@ -78,6 +78,13 @@ export type UpdateIssueInput = {
 	workflow?: Partial<Omit<WorkflowProjection, "version" | "hash">>;
 };
 
+export type TrackerIssueInspection = {
+	issue?: WorkflowIssue;
+	logs: Array<unknown>;
+	labels?: Array<string>;
+	projectionError?: string;
+};
+
 export type Tracker = {
 	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	getIssue: (id: string) => Promise<WorkflowIssue>;
@@ -88,6 +95,7 @@ export type Tracker = {
 		input: Omit<WorkflowLog, "sequence" | "issueId">,
 	) => Promise<WorkflowLog>;
 	readLogs: (id: string) => Promise<Array<WorkflowLog>>;
+	inspectIssue?: (id: string) => Promise<TrackerIssueInspection>;
 	addChild: (parentId: string, childId: string) => Promise<void>;
 	removeChild: (parentId: string, childId: string) => Promise<void>;
 	addDependency: (issueId: string, blockedById: string) => Promise<void>;
@@ -170,18 +178,34 @@ class InMemoryTracker implements Tracker {
 	}
 
 	async getIssue(id: string): Promise<WorkflowIssue> {
-		return cloneIssue(this.requireIssue(id));
+		return cloneIssue(this.requireHealthyIssue(id));
 	}
 
 	async listIssues(): Promise<Array<WorkflowIssue>> {
-		return [...this.issues.values()].map(cloneIssue);
+		return [...this.issues.values()].map((issue) =>
+			cloneIssue(requireHealthy(issue)),
+		);
+	}
+
+	async inspectIssue(id: string): Promise<TrackerIssueInspection> {
+		const issue = this.requireIssue(id);
+		return {
+			...(issue.projectionError === undefined
+				? { issue: cloneIssue(issue) }
+				: {}),
+			logs: cloneJson(issue.logs) as Array<unknown>,
+			...(issue.labels === undefined ? {} : { labels: [...issue.labels] }),
+			...(issue.projectionError === undefined
+				? {}
+				: { projectionError: issue.projectionError }),
+		};
 	}
 
 	async updateIssue(
 		id: string,
 		input: UpdateIssueInput,
 	): Promise<WorkflowIssue> {
-		const issue = this.requireIssue(id);
+		const issue = this.requireHealthyIssue(id);
 		if (
 			input.expect?.version !== undefined &&
 			input.expect.version !== issue.workflow.version
@@ -217,7 +241,7 @@ class InMemoryTracker implements Tracker {
 		id: string,
 		input: Omit<WorkflowLog, "sequence" | "issueId">,
 	): Promise<WorkflowLog> {
-		const issue = this.requireIssue(id);
+		const issue = this.requireHealthyIssue(id);
 		const log = cloneJson({
 			...input,
 			issueId: id,
@@ -228,7 +252,7 @@ class InMemoryTracker implements Tracker {
 	}
 
 	async readLogs(id: string): Promise<Array<WorkflowLog>> {
-		return cloneJson(this.requireIssue(id).logs) as Array<WorkflowLog>;
+		return cloneJson(this.requireHealthyIssue(id).logs) as Array<WorkflowLog>;
 	}
 
 	async addChild(parentId: string, childId: string): Promise<void> {
@@ -305,13 +329,20 @@ class InMemoryTracker implements Tracker {
 	}
 
 	private storeSeed(input: SeedIssueInput): void {
-		const seeded = "labels" in input ? fromLabels(input) : input;
+		const projected = "labels" in input ? tryFromLabels(input) : { input };
+		const seeded = projected.input;
 		if (seeded.id === undefined) {
 			throw new CorruptWorkflowProjectionError(
 				"Seeded issues must have an id.",
 			);
 		}
 		const normalized = normalizeIssue({ ...seeded, id: seeded.id });
+		if ("labels" in input) {
+			normalized.labels = [...input.labels];
+		}
+		if (projected.error !== undefined) {
+			normalized.projectionError = projected.error;
+		}
 		if (this.issues.has(normalized.id)) {
 			throw new CorruptWorkflowProjectionError(
 				`Duplicate issue id '${normalized.id}'.`,
@@ -330,6 +361,10 @@ class InMemoryTracker implements Tracker {
 			throw new IssueNotFoundError(id);
 		}
 		return issue;
+	}
+
+	private requireHealthyIssue(id: string): StoredIssue {
+		return requireHealthy(this.requireIssue(id));
 	}
 
 	private backfillSeededRelationshipInverses(): void {
@@ -361,8 +396,38 @@ class InMemoryTracker implements Tracker {
 
 type StoredIssue = Omit<WorkflowIssue, "workflow"> & {
 	workflow: WorkflowProjection;
-	logs: Array<WorkflowLog>;
+	logs: Array<unknown>;
+	labels?: Array<string>;
+	projectionError?: string;
 };
+
+function tryFromLabels(
+	input: Extract<SeedIssueInput, { labels: Array<string> }>,
+): { input: CreateIssueInput; error?: string } {
+	try {
+		return { input: fromLabels(input) };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes("malformed label projection data")) {
+			throw error;
+		}
+		return {
+			input: {
+				id: input.id,
+				title: input.title,
+				body: input.body,
+				workflow: {
+					kind: "corrupt",
+					state: "need-human",
+					action: "none",
+					version: input.version,
+				},
+				relationships: input.relationships,
+			},
+			error: message,
+		};
+	}
+}
 
 function fromLabels(
 	input: Extract<SeedIssueInput, { labels: Array<string> }>,
@@ -505,8 +570,20 @@ function stableStringify(value: unknown): string {
 }
 
 function cloneIssue(issue: StoredIssue): WorkflowIssue {
-	const { logs: _logs, ...withoutLogs } = issue;
+	const {
+		logs: _logs,
+		labels: _labels,
+		projectionError: _projectionError,
+		...withoutLogs
+	} = issue;
 	return cloneJson(withoutLogs) as WorkflowIssue;
+}
+
+function requireHealthy(issue: StoredIssue): StoredIssue {
+	if (issue.projectionError !== undefined) {
+		throw new CorruptWorkflowProjectionError(issue.projectionError);
+	}
+	return issue;
 }
 
 function cloneJson(value: unknown): unknown {

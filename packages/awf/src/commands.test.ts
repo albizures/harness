@@ -409,6 +409,189 @@ test("get returns derived run attempts even for crash-like running state", async
 	});
 });
 
+test("reconcile reports diagnostics read-only by default", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Drifted",
+				workflow: { kind: "ticket", state: "running", action: "implement" },
+				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+			},
+		],
+	});
+
+	const envelope = await execute(["reconcile", "123"], { tracker });
+
+	assert.equal(envelope.ok, true);
+	assert.equal((await tracker.getIssue("123")).workflow.activeRunId, undefined);
+	assert.deepEqual(
+		(envelope.ok ? envelope.data : {}) as Record<string, unknown>,
+		{
+			id: "123",
+			mode: "check",
+			status: "diagnosed",
+			diagnostics: [
+				{
+					code: "MISSING_ACTIVE_RUN",
+					severity: "drift",
+					message: "Current fields are missing active run 'run-1'.",
+					repair: "safe",
+					runId: "run-1",
+				},
+			],
+			issue: await tracker.getIssue("123"),
+		},
+	);
+});
+
+test("reconcile --apply performs deterministic safe active-run repair", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Repairable",
+				workflow: { kind: "ticket", state: "running", action: "implement" },
+				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+			},
+		],
+	});
+
+	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
+
+	assert.equal(envelope.ok, true);
+	assert.equal((await tracker.getIssue("123")).workflow.activeRunId, "run-1");
+	assert.equal(
+		(
+			(envelope.ok ? envelope.data : {}) as {
+				diagnostics: Array<{ applied?: boolean }>;
+			}
+		).diagnostics[0]?.applied,
+		true,
+	);
+});
+
+test("reconcile leaves ambiguous active-run drift for humans", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Ambiguous",
+				workflow: { kind: "ticket", state: "running", action: "implement" },
+				logs: [
+					{ sequence: 1, type: "action_started", runId: "run-1" },
+					{ sequence: 2, type: "action_started", runId: "run-2" },
+				],
+			},
+		],
+	});
+
+	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
+
+	assert.equal(envelope.ok, true);
+	assert.equal((await tracker.getIssue("123")).workflow.activeRunId, undefined);
+	assert.equal(
+		(
+			(envelope.ok ? envelope.data : {}) as {
+				diagnostics: Array<{ repair: string }>;
+			}
+		).diagnostics[0]?.repair,
+		"need-human",
+	);
+});
+
+test("reconcile reports malformed logs and corrupt current metadata", async () => {
+	const malformedLogTracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "logs",
+				title: "Bad logs",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				logs: [{ sequence: 1, type: "action_started", runId: "" }],
+			},
+		],
+	});
+	const duplicateFieldsTracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "dupe",
+				title: "Bad labels",
+				labels: ["type:ticket", "type:spec", "state:ready", "action:implement"],
+			},
+			{
+				id: "missing",
+				title: "Missing labels",
+				labels: ["type:ticket", "state:ready"],
+			},
+		],
+	});
+
+	const malformedEnvelope = await execute(["reconcile", "logs"], {
+		tracker: malformedLogTracker,
+	});
+	assert.equal(malformedEnvelope.ok, true);
+	assert.equal(
+		(malformedEnvelope.ok
+			? (malformedEnvelope.data as { diagnostics: Array<{ code: string }> })
+			: { diagnostics: [] }
+		).diagnostics[0]?.code,
+		"MALFORMED_WORKFLOW_LOG",
+	);
+	for (const [id, code] of [
+		["dupe", "DUPLICATE_CURRENT_FIELDS"],
+		["missing", "MISSING_CURRENT_METADATA"],
+	] as const) {
+		const envelope = await execute(["reconcile", id], {
+			tracker: duplicateFieldsTracker,
+		});
+		assert.equal(envelope.ok, true);
+		assert.equal(
+			(
+				(envelope.ok ? envelope.data : {}) as {
+					diagnostics: Array<{ code: string }>;
+				}
+			).diagnostics[0]?.code,
+			code,
+		);
+	}
+});
+
+test("normal commands do not silently repair drift before reconciliation", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Smoke repair",
+				workflow: { kind: "ticket", state: "running", action: "implement" },
+				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+			},
+		],
+	});
+
+	const before = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
+		},
+	);
+	assert.equal(before.ok, false);
+	assert.equal(before.ok ? undefined : before.error.code, "RUN_MISMATCH");
+	await execute(["reconcile", "123", "--apply"], { tracker });
+	const after = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
+		},
+	);
+	assert.equal(after.ok, true);
+});
+
 const defaultTicketOnlyReadyManifest = defineManifest({
 	version: "v1",
 	workflow: { id: "test-workflow" },

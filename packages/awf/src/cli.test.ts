@@ -99,6 +99,81 @@ test("CLI smoke path seeds multiple in-memory issues and returns only legally ex
 	);
 });
 
+test("CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
+	const issues = [
+		{
+			id: "42",
+			title: "Drifted lifecycle",
+			workflow: { kind: "ticket", state: "running", action: "implement" },
+			logs: [
+				{
+					sequence: 1,
+					issueId: "42",
+					type: "action_started",
+					runId: "run-42",
+				},
+			],
+		},
+	];
+	const env = { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) };
+
+	const before = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "succeed", "42", "--run", "run-42", "--input", "-"],
+		{
+			encoding: "utf8",
+			input: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
+			env,
+		},
+	);
+	assert.equal(before.status, 1);
+	assert.equal(JSON.parse(before.stdout).error.code, "RUN_MISMATCH");
+
+	const diagnosed = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "reconcile", "42"],
+		{
+			encoding: "utf8",
+			env,
+		},
+	);
+	assert.equal(diagnosed.status, 0);
+	assert.equal(
+		JSON.parse(diagnosed.stdout).data.diagnostics[0].code,
+		"MISSING_ACTIVE_RUN",
+	);
+
+	const applied = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "reconcile", "42", "--apply"],
+		{ encoding: "utf8", env },
+	);
+	assert.equal(applied.status, 0);
+	const repairedIssue = JSON.parse(applied.stdout).data.issue;
+	assert.equal(repairedIssue.workflow.activeRunId, "run-42");
+
+	const after = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "succeed", "42", "--run", "run-42", "--input", "-"],
+		{
+			encoding: "utf8",
+			input: JSON.stringify({
+				implementationPr: "https://github.com/albizures/harness/pull/1",
+			}),
+			env: {
+				...process.env,
+				AWF_MEMORY_ISSUES: JSON.stringify([
+					{ ...repairedIssue, logs: issues[0].logs },
+				]),
+			},
+		},
+	);
+	assert.equal(after.status, 0, after.stdout || after.stderr);
+	assert.equal(JSON.parse(after.stdout).ok, true);
+});
+
 test("CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
 	const started = spawnSync(
 		process.execPath,
