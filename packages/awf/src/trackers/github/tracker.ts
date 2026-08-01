@@ -30,6 +30,7 @@ import {
 import type { GitHubTrackerApi, GitHubTrackerIssue } from "./index.ts";
 import {
 	hasWorkflowProjectionLabels,
+	isWorkflowProjectionLabel,
 	labelsForProjection,
 	projectionFromLabels,
 	projectionMarker,
@@ -323,7 +324,7 @@ export class GitHubTracker implements TrackerAdapter {
 				version: current.workflow.version + 1,
 			});
 			validateProjectionShape(id, next);
-			await this.projectLabels(number, current.workflow, next);
+			await this.projectLabels(number, next);
 			await this.upsertProjectionComment(
 				number,
 				metadataFromProjection(next, current.artifacts, current.changes),
@@ -570,17 +571,21 @@ export class GitHubTracker implements TrackerAdapter {
 
 	private async projectLabels(
 		number: number,
-		current: WorkflowProjection,
 		next: WorkflowProjection,
 	): Promise<void> {
-		const currentLabels = new Set(labelsForProjection(this.manifest, current));
+		const actualLabels = new Set(
+			(await this.requireGitHubIssue(String(number))).labels,
+		);
 		const nextLabels = new Set(labelsForProjection(this.manifest, next));
-		for (const label of currentLabels) {
-			if (!nextLabels.has(label)) {
+		for (const label of actualLabels) {
+			if (
+				isWorkflowProjectionLabel(this.manifest, label) &&
+				!nextLabels.has(label)
+			) {
 				await this.api.removeLabel(number, label);
 			}
 		}
-		const add = [...nextLabels].filter((label) => !currentLabels.has(label));
+		const add = [...nextLabels].filter((label) => !actualLabels.has(label));
 		if (add.length > 0) {
 			await this.api.addLabels(number, add);
 		}

@@ -12,6 +12,8 @@ import {
 } from "../../tracker.ts";
 
 const PROJECTION_SCHEMA_VERSION = 1;
+const WORKFLOW_LABEL_FIELDS = ["kind", "state", "action", "reason"] as const;
+type WorkflowLabelField = (typeof WORKFLOW_LABEL_FIELDS)[number];
 
 export async function validateGitHubTrackerCapabilities(api: {
 	capabilities: () => Promise<{ subIssues: boolean; dependencies: boolean }>;
@@ -39,7 +41,16 @@ export function hasWorkflowProjectionLabels(
 	manifest: WorkflowManifest,
 	labels: Array<string>,
 ): boolean {
-	return labels.some((label) => label.startsWith(reservedPrefix(manifest)));
+	return labels.some((label) => isWorkflowProjectionLabel(manifest, label));
+}
+
+export function isWorkflowProjectionLabel(
+	manifest: WorkflowManifest,
+	label: string,
+): boolean {
+	return WORKFLOW_LABEL_FIELDS.some((field) =>
+		label.startsWith(reservedPrefix(manifest, field)),
+	);
 }
 
 export function labelsForProjection(
@@ -128,7 +139,7 @@ function readOptionalReservedLabel(
 function valuesForReservedLabel(
 	manifest: WorkflowManifest,
 	labels: Array<string>,
-	field: "kind" | "state" | "action" | "reason",
+	field: WorkflowLabelField,
 ): Array<string> {
 	const prefix = reservedPrefix(manifest, field);
 	return labels
@@ -138,7 +149,7 @@ function valuesForReservedLabel(
 
 function labelFor(
 	manifest: WorkflowManifest,
-	field: "kind" | "state" | "action" | "reason",
+	field: WorkflowLabelField,
 	value: string,
 ): string {
 	return `${reservedPrefix(manifest, field)}${value}`;
@@ -146,7 +157,7 @@ function labelFor(
 
 function reservedPrefix(
 	manifest: WorkflowManifest,
-	field?: "kind" | "state" | "action" | "reason",
+	field?: WorkflowLabelField,
 ): string {
 	const prefix = `${manifest.github.reservedPrefix}:${manifest.workflow.id}:`;
 	return field === undefined ? prefix : `${prefix}${field}:`;

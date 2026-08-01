@@ -45,6 +45,62 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 	assert.equal(updated.workflow.version, 2);
 });
 
+test("projects optional reasons and removes stale canonical labels on update", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
+
+	const issue = await tracker.createIssue({
+		title: "Blocked ticket",
+		workflow: {
+			kind: "ticket",
+			state: "need-human",
+			action: "none",
+			reason: "dependencies",
+		},
+	});
+
+	assert.deepEqual(api.issue(1).labels.sort(), [
+		"awf:agent-development:action:none",
+		"awf:agent-development:kind:ticket",
+		"awf:agent-development:reason:dependencies",
+		"awf:agent-development:state:need-human",
+	]);
+
+	await tracker.updateIssue(issue.id, {
+		expect: { hash: issue.workflow.hash },
+		workflow: {
+			kind: "spec",
+			state: "ready",
+			action: "plan",
+			reason: undefined,
+		},
+	});
+
+	assert.deepEqual(api.issue(1).labels.sort(), [
+		"awf:agent-development:action:plan",
+		"awf:agent-development:kind:spec",
+		"awf:agent-development:state:ready",
+	]);
+});
+
+test("listIssues ignores non-current reserved GitHub labels", async () => {
+	const api = createMockGitHubApi();
+	await api.createIssue({
+		title: "Reserved but not workflow current fields",
+		labels: ["awf:agent-development:projection"],
+	});
+	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
+	await tracker.createIssue({
+		title: "Workflow issue",
+		workflow: { kind: "ticket", state: "ready", action: "implement" },
+	});
+
+	assert.deepEqual(
+		(await tracker.listIssues()).map((candidate) => candidate.id),
+		["2"],
+	);
+});
+
 test("appends logs as strict machine comments", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
