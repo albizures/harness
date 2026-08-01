@@ -1357,19 +1357,12 @@ function createNoTouchTracker(): Tracker {
 		resumeWorkflow: touched,
 		changeRelationship: touched,
 		applyPlan: touched,
-		createIssue: touched,
+		recordCommand: touched,
+		advanceWorkflow: touched,
+		repairIssue: touched,
 		getIssue: touched,
 		listIssues: touched,
-		updateIssue: touched,
-		appendLog: touched,
 		readLogs: touched,
-		addChild: touched,
-		removeChild: touched,
-		addDependency: touched,
-		removeDependency: touched,
-		deleteIssue: touched,
-		registerArtifact: touched,
-		registerChange: touched,
 	};
 }
 

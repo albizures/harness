@@ -187,11 +187,13 @@ export async function applyGenericWorkflowCommand(
 		) {
 			return invalidTransition(issueId, command.id);
 		}
-		const log = await tracker.appendLog(issueId, {
-			type: `${command.id}_applied`,
-			payload: { input: parsed.data },
+		const result = await tracker.recordCommand(issueId, {
+			log: {
+				type: `${command.id}_applied`,
+				payload: { input: parsed.data },
+			},
 		});
-		const data = { issue, log, outcome: "APPLIED" };
+		const data = { issue: result.issue, log: result.log, outcome: "APPLIED" };
 		const outputValidation = validateWorkflowCommandOutput(command, data);
 		if (outputValidation !== undefined) {
 			return outputValidation;

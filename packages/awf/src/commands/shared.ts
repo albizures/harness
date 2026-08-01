@@ -1,8 +1,21 @@
 import { readFile } from "node:fs/promises";
 import type { JsonValue } from "type-fest";
 import { failure, success, type Envelope } from "../envelope.ts";
-import type { ManifestCommand, PayloadZodSchema, ManifestNamedReadinessFilter, ManifestTransition, WorkflowManifest } from "../manifest.ts";
-import { CorruptWorkflowProjectionError, IssueNotFoundError, NeedReconciliationError, ProjectionConflictError, type Tracker } from "../tracker.ts";
+import type {
+	ManifestCommand,
+	PayloadZodSchema,
+	ManifestNamedReadinessFilter,
+	ManifestTransition,
+	WorkflowManifest,
+} from "../manifest.ts";
+import {
+	CorruptWorkflowProjectionError,
+	IssueNotFoundError,
+	NeedReconciliationError,
+	ProjectionConflictError,
+	type Tracker,
+	type TrackerAdapter,
+} from "../tracker.ts";
 export type WorkflowFields = {
 	kind: string;
 	state: string;
@@ -11,7 +24,10 @@ export type WorkflowFields = {
 	activeRunId?: string;
 };
 
-export function readOption(args: Array<string>, name: string): string | undefined {
+export function readOption(
+	args: Array<string>,
+	name: string,
+): string | undefined {
 	const index = args.indexOf(name);
 	return index === -1 ? undefined : args[index + 1];
 }
@@ -132,7 +148,9 @@ export function readTicketContent(record: Record<string, unknown>): string {
 	return "";
 }
 
-export function parseJsonObject(raw: string): Record<string, unknown> | undefined {
+export function parseJsonObject(
+	raw: string,
+): Record<string, unknown> | undefined {
 	try {
 		const parsed = JSON.parse(raw) as unknown;
 		return isRecord(parsed) ? parsed : undefined;
@@ -164,16 +182,13 @@ export function genericIssueBody(input: JsonValue, raw: string): string {
 	return raw;
 }
 
-export function parseJsonInput(
-	raw: string,
-	code: string,
-): Envelope<JsonValue> {
+export function parseJsonInput(raw: string, code: string): Envelope<JsonValue> {
 	try {
-		return success(JSON.parse(raw) as JsonValue)
+		return success(JSON.parse(raw) as JsonValue);
 	} catch (error) {
 		return failure(code, "Input must be valid JSON.", {
 			message: error instanceof Error ? error.message : String(error),
-		})
+		});
 	}
 }
 
@@ -371,7 +386,9 @@ export function validatePlan(
 	return issues;
 }
 
-export function findDependencyCycle(plan: PlanBundle): Array<string> | undefined {
+export function findDependencyCycle(
+	plan: PlanBundle,
+): Array<string> | undefined {
 	const byKey = new Map(plan.tickets.map((ticket) => [ticket.key, ticket]));
 	const visiting = new Set<string>();
 	const visited = new Set<string>();
@@ -409,7 +426,7 @@ export function findDependencyCycle(plan: PlanBundle): Array<string> | undefined
 }
 
 export async function rollbackPlanApplication(
-	tracker: Tracker,
+	tracker: TrackerAdapter,
 	specId: string,
 	specWorkflow: WorkflowFields,
 	dependencies: Array<{ issueId: string; blockedById: string }>,
@@ -457,7 +474,7 @@ export async function rollbackPlanApplication(
 }
 
 export async function escalatePartialRollback(
-	tracker: Tracker,
+	tracker: TrackerAdapter,
 	specId: string,
 ): Promise<void> {
 	try {
@@ -498,7 +515,7 @@ export async function progressParentSpecAfterTicketDone(
 	if (!children.every((child) => isDone(child))) {
 		return;
 	}
-	await tracker.updateIssue(parentId, {
+	await tracker.advanceWorkflow(parentId, {
 		expect: { version: parent.workflow.version, hash: parent.workflow.hash },
 		workflow: { state: "ready", action: "integration-test" },
 	});
@@ -714,7 +731,9 @@ export function concurrencyBlocking(
 	return blocking;
 }
 
-export function isDone(issue: { workflow: WorkflowFields } | undefined): boolean {
+export function isDone(
+	issue: { workflow: WorkflowFields } | undefined,
+): boolean {
 	return issue?.workflow.state === "done";
 }
 
@@ -748,7 +767,9 @@ export function compareReadyIssues(
 	);
 }
 
-export function cleanWorkflowFields(workflow: WorkflowFields): Record<string, string> {
+export function cleanWorkflowFields(
+	workflow: WorkflowFields,
+): Record<string, string> {
 	return Object.fromEntries(
 		Object.entries({
 			kind: workflow.kind,
@@ -970,7 +991,11 @@ export function isReadyAction(
 	);
 }
 
-export function policyViolation(id: string, policy: string, action: string): Envelope {
+export function policyViolation(
+	id: string,
+	policy: string,
+	action: string,
+): Envelope {
 	return failure(
 		"LIFECYCLE_POLICY_VIOLATION",
 		"Lifecycle policy does not allow this transition.",

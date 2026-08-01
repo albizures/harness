@@ -108,6 +108,17 @@ export type TrackerRecordArtifactsIntent = {
 	log: Omit<WorkflowLog, "sequence" | "issueId">;
 };
 
+export type TrackerRecordCommandIntent = {
+	log: Omit<WorkflowLog, "sequence" | "issueId">;
+};
+
+export type TrackerAdvanceWorkflowIntent = {
+	expect: TrackerProjectionExpectation;
+	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+};
+
+export type TrackerRepairIssueIntent = TrackerAdvanceWorkflowIntent;
+
 export type TrackerRecordArtifactsResult = {
 	issue: WorkflowIssue;
 	log: WorkflowLog;
@@ -182,16 +193,38 @@ export type Tracker = {
 	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
 	changeRelationship: (input: TrackerRelationshipIntent) => Promise<void>;
 	applyPlan: (input: TrackerApplyPlanIntent) => Promise<TrackerApplyPlanResult>;
-	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
+	recordCommand: (
+		id: string,
+		input: TrackerRecordCommandIntent,
+	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
+	advanceWorkflow: (
+		id: string,
+		input: TrackerAdvanceWorkflowIntent,
+	) => Promise<WorkflowIssue>;
+	repairIssue: (
+		id: string,
+		input: TrackerRepairIssueIntent,
+	) => Promise<WorkflowIssue>;
 	getIssue: (id: string) => Promise<WorkflowIssue>;
 	listIssues: () => Promise<Array<WorkflowIssue>>;
+	readLogs: (id: string) => Promise<Array<WorkflowLog>>;
+	inspectIssue?: (id: string) => Promise<TrackerIssueInspection>;
+};
+
+/**
+ * Adapter-owned mutating primitives.
+ *
+ * Runtime and CLI code should depend on `Tracker`, which exposes verified
+ * workflow intents plus reads. These primitives are retained for adapter
+ * implementations, reconciliation/test setup, and projection repair internals.
+ */
+export type TrackerAdapterPrimitives = {
+	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	updateIssue: (id: string, input: UpdateIssueInput) => Promise<WorkflowIssue>;
 	appendLog: (
 		id: string,
 		input: Omit<WorkflowLog, "sequence" | "issueId">,
 	) => Promise<WorkflowLog>;
-	readLogs: (id: string) => Promise<Array<WorkflowLog>>;
-	inspectIssue?: (id: string) => Promise<TrackerIssueInspection>;
 	addChild: (parentId: string, childId: string) => Promise<void>;
 	removeChild: (parentId: string, childId: string) => Promise<void>;
 	addDependency: (issueId: string, blockedById: string) => Promise<void>;
@@ -206,6 +239,8 @@ export type Tracker = {
 		input: Omit<WorkflowChange, "id">,
 	) => Promise<WorkflowChange>;
 };
+
+export type TrackerAdapter = Tracker & TrackerAdapterPrimitives;
 
 export class ProjectionConflictError extends Error {
 	constructor(
@@ -241,13 +276,13 @@ export class IssueNotFoundError extends Error {
 
 export function createInMemoryTracker(
 	seed: { issues?: Array<SeedIssueInput> } = {},
-): Tracker {
+): TrackerAdapter {
 	return new InMemoryTracker(seed.issues ?? []);
 }
 
 export function createInMemoryTrackerFromEnvironment(
 	env: Record<string, string | undefined>,
-): Tracker {
+): TrackerAdapter {
 	const rawIssues = env.AWF_MEMORY_ISSUES;
 	if (rawIssues === undefined || rawIssues === "") {
 		return createInMemoryTracker();
@@ -261,7 +296,7 @@ export function createInMemoryTrackerFromEnvironment(
 	return createInMemoryTracker({ issues: parsed as Array<SeedIssueInput> });
 }
 
-class InMemoryTracker implements Tracker {
+class InMemoryTracker implements TrackerAdapter {
 	private readonly issues = new Map<string, StoredIssue>();
 	private nextIssueNumber = 1;
 
@@ -352,6 +387,28 @@ class InMemoryTracker implements Tracker {
 		});
 		const log = await this.appendLog(id, input.log);
 		return { issue, log };
+	}
+
+	async recordCommand(
+		id: string,
+		input: TrackerRecordCommandIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const log = await this.appendLog(id, input.log);
+		return { issue: await this.getIssue(id), log };
+	}
+
+	async advanceWorkflow(
+		id: string,
+		input: TrackerAdvanceWorkflowIntent,
+	): Promise<WorkflowIssue> {
+		return this.updateIssue(id, input);
+	}
+
+	async repairIssue(
+		id: string,
+		input: TrackerRepairIssueIntent,
+	): Promise<WorkflowIssue> {
+		return this.updateIssue(id, input);
 	}
 
 	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {

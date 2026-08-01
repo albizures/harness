@@ -11,6 +11,7 @@ import {
 	NeedReconciliationError,
 	createInMemoryTracker,
 	type Tracker,
+	type TrackerAdapter,
 	type WorkflowIssue,
 } from "./tracker.ts";
 
@@ -583,14 +584,20 @@ function pickWorkflow(workflow: {
 	};
 }
 
-function failingTracker(base: Tracker, overrides: Partial<Tracker>): Tracker {
-	return {
+function failingTracker(
+	base: TrackerAdapter,
+	overrides: Partial<TrackerAdapter>,
+): TrackerAdapter {
+	const tracker: TrackerAdapter = {
 		createWorkflowIssue: base.createWorkflowIssue.bind(base),
 		startRun: base.startRun.bind(base),
 		completeRun: base.completeRun.bind(base),
 		recordArtifacts: base.recordArtifacts.bind(base),
+		recordCommand: base.recordCommand.bind(base),
 		escalateWorkflow: base.escalateWorkflow.bind(base),
 		resumeWorkflow: base.resumeWorkflow.bind(base),
+		advanceWorkflow: base.advanceWorkflow.bind(base),
+		repairIssue: base.repairIssue.bind(base),
 		changeRelationship: base.changeRelationship.bind(base),
 		applyPlan: base.applyPlan.bind(base),
 		createIssue: base.createIssue.bind(base),
@@ -606,6 +613,6 @@ function failingTracker(base: Tracker, overrides: Partial<Tracker>): Tracker {
 		deleteIssue: base.deleteIssue.bind(base),
 		registerArtifact: base.registerArtifact.bind(base),
 		registerChange: base.registerChange.bind(base),
-		...overrides,
 	};
+	return Object.assign(tracker, overrides);
 }

@@ -11,6 +11,7 @@ import {
 	type CreateIssueInput,
 	type IssueRelationships,
 	type Tracker,
+	type TrackerAdapter,
 	type TrackerApplyPlanIntent,
 	type TrackerApplyPlanResult,
 	type TrackerCompleteRunIntent,
@@ -19,7 +20,10 @@ import {
 	type TrackerIssueInspection,
 	type TrackerRecordArtifactsIntent,
 	type TrackerRecordArtifactsResult,
+	type TrackerRecordCommandIntent,
 	type TrackerRelationshipIntent,
+	type TrackerAdvanceWorkflowIntent,
+	type TrackerRepairIssueIntent,
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
 	type UpdateIssueInput,
@@ -111,7 +115,7 @@ export async function validateGitHubTrackerCapabilities(
 export function createGitHubTracker({
 	api,
 	manifest,
-}: CreateGitHubTrackerOptions): Tracker {
+}: CreateGitHubTrackerOptions): TrackerAdapter {
 	return new GitHubTracker(api, manifest);
 }
 
@@ -126,7 +130,7 @@ export function createGhCliGitHubTracker(options: {
 	});
 }
 
-class GitHubTracker implements Tracker {
+class GitHubTracker implements TrackerAdapter {
 	private readonly api: GitHubTrackerApi;
 	private readonly manifest: WorkflowManifest;
 
@@ -215,6 +219,28 @@ class GitHubTracker implements Tracker {
 		});
 		const log = await this.appendLog(id, input.log);
 		return { issue, log };
+	}
+
+	async recordCommand(
+		id: string,
+		input: TrackerRecordCommandIntent,
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
+		const log = await this.appendLog(id, input.log);
+		return { issue: await this.getIssue(id), log };
+	}
+
+	async advanceWorkflow(
+		id: string,
+		input: TrackerAdvanceWorkflowIntent,
+	): Promise<WorkflowIssue> {
+		return this.updateIssue(id, input);
+	}
+
+	async repairIssue(
+		id: string,
+		input: TrackerRepairIssueIntent,
+	): Promise<WorkflowIssue> {
+		return this.updateIssue(id, input);
 	}
 
 	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {

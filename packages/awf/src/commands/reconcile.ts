@@ -35,7 +35,7 @@ export async function reconcileCommand(
 		if (apply && safeRepair !== undefined && inspection.issue !== undefined) {
 			const workflow = safeRepairWorkflow(safeRepair);
 			if (workflow !== undefined) {
-				repairedIssue = await tracker.updateIssue(id, {
+				repairedIssue = await tracker.repairIssue(id, {
 					expect: {
 						version: inspection.issue.workflow.version,
 						hash: inspection.issue.workflow.hash,
