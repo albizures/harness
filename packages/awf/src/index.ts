@@ -18,6 +18,14 @@ export {
 	type WorkflowManifest,
 } from "./manifest.ts";
 export {
+	createGhCliGitHubTracker,
+	createGitHubTracker,
+	validateGitHubTrackerCapabilities,
+	type GitHubTrackerApi,
+	type GitHubTrackerCapabilities,
+	type GitHubTrackerIssue,
+} from "./github-tracker.ts";
+export {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
 	ProjectionConflictError,
