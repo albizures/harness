@@ -12,6 +12,8 @@ import {
 } from "../../tracker.ts";
 
 const PROJECTION_SCHEMA_VERSION = 1;
+const MACHINE_COMMENT_VERSION = 1;
+const MACHINE_COMMENT_PREFIX = "awf";
 const WORKFLOW_LABEL_FIELDS = ["kind", "state", "action", "reason"] as const;
 type WorkflowLabelField = (typeof WORKFLOW_LABEL_FIELDS)[number];
 
@@ -164,32 +166,40 @@ function reservedPrefix(
 }
 
 export function projectionMarker(manifest: WorkflowManifest): string {
-	return `${manifest.github.reservedPrefix}:${manifest.workflow.id}:projection`;
+	return machineCommentMarker("current", manifest.workflow.id);
 }
 
 export function logMarker(manifest: WorkflowManifest): string {
-	return `${manifest.github.reservedPrefix}:${manifest.workflow.id}:log`;
+	return machineCommentMarker("log", manifest.workflow.id);
 }
 
 export function machineComment(marker: string, payload: unknown): string {
-	return `<!-- ${marker}\n${stableStringify(payload)}\n-->`;
+	parseMarkerLine(marker);
+	return `${marker}\n${stableStringify(payload)}`;
 }
 
 export function parseMachineComment(
 	body: string,
 	marker: string,
 ): unknown | undefined {
-	const trimmed = body.trim();
-	const prefix = `<!-- ${marker}\n`;
-	if (!trimmed.startsWith(prefix)) {
+	const expected = parseMarkerLine(marker);
+	const lineBreak = body.indexOf("\n");
+	if (lineBreak === -1) {
 		return undefined;
 	}
-	if (!trimmed.endsWith("\n-->")) {
-		throw new CorruptWorkflowProjectionError(
-			"NEED_RECONCILIATION: malformed machine comment marker.",
-		);
+	const firstLine = body.slice(0, lineBreak);
+	const actual = parseOptionalMarkerLine(firstLine);
+	if (actual === undefined) {
+		return undefined;
 	}
-	const json = trimmed.slice(prefix.length, -"\n-->".length);
+	if (
+		actual.type !== expected.type ||
+		actual.version !== expected.version ||
+		actual.workflowId !== expected.workflowId
+	) {
+		return undefined;
+	}
+	const json = body.slice(lineBreak + 1);
 	try {
 		return JSON.parse(json) as unknown;
 	} catch {
@@ -197,6 +207,49 @@ export function parseMachineComment(
 			"NEED_RECONCILIATION: malformed machine comment JSON.",
 		);
 	}
+}
+
+type MachineCommentType = "current" | "log";
+
+type MachineCommentMarker = {
+	type: MachineCommentType;
+	version: number;
+	workflowId: string;
+};
+
+function machineCommentMarker(
+	type: MachineCommentType,
+	workflowId: string,
+): string {
+	return `<!-- ${MACHINE_COMMENT_PREFIX}:${type} v${MACHINE_COMMENT_VERSION} ${workflowId} -->`;
+}
+
+function parseMarkerLine(marker: string): MachineCommentMarker {
+	const parsed = parseOptionalMarkerLine(marker);
+	if (parsed === undefined) {
+		throw new CorruptWorkflowProjectionError(
+			"NEED_RECONCILIATION: malformed machine comment marker.",
+		);
+	}
+	return parsed;
+}
+
+function parseOptionalMarkerLine(
+	marker: string,
+): MachineCommentMarker | undefined {
+	const match =
+		/^<!-- awf:(current|log) v(\d+) ([A-Za-z0-9][A-Za-z0-9._-]*) -->$/u.exec(
+			marker,
+		);
+	if (match === null) {
+		return undefined;
+	}
+	const [, type, version, workflowId] = match;
+	return {
+		type: type as MachineCommentType,
+		version: Number(version),
+		workflowId: workflowId ?? "",
+	};
 }
 
 export function metadataFromProjection(

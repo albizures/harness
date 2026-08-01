@@ -27,6 +27,13 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 		"awf:agent-development:state:ready",
 	]);
 	assert.equal(api.issue(1).comments.length, 1);
+	assert.ok(
+		api
+			.issue(1)
+			.comments[0]?.body.startsWith(
+				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
+			),
+	);
 	assert.equal(issue.workflow.kind, "ticket");
 	assert.equal(issue.workflow.version, 1);
 
@@ -40,6 +47,14 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 		"awf:agent-development:kind:ticket",
 		"awf:agent-development:state:running",
 	]);
+	assert.equal(api.issue(1).comments.length, 1);
+	assert.ok(
+		api
+			.issue(1)
+			.comments[0]?.body.startsWith(
+				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
+			),
+	);
 	const updated = await tracker.getIssue("1");
 	assert.equal(updated.workflow.activeRunId, "run-1");
 	assert.equal(updated.workflow.version, 2);
@@ -116,6 +131,10 @@ test("appends logs as strict machine comments", async () => {
 	});
 
 	assert.equal(api.issue(1).comments.length, PROJECT_COMMENT_AND_TWO_LOGS);
+	assert.equal(
+		api.issue(1).comments[1]?.body,
+		'<!-- awf:log v1 agent-development -->\n{"issueId":"1","runId":"run-1","sequence":1,"type":"started"}',
+	);
 	assert.deepEqual(
 		(await tracker.readLogs(issue.id)).map((log) => [log.sequence, log.type]),
 		[
@@ -201,7 +220,45 @@ test("machine-comment corruption requires reconciliation", async () => {
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
 	api.issue(1).comments[0].body =
-		"<!-- awf:agent-development:projection\nnot-json\n-->";
+		"<!-- awf:current v1 agent-development -->\nnot-json";
+
+	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+});
+
+test("machine-comment markers validate type version and workflow id", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
+	await tracker.createIssue({
+		title: "Implement adapter",
+		workflow: { kind: "ticket", state: "ready", action: "implement" },
+	});
+	api.issue(1).comments[0].body =
+		api
+			.issue(1)
+			.comments[0]?.body.replace(
+				"<!-- awf:current v1 agent-development -->",
+				"<!-- awf:log v1 agent-development -->",
+			) ?? "";
+
+	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+
+	api.issue(1).comments[0].body =
+		api
+			.issue(1)
+			.comments[0]?.body.replace(
+				"<!-- awf:log v1 agent-development -->",
+				"<!-- awf:current v2 agent-development -->",
+			) ?? "";
+
+	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+
+	api.issue(1).comments[0].body =
+		api
+			.issue(1)
+			.comments[0]?.body.replace(
+				"<!-- awf:current v2 agent-development -->",
+				"<!-- awf:current v1 other-workflow -->",
+			) ?? "";
 
 	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
 });
