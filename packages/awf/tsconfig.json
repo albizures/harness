@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"strict": true,
+		"declaration": true,
+		"sourceMap": true,
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"outDir": "dist",
+		"rootDir": "src",
+		"skipLibCheck": true,
+		"types": ["node"],
+		"forceConsistentCasingInFileNames": true
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["src/**/*.test.ts", "src/fixtures/**/*.ts", "dist"]
+}

@@ -143,7 +143,9 @@ test("/suggested-reply inserts the selected suggestion into the editor", async (
 			tool = value;
 		},
 		registerCommand(name: string, value: any) {
-			if (name === "suggested-reply") command = value;
+			if (name === "suggested-reply") {
+				command = value;
+			}
 		},
 		registerShortcut() {},
 	} as any);

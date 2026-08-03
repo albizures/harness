@@ -86,11 +86,17 @@ export default function suggestedReplies(pi: ExtensionAPI) {
 		ctx: Pick<ExtensionContext, "ui">,
 		index: number,
 	): boolean => {
-		if (!state) return false;
-		if (index < 0 || index >= state.suggestions.length) return false;
+		if (!state) {
+			return false;
+		}
+		if (index < 0 || index >= state.suggestions.length) {
+			return false;
+		}
 
 		const suggestion = state.suggestions[index];
-		if (!suggestion) return false;
+		if (!suggestion) {
+			return false;
+		}
 		state.selectedIndex = index;
 		ctx.ui.setEditorText(suggestion.label);
 		refreshWidget(ctx);
@@ -101,7 +107,9 @@ export default function suggestedReplies(pi: ExtensionAPI) {
 		ctx: Pick<ExtensionContext, "ui">,
 		direction: -1 | 1,
 	): boolean => {
-		if (!state || state.suggestions.length === 0) return false;
+		if (!state || state.suggestions.length === 0) {
+			return false;
+		}
 		const next = wrapIndex(
 			state.selectedIndex + direction,
 			state.suggestions.length,
@@ -118,8 +126,12 @@ export default function suggestedReplies(pi: ExtensionAPI) {
 	});
 
 	pi.on("input", (event, ctx) => {
-		if (event.source === "extension") return { action: "continue" as const };
-		if (state) clearSuggestions(ctx);
+		if (event.source === "extension") {
+			return { action: "continue" as const };
+		}
+		if (state) {
+			clearSuggestions(ctx);
+		}
 		return { action: "continue" as const };
 	});
 
@@ -228,8 +240,12 @@ export function renderSuggestedRepliesWidget(
 	width: number,
 	borderStyle: BorderStyle = (text) => text,
 ): Array<string> {
-	if (!state || state.suggestions.length === 0) return [];
-	if (width <= 0) return [];
+	if (!state || state.suggestions.length === 0) {
+		return [];
+	}
+	if (width <= 0) {
+		return [];
+	}
 
 	const contentLines = ["Suggested replies"];
 	for (const [index, suggestion] of state.suggestions.entries()) {
@@ -248,10 +264,13 @@ export function renderSuggestedRepliesWidget(
 
 export function parseSuggestionNumber(args: string): number | undefined {
 	const first = args.trim().split(/\s+/, 1)[0];
-	if (!first) return undefined;
-	const parsed = Number.parseInt(first, 10);
-	if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_SUGGESTIONS)
+	if (!first) {
 		return undefined;
+	}
+	const parsed = Number.parseInt(first, 10);
+	if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_SUGGESTIONS) {
+		return undefined;
+	}
 	return parsed - 1;
 }
 
@@ -260,7 +279,9 @@ export function wrapIndex(index: number, length: number): number {
 }
 
 function renderTopBorder(width: number, borderStyle: BorderStyle): string {
-	if (width === 1) return borderStyle("┌");
+	if (width === 1) {
+		return borderStyle("┌");
+	}
 	return borderStyle(`┌${"─".repeat(width - 2)}┐`);
 }
 
@@ -271,18 +292,28 @@ function renderSideBorderLine(
 ): string {
 	if (width < COMPACT_LAYOUT_WIDTH) {
 		const contentWidth = width - 1;
-		if (contentWidth <= 0) return "";
+		if (contentWidth <= 0) {
+			return "";
+		}
 		return `  ${truncatePlainLine(line, contentWidth)}`;
 	}
 
 	const contentWidth = width - 1;
-	if (contentWidth <= 0) return borderStyle("│");
+	if (contentWidth <= 0) {
+		return borderStyle("│");
+	}
 	return `  ${truncatePlainLine(line, contentWidth)}`;
 }
 
 function truncatePlainLine(line: string, width: number): string {
-	if (width <= 0) return "";
-	if (line.length <= width) return line;
-	if (width === 1) return "…";
+	if (width <= 0) {
+		return "";
+	}
+	if (line.length <= width) {
+		return line;
+	}
+	if (width === 1) {
+		return "…";
+	}
 	return `${line.slice(0, width - 1)}…`;
 }

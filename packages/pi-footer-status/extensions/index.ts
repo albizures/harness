@@ -160,18 +160,26 @@ export function renderFooter(
 			: "?";
 
 	let pwd = formatCwdForFooter(state.cwd, state.home);
-	if (state.gitBranch) pwd = `${pwd} (${state.gitBranch})`;
-	if (state.sessionName) pwd = `${pwd} • ${state.sessionName}`;
+	if (state.gitBranch) {
+		pwd = `${pwd} (${state.gitBranch})`;
+	}
+	if (state.sessionName) {
+		pwd = `${pwd} • ${state.sessionName}`;
+	}
 
 	const statsParts: Array<string> = [];
-	if (usage.totals.input)
+	if (usage.totals.input) {
 		statsParts.push(`↑${formatTokens(usage.totals.input)}`);
-	if (usage.totals.output)
+	}
+	if (usage.totals.output) {
 		statsParts.push(`↓${formatTokens(usage.totals.output)}`);
-	if (usage.totals.cacheRead)
+	}
+	if (usage.totals.cacheRead) {
 		statsParts.push(`R${formatTokens(usage.totals.cacheRead)}`);
-	if (usage.totals.cacheWrite)
+	}
+	if (usage.totals.cacheWrite) {
 		statsParts.push(`W${formatTokens(usage.totals.cacheWrite)}`);
+	}
 	if (
 		(usage.totals.cacheRead > 0 || usage.totals.cacheWrite > 0) &&
 		usage.latestCacheHitRate !== undefined
@@ -192,10 +200,11 @@ export function renderFooter(
 	statsParts.push(
 		colorByContextSeverity(contextPercentValue, contextPercentDisplay, theme),
 	);
-	if (state.experimental)
+	if (state.experimental) {
 		statsParts.push(
 			`${theme.fg("dim", "•")} ${theme.bold(theme.fg("warning", "xp"))}`,
 		);
+	}
 
 	const statsLine = renderStatsLine(statsParts.join(" "), state, theme, width);
 	const contextBarLine = renderContextFillBar(
@@ -215,7 +224,9 @@ export function renderFooter(
 		theme,
 		width,
 	);
-	if (statuses) lines.push(statuses);
+	if (statuses) {
+		lines.push(statuses);
+	}
 	return lines;
 }
 
@@ -245,8 +256,9 @@ function renderStatsLine(
 	let rightSide = rightSideWithoutProvider;
 	if (state.availableProviderCount > 1 && state.model) {
 		rightSide = `(${state.model.provider}) ${rightSideWithoutProvider}`;
-		if (statsLeftWidth + 2 + visibleWidth(rightSide) > width)
+		if (statsLeftWidth + 2 + visibleWidth(rightSide) > width) {
 			rightSide = rightSideWithoutProvider;
+		}
 	}
 
 	const rightSideWidth = visibleWidth(rightSide);
@@ -293,8 +305,12 @@ export function renderContextFillBar(
 
 	const clampedPercent = Math.max(0, Math.min(MAX_PERCENT, usage.percent));
 	let filled = Math.round((clampedPercent / MAX_PERCENT) * BAR_WIDTH);
-	if (clampedPercent > 0) filled = Math.max(1, filled);
-	if (clampedPercent >= FULL_BAR_PERCENT) filled = BAR_WIDTH;
+	if (clampedPercent > 0) {
+		filled = Math.max(1, filled);
+	}
+	if (clampedPercent >= FULL_BAR_PERCENT) {
+		filled = BAR_WIDTH;
+	}
 
 	const filledCells = "█".repeat(filled);
 	const emptyCells = "░".repeat(BAR_WIDTH - filled);
@@ -314,7 +330,9 @@ function renderExtensionStatuses(
 	theme: FooterTheme,
 	width: number,
 ): string | undefined {
-	if (statuses.size === 0) return undefined;
+	if (statuses.size === 0) {
+		return undefined;
+	}
 	const statusLine = Array.from(statuses.entries())
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([, text]) => sanitizeStatusText(text))
@@ -337,7 +355,9 @@ function getUsageStats(entries: FooterState["entries"]): {
 
 	for (const entry of entries) {
 		const usage = getEntryUsage(entry);
-		if (!usage) continue;
+		if (!usage) {
+			continue;
+		}
 		addUsage(totals, usage);
 
 		if (entry.type === "message" && entry.message.role === "assistant") {
@@ -345,9 +365,7 @@ function getUsageStats(entries: FooterState["entries"]): {
 			const promptTokens =
 				(usage.input ?? 0) + cacheRead + (usage.cacheWrite ?? 0);
 			latestCacheHitRate =
-				promptTokens > 0
-					? (cacheRead / promptTokens) * MAX_PERCENT
-					: undefined;
+				promptTokens > 0 ? (cacheRead / promptTokens) * MAX_PERCENT : undefined;
 		}
 	}
 
@@ -358,14 +376,19 @@ function getEntryUsage(
 	entry: FooterState["entries"][number],
 ): FooterUsage | undefined {
 	if (entry.type === "message") {
-		if (entry.message.role === "assistant") return entry.message.usage;
-		if (entry.message.role === "toolResult") return entry.message.usage;
+		if (entry.message.role === "assistant") {
+			return entry.message.usage;
+		}
+		if (entry.message.role === "toolResult") {
+			return entry.message.usage;
+		}
 	}
 	if (
 		(entry.type === "branch_summary" || entry.type === "compaction") &&
 		entry.usage
-	)
+	) {
 		return entry.usage;
+	}
 	return undefined;
 }
 
@@ -382,8 +405,12 @@ function colorByContextSeverity(
 	text: string,
 	theme: FooterTheme,
 ): string {
-	if (percent > ERROR_PERCENT) return theme.fg("error", text);
-	if (percent > WARNING_PERCENT) return theme.fg("warning", text);
+	if (percent > ERROR_PERCENT) {
+		return theme.fg("error", text);
+	}
+	if (percent > WARNING_PERCENT) {
+		return theme.fg("warning", text);
+	}
 	return text;
 }
 
@@ -395,13 +422,18 @@ function sanitizeStatusText(text: string): string {
 }
 
 export function formatTokens(count: number): string {
-	if (count < TOKEN_UNIT) return count.toString();
-	if (count < TOKEN_UNIT_DECIMAL_LIMIT)
+	if (count < TOKEN_UNIT) {
+		return count.toString();
+	}
+	if (count < TOKEN_UNIT_DECIMAL_LIMIT) {
 		return `${(count / TOKEN_UNIT).toFixed(1)}k`;
-	if (count < MILLION_TOKEN_UNIT)
+	}
+	if (count < MILLION_TOKEN_UNIT) {
 		return `${Math.round(count / TOKEN_UNIT)}k`;
-	if (count < MILLION_TOKEN_DECIMAL_LIMIT)
+	}
+	if (count < MILLION_TOKEN_DECIMAL_LIMIT) {
 		return `${(count / MILLION_TOKEN_UNIT).toFixed(1)}M`;
+	}
 	return `${Math.round(count / MILLION_TOKEN_UNIT)}M`;
 }
 
@@ -409,7 +441,9 @@ export function formatCwdForFooter(
 	cwd: string,
 	home: string | undefined,
 ): string {
-	if (!home) return cwd;
+	if (!home) {
+		return cwd;
+	}
 	const resolvedCwd = resolve(cwd);
 	const resolvedHome = resolve(home);
 	const relativeToHome = relative(resolvedHome, resolvedCwd);
@@ -418,6 +452,8 @@ export function formatCwdForFooter(
 		(relativeToHome !== ".." &&
 			!relativeToHome.startsWith(`..${sep}`) &&
 			!isAbsolute(relativeToHome));
-	if (!isInsideHome) return cwd;
+	if (!isInsideHome) {
+		return cwd;
+	}
 	return relativeToHome === "" ? "~" : `~${sep}${relativeToHome}`;
 }
