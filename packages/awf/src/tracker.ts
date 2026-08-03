@@ -18,12 +18,22 @@ export type IssueRelationships = {
 	dependents: Array<string>;
 };
 
+export type StructuredWorkflowArtifactReference = {
+	type: ArtifactKind;
+	ref?: string;
+	url?: string;
+	path?: string;
+	id?: string;
+	title?: string;
+	metadata?: Record<string, JsonValue>;
+};
+
 export type WorkflowArtifact = {
 	id: string;
 	kind: ArtifactKind;
 	uri: string;
 	name?: string;
-};
+} & Partial<StructuredWorkflowArtifactReference>;
 
 export type WorkflowChange = {
 	id: string;

@@ -288,38 +288,58 @@ export function validateBundledTerminalInput(
 	return undefined;
 }
 
+type PullRequestArtifactInput = {
+	kind: "pull-request";
+	uri: string;
+	name: string;
+} & Record<string, JsonValue>;
+
 export function bundledArtifactInputs(
 	workflow: WorkflowFields,
 	input: JsonValue,
-): Array<{ kind: "pull-request"; uri: string; name: string }> {
+): Array<PullRequestArtifactInput> {
 	if (!isRecord(input)) {
 		return [];
 	}
-	const artifacts: Array<{ kind: "pull-request"; uri: string; name: string }> =
-		[];
-	if (
-		workflow.kind === "ticket" &&
-		workflow.action === "implement" &&
-		typeof input.implementationPr === "string"
-	) {
-		artifacts.push({
-			kind: "pull-request",
-			uri: input.implementationPr,
-			name: "Implementation PR",
-		});
+	const artifacts: Array<PullRequestArtifactInput> = [];
+	if (workflow.kind === "ticket" && workflow.action === "implement") {
+		const artifact = pullRequestArtifactInput(
+			input.implementationPr,
+			"Implementation PR",
+		);
+		if (artifact !== undefined) {
+			artifacts.push(artifact);
+		}
 	}
-	if (
-		workflow.kind === "spec" &&
-		workflow.action === "integration-test" &&
-		typeof input.specPr === "string"
-	) {
-		artifacts.push({
-			kind: "pull-request",
-			uri: input.specPr,
-			name: "Spec PR",
-		});
+	if (workflow.kind === "spec" && workflow.action === "integration-test") {
+		const artifact = pullRequestArtifactInput(input.specPr, "Spec PR");
+		if (artifact !== undefined) {
+			artifacts.push(artifact);
+		}
 	}
 	return artifacts;
+}
+
+function pullRequestArtifactInput(
+	value: JsonValue | undefined,
+	name: string,
+): PullRequestArtifactInput | undefined {
+	if (typeof value === "string") {
+		return { kind: "pull-request", uri: value, name };
+	}
+	if (!isRecord(value) || value.type !== "pull-request") {
+		return undefined;
+	}
+	const uri = typeof value.url === "string" ? value.url : undefined;
+	if (uri === undefined) {
+		return undefined;
+	}
+	return {
+		...value,
+		kind: "pull-request",
+		uri,
+		name,
+	} as PullRequestArtifactInput;
 }
 
 export function validatePlan(

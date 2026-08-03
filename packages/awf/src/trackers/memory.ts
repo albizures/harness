@@ -395,7 +395,7 @@ class InMemoryTracker implements TrackerAdapter {
 		input: Omit<WorkflowArtifact, "id">,
 	): Promise<WorkflowArtifact> {
 		const issue = this.requireIssue(issueId);
-		const artifact = { id: `artifact-${issue.artifacts.length + 1}`, ...input };
+		const artifact = { ...input, id: `artifact-${issue.artifacts.length + 1}` };
 		issue.artifacts.push(artifact);
 		return cloneJson(artifact) as WorkflowArtifact;
 	}

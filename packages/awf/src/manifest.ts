@@ -138,16 +138,16 @@ export const artifacts = {
 	string: () => z.string(),
 	object: <const T extends z.ZodRawShape>(shape: T) => z.strictObject(shape),
 	array: <T extends PayloadZodSchema>(item: T) => z.array(item),
-	url: () => artifactString("url"),
-	file: () => artifactString("file"),
-	issue: () => artifactString("issue"),
-	pullRequest: () => artifactString("pull-request"),
-	gitRef: () => artifactString("git-ref"),
-	inlineMarkdown: () => nonEmptyArtifactString("markdown"),
-	markdown: () => nonEmptyArtifactString("markdown"),
-	inline: () => nonEmptyArtifactString("inline"),
-	handoff: () => nonEmptyArtifactString("handoff"),
-	finding: () => nonEmptyArtifactString("finding"),
+	url: () => artifactReference("url"),
+	file: () => artifactReference("file"),
+	issue: () => artifactReference("issue"),
+	pullRequest: () => artifactReference("pull-request"),
+	gitRef: () => artifactReference("git-ref"),
+	inlineMarkdown: () => artifactReference("markdown"),
+	markdown: () => artifactReference("markdown"),
+	inline: () => artifactReference("inline"),
+	handoff: () => artifactReference("handoff"),
+	finding: () => artifactReference("finding"),
 };
 
 export function validateArtifactReferenceValue(
@@ -198,8 +198,117 @@ function artifactString(kind: ArtifactKind): z.ZodString {
 		.meta({ [artifactMetadataKey]: kind });
 }
 
-function nonEmptyArtifactString(kind: ArtifactKind): z.ZodString {
-	return artifactString(kind);
+const structuredArtifactReferenceShape = {
+	type: z.enum([
+		"markdown",
+		"inline",
+		"file",
+		"issue",
+		"pull-request",
+		"url",
+		"git-ref",
+		"handoff",
+		"finding",
+	]),
+	ref: z.string().trim().optional(),
+	url: z.string().trim().optional(),
+	path: z.string().trim().optional(),
+	id: z.string().trim().optional(),
+	title: z.string().trim().optional(),
+	metadata: z.record(z.string(), z.unknown()).optional(),
+};
+
+function artifactReference(kind: ArtifactKind): PayloadZodSchema {
+	return z
+		.union([artifactString(kind), structuredArtifactReference(kind)])
+		.meta({ [artifactMetadataKey]: kind });
+}
+
+function structuredArtifactReference(kind: ArtifactKind): PayloadZodSchema {
+	return z
+		.strictObject(structuredArtifactReferenceShape)
+		.superRefine((value, context) => {
+			if (value.type !== kind) {
+				context.addIssue({
+					code: "custom",
+					path: ["type"],
+					message: `Artifact type must be '${kind}'.`,
+				});
+			}
+			validateStructuredArtifactReference(value, kind, context);
+		});
+}
+
+type StructuredArtifactReferenceInput = z.infer<
+	ReturnType<typeof z.strictObject<typeof structuredArtifactReferenceShape>>
+>;
+
+function validateStructuredArtifactReference(
+	value: StructuredArtifactReferenceInput,
+	kind: ArtifactKind,
+	context: z.RefinementCtx,
+): void {
+	if (kind === "pull-request" || kind === "url") {
+		validateStructuredField(value.url, "url", kind, context);
+		return;
+	}
+	if (kind === "file") {
+		validateStructuredField(value.path, "path", kind, context);
+		return;
+	}
+	if (kind === "git-ref") {
+		validateStructuredField(value.ref, "ref", kind, context);
+		return;
+	}
+	if (kind === "issue") {
+		if (
+			value.ref === undefined &&
+			value.url === undefined &&
+			value.id === undefined
+		) {
+			context.addIssue({
+				code: "custom",
+				path: ["ref"],
+				message: "Issue artifact must include ref, url, or id.",
+			});
+			return;
+		}
+		if (value.ref !== undefined) {
+			validateStructuredField(value.ref, "ref", kind, context);
+		}
+		if (value.url !== undefined) {
+			validateStructuredField(value.url, "url", kind, context);
+		}
+		if (value.id !== undefined && value.id.trim() === "") {
+			context.addIssue({
+				code: "custom",
+				path: ["id"],
+				message: "Artifact reference must be non-empty.",
+			});
+		}
+		return;
+	}
+	validateStructuredField(value.ref, "ref", kind, context);
+}
+
+function validateStructuredField(
+	value: string | undefined,
+	field: "ref" | "url" | "path",
+	kind: ArtifactKind,
+	context: z.RefinementCtx,
+): void {
+	if (value === undefined) {
+		context.addIssue({
+			code: "custom",
+			path: [field],
+			message: `Artifact reference must include ${field}.`,
+		});
+		return;
+	}
+	const message = validateArtifactReferenceValue(value, kind);
+	if (message !== undefined) {
+		context.addIssue({ code: "custom", path: [field], message });
+	}
 }
 
 const payloadZodSchemaSchema = z.custom<PayloadZodSchema>(isPayloadZodSchema, {

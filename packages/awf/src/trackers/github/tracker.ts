@@ -449,7 +449,7 @@ export class GitHubTracker implements TrackerAdapter {
 	): Promise<WorkflowArtifact> {
 		validatePullRequestArtifact(input.kind, input.uri);
 		const issue = await this.readProjectedIssue(issueId);
-		const artifact = { id: `artifact-${issue.artifacts.length + 1}`, ...input };
+		const artifact = { ...input, id: `artifact-${issue.artifacts.length + 1}` };
 		await this.upsertProjectionComment(
 			parseIssueNumber(issueId),
 			metadataFromProjection(

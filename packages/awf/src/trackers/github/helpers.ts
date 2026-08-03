@@ -431,10 +431,14 @@ export function parseIssueNumber(id: string): number {
 	return number;
 }
 
-export function validatePullRequestArtifact(kind: string, uri: string): void {
+export function validatePullRequestArtifact(
+	kind: string,
+	uri: string | undefined,
+): void {
 	if (
 		kind === "pull-request" &&
-		!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/u.test(uri)
+		(uri === undefined ||
+			!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/u.test(uri))
 	) {
 		throw new CorruptWorkflowProjectionError(
 			"Pull request artifact must be a GitHub pull request URL.",

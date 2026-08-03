@@ -1,5 +1,9 @@
 import type { WorkflowManifest } from "../../manifest.ts";
-import type { IssueRelationships, Tracker, TrackerAdapter } from "../../tracker.ts";
+import type {
+	IssueRelationships,
+	Tracker,
+	TrackerAdapter,
+} from "../../tracker.ts";
 import { GhCliGitHubTrackerApi } from "./gh-cli.ts";
 import { validateGitHubTrackerCapabilities } from "./helpers.ts";
 import { GitHubTracker } from "./tracker.ts";
@@ -78,4 +82,8 @@ export function createGhCliGitHubTracker(options: {
 	});
 }
 
-export { GhCliGitHubTrackerApi, GitHubTracker, validateGitHubTrackerCapabilities };
+export {
+	GhCliGitHubTrackerApi,
+	GitHubTracker,
+	validateGitHubTrackerCapabilities,
+};

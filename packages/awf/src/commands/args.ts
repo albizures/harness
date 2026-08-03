@@ -3,7 +3,9 @@ import { readOption, unknownCommand } from "./shared.ts";
 
 const maxReconcileArgumentCount = 3;
 const createHandoffArgumentCount = 6;
-export function validateKnownCommand(args: Array<string>): Envelope | undefined {
+export function validateKnownCommand(
+	args: Array<string>,
+): Envelope | undefined {
 	const [command, subcommand] = args;
 
 	switch (command) {
@@ -244,4 +246,3 @@ function requirePositionalAndOption(
 
 	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
 }
-

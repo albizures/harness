@@ -175,7 +175,10 @@ test("Spec post-plan waits as ready/none and later progresses to ready/integrati
 	);
 
 	assert.deepEqual(
-		{ state: applied.spec.workflow.state, action: applied.spec.workflow.action },
+		{
+			state: applied.spec.workflow.state,
+			action: applied.spec.workflow.action,
+		},
 		{ state: "ready", action: "none" },
 	);
 	assert.deepEqual(
@@ -192,8 +195,9 @@ test("Spec post-plan waits as ready/none and later progresses to ready/integrati
 
 	const ticketId = applied.tickets[0]?.id;
 	assert.equal(typeof ticketId, "string");
+	const implementationPrNumber = 6;
 	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
-		implementationPr: pr(6),
+		implementationPr: pr(implementationPrNumber),
 	});
 	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
 		verdict: "approved",
@@ -294,7 +298,10 @@ test("default retry, explicit escalation, and explicit resume expose workflow lo
 		issue: { workflow: { state: string; action: string } };
 	}>(await execute(["resume", "human", "--action", "fix"], { tracker }));
 	assert.deepEqual(
-		{ state: resumed.issue.workflow.state, action: resumed.issue.workflow.action },
+		{
+			state: resumed.issue.workflow.state,
+			action: resumed.issue.workflow.action,
+		},
 		{ state: "ready", action: "fix" },
 	);
 	assert.deepEqual(
@@ -419,6 +426,20 @@ test("required action artifact validation rejects malformed JSON and PRs before 
 				},
 			],
 		],
+		[
+			JSON.stringify({
+				implementationPr: {
+					type: "pull-request",
+					url: "https://github.com/albizures/harness/issues/51",
+				},
+			}),
+			[
+				{
+					path: "$.implementationPr.url",
+					message: "Pull request artifact must be a GitHub pull request URL.",
+				},
+			],
+		],
 	] as const) {
 		const tracker = createInMemoryTracker({
 			issues: [
@@ -477,19 +498,30 @@ test("terminal commands pass parsed artifact references into runtime behavior", 
 	});
 
 	const parsedPrNumber = 4;
+	const structuredPr = {
+		type: "pull-request",
+		url: pr(parsedPrNumber),
+		title: "Implementation PR",
+		metadata: { repository: "albizures/harness" },
+	};
 	const envelope = await execute(
 		["succeed", "t", "--run", "r", "--input", "-"],
 		{
 			tracker,
-			stdin: JSON.stringify({ implementationPr: `  ${pr(parsedPrNumber)}  ` }),
+			stdin: JSON.stringify({ implementationPr: structuredPr }),
 		},
 	);
 
 	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(await tracker.getIssue("t")).artifacts.map((artifact) => artifact.uri),
-		[pr(parsedPrNumber)],
-	);
+	assert.deepEqual((await tracker.getIssue("t")).artifacts, [
+		{
+			id: "artifact-1",
+			kind: "pull-request",
+			uri: pr(parsedPrNumber),
+			name: "Implementation PR",
+			...structuredPr,
+		},
+	]);
 });
 
 test("required action artifact validation rejects replacement PRs", async () => {

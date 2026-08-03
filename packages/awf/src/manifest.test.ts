@@ -147,6 +147,28 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 		handoff: "Next agent should run the focused tests.",
 		finding: "Missing coverage for invalid declarations.",
 	};
+	const structuredValues = {
+		url: { type: "url", url: "https://example.com/spec", title: "Spec" },
+		file: { type: "file", path: "docs/spec.md", title: "Spec" },
+		issue: { type: "issue", ref: "#51", id: "51", title: "Spec issue" },
+		pullRequest: {
+			type: "pull-request",
+			url: "https://github.com/albizures/harness/pull/52",
+			id: "52",
+			title: "Implementation",
+			metadata: { repository: "albizures/harness" },
+		},
+		gitRef: { type: "git-ref", ref: "feature/awf-artifacts" },
+		inlineMarkdown: { type: "markdown", ref: "# Summary\n\nReady." },
+		handoff: {
+			type: "handoff",
+			ref: "Next agent should run the focused tests.",
+		},
+		finding: {
+			type: "finding",
+			ref: "Missing coverage for invalid declarations.",
+		},
+	};
 	assert.equal(
 		artifacts
 			.object({ issue: artifacts.issue() })
@@ -154,17 +176,21 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 		true,
 	);
 	assert.deepEqual(zodOutput.parse(representativeValues), representativeValues);
+	assert.deepEqual(zodOutput.parse(structuredValues), structuredValues);
 
 	const invalid = zodOutput.safeParse({
 		...representativeValues,
-		url: "ftp://example.com/spec",
-		file: "/tmp/spec.md",
-		issue: "not-an-issue",
-		pullRequest: "https://github.com/albizures/harness/issues/51",
-		gitRef: "bad ref",
-		inlineMarkdown: "",
-		handoff: "",
-		finding: "",
+		url: { type: "url", url: "ftp://example.com/spec" },
+		file: { type: "file", path: "/tmp/spec.md" },
+		issue: { type: "issue", ref: "not-an-issue" },
+		pullRequest: {
+			type: "pull-request",
+			url: "https://github.com/albizures/harness/issues/51",
+		},
+		gitRef: { type: "git-ref", ref: "bad ref" },
+		inlineMarkdown: { type: "markdown", ref: "" },
+		handoff: { type: "handoff", ref: "" },
+		finding: { type: "finding", ref: "" },
 	});
 	const invalidArtifactReferenceCount =
 		Object.keys(representativeValues).length;
