@@ -1,5 +1,11 @@
 # @albizures/pi-suggested-replies
 
+## 0.2.1
+
+### Patch Changes
+
+- 8c8fcb4: Add a muted editor-colored top border to the Suggested Replies widget.
+
 ## 0.2.0
 
 ### Minor Changes

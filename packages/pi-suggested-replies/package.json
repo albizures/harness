@@ -1,6 +1,6 @@
 {
 	"name": "@albizures/pi-suggested-replies",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Pi package that lets agents offer suggested replies for quick insertion into the prompt editor.",
 	"keywords": [
 		"pi-package",
