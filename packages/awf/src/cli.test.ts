@@ -12,6 +12,11 @@ const badManifestPath = new URL("./fixtures/bad.workflow.ts", import.meta.url)
 const linkManifestPath = new URL("./fixtures/link.workflow.ts", import.meta.url)
 	.pathname;
 
+const prArtifact = (n: number) => ({
+	type: "pull-request",
+	url: `https://github.com/albizures/harness/pull/${n}`,
+});
+
 function serializeCliSmokeInput(input: unknown): string {
 	return typeof input === "string" ? input : JSON.stringify(input);
 }
@@ -155,7 +160,7 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 		{
 			encoding: "utf8",
 			input: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 			env,
 		},
@@ -192,7 +197,7 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 		{
 			encoding: "utf8",
 			input: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 			env: {
 				...process.env,
@@ -240,7 +245,7 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		{
 			encoding: "utf8",
 			input: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 			env: {
 				...process.env,
@@ -314,6 +319,9 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 		return envelope.data;
 	};
 
+	const implementationPrNumber = 39;
+	const specPrNumber = 40;
+
 	const created = runCli(
 		["create", "spec", "--input", "-"],
 		[],
@@ -340,7 +348,7 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 			specAfterPlan,
 			{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
 		],
-		{ implementationPr: "https://github.com/albizures/harness/pull/39" },
+		{ implementationPr: prArtifact(implementationPrNumber) },
 	);
 	let ticketIssue = completed.issue;
 	let ticketLogs = [started.log, completed.log];
@@ -403,7 +411,7 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 		],
 		{
 			verdict: "passed",
-			specPr: "https://github.com/albizures/harness/pull/40",
+			specPr: prArtifact(specPrNumber),
 		},
 	);
 	let specIssue = completed.issue;

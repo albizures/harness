@@ -185,19 +185,6 @@ export function validateArtifactReferenceValue(
 	}
 }
 
-function artifactString(kind: ArtifactKind): z.ZodString {
-	return z
-		.string()
-		.trim()
-		.superRefine((value, context) => {
-			const message = validateArtifactReferenceValue(value, kind);
-			if (message !== undefined) {
-				context.addIssue({ code: "custom", message });
-			}
-		})
-		.meta({ [artifactMetadataKey]: kind });
-}
-
 const structuredArtifactReferenceShape = {
 	type: z.enum([
 		"markdown",
@@ -219,9 +206,9 @@ const structuredArtifactReferenceShape = {
 };
 
 function artifactReference(kind: ArtifactKind): PayloadZodSchema {
-	return z
-		.union([artifactString(kind), structuredArtifactReference(kind)])
-		.meta({ [artifactMetadataKey]: kind });
+	return structuredArtifactReference(kind).meta({
+		[artifactMetadataKey]: kind,
+	});
 }
 
 function structuredArtifactReference(kind: ArtifactKind): PayloadZodSchema {

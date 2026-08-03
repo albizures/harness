@@ -114,7 +114,14 @@ test("artifact and change registrations are returned with the normalized issue",
 
 	const read = await tracker.getIssue(issue.id);
 	assert.deepEqual(read.artifacts, [
-		{ id: "artifact-1", kind: "file", uri: "docs/plan.md", name: "Plan" },
+		{
+			id: "artifact-1",
+			kind: "file",
+			uri: "docs/plan.md",
+			name: "Plan",
+			type: "file",
+			path: "docs/plan.md",
+		},
 	]);
 	assert.deepEqual(read.changes, [
 		{

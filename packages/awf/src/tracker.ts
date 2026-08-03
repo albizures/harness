@@ -1,5 +1,8 @@
 import type { JsonValue } from "type-fest";
-import type { ArtifactKind } from "./manifest.ts";
+import {
+	validateArtifactReferenceValue,
+	type ArtifactKind,
+} from "./manifest.ts";
 
 export type WorkflowProjection = {
 	kind: string;
@@ -34,6 +37,73 @@ export type WorkflowArtifact = {
 	uri: string;
 	name?: string;
 } & Partial<StructuredWorkflowArtifactReference>;
+
+export type WorkflowArtifactInput = Omit<WorkflowArtifact, "id"> & {
+	id?: string;
+};
+
+export function normalizeWorkflowArtifactInput(
+	input: WorkflowArtifactInput,
+	id: string,
+): WorkflowArtifact {
+	validateWorkflowArtifactInput(input);
+	return {
+		...compatibilityStructuredArtifactFields(input.kind, input.uri),
+		...input,
+		type: input.type ?? input.kind,
+		id,
+	};
+}
+
+export function validateWorkflowArtifactInput(
+	input: WorkflowArtifactInput,
+): void {
+	const uriIssue = validateArtifactReferenceValue(input.uri, input.kind);
+	if (uriIssue !== undefined) {
+		throw new Error(uriIssue);
+	}
+	if (input.type !== undefined && input.type !== input.kind) {
+		throw new Error(`Artifact type must be '${input.kind}'.`);
+	}
+	for (const [field, value] of structuredArtifactFields(input.kind, input)) {
+		const fieldIssue = validateArtifactReferenceValue(value, input.kind);
+		if (fieldIssue !== undefined) {
+			throw new Error(`${field}: ${fieldIssue}`);
+		}
+	}
+}
+
+function structuredArtifactFields(
+	kind: ArtifactKind,
+	input: WorkflowArtifactInput,
+): Array<["ref" | "url" | "path", string]> {
+	const field = structuredArtifactField(kind);
+	const value = input[field];
+	return value === undefined ? [] : [[field, value]];
+}
+
+function structuredArtifactField(kind: ArtifactKind): "ref" | "url" | "path" {
+	if (kind === "pull-request" || kind === "url") {
+		return "url";
+	}
+	if (kind === "file") {
+		return "path";
+	}
+	return "ref";
+}
+
+function compatibilityStructuredArtifactFields(
+	kind: ArtifactKind,
+	uri: string,
+): Partial<StructuredWorkflowArtifactReference> {
+	if (kind === "pull-request" || kind === "url") {
+		return { type: kind, url: uri };
+	}
+	if (kind === "file") {
+		return { type: kind, path: uri };
+	}
+	return { type: kind, ref: uri };
+}
 
 export type WorkflowChange = {
 	id: string;
@@ -106,13 +176,13 @@ export type TrackerCompleteRunIntent = {
 	expect: TrackerProjectionExpectation;
 	runId: string;
 	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-	artifacts?: Array<Omit<WorkflowArtifact, "id">>;
+	artifacts?: Array<WorkflowArtifactInput>;
 	changes?: Array<Omit<WorkflowChange, "id">>;
 	log: Omit<WorkflowLog, "sequence" | "issueId">;
 };
 
 export type TrackerRecordArtifactsIntent = {
-	artifacts?: Array<Omit<WorkflowArtifact, "id">>;
+	artifacts?: Array<WorkflowArtifactInput>;
 	changes?: Array<Omit<WorkflowChange, "id">>;
 	log: Omit<WorkflowLog, "sequence" | "issueId">;
 };
@@ -160,12 +230,14 @@ export type TrackerApplyPlanIntent = {
 		workflow: CreateIssueInput["workflow"];
 		dependsOn?: Array<string>;
 	}>;
+	artifacts?: Array<WorkflowArtifactInput>;
 	log: Omit<WorkflowLog, "sequence" | "issueId">;
 };
 
 export type TrackerApplyPlanResult = {
 	spec: WorkflowIssue;
 	tickets: Array<{ key: string; id: string }>;
+	artifacts: Array<WorkflowArtifact>;
 	log: WorkflowLog;
 };
 
@@ -241,7 +313,7 @@ export type TrackerAdapterPrimitives = {
 	deleteIssue: (id: string) => Promise<void>;
 	registerArtifact: (
 		issueId: string,
-		input: Omit<WorkflowArtifact, "id">,
+		input: WorkflowArtifactInput,
 	) => Promise<WorkflowArtifact>;
 	registerChange: (
 		issueId: string,

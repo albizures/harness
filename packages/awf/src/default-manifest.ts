@@ -79,7 +79,9 @@ const handoffCreateOutput = z.looseObject({
 	artifact: z.looseObject({
 		id: z.string(),
 		kind: z.literal("handoff"),
-		uri: artifacts.handoff(),
+		type: z.literal("handoff"),
+		uri: z.string(),
+		ref: z.string(),
 	}),
 });
 

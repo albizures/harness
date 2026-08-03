@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import test from "node:test";
 import { z } from "zod";
 import { execute } from "./commands.ts";
@@ -16,9 +16,21 @@ import {
 import { createInMemoryTracker } from "./trackers/memory.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
-type ApplyPlanData = { outcome: string; tickets: Array<{ key: string }> };
+type ApplyPlanData = {
+	outcome: string;
+	tickets: Array<{ key: string }>;
+	artifact: {
+		kind: string;
+		uri: string;
+		type?: string;
+		path?: string;
+		ref?: string;
+	};
+};
 type ReadyData = { items: Array<{ id: string }> };
-type HandoffData = { artifact: { kind: string; uri: string } };
+type HandoffData = {
+	artifact: { kind: string; uri: string; type?: string; ref?: string };
+};
 
 test("create spec creates a bundled workflow Spec from Markdown input", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-spec-"));
@@ -118,7 +130,12 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 		["create", "handoff", "--source", "ticket-1", "--input", "-"],
 		{
 			tracker,
-			stdin: JSON.stringify({ handoff: "Next agent: inspect the retry path." }),
+			stdin: JSON.stringify({
+				handoff: {
+					type: "handoff",
+					ref: "Next agent: inspect the retry path.",
+				},
+			}),
 		},
 	);
 
@@ -132,6 +149,8 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 		kind: "handoff",
 		uri: "Next agent: inspect the retry path.",
 		name: "Handoff",
+		type: "handoff",
+		ref: "Next agent: inspect the retry path.",
 	});
 	assert.deepEqual((await tracker.getIssue("ticket-1")).artifacts, [
 		data.artifact,
@@ -155,7 +174,10 @@ test("create handoff rejects invalid manifest-declared input before mutating", a
 
 	const envelope = await execute(
 		["create", "handoff", "--source", "ticket-1", "--input", "-"],
-		{ tracker, stdin: JSON.stringify({ handoff: "" }) },
+		{
+			tracker,
+			stdin: JSON.stringify({ handoff: { type: "handoff", ref: "" } }),
+		},
 	);
 
 	assert.equal(envelope.ok, false);
@@ -318,6 +340,18 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 		action: "none",
 	});
 	assert.deepEqual(spec.relationships.children, ["1", "2"]);
+	assert.deepEqual(spec.artifacts, [data.artifact]);
+	const planArtifactPath = relative(process.cwd(), plan);
+	assert.deepEqual(data.artifact, {
+		id: "artifact-1",
+		kind: "file",
+		uri: planArtifactPath,
+		name: "Plan bundle",
+		type: "file",
+		path: planArtifactPath,
+		title: "Submitted plan bundle",
+		metadata: { ticketCount: 2 },
+	});
 	assert.deepEqual((await tracker.getIssue("2")).relationships.dependencies, [
 		"1",
 	]);

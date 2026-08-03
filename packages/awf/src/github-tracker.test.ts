@@ -306,6 +306,62 @@ test("registers and validates pull-request artifacts", async () => {
 	);
 });
 
+test("preserves structured artifact fields through GitHub projection reads and logs", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
+	await tracker.createIssue({
+		title: "Structured artifact issue",
+		workflow: { kind: "ticket", state: "running", action: "implement" },
+	});
+
+	const artifact = await tracker.registerArtifact("1", {
+		kind: "file",
+		type: "file",
+		uri: "docs/plan.md",
+		path: "docs/plan.md",
+		url: "https://example.test/plan",
+		id: "external-artifact-id",
+		title: "Plan",
+		name: "Plan file",
+		metadata: { ticketCount: 2, nested: { ok: true } },
+	});
+	await tracker.appendLog("1", {
+		type: "artifact_recorded",
+		payload: { artifacts: [artifact] },
+	});
+
+	assert.deepEqual((await tracker.getIssue("1")).artifacts, [artifact]);
+	assert.deepEqual((await tracker.readLogs("1"))[0]?.payload, {
+		artifacts: [artifact],
+	});
+	assert.match(api.issue(1).comments[0]?.body ?? "", /external-artifact-id/u);
+	assert.match(api.issue(1).comments[1]?.body ?? "", /"artifacts":\[/u);
+});
+
+test("malformed machine-owned artifact data requires reconciliation", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({ api, manifest: defaultManifest });
+	await tracker.createIssue({
+		title: "Corrupt artifact issue",
+		workflow: { kind: "ticket", state: "running", action: "implement" },
+	});
+	const [marker, json] = api.issue(1).comments[0]?.body.split("\n") ?? [];
+	assert.ok(marker);
+	assert.ok(json);
+	const metadata = JSON.parse(json) as Record<string, unknown>;
+	metadata.artifacts = [
+		{
+			id: "external-artifact-id",
+			kind: "file",
+			uri: "docs/plan.md",
+			extra: true,
+		},
+	];
+	api.issue(1).comments[0].body = `${marker}\n${JSON.stringify(metadata)}`;
+
+	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+});
+
 test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub repository", {
 	skip: process.env.AWF_GITHUB_SMOKE !== "1",
 }, async () => {

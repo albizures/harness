@@ -1,3 +1,4 @@
+import { isAbsolute, relative } from "node:path";
 import type { JsonValue } from "type-fest";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
@@ -19,6 +20,7 @@ import {
 	parsePayloadValue,
 	planApplicationTarget,
 	readInput,
+	structuredArtifactInput,
 	validatePlan,
 	validateWorkflowCommandInput,
 	validateWorkflowCommandOutput,
@@ -225,7 +227,9 @@ export async function createSpecCommand(
 	}
 	const raw = await readInput(inputPath, stdin);
 	const command = commandOverride ?? workflowCommand(manifest, "spec-create");
-	const inputValidation = validateWorkflowCommandInput(command, { spec: raw });
+	const inputValidation = validateWorkflowCommandInput(command, {
+		spec: { type: "markdown", ref: raw },
+	});
 	if (inputValidation !== undefined) {
 		return inputValidation;
 	}
@@ -293,7 +297,19 @@ export async function createHandoffCommand(
 			},
 		);
 	}
-	if (!isRecord(payload.value) || typeof payload.value.handoff !== "string") {
+	if (!isRecord(payload.value)) {
+		return failure(
+			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+			"Workflow command input is invalid.",
+			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
+		);
+	}
+	const artifactInput = structuredArtifactInput(
+		payload.value.handoff as JsonValue | undefined,
+		"handoff",
+		"Handoff",
+	);
+	if (artifactInput === undefined) {
 		return failure(
 			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 			"Workflow command input is invalid.",
@@ -303,11 +319,6 @@ export async function createHandoffCommand(
 
 	try {
 		await tracker.getIssue(sourceId);
-		const artifactInput = {
-			kind: "handoff" as const,
-			uri: payload.value.handoff,
-			name: "Handoff",
-		};
 		const { artifacts, log } = await tracker.recordArtifacts(sourceId, {
 			artifacts: [artifactInput],
 			log: {
@@ -412,15 +423,25 @@ export async function applyPlanCommand(
 				},
 				dependsOn: ticket.dependsOn as Array<string> | undefined,
 			})),
+			artifacts: [planBundleArtifactInput(inputPath, plan.tickets.length)],
 			log: {
 				type: "plan_applied",
-				payload: { input: inputPath },
+				payload: {
+					input: planBundleArtifactReference(inputPath, plan.tickets.length),
+				},
 			},
 		});
+		const artifact = applied.artifacts[0];
+		if (artifact === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: plan bundle artifact was not recorded.",
+			);
+		}
 		const data = {
 			outcome: "SUCCESS",
 			spec: applied.spec,
 			tickets: applied.tickets,
+			artifact,
 			log: applied.log,
 		};
 		const outputValidation = validateWorkflowCommandOutput(command, data);
@@ -431,4 +452,52 @@ export async function applyPlanCommand(
 	} catch (error) {
 		return lifecycleError(specId, error);
 	}
+}
+
+type PlanBundleArtifactReference =
+	| {
+			type: "inline";
+			ref: string;
+			title: string;
+			metadata: { ticketCount: number };
+	  }
+	| {
+			type: "file";
+			path: string;
+			title: string;
+			metadata: { ticketCount: number };
+	  };
+
+function planBundleArtifactInput(inputPath: string, ticketCount: number) {
+	const reference = planBundleArtifactReference(inputPath, ticketCount);
+	return {
+		...reference,
+		kind: reference.type,
+		uri: reference.type === "file" ? reference.path : reference.ref,
+		name: "Plan bundle",
+	};
+}
+
+function planBundleArtifactReference(
+	inputPath: string,
+	ticketCount: number,
+): PlanBundleArtifactReference {
+	if (inputPath === "-") {
+		return {
+			type: "inline" as const,
+			ref: "submitted-plan-bundle",
+			title: "Submitted plan bundle",
+			metadata: { ticketCount },
+		};
+	}
+	return {
+		type: "file" as const,
+		path: workflowArtifactFilePath(inputPath),
+		title: "Submitted plan bundle",
+		metadata: { ticketCount },
+	};
+}
+
+function workflowArtifactFilePath(path: string): string {
+	return isAbsolute(path) ? relative(process.cwd(), path) : path;
 }

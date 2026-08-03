@@ -330,7 +330,9 @@ export function isProjectionMetadata(
 		value.schemaVersion === PROJECTION_SCHEMA_VERSION &&
 		isProjection(value.workflow) &&
 		Array.isArray(value.artifacts) &&
-		Array.isArray(value.changes)
+		value.artifacts.every(isWorkflowArtifact) &&
+		Array.isArray(value.changes) &&
+		value.changes.every(isWorkflowChange)
 	);
 }
 
@@ -355,6 +357,81 @@ export function isWorkflowLog(value: unknown): value is WorkflowLog {
 		typeof value.issueId === "string" &&
 		typeof value.type === "string" &&
 		(value.runId === undefined || typeof value.runId === "string")
+	);
+}
+
+function isWorkflowArtifact(value: unknown): value is WorkflowArtifact {
+	return (
+		isRecord(value) &&
+		Object.keys(value).every((key) => WORKFLOW_ARTIFACT_FIELDS.has(key)) &&
+		typeof value.id === "string" &&
+		value.id !== "" &&
+		isArtifactKind(value.kind) &&
+		typeof value.uri === "string" &&
+		value.uri !== "" &&
+		(value.name === undefined || typeof value.name === "string") &&
+		(value.type === undefined || value.type === value.kind) &&
+		(value.ref === undefined || typeof value.ref === "string") &&
+		(value.url === undefined || typeof value.url === "string") &&
+		(value.path === undefined || typeof value.path === "string") &&
+		(value.title === undefined || typeof value.title === "string") &&
+		(value.metadata === undefined || isJsonRecord(value.metadata))
+	);
+}
+
+function isWorkflowChange(value: unknown): value is WorkflowChange {
+	return (
+		isRecord(value) &&
+		typeof value.id === "string" &&
+		value.id !== "" &&
+		isArtifactKind(value.kind) &&
+		typeof value.uri === "string" &&
+		value.uri !== "" &&
+		(value.summary === undefined || typeof value.summary === "string")
+	);
+}
+
+const WORKFLOW_ARTIFACT_FIELDS = new Set([
+	"id",
+	"kind",
+	"uri",
+	"name",
+	"type",
+	"ref",
+	"url",
+	"path",
+	"title",
+	"metadata",
+]);
+
+const ARTIFACT_KINDS = new Set([
+	"markdown",
+	"inline",
+	"file",
+	"issue",
+	"pull-request",
+	"url",
+	"git-ref",
+	"handoff",
+	"finding",
+]);
+
+function isArtifactKind(value: unknown): boolean {
+	return typeof value === "string" && ARTIFACT_KINDS.has(value);
+}
+
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+	return isRecord(value) && Object.values(value).every(isJsonValue);
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+	return (
+		value === null ||
+		typeof value === "string" ||
+		typeof value === "number" ||
+		typeof value === "boolean" ||
+		(Array.isArray(value) && value.every(isJsonValue)) ||
+		isJsonRecord(value)
 	);
 }
 

@@ -7,6 +7,12 @@ import { defineManifest, type WorkflowManifest } from "./manifest.ts";
 import type { Tracker } from "./tracker.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
 
+const prArtifact = (n: number) => ({
+	type: "pull-request",
+	url: `https://github.com/albizures/harness/pull/${n}`,
+});
+const findingArtifact = (ref: string) => ({ type: "finding", ref });
+
 test("help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
 
@@ -644,6 +650,8 @@ test("create handoff records artifact and log through one tracker intent", async
 					kind: "handoff",
 					uri: "handoff.md",
 					name: "Handoff",
+					type: "handoff",
+					ref: "handoff.md",
 				},
 			]);
 			assert.equal(input.log.type, "handoff_created");
@@ -655,6 +663,8 @@ test("create handoff records artifact and log through one tracker intent", async
 						kind: "handoff",
 						uri: "handoff.md",
 						name: "Handoff",
+						type: "handoff",
+						ref: "handoff.md",
 					},
 				],
 				changes: [],
@@ -665,7 +675,12 @@ test("create handoff records artifact and log through one tracker intent", async
 
 	const envelope = await execute(
 		["create", "handoff", "--source", "123", "--input", "-"],
-		{ tracker, stdin: JSON.stringify({ handoff: "handoff.md" }) },
+		{
+			tracker,
+			stdin: JSON.stringify({
+				handoff: { type: "handoff", ref: "handoff.md" },
+			}),
+		},
 	);
 
 	assert.equal(envelope.ok, true);
@@ -773,7 +788,7 @@ test("succeed applies the manifest terminal transition for the active run", asyn
 		{
 			tracker,
 			stdin: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 		},
 	);
@@ -818,7 +833,7 @@ test("failed running actions retry the same ready action by default", async () =
 			tracker,
 			stdin: JSON.stringify({
 				verdict: "changes-requested",
-				findings: ["bug"],
+				findings: [findingArtifact("bug")],
 			}),
 		},
 	);
@@ -840,7 +855,7 @@ test("failed running actions retry the same ready action by default", async () =
 	);
 	assert.deepEqual((await tracker.readLogs("123"))[0]?.payload, {
 		event: "fail",
-		input: { verdict: "changes-requested", findings: ["bug"] },
+		input: { verdict: "changes-requested", findings: [findingArtifact("bug")] },
 		to: { state: "ready", action: "merge" },
 	});
 });
@@ -1003,7 +1018,7 @@ test("lifecycle commands reject invalid manifest transitions and run mismatches"
 		await execute(["succeed", "running", "--run", "other", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 		}),
 		{
@@ -1258,7 +1273,7 @@ test("normal commands do not silently repair drift before reconciliation", async
 		{
 			tracker,
 			stdin: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 		},
 	);
@@ -1270,7 +1285,7 @@ test("normal commands do not silently repair drift before reconciliation", async
 		{
 			tracker,
 			stdin: JSON.stringify({
-				implementationPr: "https://github.com/albizures/harness/pull/1",
+				implementationPr: prArtifact(1),
 			}),
 		},
 	);

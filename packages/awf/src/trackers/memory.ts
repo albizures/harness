@@ -25,6 +25,8 @@ import {
 	type TrackerStartRunIntent,
 	type UpdateIssueInput,
 	type WorkflowArtifact,
+	type WorkflowArtifactInput,
+	normalizeWorkflowArtifactInput,
 	type WorkflowChange,
 	type WorkflowIssue,
 	type WorkflowLog,
@@ -230,12 +232,25 @@ class InMemoryTracker implements TrackerAdapter {
 				expect: input.expect,
 				workflow: input.specWorkflow,
 			});
+			const artifacts = [];
+			for (const artifact of input.artifacts ?? []) {
+				artifacts.push(await this.registerArtifact(input.specId, artifact));
+			}
 			const log = await this.appendLog(input.specId, {
 				...input.log,
-				payload: { ...asObject(input.log.payload), tickets: created },
+				payload: {
+					...asObject(input.log.payload),
+					tickets: created,
+					artifacts,
+				},
 			});
 			await this.verifyPlanApplication(input.specId, created, input.tickets);
-			return { spec: await this.getIssue(input.specId), tickets: created, log };
+			return {
+				spec: await this.getIssue(input.specId),
+				tickets: created,
+				artifacts,
+				log,
+			};
 		} catch (error) {
 			if (
 				error instanceof NeedReconciliationError ||
@@ -392,10 +407,13 @@ class InMemoryTracker implements TrackerAdapter {
 
 	async registerArtifact(
 		issueId: string,
-		input: Omit<WorkflowArtifact, "id">,
+		input: WorkflowArtifactInput,
 	): Promise<WorkflowArtifact> {
 		const issue = this.requireIssue(issueId);
-		const artifact = { ...input, id: `artifact-${issue.artifacts.length + 1}` };
+		const artifact = normalizeWorkflowArtifactInput(
+			input,
+			input.id ?? `artifact-${issue.artifacts.length + 1}`,
+		);
 		issue.artifacts.push(artifact);
 		return cloneJson(artifact) as WorkflowArtifact;
 	}

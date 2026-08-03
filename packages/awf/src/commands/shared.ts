@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { JsonValue } from "type-fest";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type {
+	ArtifactKind,
 	ManifestCommand,
 	PayloadZodSchema,
 	ManifestNamedReadinessFilter,
@@ -288,8 +289,8 @@ export function validateBundledTerminalInput(
 	return undefined;
 }
 
-type PullRequestArtifactInput = {
-	kind: "pull-request";
+export type BundledArtifactInput = {
+	kind: ArtifactKind;
 	uri: string;
 	name: string;
 } & Record<string, JsonValue>;
@@ -297,11 +298,11 @@ type PullRequestArtifactInput = {
 export function bundledArtifactInputs(
 	workflow: WorkflowFields,
 	input: JsonValue,
-): Array<PullRequestArtifactInput> {
+): Array<BundledArtifactInput> {
 	if (!isRecord(input)) {
 		return [];
 	}
-	const artifacts: Array<PullRequestArtifactInput> = [];
+	const artifacts: Array<BundledArtifactInput> = [];
 	if (workflow.kind === "ticket" && workflow.action === "implement") {
 		const artifact = pullRequestArtifactInput(
 			input.implementationPr,
@@ -323,23 +324,40 @@ export function bundledArtifactInputs(
 function pullRequestArtifactInput(
 	value: JsonValue | undefined,
 	name: string,
-): PullRequestArtifactInput | undefined {
-	if (typeof value === "string") {
-		return { kind: "pull-request", uri: value, name };
-	}
-	if (!isRecord(value) || value.type !== "pull-request") {
+): BundledArtifactInput | undefined {
+	return structuredArtifactInput(value, "pull-request", name);
+}
+
+export function structuredArtifactInput(
+	value: JsonValue | undefined,
+	kind: ArtifactKind,
+	name: string,
+): BundledArtifactInput | undefined {
+	if (!isRecord(value) || value.type !== kind) {
 		return undefined;
 	}
-	const uri = typeof value.url === "string" ? value.url : undefined;
+	const uri = artifactReferenceUri(value);
 	if (uri === undefined) {
 		return undefined;
 	}
 	return {
 		...value,
-		kind: "pull-request",
+		kind,
 		uri,
 		name,
-	} as PullRequestArtifactInput;
+	} as BundledArtifactInput;
+}
+
+export function artifactReferenceUri(
+	value: Record<string, unknown>,
+): string | undefined {
+	for (const field of ["url", "path", "ref", "id"] as const) {
+		const candidate = value[field];
+		if (typeof candidate === "string") {
+			return candidate;
+		}
+	}
+	return undefined;
 }
 
 export function validatePlan(

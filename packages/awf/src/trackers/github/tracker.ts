@@ -4,6 +4,7 @@ import {
 	IssueNotFoundError,
 	NeedReconciliationError,
 	ProjectionConflictError,
+	normalizeWorkflowArtifactInput,
 	type CreateIssueInput,
 	type TrackerAdapter,
 	type TrackerApplyPlanIntent,
@@ -22,6 +23,7 @@ import {
 	type TrackerStartRunIntent,
 	type UpdateIssueInput,
 	type WorkflowArtifact,
+	type WorkflowArtifactInput,
 	type WorkflowChange,
 	type WorkflowIssue,
 	type WorkflowLog,
@@ -230,12 +232,21 @@ export class GitHubTracker implements TrackerAdapter {
 				expect: input.expect,
 				workflow: input.specWorkflow,
 			});
+			const artifacts: Array<WorkflowArtifact> = [];
+			for (const artifact of input.artifacts ?? []) {
+				artifacts.push(await this.registerArtifact(input.specId, artifact));
+			}
 			const log = await this.appendLog(input.specId, {
 				...input.log,
-				payload: { ...asObject(input.log.payload), tickets },
+				payload: { ...asObject(input.log.payload), tickets, artifacts },
 			});
 			await this.verifyPlanApplication(input.specId, tickets, input.tickets);
-			return { spec: await this.getIssue(input.specId), tickets, log };
+			return {
+				spec: await this.getIssue(input.specId),
+				tickets,
+				artifacts,
+				log,
+			};
 		} catch (error) {
 			if (
 				error instanceof NeedReconciliationError ||
@@ -445,11 +456,13 @@ export class GitHubTracker implements TrackerAdapter {
 
 	async registerArtifact(
 		issueId: string,
-		input: Omit<WorkflowArtifact, "id">,
+		input: WorkflowArtifactInput,
 	): Promise<WorkflowArtifact> {
-		validatePullRequestArtifact(input.kind, input.uri);
 		const issue = await this.readProjectedIssue(issueId);
-		const artifact = { ...input, id: `artifact-${issue.artifacts.length + 1}` };
+		const artifact = normalizeWorkflowArtifactInput(
+			input,
+			input.id ?? `artifact-${issue.artifacts.length + 1}`,
+		);
 		await this.upsertProjectionComment(
 			parseIssueNumber(issueId),
 			metadataFromProjection(

@@ -5,6 +5,8 @@ import type { Tracker } from "./tracker.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
 
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
+const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });
+const findingArtifact = (ref: string) => ({ type: "finding", ref });
 
 async function start(tracker: Tracker, id: string): Promise<string> {
 	const envelope = await execute(["start", id], { tracker });
@@ -50,7 +52,7 @@ test("Ticket approved review path merges exactly one implementation PR to done",
 	});
 
 	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		implementationPr: pr(1),
+		implementationPr: prArtifact(1),
 	});
 	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
 		verdict: "approved",
@@ -80,11 +82,11 @@ test("Ticket changes-requested path goes through fix and back to review", async 
 	});
 
 	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		implementationPr: pr(2),
+		implementationPr: prArtifact(2),
 	});
 	await terminal(tracker, "fail", "t", await start(tracker, "t"), {
 		verdict: "changes-requested",
-		findings: ["missing test"],
+		findings: [findingArtifact("missing test")],
 	});
 	assert.equal((await tracker.getIssue("t")).workflow.action, "fix");
 	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
@@ -197,7 +199,7 @@ test("Spec post-plan waits as ready/none and later progresses to ready/integrati
 	assert.equal(typeof ticketId, "string");
 	const implementationPrNumber = 6;
 	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
-		implementationPr: pr(implementationPrNumber),
+		implementationPr: prArtifact(implementationPrNumber),
 	});
 	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
 		verdict: "approved",
@@ -378,7 +380,7 @@ test("Spec integration passed path enables merge and merge completes the Spec", 
 	const specPrNumber = 3;
 	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
 		verdict: "passed",
-		specPr: pr(specPrNumber),
+		specPr: prArtifact(specPrNumber),
 	});
 	assert.equal((await tracker.getIssue("s")).workflow.action, "merge");
 	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
@@ -407,7 +409,7 @@ test("Spec integration changes-needed returns to ready plan", async () => {
 
 	await terminal(tracker, "fail", "s", await start(tracker, "s"), {
 		verdict: "changes-needed",
-		findings: ["split ticket"],
+		findings: [findingArtifact("split ticket")],
 	});
 	const issue = await tracker.getIssue("s");
 	assert.equal(issue.workflow.state, "ready");
@@ -422,7 +424,7 @@ test("required action artifact validation rejects malformed JSON and PRs before 
 			[
 				{
 					path: "$.implementationPr",
-					message: "Pull request artifact must be a GitHub pull request URL.",
+					message: "Invalid input: expected object, received string",
 				},
 			],
 		],
@@ -550,7 +552,12 @@ test("required action artifact validation rejects replacement PRs", async () => 
 		["succeed", "t", "--run", "r", "--input", "-"],
 		{
 			tracker,
-			stdin: JSON.stringify({ implementationPr: pr(replacementPrNumber) }),
+			stdin: JSON.stringify({
+				implementationPr: {
+					type: "pull-request",
+					url: pr(replacementPrNumber),
+				},
+			}),
 		},
 	);
 	assert.equal(replacement.ok, false);

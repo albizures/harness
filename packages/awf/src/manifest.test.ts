@@ -89,9 +89,17 @@ test("defineManifest defaults the canonical GitHub reserved prefix and keeps Zod
 	assert.equal(manifest.commands[0]?.input instanceof z.ZodType, true);
 	assert.deepEqual(
 		manifest.commands[0]?.input?.parse({
-			pullRequest: " https://github.com/albizures/harness/pull/52 ",
+			pullRequest: {
+				type: "pull-request",
+				url: " https://github.com/albizures/harness/pull/52 ",
+			},
 		}),
-		{ pullRequest: "https://github.com/albizures/harness/pull/52" },
+		{
+			pullRequest: {
+				type: "pull-request",
+				url: "https://github.com/albizures/harness/pull/52",
+			},
+		},
 	);
 });
 
@@ -137,7 +145,7 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 	assert.deepEqual(validateManifest(manifest), []);
 	assert.equal(manifest.commands[0]?.output, zodOutput);
 
-	const representativeValues = {
+	const legacyStringValues = {
 		url: "https://example.com/spec",
 		file: "docs/spec.md",
 		issue: "https://github.com/albizures/harness/issues/51",
@@ -172,14 +180,13 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 	assert.equal(
 		artifacts
 			.object({ issue: artifacts.issue() })
-			.safeParse({ issue: representativeValues.issue }).success,
-		true,
+			.safeParse({ issue: legacyStringValues.issue }).success,
+		false,
 	);
-	assert.deepEqual(zodOutput.parse(representativeValues), representativeValues);
 	assert.deepEqual(zodOutput.parse(structuredValues), structuredValues);
 
 	const invalid = zodOutput.safeParse({
-		...representativeValues,
+		...structuredValues,
 		url: { type: "url", url: "ftp://example.com/spec" },
 		file: { type: "file", path: "/tmp/spec.md" },
 		issue: { type: "issue", ref: "not-an-issue" },
@@ -192,8 +199,7 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 		handoff: { type: "handoff", ref: "" },
 		finding: { type: "finding", ref: "" },
 	});
-	const invalidArtifactReferenceCount =
-		Object.keys(representativeValues).length;
+	const invalidArtifactReferenceCount = Object.keys(legacyStringValues).length;
 	assert.equal(invalid.success, false);
 	assert.equal(invalid.error.issues.length, invalidArtifactReferenceCount);
 });
