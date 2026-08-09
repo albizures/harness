@@ -31,7 +31,7 @@ import { WorkflowTrackerState, asObject } from "./state.ts";
 export function createInMemoryTracker(
 	seed: { issues?: Array<SeedIssueInput> } = {},
 ): TrackerAdapter {
-	return new InMemoryTracker(seed.issues ?? []);
+	return new WorkflowStateTracker(new WorkflowTrackerState(seed.issues ?? []));
 }
 
 export function createInMemoryTrackerFromEnvironment(
@@ -50,11 +50,15 @@ export function createInMemoryTrackerFromEnvironment(
 	return createInMemoryTracker({ issues: parsed as Array<SeedIssueInput> });
 }
 
-class InMemoryTracker implements TrackerAdapter {
-	private readonly state: WorkflowTrackerState;
+export class WorkflowStateTracker implements TrackerAdapter {
+	protected readonly state: WorkflowTrackerState;
 
-	constructor(seed: Array<SeedIssueInput>) {
-		this.state = new WorkflowTrackerState(seed);
+	constructor(state: WorkflowTrackerState) {
+		this.state = state;
+	}
+
+	protected afterMutation(): void {
+		// In-memory trackers have no durable side effect.
 	}
 
 	async createWorkflowIssue(
@@ -256,7 +260,9 @@ class InMemoryTracker implements TrackerAdapter {
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {
-		return this.state.createIssue(input);
+		const result = this.state.createIssue(input);
+		this.afterMutation();
+		return result;
 	}
 
 	async getIssue(id: string): Promise<WorkflowIssue> {
@@ -275,14 +281,18 @@ class InMemoryTracker implements TrackerAdapter {
 		id: string,
 		input: UpdateIssueInput,
 	): Promise<WorkflowIssue> {
-		return this.state.updateIssue(id, input);
+		const result = this.state.updateIssue(id, input);
+		this.afterMutation();
+		return result;
 	}
 
 	async appendLog(
 		id: string,
 		input: Omit<WorkflowLog, "sequence" | "issueId">,
 	): Promise<WorkflowLog> {
-		return this.state.appendLog(id, input);
+		const result = this.state.appendLog(id, input);
+		this.afterMutation();
+		return result;
 	}
 
 	async readLogs(id: string): Promise<Array<WorkflowLog>> {
@@ -291,35 +301,44 @@ class InMemoryTracker implements TrackerAdapter {
 
 	async addChild(parentId: string, childId: string): Promise<void> {
 		this.state.addChild(parentId, childId);
+		this.afterMutation();
 	}
 
 	async removeChild(parentId: string, childId: string): Promise<void> {
 		this.state.removeChild(parentId, childId);
+		this.afterMutation();
 	}
 
 	async addDependency(issueId: string, blockedById: string): Promise<void> {
 		this.state.addDependency(issueId, blockedById);
+		this.afterMutation();
 	}
 
 	async removeDependency(issueId: string, blockedById: string): Promise<void> {
 		this.state.removeDependency(issueId, blockedById);
+		this.afterMutation();
 	}
 
 	async deleteIssue(id: string): Promise<void> {
 		this.state.deleteIssue(id);
+		this.afterMutation();
 	}
 
 	async registerArtifact(
 		issueId: string,
 		input: WorkflowArtifactInput,
 	): Promise<WorkflowArtifact> {
-		return this.state.registerArtifact(issueId, input);
+		const result = this.state.registerArtifact(issueId, input);
+		this.afterMutation();
+		return result;
 	}
 
 	async registerChange(
 		issueId: string,
 		input: Omit<WorkflowChange, "id">,
 	): Promise<WorkflowChange> {
-		return this.state.registerChange(issueId, input);
+		const result = this.state.registerChange(issueId, input);
+		this.afterMutation();
+		return result;
 	}
 }

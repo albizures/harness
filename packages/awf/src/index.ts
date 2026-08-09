@@ -53,6 +53,10 @@ export {
 	type WorkflowProjection,
 } from "./tracker.ts";
 export {
+	createFileSystemTracker,
+	type FileSystemTrackerOptions,
+} from "./trackers/filesystem.ts";
+export {
 	createInMemoryTracker,
 	createInMemoryTrackerFromEnvironment,
 } from "./trackers/memory.ts";

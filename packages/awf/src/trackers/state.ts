@@ -31,6 +31,27 @@ export class WorkflowTrackerState {
 		this.backfillSeededRelationshipInverses();
 	}
 
+	static fromSnapshot(
+		snapshot: WorkflowTrackerStateSnapshot,
+	): WorkflowTrackerState {
+		const state = new WorkflowTrackerState();
+		state.nextIssueNumber = snapshot.nextIssueNumber;
+		for (const issue of snapshot.issues) {
+			state.issues.set(issue.id, cloneJson(issue) as StoredIssue);
+		}
+		return state;
+	}
+
+	snapshot(): WorkflowTrackerStateSnapshot {
+		return {
+			version: 1,
+			nextIssueNumber: this.nextIssueNumber,
+			issues: [...this.issues.values()].map(
+				(issue) => cloneJson(issue) as StoredIssue,
+			),
+		};
+	}
+
 	createIssue(input: CreateIssueInput): WorkflowIssue {
 		const id = input.id ?? String(this.nextIssueNumber++);
 		if (this.issues.has(id)) {
@@ -262,7 +283,9 @@ export class WorkflowTrackerState {
 		const projected = "labels" in input ? tryFromLabels(input) : { input };
 		const seeded = projected.input;
 		if (seeded.id === undefined) {
-			throw new CorruptWorkflowProjectionError("Seeded issues must have an id.");
+			throw new CorruptWorkflowProjectionError(
+				"Seeded issues must have an id.",
+			);
 		}
 		const normalized = normalizeIssue({ ...seeded, id: seeded.id });
 		if ("labels" in input) {
@@ -321,6 +344,12 @@ export class WorkflowTrackerState {
 		}
 	}
 }
+
+export type WorkflowTrackerStateSnapshot = {
+	version: 1;
+	nextIssueNumber: number;
+	issues: Array<StoredIssue>;
+};
 
 type StoredIssue = Omit<WorkflowIssue, "workflow"> & {
 	workflow: WorkflowProjection;
@@ -411,7 +440,10 @@ function readOptionalSingleLabel(
 	return values[0];
 }
 
-function workflowLabelValues(labels: Array<string>, field: string): Array<string> {
+function workflowLabelValues(
+	labels: Array<string>,
+	field: string,
+): Array<string> {
 	const canonical = new RegExp(`^awf:[^:]+:${field}:(.*)$`, "u");
 	const values = labels
 		.map((label) => canonical.exec(label)?.[1])
@@ -528,7 +560,9 @@ function cloneJson(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
 }
 
-export function asObject(value: JsonValue | undefined): Record<string, JsonValue> {
+export function asObject(
+	value: JsonValue | undefined,
+): Record<string, JsonValue> {
 	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
 		return value as Record<string, JsonValue>;
 	}
