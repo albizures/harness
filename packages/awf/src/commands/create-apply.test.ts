@@ -1,19 +1,18 @@
-import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import test from "node:test";
+import { assert, test } from "vitest";
 import { z } from "zod";
-import { execute } from "./commands.ts";
-import { defaultManifest } from "./default-manifest.ts";
-import type { WorkflowManifest } from "./manifest.ts";
+import { execute } from "../commands.ts";
+import { defaultManifest } from "../default-manifest.ts";
+import type { WorkflowManifest } from "../manifest.ts";
 import {
 	NeedReconciliationError,
 	type Tracker,
 	type TrackerAdapter,
 	type WorkflowIssue,
-} from "./tracker.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+} from "../tracker.ts";
+import { createInMemoryTracker } from "../trackers/memory.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {
@@ -58,6 +57,54 @@ test("create spec creates a bundled workflow Spec from Markdown input", async ()
 		(await tracker.readLogs(data.issue.id)).map((log) => log.type),
 		["spec_created"],
 	);
+});
+
+test("create spec records one high-level tracker intent with initial current fields and log", async () => {
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		createWorkflowIssue: async (input) => {
+			intents.push("createWorkflowIssue");
+			assert.equal(input.title, "Build lifecycle intents");
+			assert.equal(input.workflow.kind, "spec");
+			assert.equal(input.workflow.state, "ready");
+			assert.equal(input.workflow.action, "plan");
+			assert.equal(input.initialLog?.type, "spec_created");
+			return {
+				issue: {
+					id: "1",
+					title: input.title,
+					body: input.body,
+					workflow: {
+						...input.workflow,
+						version: 1,
+						hash: "hash",
+					},
+					relationships: {
+						children: [],
+						dependencies: [],
+						dependents: [],
+					},
+					artifacts: [],
+					changes: [],
+				},
+				log: {
+					...input.initialLog,
+					issueId: "1",
+					sequence: 1,
+					type: input.initialLog?.type ?? "missing",
+				},
+			};
+		},
+	};
+
+	const envelope = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		stdin: "# Build lifecycle intents\n\nUse Tracker intents.",
+	});
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(intents, ["createWorkflowIssue"]);
 });
 
 test("create targets dispatch through manifest CLI declarations", async () => {
@@ -159,6 +206,69 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 		(await tracker.readLogs("ticket-1")).map((log) => log.type),
 		["handoff_created"],
 	);
+});
+
+test("create handoff records artifact and log through one tracker intent", async () => {
+	const seed = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+		],
+	});
+	const issue = await seed.getIssue("123");
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		getIssue: async (id) => {
+			assert.equal(id, "123");
+			return issue;
+		},
+		recordArtifacts: async (id, input) => {
+			intents.push("recordArtifacts");
+			assert.equal(id, "123");
+			assert.deepEqual(input.artifacts, [
+				{
+					kind: "handoff",
+					uri: "handoff.md",
+					name: "Handoff",
+					type: "handoff",
+					ref: "handoff.md",
+				},
+			]);
+			assert.equal(input.log.type, "handoff_created");
+			return {
+				issue,
+				artifacts: [
+					{
+						id: "artifact-1",
+						kind: "handoff",
+						uri: "handoff.md",
+						name: "Handoff",
+						type: "handoff",
+						ref: "handoff.md",
+					},
+				],
+				changes: [],
+				log: { ...input.log, issueId: id, sequence: 1 },
+			};
+		},
+	};
+
+	const envelope = await execute(
+		["create", "handoff", "--source", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				handoff: { type: "handoff", ref: "handoff.md" },
+			}),
+		},
+	);
+
+	assert.equal(envelope.ok, true);
+	assert.deepEqual(intents, ["recordArtifacts"]);
 });
 
 test("create handoff rejects invalid manifest-declared input before mutating", async () => {
@@ -649,4 +759,26 @@ function failingTracker(
 		registerChange: base.registerChange.bind(base),
 	};
 	return Object.assign(tracker, overrides);
+}
+
+function createNoTouchTracker(): Tracker {
+	const touched = () => {
+		throw new Error("tracker should not be touched");
+	};
+	return {
+		createWorkflowIssue: touched,
+		startRun: touched,
+		completeRun: touched,
+		recordArtifacts: touched,
+		escalateWorkflow: touched,
+		resumeWorkflow: touched,
+		changeRelationship: touched,
+		applyPlan: touched,
+		recordCommand: touched,
+		advanceWorkflow: touched,
+		repairIssue: touched,
+		getIssue: touched,
+		listIssues: touched,
+		readLogs: touched,
+	};
 }

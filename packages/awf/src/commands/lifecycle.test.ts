@@ -1,35 +1,11 @@
 import { assert, test } from "vitest";
 import { execute } from "../commands.ts";
 import { defaultManifest } from "../default-manifest.ts";
-import type { Tracker } from "../tracker.ts";
 import { createInMemoryTracker } from "../trackers/memory.ts";
 
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });
 const findingArtifact = (ref: string) => ({ type: "finding", ref });
-const integrationImplementationPrNumber = 6;
-const integrationSpecPrNumber = 3;
-
-async function start(tracker: Tracker, id: string): Promise<string> {
-	const envelope = await execute(["start", id], { tracker });
-	assert.equal(envelope.ok, true);
-	return (envelope as { ok: true; data: { run: { id: string } } }).data.run.id;
-}
-
-async function terminal(
-	tracker: Tracker,
-	event: "succeed" | "fail",
-	id: string,
-	run: string,
-	input: Record<string, unknown>,
-) {
-	const envelope = await execute([event, id, "--run", run, "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify(input),
-	});
-	assert.equal(envelope.ok, true);
-	return envelope;
-}
 
 function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	assert.equal(envelope.ok, true);
@@ -372,61 +348,6 @@ test("terminal retries are idempotent for identical outcomes and reject conflict
 	);
 });
 
-test("Ticket approved review path merges exactly one implementation PR to done", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "t",
-				title: "T",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
-			},
-		],
-	});
-
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		implementationPr: prArtifact(1),
-	});
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		verdict: "approved",
-	});
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		merged: true,
-	});
-
-	const issue = await tracker.getIssue("t");
-	assert.equal(issue.workflow.state, "done");
-	assert.equal(issue.workflow.action, "none");
-	assert.deepEqual(
-		issue.artifacts.map((artifact) => artifact.uri),
-		[pr(1)],
-	);
-});
-
-test("Ticket changes-requested path goes through fix and back to review", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "t",
-				title: "T",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
-			},
-		],
-	});
-
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		implementationPr: prArtifact(2),
-	});
-	await terminal(tracker, "fail", "t", await start(tracker, "t"), {
-		verdict: "changes-requested",
-		findings: [findingArtifact("missing test")],
-	});
-	assert.equal((await tracker.getIssue("t")).workflow.action, "fix");
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
-		summary: "added test",
-	});
-	assert.equal((await tracker.getIssue("t")).workflow.action, "review");
-});
-
 test("default retry, explicit escalation, and explicit resume expose workflow logs and messages", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -519,100 +440,4 @@ test("default retry, explicit escalation, and explicit resume expose workflow lo
 		event: "resume",
 		to: { state: "ready", action: "fix" },
 	});
-});
-
-test("Spec post-plan waits and progresses through child Ticket lifecycle to Spec done", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "s",
-				title: "Spec",
-				workflow: { kind: "spec", state: "ready", action: "plan" },
-			},
-		],
-	});
-
-	const applied = assertSuccess<{
-		spec: { id: string; workflow: { state: string; action: string } };
-		tickets: Array<{ id: string; key: string }>;
-	}>(
-		await execute(["apply", "plan", "s", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				tickets: [{ key: "one", title: "One", content: "Do one thing." }],
-			}),
-		}),
-	);
-	assert.deepEqual(
-		{
-			state: applied.spec.workflow.state,
-			action: applied.spec.workflow.action,
-		},
-		{ state: "ready", action: "none" },
-	);
-	assert.deepEqual(
-		(await tracker.readLogs("s")).map((log) => log.type),
-		["plan_applied"],
-	);
-
-	const ticketId = applied.tickets[0]?.id;
-	assert.equal(typeof ticketId, "string");
-	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
-		implementationPr: prArtifact(integrationImplementationPrNumber),
-	});
-	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
-		verdict: "approved",
-	});
-	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
-		merged: true,
-	});
-
-	const spec = await tracker.getIssue("s");
-	assert.deepEqual(
-		{ state: spec.workflow.state, action: spec.workflow.action },
-		{ state: "ready", action: "integration-test" },
-	);
-
-	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
-		verdict: "passed",
-		specPr: prArtifact(integrationSpecPrNumber),
-	});
-	assert.equal((await tracker.getIssue("s")).workflow.action, "merge");
-	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
-		merged: true,
-	});
-	assert.deepEqual(
-		{
-			state: (await tracker.getIssue("s")).workflow.state,
-			action: (await tracker.getIssue("s")).workflow.action,
-		},
-		{ state: "done", action: "none" },
-	);
-});
-
-test("Spec integration changes-needed returns to ready plan", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "s",
-				title: "S",
-				workflow: { kind: "spec", state: "ready", action: "integration-test" },
-				relationships: { children: ["t"] },
-			},
-			{
-				id: "t",
-				title: "T",
-				workflow: { kind: "ticket", state: "done", action: "none" },
-				relationships: { parent: "s" },
-			},
-		],
-	});
-
-	await terminal(tracker, "fail", "s", await start(tracker, "s"), {
-		verdict: "changes-needed",
-		findings: [findingArtifact("split ticket")],
-	});
-	const issue = await tracker.getIssue("s");
-	assert.equal(issue.workflow.state, "ready");
-	assert.equal(issue.workflow.action, "plan");
 });

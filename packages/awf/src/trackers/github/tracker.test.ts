@@ -1,14 +1,13 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import { execute } from "./commands.ts";
-import { defaultManifest } from "./default-manifest.ts";
+import { assert, expect, test } from "vitest";
+import { execute } from "../../commands.ts";
+import { defaultManifest } from "../../default-manifest.ts";
 import {
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
-} from "./trackers/github/index.ts";
-import { CorruptWorkflowProjectionError } from "./tracker.ts";
+} from "./index.ts";
+import { CorruptWorkflowProjectionError } from "../../tracker.ts";
 
 const PROJECT_COMMENT_AND_TWO_LOGS = 3;
 
@@ -110,7 +109,7 @@ test("listIssues requires reconciliation for malformed reserved GitHub labels", 
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
 
-	await assert.rejects(tracker.listIssues(), /NEED_RECONCILIATION/);
+	await expect(tracker.listIssues()).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("appends logs as strict machine comments", async () => {
@@ -191,7 +190,9 @@ test("capability validation fails when native issue relationships are unavailabl
 	const api = createMockGitHubApi({
 		capabilities: { subIssues: false, dependencies: true },
 	});
-	await assert.rejects(validateGitHubTrackerCapabilities(api), /sub-issues/);
+	await expect(validateGitHubTrackerCapabilities(api)).rejects.toThrow(
+		/sub-issues/,
+	);
 });
 
 test("manual reserved-label corruption requires reconciliation", async () => {
@@ -203,12 +204,10 @@ test("manual reserved-label corruption requires reconciliation", async () => {
 	});
 	api.issue(1).labels.push("awf:agent-development:state:running");
 
-	await assert.rejects(
-		tracker.getIssue("1"),
-		(error: unknown) =>
-			error instanceof CorruptWorkflowProjectionError &&
-			error.message.includes("NEED_RECONCILIATION"),
+	await expect(tracker.getIssue("1")).rejects.toThrow(
+		CorruptWorkflowProjectionError,
 	);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("machine-comment corruption requires reconciliation", async () => {
@@ -221,7 +220,7 @@ test("machine-comment corruption requires reconciliation", async () => {
 	api.issue(1).comments[0].body =
 		"<!-- awf:current v1 agent-development -->\nnot-json";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("malformed canonical and legacy workflow-owned machine comments require reconciliation", async () => {
@@ -236,13 +235,13 @@ test("malformed canonical and legacy workflow-owned machine comments require rec
 		id: 100,
 		body: "<!-- awf:log v2 agent-development -->\n{}",
 	});
-	await assert.rejects(tracker.readLogs("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[1].body = "<!-- awf:agent-development:log -->\n{}";
-	await assert.rejects(tracker.readLogs("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[1].body = "<!-- awf:current v1 agent-development -->";
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("machine-comment markers validate type version and workflow id", async () => {
@@ -260,7 +259,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 				"<!-- awf:log v1 agent-development -->",
 			) ?? "";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[0].body =
 		api
@@ -270,7 +269,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 				"<!-- awf:current v2 agent-development -->",
 			) ?? "";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[0].body =
 		api
@@ -280,7 +279,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 				"<!-- awf:current v1 other-workflow -->",
 			) ?? "";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("registers and validates pull-request artifacts", async () => {
@@ -291,10 +290,9 @@ test("registers and validates pull-request artifacts", async () => {
 		workflow: { kind: "ticket", state: "running", action: "implement" },
 	});
 
-	await assert.rejects(
+	await expect(
 		tracker.registerArtifact("1", { kind: "pull-request", uri: "not a pr" }),
-		/Pull request artifact/,
-	);
+	).rejects.toThrow(/Pull request artifact/);
 	await tracker.registerArtifact("1", {
 		kind: "pull-request",
 		uri: "https://github.com/albizures/harness/pull/1",
@@ -359,7 +357,7 @@ test("malformed machine-owned artifact data requires reconciliation", async () =
 	];
 	api.issue(1).comments[0].body = `${marker}\n${JSON.stringify(metadata)}`;
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub repository", {
@@ -371,9 +369,7 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 	// repository with GitHub sub-issues/dependencies enabled and gh authenticated.
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
-	const { createGhCliGitHubTracker } = await import(
-		"./trackers/github/index.ts"
-	);
+	const { createGhCliGitHubTracker } = await import("./index.ts");
 	const [owner, name] = repo.split("/");
 	assert.ok(owner);
 	assert.ok(name);

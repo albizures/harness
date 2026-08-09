@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import {
 	mkdtemp,
 	readFile,
@@ -9,9 +8,9 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import test from "node:test";
-import { CorruptWorkflowProjectionError } from "./tracker.ts";
-import { createFileSystemTracker } from "./trackers/filesystem.ts";
+import { assert, expect, test } from "vitest";
+import { CorruptWorkflowProjectionError } from "../tracker.ts";
+import { createFileSystemTracker } from "./filesystem.ts";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	const dir = await mkdtemp(join(tmpdir(), "awf-file-tracker-"));
@@ -28,7 +27,7 @@ test("file-backed tracker initializes missing state and persists mutations for l
 		const tracker = createFileSystemTracker({ path: file });
 
 		assert.deepEqual(await tracker.listIssues(), []);
-		await assert.rejects(stat(file));
+		await expect(stat(file)).rejects.toThrow();
 
 		const issue = await tracker.createIssue({
 			title: "Durable ticket",
@@ -217,11 +216,11 @@ test("file-backed tracker rejects corrupted JSON clearly", async () => {
 		const file = join(dir, "tracker.json");
 		await writeFile(file, "{not json", "utf8");
 
-		assert.throws(
-			() => createFileSystemTracker({ path: file }),
-			(error: unknown) =>
-				error instanceof CorruptWorkflowProjectionError &&
-				error.message.includes("not valid JSON"),
+		expect(() => createFileSystemTracker({ path: file })).toThrow(
+			CorruptWorkflowProjectionError,
+		);
+		expect(() => createFileSystemTracker({ path: file })).toThrow(
+			/not valid JSON/,
 		);
 	});
 });

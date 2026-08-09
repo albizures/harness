@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import {
 	NeedReconciliationError,
 	ProjectionConflictError,
@@ -23,15 +22,14 @@ test("adapter conformance: intent writes reject stale projection preconditions",
 		workflow: { state: "running", activeRunId: "run-1" },
 	});
 
-	await assert.rejects(
+	await expect(
 		tracker.startRun("1", {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
 			runId: "run-2",
 			workflow: { state: "running" },
 			log: { type: "action_started", runId: "run-2" },
 		}),
-		ProjectionConflictError,
-	);
+	).rejects.toThrow(ProjectionConflictError);
 });
 
 test("adapter conformance: plan intents verify created projection through Tracker reads", async () => {
@@ -110,7 +108,7 @@ test("adapter conformance: partial tracker failures return NEED_RECONCILIATION w
 		},
 	};
 
-	await assert.rejects(
+	await expect(
 		tracker.applyPlan({
 			specId: "spec-1",
 			expect: { version: 1 },
@@ -124,8 +122,7 @@ test("adapter conformance: partial tracker failures return NEED_RECONCILIATION w
 			],
 			log: { type: "plan_applied" },
 		}),
-		NeedReconciliationError,
-	);
+	).rejects.toThrow(NeedReconciliationError);
 	assert.deepEqual(
 		(await base.listIssues()).map((issue) => issue.id),
 		["spec-1", "1"],

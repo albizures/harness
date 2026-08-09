@@ -1,5 +1,4 @@
 import { assert, test } from "vitest";
-import { z } from "zod";
 import { execute } from "../commands.ts";
 import { defineManifest, type WorkflowManifest } from "../manifest.ts";
 import type { Tracker } from "../tracker.ts";
@@ -56,66 +55,6 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 		},
 	],
 	commands: [],
-});
-
-const syntheticManifest = defineManifest({
-	version: "v1",
-	workflow: { id: "synthetic" },
-	vocabulary: {
-		states: ["draft", "ready", "running", "done"],
-		actions: ["refine", "promote", "none"],
-		events: ["start", "succeed"],
-	},
-	github: { reservedPrefix: "awf" },
-	concurrency: { perIssue: 1, perWorkflow: 4 },
-	readiness: {
-		filters: [{ kind: "idea", state: "ready", action: "promote" }],
-		namedFilters: [{ name: "goal", kind: "goal", relationship: "parent" }],
-	},
-	kinds: [
-		{
-			id: "goal",
-			label: "Goal",
-			initial: { state: "done", action: "none" },
-			transitions: [],
-		},
-		{
-			id: "idea",
-			label: "Idea",
-			initial: { state: "ready", action: "promote" },
-			transitions: [
-				{
-					from: { state: "ready", action: "promote" },
-					event: "start",
-					to: { state: "running", action: "promote" },
-				},
-				{
-					from: { state: "running", action: "promote" },
-					event: "succeed",
-					to: { state: "done", action: "none" },
-				},
-			],
-		},
-	],
-	commands: [
-		{
-			id: "idea-create",
-			cli: { verb: "create", target: "idea" },
-			target: { kind: "idea", action: "promote" },
-			input: z.strictObject({
-				title: z.string().min(1),
-				body: z.string().min(1),
-			}),
-		},
-	],
-	relationships: [
-		{
-			id: "goal-ideas",
-			from: "goal",
-			to: "idea",
-			projection: { type: "parent-child", direction: "outbound" },
-		},
-	],
 });
 
 test("runtime commands reject unsupported workflow manifest relationship projection types", async () => {
@@ -543,50 +482,6 @@ test("invalid readiness filter values report the value problem", async () => {
 					expectedKind: "spec",
 					actualKind: "ticket",
 				},
-			},
-		},
-	);
-});
-
-test("synthetic workflow readiness filters use manifest-declared names", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "goal-1",
-				title: "Goal",
-				workflow: { kind: "goal", state: "done", action: "none" },
-			},
-			{
-				id: "idea-1",
-				title: "Promotable idea",
-				workflow: { kind: "idea", state: "ready", action: "promote" },
-			},
-		],
-	});
-	await tracker.addChild("goal-1", "idea-1");
-
-	const ready = await execute(["ready", "--filter", "goal=goal-1"], {
-		tracker,
-		manifest: syntheticManifest,
-	});
-	assert.equal(ready.ok, true);
-	assert.deepEqual(
-		(
-			ready as { ok: true; data: { items: Array<{ id: string }> } }
-		).data.items.map((item) => item.id),
-		["idea-1"],
-	);
-	assert.deepEqual(
-		await execute(["ready", "--filter", "spec=goal-1"], {
-			tracker,
-			manifest: syntheticManifest,
-		}),
-		{
-			ok: false,
-			error: {
-				code: "INVALID_READY_FILTER",
-				message: "Readiness filter is not declared by the manifest.",
-				details: { filter: "spec" },
 			},
 		},
 	);

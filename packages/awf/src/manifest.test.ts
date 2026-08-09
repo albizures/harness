@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { z } from "zod";
 import {
 	artifacts,
@@ -9,6 +8,35 @@ import {
 	ManifestValidationError,
 	validateManifest,
 } from "./manifest.ts";
+
+const assert = {
+	equal(actual: unknown, expected: unknown) {
+		expect(actual).toBe(expected);
+	},
+	deepEqual(actual: unknown, expected: unknown) {
+		expect(actual).toEqual(expected);
+	},
+	match(actual: string, expected: RegExp) {
+		expect(actual).toMatch(expected);
+	},
+	async rejects(
+		promise: Promise<unknown>,
+		expectation: { message: RegExp } | ((error: unknown) => boolean),
+	) {
+		try {
+			await promise;
+		} catch (error) {
+			if (typeof expectation === "function") {
+				expect(expectation(error)).toBe(true);
+				return;
+			}
+			expect(error).toBeInstanceOf(Error);
+			expect((error as Error).message).toMatch(expectation.message);
+			return;
+		}
+		throw new Error("Expected promise to reject.");
+	},
+};
 
 const validFixture = new URL("./fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;

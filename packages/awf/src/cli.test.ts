@@ -1,4 +1,3 @@
-import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	chmod,
@@ -10,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { assert, test } from "vitest";
 
 const cliPath = new URL("./cli.ts", import.meta.url);
 const validManifestPath = new URL(

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
@@ -21,13 +20,12 @@ test("conditional updates advance the projection version and reject stale expect
 	assert.equal(updated.workflow.version, issue.workflow.version + 1);
 	assert.equal(updated.workflow.state, "running");
 	assert.equal(updated.workflow.activeRunId, "run-1");
-	await assert.rejects(
+	await expect(
 		tracker.updateIssue(issue.id, {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
 			workflow: { state: "done" },
 		}),
-		ProjectionConflictError,
-	);
+	).rejects.toThrow(ProjectionConflictError);
 });
 
 test("workflow logs are append-only and read back in append order", async () => {
@@ -148,8 +146,7 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 			},
 		],
 	});
-	await assert.rejects(
-		() => duplicate.getIssue("1"),
+	await expect(duplicate.getIssue("1")).rejects.toThrow(
 		CorruptWorkflowProjectionError,
 	);
 	const missing = createInMemoryTracker({
@@ -164,21 +161,18 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 			},
 		],
 	});
-	await assert.rejects(
-		() => missing.getIssue("2"),
+	await expect(missing.getIssue("2")).rejects.toThrow(
 		CorruptWorkflowProjectionError,
 	);
-	assert.throws(
-		() =>
-			createInMemoryTracker({
-				issues: [
-					{
-						id: "3",
-						title: "Bad",
-						labels: "awf:agent-development:kind:ticket",
-					} as never,
-				],
-			}),
-		CorruptWorkflowProjectionError,
-	);
+	expect(() =>
+		createInMemoryTracker({
+			issues: [
+				{
+					id: "3",
+					title: "Bad",
+					labels: "awf:agent-development:kind:ticket",
+				} as never,
+			],
+		}),
+	).toThrow(CorruptWorkflowProjectionError);
 });
