@@ -57,6 +57,123 @@ test("file-backed tracker initializes missing state and persists mutations for l
 	});
 });
 
+test("file-backed tracker preserves workflow data and issue allocation across fresh adapters", async () => {
+	await withTempDir(async (dir) => {
+		const file = join(dir, "tracker.json");
+		const tracker = createFileSystemTracker({ path: file });
+
+		const { issue: spec } = await tracker.createWorkflowIssue({
+			title: "Durable Spec",
+			workflow: { kind: "spec", state: "ready", action: "plan" },
+			initialLog: { type: "workflow_created" },
+		});
+		const { issue: ticket } = await tracker.createWorkflowIssue({
+			title: "Durable Ticket",
+			workflow: { kind: "ticket", state: "ready", action: "implement" },
+			initialLog: { type: "workflow_created" },
+		});
+		const { issue: blocker } = await tracker.createWorkflowIssue({
+			title: "Durable Blocker",
+			workflow: { kind: "ticket", state: "ready", action: "implement" },
+		});
+
+		await tracker.changeRelationship({
+			type: "add-child",
+			parentId: spec.id,
+			childId: ticket.id,
+		});
+		await tracker.changeRelationship({
+			type: "add-dependency",
+			issueId: ticket.id,
+			blockedById: blocker.id,
+		});
+		const started = await tracker.startRun(ticket.id, {
+			expect: {
+				version: ticket.workflow.version,
+				hash: ticket.workflow.hash,
+			},
+			runId: "run-1",
+			workflow: { state: "running", activeRunId: "run-1" },
+			log: { type: "action_started", runId: "run-1" },
+		});
+		await tracker.completeRun(ticket.id, {
+			expect: {
+				version: started.issue.workflow.version,
+				hash: started.issue.workflow.hash,
+			},
+			runId: "run-1",
+			workflow: { state: "done", action: "none" },
+			artifacts: [
+				{
+					kind: "file",
+					uri: "docs/implementation.md",
+					name: "Implementation notes",
+				},
+			],
+			changes: [
+				{
+					kind: "git-ref",
+					uri: "abc123",
+					summary: "Implemented filesystem persistence",
+				},
+			],
+			log: { type: "action_succeeded", runId: "run-1" },
+		});
+
+		const reloaded = createFileSystemTracker({ path: file });
+		const reloadedTicket = await reloaded.getIssue(ticket.id);
+		const nextIssue = await reloaded.createWorkflowIssue({
+			title: "Created after reload",
+			workflow: { kind: "ticket", state: "ready", action: "implement" },
+		});
+
+		assert.deepEqual(
+			(await reloaded.listIssues()).map((issue) => issue.id),
+			[spec.id, ticket.id, blocker.id, nextIssue.issue.id],
+		);
+		assert.deepEqual(
+			(await reloaded.readLogs(ticket.id)).map((log) => ({
+				sequence: log.sequence,
+				type: log.type,
+			})),
+			[
+				{ sequence: 1, type: "workflow_created" },
+				{ sequence: 2, type: "action_started" },
+				{ sequence: 3, type: "action_succeeded" },
+			],
+		);
+		assert.deepEqual(
+			(await reloaded.getIssue(spec.id)).relationships.children,
+			[ticket.id],
+		);
+		assert.equal(reloadedTicket.relationships.parent, spec.id);
+		assert.deepEqual(reloadedTicket.relationships.dependencies, [blocker.id]);
+		assert.deepEqual(
+			(await reloaded.getIssue(blocker.id)).relationships.dependents,
+			[ticket.id],
+		);
+		assert.deepEqual(reloadedTicket.artifacts, [
+			{
+				id: "artifact-1",
+				kind: "file",
+				uri: "docs/implementation.md",
+				name: "Implementation notes",
+				type: "file",
+				path: "docs/implementation.md",
+			},
+		]);
+		assert.deepEqual(reloadedTicket.changes, [
+			{
+				id: "change-1",
+				kind: "git-ref",
+				uri: "abc123",
+				summary: "Implemented filesystem persistence",
+			},
+		]);
+		assert.equal(nextIssue.issue.id, "4");
+	});
+});
+
 test("file-backed tracker read-only operations do not rewrite state", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
