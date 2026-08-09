@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { execute } from "./commands.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import type { Tracker } from "./tracker.ts";
@@ -7,7 +7,7 @@ import { createInMemoryTracker } from "./trackers/memory.ts";
 test("fixed handoff runtime command is not publicly accepted", async () => {
 	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);
 
-	assert.deepEqual(envelope, {
+	expect(envelope).toEqual({
 		ok: false,
 		error: {
 			code: "UNKNOWN_COMMAND",
@@ -24,7 +24,7 @@ test("unknown manifest command targets are rejected before tracker mutation", as
 		stdin: "# Ticket\n",
 	});
 
-	assert.deepEqual(envelope, {
+	expect(envelope).toEqual({
 		ok: false,
 		error: {
 			code: "UNKNOWN_COMMAND_TARGET",
@@ -49,20 +49,20 @@ test("start records one high-level tracker intent instead of low-level writes", 
 	const tracker: Tracker = {
 		...createNoTouchTracker(),
 		getIssue: async (id) => {
-			assert.equal(id, "123");
+			expect(id).toBe("123");
 			return issue;
 		},
 		startRun: async (id, input) => {
 			intents.push("startRun");
-			assert.equal(id, "123");
-			assert.deepEqual(input.expect, {
+			expect(id).toBe("123");
+			expect(input.expect).toEqual({
 				version: issue.workflow.version,
 				hash: issue.workflow.hash,
 			});
-			assert.equal(input.workflow.state, "running");
-			assert.equal(input.workflow.action, "implement");
-			assert.equal(input.log.type, "action_started");
-			assert.equal(input.log.runId, input.runId);
+			expect(input.workflow.state).toBe("running");
+			expect(input.workflow.action).toBe("implement");
+			expect(input.log.type).toBe("action_started");
+			expect(input.log.runId).toBe(input.runId);
 			return {
 				issue: {
 					...issue,
@@ -79,8 +79,8 @@ test("start records one high-level tracker intent instead of low-level writes", 
 
 	const envelope = await execute(["start", "123"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(intents, ["startRun"]);
+	expect(envelope.ok).toBe(true);
+	expect(intents).toEqual(["startRun"]);
 });
 
 function createNoTouchTracker(): Tracker {
@@ -108,7 +108,7 @@ function createNoTouchTracker(): Tracker {
 test("invalid arguments return a stable parse error envelope", async () => {
 	const envelope = await execute(["succeed", "123"]);
 
-	assert.deepEqual(envelope, {
+	expect(envelope).toEqual({
 		ok: false,
 		error: {
 			code: "INVALID_ARGUMENTS",

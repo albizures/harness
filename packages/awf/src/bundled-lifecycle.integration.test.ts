@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { execute } from "./commands.ts";
 import type { Tracker } from "./tracker.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
@@ -11,7 +11,7 @@ const integrationSpecPrNumber = 3;
 
 async function start(tracker: Tracker, id: string): Promise<string> {
 	const envelope = await execute(["start", id], { tracker });
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	return (envelope as { ok: true; data: { run: { id: string } } }).data.run.id;
 }
 
@@ -26,12 +26,12 @@ async function terminal(
 		tracker,
 		stdin: JSON.stringify(input),
 	});
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	return envelope;
 }
 
 function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	return (envelope as { ok: true; data: T }).data;
 }
 
@@ -57,14 +57,11 @@ test("bundled Ticket workflow progresses through implementation review and merge
 	});
 
 	const issue = await tracker.getIssue("t");
-	assert.deepEqual(
-		{ state: issue.workflow.state, action: issue.workflow.action },
-		{ state: "done", action: "none" },
-	);
-	assert.deepEqual(
-		issue.artifacts.map((artifact) => artifact.uri),
-		[pr(1)],
-	);
+	expect({
+		state: issue.workflow.state,
+		action: issue.workflow.action,
+	}).toEqual({ state: "done", action: "none" });
+	expect(issue.artifacts.map((artifact) => artifact.uri)).toEqual([pr(1)]);
 });
 
 test("bundled Ticket changes-requested review returns to fix and review", async () => {
@@ -85,11 +82,11 @@ test("bundled Ticket changes-requested review returns to fix and review", async 
 		verdict: "changes-requested",
 		findings: [findingArtifact("missing test")],
 	});
-	assert.equal((await tracker.getIssue("t")).workflow.action, "fix");
+	expect((await tracker.getIssue("t")).workflow.action).toBe("fix");
 	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
 		summary: "added test",
 	});
-	assert.equal((await tracker.getIssue("t")).workflow.action, "review");
+	expect((await tracker.getIssue("t")).workflow.action).toBe("review");
 });
 
 test("bundled Spec workflow waits for child Tickets before integration and merge", async () => {
@@ -114,16 +111,13 @@ test("bundled Spec workflow waits for child Tickets before integration and merge
 			}),
 		}),
 	);
-	assert.deepEqual(
-		{
-			state: applied.spec.workflow.state,
-			action: applied.spec.workflow.action,
-		},
-		{ state: "ready", action: "none" },
-	);
+	expect({
+		state: applied.spec.workflow.state,
+		action: applied.spec.workflow.action,
+	}).toEqual({ state: "ready", action: "none" });
 
 	const ticketId = applied.tickets[0]?.id;
-	assert.equal(typeof ticketId, "string");
+	expect(typeof ticketId).toBe("string");
 	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
 		implementationPr: prArtifact(integrationImplementationPrNumber),
 	});
@@ -135,30 +129,24 @@ test("bundled Spec workflow waits for child Tickets before integration and merge
 	});
 
 	const readyForIntegration = await tracker.getIssue("s");
-	assert.deepEqual(
-		{
-			state: readyForIntegration.workflow.state,
-			action: readyForIntegration.workflow.action,
-		},
-		{ state: "ready", action: "integration-test" },
-	);
+	expect({
+		state: readyForIntegration.workflow.state,
+		action: readyForIntegration.workflow.action,
+	}).toEqual({ state: "ready", action: "integration-test" });
 
 	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
 		verdict: "passed",
 		specPr: prArtifact(integrationSpecPrNumber),
 	});
-	assert.equal((await tracker.getIssue("s")).workflow.action, "merge");
+	expect((await tracker.getIssue("s")).workflow.action).toBe("merge");
 	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
 		merged: true,
 	});
 	const doneSpec = await tracker.getIssue("s");
-	assert.deepEqual(
-		{
-			state: doneSpec.workflow.state,
-			action: doneSpec.workflow.action,
-		},
-		{ state: "done", action: "none" },
-	);
+	expect({
+		state: doneSpec.workflow.state,
+		action: doneSpec.workflow.action,
+	}).toEqual({ state: "done", action: "none" });
 });
 
 test("bundled Spec integration changes-needed returns to planning", async () => {
@@ -184,8 +172,8 @@ test("bundled Spec integration changes-needed returns to planning", async () => 
 		findings: [findingArtifact("split ticket")],
 	});
 	const issue = await tracker.getIssue("s");
-	assert.deepEqual(
-		{ state: issue.workflow.state, action: issue.workflow.action },
-		{ state: "ready", action: "plan" },
-	);
+	expect({
+		state: issue.workflow.state,
+		action: issue.workflow.action,
+	}).toEqual({ state: "ready", action: "plan" });
 });

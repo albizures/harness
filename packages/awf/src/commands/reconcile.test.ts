@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { execute } from "../commands.ts";
 import { createInMemoryTracker } from "../trackers/memory.ts";
 
@@ -21,10 +21,9 @@ test("reconcile reports diagnostics read-only by default", async () => {
 
 	const envelope = await execute(["reconcile", "123"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.equal((await tracker.getIssue("123")).workflow.activeRunId, undefined);
-	assert.deepEqual(
-		(envelope.ok ? envelope.data : {}) as Record<string, unknown>,
+	expect(envelope.ok).toBe(true);
+	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe(undefined);
+	expect((envelope.ok ? envelope.data : {}) as Record<string, unknown>).toEqual(
 		{
 			id: "123",
 			mode: "check",
@@ -57,16 +56,15 @@ test("reconcile --apply performs deterministic safe active-run repair", async ()
 
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.equal((await tracker.getIssue("123")).workflow.activeRunId, "run-1");
-	assert.equal(
+	expect(envelope.ok).toBe(true);
+	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe("run-1");
+	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
 				diagnostics: Array<{ applied?: boolean }>;
 			}
 		).diagnostics[0]?.applied,
-		true,
-	);
+	).toBe(true);
 });
 
 test("reconcile leaves ambiguous active-run drift for humans", async () => {
@@ -86,16 +84,15 @@ test("reconcile leaves ambiguous active-run drift for humans", async () => {
 
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.equal((await tracker.getIssue("123")).workflow.activeRunId, undefined);
-	assert.equal(
+	expect(envelope.ok).toBe(true);
+	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe(undefined);
+	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
 				diagnostics: Array<{ repair: string }>;
 			}
 		).diagnostics[0]?.repair,
-		"need-human",
-	);
+	).toBe("need-human");
 });
 
 test("reconcile reports malformed logs and corrupt current metadata", async () => {
@@ -135,14 +132,13 @@ test("reconcile reports malformed logs and corrupt current metadata", async () =
 	const malformedEnvelope = await execute(["reconcile", "logs"], {
 		tracker: malformedLogTracker,
 	});
-	assert.equal(malformedEnvelope.ok, true);
-	assert.equal(
+	expect(malformedEnvelope.ok).toBe(true);
+	expect(
 		(malformedEnvelope.ok
 			? (malformedEnvelope.data as { diagnostics: Array<{ code: string }> })
 			: { diagnostics: [] }
 		).diagnostics[0]?.code,
-		"MALFORMED_WORKFLOW_LOG",
-	);
+	).toBe("MALFORMED_WORKFLOW_LOG");
 	for (const [id, code] of [
 		["dupe", "DUPLICATE_CURRENT_FIELDS"],
 		["missing", "MISSING_CURRENT_METADATA"],
@@ -150,15 +146,14 @@ test("reconcile reports malformed logs and corrupt current metadata", async () =
 		const envelope = await execute(["reconcile", id], {
 			tracker: duplicateFieldsTracker,
 		});
-		assert.equal(envelope.ok, true);
-		assert.equal(
+		expect(envelope.ok).toBe(true);
+		expect(
 			(
 				(envelope.ok ? envelope.data : {}) as {
 					diagnostics: Array<{ code: string }>;
 				}
 			).diagnostics[0]?.code,
-			code,
-		);
+		).toBe(code);
 	}
 });
 
@@ -181,8 +176,8 @@ test("normal commands do not silently repair drift before reconciliation", async
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
 		},
 	);
-	assert.equal(before.ok, false);
-	assert.equal(before.ok ? undefined : before.error.code, "RUN_MISMATCH");
+	expect(before.ok).toBe(false);
+	expect(before.ok ? undefined : before.error.code).toBe("RUN_MISMATCH");
 	await execute(["reconcile", "123", "--apply"], { tracker });
 	const after = await execute(
 		["succeed", "123", "--run", "run-1", "--input", "-"],
@@ -191,5 +186,5 @@ test("normal commands do not silently repair drift before reconciliation", async
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
 		},
 	);
-	assert.equal(after.ok, true);
+	expect(after.ok).toBe(true);
 });

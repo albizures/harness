@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { defaultManifest } from "../default-manifest.ts";
 import { defineManifest } from "../manifest.ts";
 import { execute } from "../commands.ts";
@@ -7,7 +7,7 @@ import { helpCommands, helpReadiness } from "./help.ts";
 test("help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
 
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	if (!envelope.ok) {
 		throw new Error("expected success");
 	}
@@ -16,23 +16,25 @@ test("help returns a stable success envelope", async () => {
 		description: string;
 		commands: Array<{ name: string; usage: string }>;
 	};
-	assert.equal(data.name, "awf");
-	assert.equal(data.description, "Agent workflow CLI.");
-	assert.ok(Array.isArray(data.commands));
-	assert.ok(
+	expect(data.name).toBe("awf");
+	expect(data.description).toBe("Agent workflow CLI.");
+	expect(Array.isArray(data.commands)).toBeTruthy();
+	expect(
 		data.commands.some((command) => command.usage === "awf start <id>"),
-	);
-	assert.ok(
+	).toBeTruthy();
+	expect(
 		data.commands.some(
 			(command) =>
 				command.usage ===
 				"awf create handoff --source <issue> --input <file|->",
 		),
-	);
-	assert.ok(data.commands.every((command) => command.name !== "handoff"));
-	assert.ok(
+	).toBeTruthy();
+	expect(
+		data.commands.every((command) => command.name !== "handoff"),
+	).toBeTruthy();
+	expect(
 		data.commands.every((command) => !command.usage.startsWith("awf handoff")),
-	);
+	).toBeTruthy();
 });
 
 test("help combines runtime commands with manifest CLI targets and readiness filters", () => {
@@ -56,23 +58,23 @@ test("help combines runtime commands with manifest CLI targets and readiness fil
 		],
 	});
 
-	assert.ok(
+	expect(
 		helpCommands(manifest).some((command) => command.usage === "awf get <id>"),
-	);
-	assert.ok(
+	).toBeTruthy();
+	expect(
 		helpCommands(manifest).some(
 			(command) => command.usage === "awf create ticket --input <file|->",
 		),
-	);
-	assert.ok(
+	).toBeTruthy();
+	expect(
 		helpCommands(manifest).some(
 			(command) => command.usage === "awf apply brief <issue> --input <file|->",
 		),
-	);
-	assert.deepEqual(helpReadiness(manifest).filters, [
+	).toBeTruthy();
+	expect(helpReadiness(manifest).filters).toEqual([
 		{ kind: "ticket", state: "ready", action: "implement" },
 	]);
-	assert.deepEqual(helpReadiness(manifest).namedFilters, [
+	expect(helpReadiness(manifest).namedFilters).toEqual([
 		{
 			name: "spec",
 			kind: "spec",

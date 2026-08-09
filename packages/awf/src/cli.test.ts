@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 
 const cliPath = new URL("./cli.ts", import.meta.url);
 const validManifestPath = new URL(
@@ -83,11 +83,11 @@ test("CLI writes success envelopes to stdout", () => {
 		encoding: "utf8",
 	});
 
-	assert.equal(result.status, 0);
-	assert.equal(result.stderr, "");
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
-	assert.equal(envelope.ok, true);
-	assert.equal(envelope.data.name, "awf");
+	expect(envelope.ok).toBe(true);
+	expect(envelope.data.name).toBe("awf");
 });
 
 test("CLI discovers only ./awf.config.ts from the current working directory", async () => {
@@ -102,13 +102,12 @@ test("CLI discovers only ./awf.config.ts from the current working directory", as
 			},
 		);
 
-		assert.equal(discovered.status, 0, discovered.stdout || discovered.stderr);
-		assert.deepEqual(
+		expect(discovered.status).toBe(0);
+		expect(
 			JSON.parse(discovered.stdout).data.items.map(
 				(item: { id: string }) => item.id,
 			),
-			["91"],
-		);
+		).toEqual(["91"]);
 
 		const child = join(dir, "child");
 		await mkdir(child);
@@ -118,8 +117,8 @@ test("CLI discovers only ./awf.config.ts from the current working directory", as
 			{ cwd: child, encoding: "utf8" },
 		);
 
-		assert.equal(notDiscoveredFromParent.status, 0);
-		assert.deepEqual(JSON.parse(notDiscoveredFromParent.stdout).data.items, []);
+		expect(notDiscoveredFromParent.status).toBe(0);
+		expect(JSON.parse(notDiscoveredFromParent.stdout).data.items).toEqual([]);
 	});
 });
 
@@ -133,13 +132,12 @@ test("CLI global --config loads a workflow module before command execution", asy
 			{ cwd: dir, encoding: "utf8" },
 		);
 
-		assert.equal(result.status, 0, result.stdout || result.stderr);
-		assert.deepEqual(
+		expect(result.status).toBe(0);
+		expect(
 			JSON.parse(result.stdout).data.items.map(
 				(item: { id: string }) => item.id,
 			),
-			["92"],
-		);
+		).toEqual(["92"]);
 	});
 });
 
@@ -151,11 +149,11 @@ test("CLI defaults to the bundled manifest and ./.awf/tracker.json", async () =>
 			{ cwd: dir, encoding: "utf8", input: "# Durable default\n" },
 		);
 
-		assert.equal(created.status, 0, created.stdout || created.stderr);
+		expect(created.status).toBe(0);
 		const trackerState = JSON.parse(
 			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
 		);
-		assert.equal(trackerState.issues[0].title, "Durable default");
+		expect(trackerState.issues[0].title).toBe("Durable default");
 	});
 });
 
@@ -173,11 +171,11 @@ export const manifest = defaultManifest;
 			{ cwd: dir, encoding: "utf8", input: "# Manifest-only config\n" },
 		);
 
-		assert.equal(created.status, 0, created.stdout || created.stderr);
+		expect(created.status).toBe(0);
 		const trackerState = JSON.parse(
 			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
 		);
-		assert.equal(trackerState.issues[0].title, "Manifest-only config");
+		expect(trackerState.issues[0].title).toBe("Manifest-only config");
 	});
 });
 
@@ -189,10 +187,10 @@ test("CLI default filesystem tracker keeps workflow state across separate proces
 				encoding: "utf8",
 				input: input === undefined ? undefined : serializeCliSmokeInput(input),
 			});
-			assert.equal(result.status, 0, result.stdout || result.stderr);
-			assert.equal(result.stderr, "");
+			expect(result.status).toBe(0);
+			expect(result.stderr).toBe("");
 			const envelope = JSON.parse(result.stdout);
-			assert.equal(envelope.ok, true, result.stdout);
+			expect(envelope.ok).toBe(true);
 			return envelope.data;
 		};
 
@@ -200,82 +198,66 @@ test("CLI default filesystem tracker keeps workflow state across separate proces
 			["create", "spec", "--input", "-"],
 			"# Durable spec\n",
 		).issue;
-		assert.equal(spec.id, "1");
-		assert.deepEqual(
+		expect(spec.id).toBe("1");
+		expect(
 			runCli(["ready"]).items.map((item: { id: string }) => item.id),
-			["1"],
-		);
-		assert.equal(runCli(["get", spec.id]).issue.title, "Durable spec");
+		).toEqual(["1"]);
+		expect(runCli(["get", spec.id]).issue.title).toBe("Durable spec");
 
 		const planned = runCli(["apply", "plan", spec.id, "--input", "-"], {
 			tickets: [{ key: "one", title: "Durable ticket", content: "Do it." }],
 		});
 		const ticketId = planned.tickets[0].id;
-		assert.deepEqual(
+		expect(
 			runCli(["ready"]).items.map((item: { id: string }) => item.id),
-			[ticketId],
-		);
-		assert.equal(runCli(["get", ticketId]).issue.relationships.parent, spec.id);
-		assert.deepEqual(
+		).toEqual([ticketId]);
+		expect(runCli(["get", ticketId]).issue.relationships.parent).toBe(spec.id);
+		expect(
 			runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
-			["spec_created", "plan_applied"],
-		);
+		).toEqual(["spec_created", "plan_applied"]);
 
 		const started = runCli(["start", ticketId]);
-		assert.deepEqual(runCli(["ready"]).items, []);
+		expect(runCli(["ready"]).items).toEqual([]);
 		const failed = runCli(
 			["fail", ticketId, "--run", started.run.id, "--input", "-"],
 			{ reason: "transient" },
 		);
-		assert.deepEqual(
-			{
-				state: failed.issue.workflow.state,
-				action: failed.issue.workflow.action,
-			},
-			{ state: "ready", action: "implement" },
-		);
+		expect({
+			state: failed.issue.workflow.state,
+			action: failed.issue.workflow.action,
+		}).toEqual({ state: "ready", action: "implement" });
 
 		const restarted = runCli(["start", ticketId]);
 		const implemented = runCli(
 			["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
 			{ implementationPr: prArtifact(durableImplementationPrNumber) },
 		);
-		assert.deepEqual(
-			{
-				state: implemented.issue.workflow.state,
-				action: implemented.issue.workflow.action,
-			},
-			{ state: "ready", action: "review" },
-		);
+		expect({
+			state: implemented.issue.workflow.state,
+			action: implemented.issue.workflow.action,
+		}).toEqual({ state: "ready", action: "review" });
 		const escalated = runCli(["escalate", ticketId, "--input", "-"], {
 			reason: "needs decision",
 		});
-		assert.deepEqual(
-			{
-				state: escalated.issue.workflow.state,
-				action: escalated.issue.workflow.action,
-			},
-			{ state: "need-human", action: "none" },
-		);
+		expect({
+			state: escalated.issue.workflow.state,
+			action: escalated.issue.workflow.action,
+		}).toEqual({ state: "need-human", action: "none" });
 		const resumed = runCli(["resume", ticketId, "--action", "fix"]);
-		assert.deepEqual(
-			{
-				state: resumed.issue.workflow.state,
-				action: resumed.issue.workflow.action,
-			},
-			{ state: "ready", action: "fix" },
-		);
-		assert.deepEqual(
+		expect({
+			state: resumed.issue.workflow.state,
+			action: resumed.issue.workflow.action,
+		}).toEqual({ state: "ready", action: "fix" });
+		expect(
 			runCli(["logs", ticketId]).logs.map((log: { type: string }) => log.type),
-			[
-				"action_started",
-				"action_failed",
-				"action_started",
-				"action_succeeded",
-				"human_intervention_needed",
-				"action_resumed",
-			],
-		);
+		).toEqual([
+			"action_started",
+			"action_failed",
+			"action_started",
+			"action_succeeded",
+			"human_intervention_needed",
+			"action_resumed",
+		]);
 	});
 });
 
@@ -304,7 +286,7 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" }
 			],
 			{ cwd: dir, encoding: "utf8", input: "# Config tracker\n" },
 		);
-		assert.equal(create.status, 0, create.stdout || create.stderr);
+		expect(create.status).toBe(0);
 		const createdId = JSON.parse(create.stdout).data.issue.id;
 
 		const get = spawnSync(
@@ -312,12 +294,12 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" }
 			[cliPath.pathname, "--config", configPath, "get", createdId],
 			{ cwd: dir, encoding: "utf8" },
 		);
-		assert.equal(get.status, 0, get.stdout || get.stderr);
-		assert.equal(JSON.parse(get.stdout).data.issue.title, "Config tracker");
+		expect(get.status).toBe(0);
+		expect(JSON.parse(get.stdout).data.issue.title).toBe("Config tracker");
 		const trackerState = JSON.parse(
 			await readFile(join(dir, "custom-tracker.json"), "utf8"),
 		);
-		assert.equal(trackerState.issues[0].id, createdId);
+		expect(trackerState.issues[0].id).toBe(createdId);
 	});
 });
 
@@ -327,26 +309,26 @@ test("CLI returns clear failure envelopes for explicit bad config paths", async 
 		[cliPath.pathname, "--config", "./missing.workflow.ts", "ready"],
 		{ encoding: "utf8" },
 	);
-	assert.equal(missing.status, 1);
-	assert.equal(JSON.parse(missing.stdout).error.code, "CONFIG_LOAD_FAILED");
+	expect(missing.status).toBe(1);
+	expect(JSON.parse(missing.stdout).error.code).toBe("CONFIG_LOAD_FAILED");
 
 	const invalid = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--config", badManifestPath, "ready"],
 		{ encoding: "utf8" },
 	);
-	assert.equal(invalid.status, 1);
-	assert.equal(JSON.parse(invalid.stdout).error.code, "CONFIG_LOAD_FAILED");
+	expect(invalid.status).toBe(1);
+	expect(JSON.parse(invalid.stdout).error.code).toBe("CONFIG_LOAD_FAILED");
 
 	const manifestless = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--config", missingManifestPath, "ready"],
 		{ encoding: "utf8" },
 	);
-	assert.equal(manifestless.status, 1);
+	expect(manifestless.status).toBe(1);
 	const envelope = JSON.parse(manifestless.stdout);
-	assert.equal(envelope.error.code, "CONFIG_LOAD_FAILED");
-	assert.match(envelope.error.message, /manifest/);
+	expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
+	expect(envelope.error.message).toMatch(/manifest/);
 
 	await withTempDir(async (dir) => {
 		const unreadablePath = join(dir, "unreadable.workflow.ts");
@@ -358,9 +340,8 @@ test("CLI returns clear failure envelopes for explicit bad config paths", async 
 				[cliPath.pathname, "--config", unreadablePath, "ready"],
 				{ encoding: "utf8" },
 			);
-			assert.equal(unreadable.status, 1);
-			assert.equal(
-				JSON.parse(unreadable.stdout).error.code,
+			expect(unreadable.status).toBe(1);
+			expect(JSON.parse(unreadable.stdout).error.code).toBe(
 				"CONFIG_LOAD_FAILED",
 			);
 		} finally {
@@ -376,9 +357,9 @@ test("CLI smoke path loads a fixture manifest and returns a JSON success envelop
 		{ encoding: "utf8" },
 	);
 
-	assert.equal(result.status, 0);
-	assert.equal(result.stderr, "");
-	assert.deepEqual(JSON.parse(result.stdout), {
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toEqual({
 		ok: true,
 		data: {
 			manifest: "agent-development",
@@ -395,17 +376,15 @@ test("CLI returns a stable validation error envelope for a generic link projecti
 		{ encoding: "utf8" },
 	);
 
-	assert.equal(result.status, 1);
-	assert.equal(result.stderr, "");
+	expect(result.status).toBe(1);
+	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
-	assert.equal(envelope.ok, false);
-	assert.equal(envelope.error.code, "MANIFEST_VALIDATION_FAILED");
-	assert.equal(
-		envelope.error.details.issues.at(-1).path,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.error.code).toBe("MANIFEST_VALIDATION_FAILED");
+	expect(envelope.error.details.issues.at(-1).path).toBe(
 		"$.relationships[2].projection.type",
 	);
-	assert.match(
-		envelope.error.details.issues.at(-1).message,
+	expect(envelope.error.details.issues.at(-1).message).toMatch(
 		/parent-child or dependency/,
 	);
 });
@@ -417,12 +396,12 @@ test("CLI returns a stable validation error envelope for a bad manifest", () => 
 		{ encoding: "utf8" },
 	);
 
-	assert.equal(result.status, 1);
-	assert.equal(result.stderr, "");
+	expect(result.status).toBe(1);
+	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
-	assert.equal(envelope.ok, false);
-	assert.equal(envelope.error.code, "MANIFEST_VALIDATION_FAILED");
-	assert.match(JSON.stringify(envelope.error.details.issues), /wildcard/);
+	expect(envelope.ok).toBe(false);
+	expect(envelope.error.code).toBe("MANIFEST_VALIDATION_FAILED");
+	expect(JSON.stringify(envelope.error.details.issues)).toMatch(/wildcard/);
 });
 
 test("CLI smoke path seeds multiple in-memory issues and returns only legally executable ready items", () => {
@@ -468,12 +447,11 @@ test("CLI smoke path seeds multiple in-memory issues and returns only legally ex
 		},
 	);
 
-	assert.equal(result.status, 0);
-	assert.equal(result.stderr, "");
-	assert.deepEqual(
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
+	expect(
 		JSON.parse(result.stdout).data.items.map((item: { id: string }) => item.id),
-		["1"],
-	);
+	).toEqual(["1"]);
 });
 
 test("CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
@@ -515,8 +493,8 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 			env,
 		},
 	);
-	assert.equal(before.status, 1);
-	assert.equal(JSON.parse(before.stdout).error.code, "RUN_MISMATCH");
+	expect(before.status).toBe(1);
+	expect(JSON.parse(before.stdout).error.code).toBe("RUN_MISMATCH");
 
 	const diagnosed = spawnSync(
 		process.execPath,
@@ -526,9 +504,8 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 			env,
 		},
 	);
-	assert.equal(diagnosed.status, 0);
-	assert.equal(
-		JSON.parse(diagnosed.stdout).data.diagnostics[0].code,
+	expect(diagnosed.status).toBe(0);
+	expect(JSON.parse(diagnosed.stdout).data.diagnostics[0].code).toBe(
 		"MISSING_ACTIVE_RUN",
 	);
 
@@ -544,9 +521,9 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 		],
 		{ encoding: "utf8", env },
 	);
-	assert.equal(applied.status, 0);
+	expect(applied.status).toBe(0);
 	const repairedIssue = JSON.parse(applied.stdout).data.issue;
-	assert.equal(repairedIssue.workflow.activeRunId, "run-42");
+	expect(repairedIssue.workflow.activeRunId).toBe("run-42");
 
 	const after = spawnSync(
 		process.execPath,
@@ -574,8 +551,8 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 			},
 		},
 	);
-	assert.equal(after.status, 0, after.stdout || after.stderr);
-	assert.equal(JSON.parse(after.stdout).ok, true);
+	expect(after.status).toBe(0);
+	expect(JSON.parse(after.stdout).ok).toBe(true);
 });
 
 test("CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
@@ -601,10 +578,10 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		},
 	);
 
-	assert.equal(started.status, 0);
-	assert.equal(started.stderr, "");
+	expect(started.status).toBe(0);
+	expect(started.stderr).toBe("");
 	const startEnvelope = JSON.parse(started.stdout);
-	assert.equal(startEnvelope.ok, true);
+	expect(startEnvelope.ok).toBe(true);
 	const runId = startEnvelope.data.run.id;
 	const succeeded = spawnSync(
 		process.execPath,
@@ -643,10 +620,10 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		},
 	);
 
-	assert.equal(succeeded.status, 0);
-	assert.equal(succeeded.stderr, "");
+	expect(succeeded.status).toBe(0);
+	expect(succeeded.stderr).toBe("");
 	const succeedEnvelope = JSON.parse(succeeded.stdout);
-	assert.equal(succeedEnvelope.ok, true);
+	expect(succeedEnvelope.ok).toBe(true);
 	const logged = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--config", envMemoryWorkflowPath, "logs", "42"],
@@ -670,14 +647,13 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		},
 	);
 
-	assert.equal(logged.status, 0);
-	assert.equal(logged.stderr, "");
+	expect(logged.status).toBe(0);
+	expect(logged.stderr).toBe("");
 	const logsEnvelope = JSON.parse(logged.stdout);
-	assert.equal(logsEnvelope.ok, true);
-	assert.deepEqual(
+	expect(logsEnvelope.ok).toBe(true);
+	expect(
 		logsEnvelope.data.logs.map((log: { type: string }) => log.type),
-		["action_started", "action_succeeded"],
-	);
+	).toEqual(["action_started", "action_succeeded"]);
 });
 
 test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
@@ -697,10 +673,10 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 				env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
 			},
 		);
-		assert.equal(result.status, 0, result.stdout || result.stderr);
-		assert.equal(result.stderr, "");
+		expect(result.status).toBe(0);
+		expect(result.stderr).toBe("");
 		const envelope = JSON.parse(result.stdout);
-		assert.equal(envelope.ok, true, result.stdout);
+		expect(envelope.ok).toBe(true);
 		return envelope.data;
 	};
 
@@ -774,7 +750,7 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 		{ merged: true },
 	);
 	ticketIssue = completed.issue;
-	assert.equal(ticketIssue.workflow.state, "done");
+	expect(ticketIssue.workflow.state).toBe("done");
 	const specReadyForIntegration = {
 		...specAfterPlan,
 		workflow: { ...specAfterPlan.workflow, action: "integration-test" },
@@ -819,8 +795,8 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 		{ merged: true },
 	);
 	specIssue = completed.issue;
-	assert.equal(specIssue.workflow.state, "done");
-	assert.equal(specIssue.workflow.action, "none");
+	expect(specIssue.workflow.state).toBe("done");
+	expect(specIssue.workflow.action).toBe("none");
 });
 
 test("CLI writes error envelopes to stdout and exits non-zero", () => {
@@ -828,9 +804,9 @@ test("CLI writes error envelopes to stdout and exits non-zero", () => {
 		encoding: "utf8",
 	});
 
-	assert.equal(result.status, 1);
-	assert.equal(result.stderr, "");
-	assert.deepEqual(JSON.parse(result.stdout), {
+	expect(result.status).toBe(1);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toEqual({
 		ok: false,
 		error: {
 			code: "UNKNOWN_COMMAND",

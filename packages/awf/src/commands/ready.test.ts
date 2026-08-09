@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { execute } from "../commands.ts";
 import { defineManifest, type WorkflowManifest } from "../manifest.ts";
 import type { Tracker } from "../tracker.ts";
@@ -72,7 +72,7 @@ test("runtime commands reject unsupported workflow manifest relationship project
 		} as unknown as WorkflowManifest,
 	});
 
-	assert.deepEqual(envelope, {
+	expect(envelope).toEqual({
 		ok: false,
 		error: {
 			code: "MANIFEST_VALIDATION_FAILED",
@@ -146,8 +146,8 @@ test("ready returns legal executable work after dependency, concurrency, active-
 		},
 	});
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(envelope.ok ? envelope.data : undefined, {
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
 		items: [
 			{
 				id: "10",
@@ -201,9 +201,8 @@ test("ready reports dependency-gated Tickets as blocked context while keeping du
 
 	const envelope = await execute(["ready"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(envelope.ok ? envelope.data : {}) as Record<string, unknown>,
+	expect(envelope.ok).toBe(true);
+	expect((envelope.ok ? envelope.data : {}) as Record<string, unknown>).toEqual(
 		{
 			items: [
 				{
@@ -241,14 +240,13 @@ test("ready reports dependency-gated Tickets as blocked context while keeping du
 			],
 		},
 	);
-	assert.deepEqual(
+	expect(
 		cleanTestWorkflow((await tracker.getIssue("blocked")).workflow),
-		{
-			kind: "ticket",
-			state: "ready",
-			action: "implement",
-		},
-	);
+	).toEqual({
+		kind: "ticket",
+		state: "ready",
+		action: "implement",
+	});
 });
 
 test("ready excludes ready/none Specs as unschedulable waiting work", async () => {
@@ -269,13 +267,15 @@ test("ready excludes ready/none Specs as unschedulable waiting work", async () =
 
 	const envelope = await execute(["ready"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(envelope.ok ? envelope.data : { items: [] }).items.map(
-			(item: { id: string }) => item.id,
+	expect(envelope.ok).toBe(true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	expect(
+		(envelope.data as { items: Array<{ id: string }> }).items.map(
+			(item) => item.id,
 		),
-		["ticket"],
-	);
+	).toEqual(["ticket"]);
 });
 
 test("ready excludes candidates blocked by manifest concurrency limits", async () => {
@@ -307,8 +307,8 @@ test("ready excludes candidates blocked by manifest concurrency limits", async (
 		},
 	});
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(envelope.ok ? envelope.data : undefined, {
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
 		items: [],
 		blocked: [
 			{
@@ -357,13 +357,15 @@ test("ready returns deterministic ordering, supports --limit 1, and manifest-nam
 		{ tracker, manifest: defaultTicketOnlyReadyManifest },
 	);
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(envelope.ok ? envelope.data : { items: [] }).items.map(
-			(item: { id: string }) => item.id,
+	expect(envelope.ok).toBe(true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	expect(
+		(envelope.data as { items: Array<{ id: string }> }).items.map(
+			(item) => item.id,
 		),
-		["1"],
-	);
+	).toEqual(["1"]);
 });
 
 test("ready accepts repeated manifest-named filters", async () => {
@@ -400,13 +402,15 @@ test("ready accepts repeated manifest-named filters", async () => {
 		},
 	);
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(envelope.ok ? envelope.data : { items: [] }).items.map(
-			(item: { id: string }) => item.id,
+	expect(envelope.ok).toBe(true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	expect(
+		(envelope.data as { items: Array<{ id: string }> }).items.map(
+			(item) => item.id,
 		),
-		["ticket-1"],
-	);
+	).toEqual(["ticket-1"]);
 });
 
 test("unknown readiness filter names are rejected before tracker reads", async () => {
@@ -415,7 +419,7 @@ test("unknown readiness filter names are rejected before tracker reads", async (
 		manifest: defaultTicketOnlyReadyManifest,
 	});
 
-	assert.deepEqual(envelope, {
+	expect(envelope).toEqual({
 		ok: false,
 		error: {
 			code: "INVALID_READY_FILTER",
@@ -431,7 +435,7 @@ test("malformed readiness filter expressions return a clear parse error", async 
 		manifest: defaultTicketOnlyReadyManifest,
 	});
 
-	assert.deepEqual(envelope, {
+	expect(envelope).toEqual({
 		ok: false,
 		error: {
 			code: "INVALID_ARGUMENTS",
@@ -452,39 +456,37 @@ test("invalid readiness filter values report the value problem", async () => {
 		],
 	});
 
-	assert.deepEqual(
+	expect(
 		await execute(["ready", "--filter", "spec=missing"], {
 			tracker,
 			manifest: defaultTicketOnlyReadyManifest,
 		}),
-		{
-			ok: false,
-			error: {
-				code: "INVALID_READY_FILTER",
-				message: "Readiness filter value does not resolve to a workflow issue.",
-				details: { filter: "spec", value: "missing" },
-			},
+	).toEqual({
+		ok: false,
+		error: {
+			code: "INVALID_READY_FILTER",
+			message: "Readiness filter value does not resolve to a workflow issue.",
+			details: { filter: "spec", value: "missing" },
 		},
-	);
-	assert.deepEqual(
+	});
+	expect(
 		await execute(["ready", "--filter", "spec=ticket-1"], {
 			tracker,
 			manifest: defaultTicketOnlyReadyManifest,
 		}),
-		{
-			ok: false,
-			error: {
-				code: "INVALID_READY_FILTER",
-				message: "Readiness filter value has the wrong workflow kind.",
-				details: {
-					filter: "spec",
-					value: "ticket-1",
-					expectedKind: "spec",
-					actualKind: "ticket",
-				},
+	).toEqual({
+		ok: false,
+		error: {
+			code: "INVALID_READY_FILTER",
+			message: "Readiness filter value has the wrong workflow kind.",
+			details: {
+				filter: "spec",
+				value: "ticket-1",
+				expectedKind: "spec",
+				actualKind: "ticket",
 			},
 		},
-	);
+	});
 });
 
 function cleanTestWorkflow(workflow: {

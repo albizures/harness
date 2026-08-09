@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { z } from "zod";
 import { execute } from "./commands.ts";
 import { defineManifest } from "./manifest.ts";
@@ -86,7 +86,7 @@ test("synthetic workflow dispatches manifest-declared create, apply, and ready c
 		manifest: syntheticManifest,
 		stdin: JSON.stringify({ title: "Promotable idea", body: "Try it." }),
 	});
-	assert.equal(created.ok, true);
+	expect(created.ok).toBe(true);
 	const issueId = (created as { ok: true; data: { issue: { id: string } } })
 		.data.issue.id;
 	await tracker.addChild("goal-1", issueId);
@@ -95,12 +95,11 @@ test("synthetic workflow dispatches manifest-declared create, apply, and ready c
 		tracker,
 		manifest: syntheticManifest,
 	});
-	assert.deepEqual(
+	expect(
 		(
 			ready as { ok: true; data: { items: Array<{ id: string }> } }
 		).data.items.map((item) => item.id),
-		[issueId],
-	);
+	).toEqual([issueId]);
 
 	const applied = await execute(
 		["apply", "promotion", issueId, "--input", "-"],
@@ -110,9 +109,8 @@ test("synthetic workflow dispatches manifest-declared create, apply, and ready c
 			stdin: JSON.stringify({ note: "Promote this idea." }),
 		},
 	);
-	assert.equal(applied.ok, true);
-	assert.equal(
-		(await tracker.readLogs(issueId)).at(-1)?.type,
+	expect(applied.ok).toBe(true);
+	expect((await tracker.readLogs(issueId)).at(-1)?.type).toBe(
 		"idea-promote_applied",
 	);
 });
@@ -128,7 +126,7 @@ test("synthetic workflow dispatch rejects undeclared command and filter names", 
 		],
 	});
 
-	assert.equal(
+	expect(
 		(
 			await execute(["create", "ticket", "--input", "-"], {
 				tracker,
@@ -136,15 +134,13 @@ test("synthetic workflow dispatch rejects undeclared command and filter names", 
 				stdin: JSON.stringify({ title: "Nope", body: "Nope." }),
 			})
 		).ok,
-		false,
-	);
-	assert.equal(
+	).toBe(false);
+	expect(
 		(
 			await execute(["ready", "--filter", "spec=goal-1"], {
 				tracker,
 				manifest: syntheticManifest,
 			})
 		).ok,
-		false,
-	);
+	).toBe(false);
 });

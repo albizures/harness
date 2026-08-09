@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { assert, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import { CorruptWorkflowProjectionError } from "../tracker.ts";
 import { createFileSystemTracker } from "./filesystem.ts";
 
@@ -26,7 +26,7 @@ test("file-backed tracker initializes missing state and persists mutations for l
 		const file = join(dir, "nested", "tracker.json");
 		const tracker = createFileSystemTracker({ path: file });
 
-		assert.deepEqual(await tracker.listIssues(), []);
+		expect(await tracker.listIssues()).toEqual([]);
 		await expect(stat(file)).rejects.toThrow();
 
 		const issue = await tracker.createIssue({
@@ -39,18 +39,15 @@ test("file-backed tracker initializes missing state and persists mutations for l
 			uri: "docs/result.md",
 		});
 
-		assert.equal((await stat(dirname(file))).isDirectory(), true);
+		expect((await stat(dirname(file))).isDirectory()).toBe(true);
 		const reloaded = createFileSystemTracker({ path: file });
-		assert.deepEqual(
-			(await reloaded.listIssues()).map((stored) => stored.title),
+		expect((await reloaded.listIssues()).map((stored) => stored.title)).toEqual(
 			["Durable ticket"],
 		);
-		assert.deepEqual(
-			(await reloaded.readLogs(issue.id)).map((log) => log.type),
-			["created"],
-		);
-		assert.equal(
-			(await reloaded.getIssue(issue.id)).artifacts[0]?.uri,
+		expect((await reloaded.readLogs(issue.id)).map((log) => log.type)).toEqual([
+			"created",
+		]);
+		expect((await reloaded.getIssue(issue.id)).artifacts[0]?.uri).toBe(
 			"docs/result.md",
 		);
 	});
@@ -126,32 +123,31 @@ test("file-backed tracker preserves workflow data and issue allocation across fr
 			workflow: { kind: "ticket", state: "ready", action: "implement" },
 		});
 
-		assert.deepEqual(
-			(await reloaded.listIssues()).map((issue) => issue.id),
-			[spec.id, ticket.id, blocker.id, nextIssue.issue.id],
-		);
-		assert.deepEqual(
+		expect((await reloaded.listIssues()).map((issue) => issue.id)).toEqual([
+			spec.id,
+			ticket.id,
+			blocker.id,
+			nextIssue.issue.id,
+		]);
+		expect(
 			(await reloaded.readLogs(ticket.id)).map((log) => ({
 				sequence: log.sequence,
 				type: log.type,
 			})),
-			[
-				{ sequence: 1, type: "workflow_created" },
-				{ sequence: 2, type: "action_started" },
-				{ sequence: 3, type: "action_succeeded" },
-			],
-		);
-		assert.deepEqual(
-			(await reloaded.getIssue(spec.id)).relationships.children,
-			[ticket.id],
-		);
-		assert.equal(reloadedTicket.relationships.parent, spec.id);
-		assert.deepEqual(reloadedTicket.relationships.dependencies, [blocker.id]);
-		assert.deepEqual(
+		).toEqual([
+			{ sequence: 1, type: "workflow_created" },
+			{ sequence: 2, type: "action_started" },
+			{ sequence: 3, type: "action_succeeded" },
+		]);
+		expect((await reloaded.getIssue(spec.id)).relationships.children).toEqual([
+			ticket.id,
+		]);
+		expect(reloadedTicket.relationships.parent).toBe(spec.id);
+		expect(reloadedTicket.relationships.dependencies).toEqual([blocker.id]);
+		expect(
 			(await reloaded.getIssue(blocker.id)).relationships.dependents,
-			[ticket.id],
-		);
-		assert.deepEqual(reloadedTicket.artifacts, [
+		).toEqual([ticket.id]);
+		expect(reloadedTicket.artifacts).toEqual([
 			{
 				id: "artifact-1",
 				kind: "file",
@@ -161,7 +157,7 @@ test("file-backed tracker preserves workflow data and issue allocation across fr
 				path: "docs/implementation.md",
 			},
 		]);
-		assert.deepEqual(reloadedTicket.changes, [
+		expect(reloadedTicket.changes).toEqual([
 			{
 				id: "change-1",
 				kind: "git-ref",
@@ -169,7 +165,7 @@ test("file-backed tracker preserves workflow data and issue allocation across fr
 				summary: "Implemented filesystem persistence",
 			},
 		]);
-		assert.equal(nextIssue.issue.id, "4");
+		expect(nextIssue.issue.id).toBe("4");
 	});
 });
 
@@ -188,7 +184,7 @@ test("file-backed tracker read-only operations do not rewrite state", async () =
 		await tracker.readLogs("1");
 
 		const after = await stat(file, { bigint: true });
-		assert.equal(after.mtimeNs, before.mtimeNs);
+		expect(after.mtimeNs).toBe(before.mtimeNs);
 	});
 });
 
@@ -203,11 +199,10 @@ test("file-backed tracker writes a complete JSON state file without leftover tem
 		});
 
 		const raw = await readFile(file, "utf8");
-		assert.equal(JSON.parse(raw).issues[0].title, "Atomic");
-		assert.deepEqual(
+		expect(JSON.parse(raw).issues[0].title).toBe("Atomic");
+		expect(
 			(await readdir(dir)).filter((entry) => entry.includes(".tmp-")),
-			[],
-		);
+		).toEqual([]);
 	});
 });
 

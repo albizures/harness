@@ -1,4 +1,4 @@
-import { assert, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import {
 	NeedReconciliationError,
 	ProjectionConflictError,
@@ -64,20 +64,15 @@ test("adapter conformance: plan intents verify created projection through Tracke
 		log: { type: "plan_applied", payload: { tickets: [] } },
 	});
 
-	assert.deepEqual(
-		result.tickets.map((ticket) => ticket.key),
-		["a", "b"],
-	);
-	assert.deepEqual(
-		(await tracker.getIssue("spec-1")).relationships.children,
+	expect(result.tickets.map((ticket) => ticket.key)).toEqual(["a", "b"]);
+	expect((await tracker.getIssue("spec-1")).relationships.children).toEqual(
 		result.tickets.map((ticket) => ticket.id),
 	);
-	assert.deepEqual(
+	expect(
 		(await tracker.getIssue(result.tickets[1]?.id ?? "missing")).relationships
 			.dependencies,
-		[result.tickets[0]?.id],
-	);
-	assert.equal((await tracker.readLogs("spec-1"))[0]?.type, "plan_applied");
+	).toEqual([result.tickets[0]?.id]);
+	expect((await tracker.readLogs("spec-1"))[0]?.type).toBe("plan_applied");
 });
 
 test("adapter conformance: partial tracker failures return NEED_RECONCILIATION without rollback", async () => {
@@ -123,11 +118,9 @@ test("adapter conformance: partial tracker failures return NEED_RECONCILIATION w
 			log: { type: "plan_applied" },
 		}),
 	).rejects.toThrow(NeedReconciliationError);
-	assert.deepEqual(
-		(await base.listIssues()).map((issue) => issue.id),
-		["spec-1", "1"],
-	);
-	assert.deepEqual((await base.getIssue("spec-1")).relationships.children, [
+	expect((await base.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
 		"1",
 	]);
+	expect((await base.getIssue("spec-1")).relationships.children).toEqual(["1"]);
 });

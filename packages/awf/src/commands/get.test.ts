@@ -1,4 +1,4 @@
-import { assert, test } from "vitest";
+import { expect, test } from "vitest";
 import { execute } from "../commands.ts";
 import { createInMemoryTracker } from "../trackers/memory.ts";
 
@@ -19,8 +19,8 @@ test("get reads a workflow issue with a stable envelope shape", async () => {
 
 	const envelope = await execute(["get", "42"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual((envelope as { ok: true; data: unknown }).data, {
+	expect(envelope.ok).toBe(true);
+	expect((envelope as { ok: true; data: unknown }).data).toEqual({
 		issue: {
 			id: "42",
 			title: "Implement tracker",
@@ -57,9 +57,8 @@ test("get returns derived run attempts even for crash-like running state", async
 
 	const envelope = await execute(["get", "123"], { tracker });
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(envelope as { ok: true; data: { runs: unknown } }).data.runs,
+	expect(envelope.ok).toBe(true);
+	expect((envelope as { ok: true; data: { runs: unknown } }).data.runs).toEqual(
 		{
 			activeRunId: "run-crash",
 			attempts: [{ runId: "run-crash", status: "running" }],
