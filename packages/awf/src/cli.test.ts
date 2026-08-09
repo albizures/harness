@@ -35,6 +35,14 @@ const defaultManifestSourcePath = new URL(
 ).pathname;
 const memoryTrackerSourcePath = new URL("./trackers/memory.ts", import.meta.url)
 	.pathname;
+const filesystemTrackerSourcePath = new URL(
+	"./trackers/filesystem.ts",
+	import.meta.url,
+).pathname;
+
+const unreadableMode = 0o000;
+const ownerReadWriteMode = 0o600;
+const durableImplementationPrNumber = 93;
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",
@@ -174,6 +182,146 @@ export const manifest = defaultManifest;
 	});
 });
 
+test("CLI default filesystem tracker keeps workflow state across separate processes", async () => {
+	await withTempDir(async (dir) => {
+		const runCli = (args: Array<string>, input?: unknown) => {
+			const result = spawnSync(process.execPath, [cliPath.pathname, ...args], {
+				cwd: dir,
+				encoding: "utf8",
+				input: input === undefined ? undefined : serializeCliSmokeInput(input),
+			});
+			assert.equal(result.status, 0, result.stdout || result.stderr);
+			assert.equal(result.stderr, "");
+			const envelope = JSON.parse(result.stdout);
+			assert.equal(envelope.ok, true, result.stdout);
+			return envelope.data;
+		};
+
+		const spec = runCli(
+			["create", "spec", "--input", "-"],
+			"# Durable spec\n",
+		).issue;
+		assert.equal(spec.id, "1");
+		assert.deepEqual(
+			runCli(["ready"]).items.map((item: { id: string }) => item.id),
+			["1"],
+		);
+		assert.equal(runCli(["get", spec.id]).issue.title, "Durable spec");
+
+		const planned = runCli(["apply", "plan", spec.id, "--input", "-"], {
+			tickets: [{ key: "one", title: "Durable ticket", content: "Do it." }],
+		});
+		const ticketId = planned.tickets[0].id;
+		assert.deepEqual(
+			runCli(["ready"]).items.map((item: { id: string }) => item.id),
+			[ticketId],
+		);
+		assert.equal(runCli(["get", ticketId]).issue.relationships.parent, spec.id);
+		assert.deepEqual(
+			runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
+			["spec_created", "plan_applied"],
+		);
+
+		const started = runCli(["start", ticketId]);
+		assert.deepEqual(runCli(["ready"]).items, []);
+		const failed = runCli(
+			["fail", ticketId, "--run", started.run.id, "--input", "-"],
+			{ reason: "transient" },
+		);
+		assert.deepEqual(
+			{
+				state: failed.issue.workflow.state,
+				action: failed.issue.workflow.action,
+			},
+			{ state: "ready", action: "implement" },
+		);
+
+		const restarted = runCli(["start", ticketId]);
+		const implemented = runCli(
+			["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
+			{ implementationPr: prArtifact(durableImplementationPrNumber) },
+		);
+		assert.deepEqual(
+			{
+				state: implemented.issue.workflow.state,
+				action: implemented.issue.workflow.action,
+			},
+			{ state: "ready", action: "review" },
+		);
+		const escalated = runCli(["escalate", ticketId, "--input", "-"], {
+			reason: "needs decision",
+		});
+		assert.deepEqual(
+			{
+				state: escalated.issue.workflow.state,
+				action: escalated.issue.workflow.action,
+			},
+			{ state: "need-human", action: "none" },
+		);
+		const resumed = runCli(["resume", ticketId, "--action", "fix"]);
+		assert.deepEqual(
+			{
+				state: resumed.issue.workflow.state,
+				action: resumed.issue.workflow.action,
+			},
+			{ state: "ready", action: "fix" },
+		);
+		assert.deepEqual(
+			runCli(["logs", ticketId]).logs.map((log: { type: string }) => log.type),
+			[
+				"action_started",
+				"action_failed",
+				"action_started",
+				"action_succeeded",
+				"human_intervention_needed",
+				"action_resumed",
+			],
+		);
+	});
+});
+
+test("CLI uses an explicit config-exported filesystem tracker across processes", async () => {
+	await withTempDir(async (dir) => {
+		const configPath = join(dir, "custom.workflow.ts");
+		await writeFile(
+			configPath,
+			`import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = defaultManifest;
+export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" });
+`,
+		);
+		const create = spawnSync(
+			process.execPath,
+			[
+				cliPath.pathname,
+				"--config",
+				configPath,
+				"create",
+				"spec",
+				"--input",
+				"-",
+			],
+			{ cwd: dir, encoding: "utf8", input: "# Config tracker\n" },
+		);
+		assert.equal(create.status, 0, create.stdout || create.stderr);
+		const createdId = JSON.parse(create.stdout).data.issue.id;
+
+		const get = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "--config", configPath, "get", createdId],
+			{ cwd: dir, encoding: "utf8" },
+		);
+		assert.equal(get.status, 0, get.stdout || get.stderr);
+		assert.equal(JSON.parse(get.stdout).data.issue.title, "Config tracker");
+		const trackerState = JSON.parse(
+			await readFile(join(dir, "custom-tracker.json"), "utf8"),
+		);
+		assert.equal(trackerState.issues[0].id, createdId);
+	});
+});
+
 test("CLI returns clear failure envelopes for explicit bad config paths", async () => {
 	const missing = spawnSync(
 		process.execPath,
@@ -204,7 +352,7 @@ test("CLI returns clear failure envelopes for explicit bad config paths", async 
 	await withTempDir(async (dir) => {
 		const unreadablePath = join(dir, "unreadable.workflow.ts");
 		await writeFile(unreadablePath, configWithMemoryIssue("93"));
-		await chmod(unreadablePath, 0o000);
+		await chmod(unreadablePath, unreadableMode);
 		try {
 			const unreadable = spawnSync(
 				process.execPath,
@@ -217,7 +365,7 @@ test("CLI returns clear failure envelopes for explicit bad config paths", async 
 				"CONFIG_LOAD_FAILED",
 			);
 		} finally {
-			await chmod(unreadablePath, 0o600);
+			await chmod(unreadablePath, ownerReadWriteMode);
 		}
 	});
 });
