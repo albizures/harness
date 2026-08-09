@@ -18,11 +18,15 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"test": "node --test src/*.test.ts",
+		"test:vitest": "vitest run --config vitest.config.ts",
 		"awf": "node ./dist/cli.js"
 	},
 	"dependencies": {
 		"jiti": "^2.7.0",
 		"type-fest": "^5.8.0",
 		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.10"
 	}
 }
