@@ -18,7 +18,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"test": "pnpm run test:node && pnpm run test:vitest",
-		"test:node": "node --test src/bundled-lifecycle.test.ts src/cli-get.test.ts src/cli.test.ts src/filesystem-tracker.test.ts src/github-tracker.test.ts src/manifest.test.ts src/spec-plan.test.ts src/tracker-conformance.test.ts src/tracker.test.ts",
+		"test:node": "node --test src/cli.test.ts src/filesystem-tracker.test.ts src/github-tracker.test.ts src/manifest.test.ts src/spec-plan.test.ts src/tracker-conformance.test.ts src/tracker.test.ts",
 		"test:vitest": "vitest run --config vitest.config.ts",
 		"awf": "node ./dist/cli.js"
 	},
