@@ -100,6 +100,10 @@ _Avoid_: agent workflow CLI core, issue workflow script
 A project- or package-provided declarative definition of entity kinds, labels, states, actions, transitions, required command inputs and outputs, relationships, concurrency rules, and tracker mappings that the Workflow runtime executes deterministically. In v1 it is authored as a TypeScript module exporting a strict declarative object through a typed `defineManifest` helper, loaded with `jiti`, and validated at runtime; TypeScript is for authoring ergonomics, not executable workflow hooks.
 _Avoid_: hard-coded workflow, loose configuration, workflow code
 
+**Workflow module**:
+A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
+_Avoid_: executable manifest, manifest hooks
+
 **Bundled workflow**:
 A Workflow definition shipped with the CLI package. The first bundled workflow is the agent-development workflow using Spec and Ticket workflow issue kinds, with Handoff represented as an artifact rather than a workflow issue kind.
 _Avoid_: built-in special case, example-only workflow
@@ -111,6 +115,10 @@ _Avoid_: handoff issue, handoff entity
 **Tracker API**:
 The Workflow runtime's lowest-common-denominator interface for issue tracker primitives such as issues, labels or fields, comments, children, dependencies, changes, and logs. Workflow-specific mapping details live inside tracker adapters, not in parent-agent commands.
 _Avoid_: GitHub API wrapper, workflow API
+
+**File-backed Tracker Adapter**:
+A Tracker API implementation that stores Workflow issues and their workflow data durably on the local filesystem for local or development use, rather than keeping them only in process memory or delegating to an external tracker.
+_Avoid_: filesystem memory tracker, local GitHub replacement
 
 **Workflow issue**:
 The core domain object managed by the Workflow runtime. A Workflow issue is a tracker issue with one manifest-defined kind attached to it, plus explicit current workflow fields and append-only logs.
