@@ -9,14 +9,17 @@ export {
 } from "./envelope.ts";
 export {
 	ManifestValidationError,
+	WorkflowModuleLoadError,
 	artifacts,
 	defineManifest,
 	loadManifest,
+	loadWorkflowModule,
 	validateManifest,
 	type ArtifactKind,
 	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,
+	type WorkflowModule,
 } from "./manifest.ts";
 export {
 	createGhCliGitHubTracker,

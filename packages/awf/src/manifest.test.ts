@@ -5,6 +5,7 @@ import {
 	artifacts,
 	defineManifest,
 	loadManifest,
+	loadWorkflowModule,
 	ManifestValidationError,
 	validateManifest,
 } from "./manifest.ts";
@@ -13,6 +14,16 @@ const validFixture = new URL("./fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;
 const linkFixture = new URL("./fixtures/link.workflow.ts", import.meta.url)
 	.pathname;
+const moduleFixture = new URL("./fixtures/module.workflow.ts", import.meta.url)
+	.pathname;
+const missingManifestFixture = new URL(
+	"./fixtures/missing-manifest.workflow.ts",
+	import.meta.url,
+).pathname;
+const invalidTrackerFixture = new URL(
+	"./fixtures/invalid-tracker.workflow.ts",
+	import.meta.url,
+).pathname;
 
 test("loads a TypeScript-authored workflow manifest as declarative data", async () => {
 	const manifest = await loadManifest(validFixture);
@@ -29,6 +40,31 @@ test("loads a TypeScript-authored workflow manifest as declarative data", async 
 		),
 		true,
 	);
+});
+
+test("loads a Workflow module manifest and optional concrete tracker binding", async () => {
+	const workflowModule = await loadWorkflowModule(moduleFixture);
+
+	assert.equal(workflowModule.manifest.workflow.id, "agent-development");
+	assert.equal(typeof workflowModule.tracker?.getIssue, "function");
+});
+
+test("Workflow module loading requires a manifest export", async () => {
+	await assert.rejects(loadWorkflowModule(missingManifestFixture), {
+		message: /Workflow module must export 'manifest'/,
+	});
+});
+
+test("Workflow module loading rejects non-concrete tracker exports", async () => {
+	await assert.rejects(loadWorkflowModule(invalidTrackerFixture), {
+		message: /'tracker' must be a concrete Tracker instance/,
+	});
+});
+
+test("manifest loading validates the manifest export without requiring or checking tracker", async () => {
+	const manifest = await loadManifest(invalidTrackerFixture);
+
+	assert.equal(manifest.workflow.id, "agent-development");
 });
 
 test("rejects loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
@@ -280,6 +316,36 @@ test("validates manifest-declared CLI targets and named readiness filters", () =
 	assert.match(messages, /Duplicate readiness filter declaration/);
 	assert.match(messages, /Duplicate readiness filter name 'spec'/);
 	assert.match(messages, /Named readiness filter kind must be known/);
+});
+
+test("rejects tracker as a manifest field inside defineManifest data", () => {
+	const manifestWithTracker = {
+		version: "v1",
+		workflow: { id: "tracker-field" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["implement"],
+			reasons: [],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [],
+			},
+		],
+		commands: [],
+		tracker: {},
+	};
+
+	const messages = validateManifest(manifestWithTracker)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	assert.match(messages, /tracker/);
 });
 
 test("rejects non-declarative hooks, wildcards, unknown references, and malformed schemas", () => {

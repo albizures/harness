@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 import { z } from "zod";
+import type { Tracker } from "./tracker.ts";
 
 export type Identifier = string;
 export type ArtifactKind =
@@ -131,6 +132,18 @@ export class ManifestValidationError extends Error {
 		this.issues = issues;
 	}
 }
+
+export class WorkflowModuleLoadError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "WorkflowModuleLoadError";
+	}
+}
+
+export type WorkflowModule = {
+	manifest: WorkflowManifest;
+	tracker?: Tracker;
+};
 
 const artifactMetadataKey = "awfArtifact";
 
@@ -439,20 +452,17 @@ function isPayloadZodSchema(value: unknown): value is PayloadZodSchema {
 export async function loadManifest(
 	modulePath: string,
 ): Promise<WorkflowManifest> {
-	const absolutePath = resolve(modulePath);
-	const jiti = createJiti(import.meta.url, {
-		moduleCache: false,
-		fsCache: false,
-	});
-	const loaded = await jiti.import<unknown>(pathToFileURL(absolutePath).href, {
-		default: true,
-	});
-	const manifest = extractManifest(loaded);
-	const issues = validateManifest(manifest);
-	if (issues.length > 0) {
-		throw new ManifestValidationError(issues);
-	}
-	return normalizeManifest(manifest);
+	return loadAndValidateManifest(await importWorkflowModule(modulePath));
+}
+
+export async function loadWorkflowModule(
+	modulePath: string,
+): Promise<WorkflowModule> {
+	const loaded = await importWorkflowModule(modulePath);
+	return {
+		manifest: loadAndValidateManifest(loaded),
+		tracker: extractTracker(loaded),
+	};
 }
 
 export function validateManifest(value: unknown): Array<ValidationIssue> {
@@ -624,11 +634,68 @@ function uniqueIssues(issues: Array<ValidationIssue>): Array<ValidationIssue> {
 	});
 }
 
+async function importWorkflowModule(modulePath: string): Promise<unknown> {
+	const absolutePath = resolve(modulePath);
+	const jiti = createJiti(import.meta.url, {
+		moduleCache: false,
+		fsCache: false,
+	});
+	return jiti.import<unknown>(pathToFileURL(absolutePath).href, {
+		default: true,
+	});
+}
+
+function loadAndValidateManifest(loaded: unknown): WorkflowManifest {
+	const manifest = extractManifest(loaded);
+	const issues = validateManifest(manifest);
+	if (issues.length > 0) {
+		throw new ManifestValidationError(issues);
+	}
+	return normalizeManifest(manifest);
+}
+
 function extractManifest(loaded: unknown): WorkflowManifestDefinition {
 	if (isRecord(loaded) && "manifest" in loaded) {
 		return loaded.manifest as WorkflowManifestDefinition;
 	}
-	return loaded as WorkflowManifestDefinition;
+	throw new WorkflowModuleLoadError("Workflow module must export 'manifest'.");
+}
+
+function extractTracker(loaded: unknown): Tracker | undefined {
+	if (!isRecord(loaded) || !("tracker" in loaded)) {
+		return undefined;
+	}
+	if (loaded.tracker === undefined) {
+		return undefined;
+	}
+	if (!isTracker(loaded.tracker)) {
+		throw new WorkflowModuleLoadError(
+			"Workflow module export 'tracker' must be a concrete Tracker instance.",
+		);
+	}
+	return loaded.tracker;
+}
+
+function isTracker(value: unknown): value is Tracker {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return [
+		"createWorkflowIssue",
+		"recordCommand",
+		"recordArtifacts",
+		"startRun",
+		"completeRun",
+		"escalateWorkflow",
+		"resumeWorkflow",
+		"changeRelationship",
+		"applyPlan",
+		"advanceWorkflow",
+		"repairIssue",
+		"getIssue",
+		"listIssues",
+		"readLogs",
+	].every((method) => typeof value[method] === "function");
 }
 
 function normalizeManifest(
