@@ -3,25 +3,33 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const cliPath = new URL("./cli.ts", import.meta.url);
+const envMemoryWorkflowPath = new URL(
+	"./fixtures/env-memory.workflow.ts",
+	import.meta.url,
+).pathname;
 
 test("CLI smoke path reads a seeded in-memory workflow issue with a stable get envelope", () => {
-	const result = spawnSync(process.execPath, [cliPath.pathname, "get", "42"], {
-		encoding: "utf8",
-		env: {
-			...process.env,
-			AWF_MEMORY_ISSUES: JSON.stringify([
-				{
-					id: "42",
-					title: "Implement tracker",
-					labels: [
-						"awf:agent-development:kind:ticket",
-						"awf:agent-development:state:ready",
-						"awf:agent-development:action:implement",
-					],
-				},
-			]),
+	const result = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", envMemoryWorkflowPath, "get", "42"],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				AWF_MEMORY_ISSUES: JSON.stringify([
+					{
+						id: "42",
+						title: "Implement tracker",
+						labels: [
+							"awf:agent-development:kind:ticket",
+							"awf:agent-development:state:ready",
+							"awf:agent-development:action:implement",
+						],
+					},
+				]),
+			},
 		},
-	});
+	);
 
 	assert.equal(result.status, 0);
 	assert.equal(result.stderr, "");
