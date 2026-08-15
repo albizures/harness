@@ -1,35 +1,29 @@
-import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { z } from "zod";
-import { execute } from "./commands.ts";
-import { defaultManifest } from "./default-manifest.ts";
-import type { WorkflowManifest } from "./manifest.ts";
+import { execute } from "../commands.ts";
+import { defaultManifest } from "../default-manifest.ts";
+import type { WorkflowManifest } from "../manifest.ts";
 import {
 	NeedReconciliationError,
 	type Tracker,
 	type TrackerAdapter,
+	type WorkflowArtifact,
 	type WorkflowIssue,
-} from "./tracker.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+} from "../tracker.ts";
+import { createInMemoryTracker } from "../trackers/memory.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {
 	outcome: string;
 	tickets: Array<{ key: string }>;
-	artifact: {
-		kind: string;
-		uri: string;
-		type?: string;
-		path?: string;
-		ref?: string;
-	};
+	artifact: WorkflowArtifact;
 };
 type ReadyData = { items: Array<{ id: string }> };
 type HandoffData = {
-	artifact: { kind: string; uri: string; type?: string; ref?: string };
+	artifact: WorkflowArtifact;
 };
 
 test("create spec creates a bundled workflow Spec from Markdown input", async () => {
@@ -42,22 +36,69 @@ test("create spec creates a bundled workflow Spec from Markdown input", async ()
 		tracker,
 	});
 
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	if (!envelope.ok) {
 		throw new Error("expected success");
 	}
 	const data = envelope.data as CreateSpecData;
-	assert.equal(data.issue.title, "Build a thing");
-	assert.equal(data.issue.body, "# Build a thing\n\nDetailed goal.\n");
-	assert.deepEqual(pickWorkflow(data.issue.workflow), {
+	expect(data.issue.title).toBe("Build a thing");
+	expect(data.issue.body).toBe("# Build a thing\n\nDetailed goal.\n");
+	expect(pickWorkflow(data.issue.workflow)).toEqual({
 		kind: "spec",
 		state: "ready",
 		action: "plan",
 	});
-	assert.deepEqual(
+	expect(
 		(await tracker.readLogs(data.issue.id)).map((log) => log.type),
-		["spec_created"],
-	);
+	).toEqual(["spec_created"]);
+});
+
+test("create spec records one high-level tracker intent with initial current fields and log", async () => {
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		createWorkflowIssue: async (input) => {
+			intents.push("createWorkflowIssue");
+			expect(input.title).toBe("Build lifecycle intents");
+			expect(input.workflow.kind).toBe("spec");
+			expect(input.workflow.state).toBe("ready");
+			expect(input.workflow.action).toBe("plan");
+			expect(input.initialLog?.type).toBe("spec_created");
+			return {
+				issue: {
+					id: "1",
+					title: input.title,
+					body: input.body,
+					workflow: {
+						...input.workflow,
+						version: 1,
+						hash: "hash",
+					},
+					relationships: {
+						children: [],
+						dependencies: [],
+						dependents: [],
+					},
+					artifacts: [],
+					changes: [],
+				},
+				log: {
+					...input.initialLog,
+					issueId: "1",
+					sequence: 1,
+					type: input.initialLog?.type ?? "missing",
+				},
+			};
+		},
+	};
+
+	const envelope = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		stdin: "# Build lifecycle intents\n\nUse Tracker intents.",
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(intents).toEqual(["createWorkflowIssue"]);
 });
 
 test("create targets dispatch through manifest CLI declarations", async () => {
@@ -77,20 +118,18 @@ test("create targets dispatch through manifest CLI declarations", async () => {
 		stdin: "# Manifest target\n",
 	});
 
-	assert.equal(envelope.ok, true);
-	assert.equal(
+	expect(envelope.ok).toBe(true);
+	expect(
 		(envelope as { ok: true; data: CreateSpecData }).data.issue.title,
-		"Manifest target",
-	);
+	).toBe("Manifest target");
 
 	const unknown = await execute(["create", "spec", "--input", "-"], {
 		tracker,
 		manifest,
 		stdin: "# Not declared\n",
 	});
-	assert.equal(unknown.ok, false);
-	assert.equal(
-		unknown.ok ? undefined : unknown.error.code,
+	expect(unknown.ok).toBe(false);
+	expect(unknown.ok ? undefined : unknown.error.code).toBe(
 		"UNKNOWN_COMMAND_TARGET",
 	);
 });
@@ -107,12 +146,11 @@ test("create spec validates the bundled manifest-declared input before mutating"
 		stdin: "# Build a thing\n",
 	});
 
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.code,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 	);
-	assert.deepEqual(await tracker.listIssues(), []);
+	expect(await tracker.listIssues()).toEqual([]);
 });
 
 test("create handoff validates input and attaches a Handoff artifact to the source issue", async () => {
@@ -139,12 +177,12 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 		},
 	);
 
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	if (!envelope.ok) {
 		throw new Error("expected success");
 	}
 	const data = envelope.data as HandoffData;
-	assert.deepEqual(data.artifact, {
+	expect(data.artifact).toEqual({
 		id: "artifact-1",
 		kind: "handoff",
 		uri: "Next agent: inspect the retry path.",
@@ -152,13 +190,75 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 		type: "handoff",
 		ref: "Next agent: inspect the retry path.",
 	});
-	assert.deepEqual((await tracker.getIssue("ticket-1")).artifacts, [
+	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([
 		data.artifact,
 	]);
-	assert.deepEqual(
-		(await tracker.readLogs("ticket-1")).map((log) => log.type),
-		["handoff_created"],
+	expect((await tracker.readLogs("ticket-1")).map((log) => log.type)).toEqual([
+		"handoff_created",
+	]);
+});
+
+test("create handoff records artifact and log through one tracker intent", async () => {
+	const seed = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+		],
+	});
+	const issue = await seed.getIssue("123");
+	const intents: Array<string> = [];
+	const tracker: Tracker = {
+		...createNoTouchTracker(),
+		getIssue: async (id) => {
+			expect(id).toBe("123");
+			return issue;
+		},
+		recordArtifacts: async (id, input) => {
+			intents.push("recordArtifacts");
+			expect(id).toBe("123");
+			expect(input.artifacts).toEqual([
+				{
+					kind: "handoff",
+					uri: "handoff.md",
+					name: "Handoff",
+					type: "handoff",
+					ref: "handoff.md",
+				},
+			]);
+			expect(input.log.type).toBe("handoff_created");
+			return {
+				issue,
+				artifacts: [
+					{
+						id: "artifact-1",
+						kind: "handoff",
+						uri: "handoff.md",
+						name: "Handoff",
+						type: "handoff",
+						ref: "handoff.md",
+					},
+				],
+				changes: [],
+				log: { ...input.log, issueId: id, sequence: 1 },
+			};
+		},
+	};
+
+	const envelope = await execute(
+		["create", "handoff", "--source", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				handoff: { type: "handoff", ref: "handoff.md" },
+			}),
+		},
 	);
+
+	expect(envelope.ok).toBe(true);
+	expect(intents).toEqual(["recordArtifacts"]);
 });
 
 test("create handoff rejects invalid manifest-declared input before mutating", async () => {
@@ -180,13 +280,12 @@ test("create handoff rejects invalid manifest-declared input before mutating", a
 		},
 	);
 
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.code,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 	);
-	assert.deepEqual((await tracker.getIssue("ticket-1")).artifacts, []);
-	assert.deepEqual(await tracker.readLogs("ticket-1"), []);
+	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([]);
+	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
 test("apply targets dispatch through manifest CLI declarations", async () => {
@@ -219,11 +318,10 @@ test("apply targets dispatch through manifest CLI declarations", async () => {
 		},
 	);
 
-	assert.equal(envelope.ok, true);
-	assert.deepEqual(
-		(await tracker.readLogs("spec-1")).map((log) => log.type),
-		["plan_applied"],
-	);
+	expect(envelope.ok).toBe(true);
+	expect((await tracker.readLogs("spec-1")).map((log) => log.type)).toEqual([
+		"plan_applied",
+	]);
 
 	const unknownTracker = createInMemoryTracker({
 		issues: [
@@ -242,16 +340,14 @@ test("apply targets dispatch through manifest CLI declarations", async () => {
 		}),
 	});
 
-	assert.equal(unknown.ok, false);
-	assert.equal(
-		unknown.ok ? undefined : unknown.error.code,
+	expect(unknown.ok).toBe(false);
+	expect(unknown.ok ? undefined : unknown.error.code).toBe(
 		"UNKNOWN_COMMAND_TARGET",
 	);
-	assert.deepEqual(
-		(await unknownTracker.listIssues()).map((issue) => issue.id),
-		["spec-2"],
-	);
-	assert.deepEqual(await unknownTracker.readLogs("spec-2"), []);
+	expect((await unknownTracker.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-2",
+	]);
+	expect(await unknownTracker.readLogs("spec-2")).toEqual([]);
 });
 
 test("apply plan requires the active manifest plan apply declaration before mutating", async () => {
@@ -279,16 +375,14 @@ test("apply plan requires the active manifest plan apply declaration before muta
 		}),
 	});
 
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.code,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"UNKNOWN_COMMAND_TARGET",
 	);
-	assert.deepEqual(
-		(await tracker.listIssues()).map((issue) => issue.id),
-		["spec-1"],
-	);
-	assert.deepEqual(await tracker.readLogs("spec-1"), []);
+	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
+	]);
+	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
 test("apply plan creates tickets, relationships, dependencies, logs application, and leaves the Spec unschedulable", async () => {
@@ -323,26 +417,23 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 		tracker,
 	});
 
-	assert.equal(envelope.ok, true);
+	expect(envelope.ok).toBe(true);
 	if (!envelope.ok) {
 		throw new Error("expected success");
 	}
 	const data = envelope.data as ApplyPlanData;
-	assert.equal(data.outcome, "SUCCESS");
-	assert.deepEqual(
-		data.tickets.map((ticket) => ticket.key),
-		["setup", "finish"],
-	);
+	expect(data.outcome).toBe("SUCCESS");
+	expect(data.tickets.map((ticket) => ticket.key)).toEqual(["setup", "finish"]);
 	const spec = await tracker.getIssue("spec-1");
-	assert.deepEqual(pickWorkflow(spec.workflow), {
+	expect(pickWorkflow(spec.workflow)).toEqual({
 		kind: "spec",
 		state: "ready",
 		action: "none",
 	});
-	assert.deepEqual(spec.relationships.children, ["1", "2"]);
-	assert.deepEqual(spec.artifacts, [data.artifact]);
+	expect(spec.relationships.children).toEqual(["1", "2"]);
+	expect(spec.artifacts).toEqual([data.artifact]);
 	const planArtifactPath = relative(process.cwd(), plan);
-	assert.deepEqual(data.artifact, {
+	expect(data.artifact).toEqual({
 		id: "artifact-1",
 		kind: "file",
 		uri: planArtifactPath,
@@ -352,24 +443,20 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 		title: "Submitted plan bundle",
 		metadata: { ticketCount: 2 },
 	});
-	assert.deepEqual((await tracker.getIssue("2")).relationships.dependencies, [
+	expect((await tracker.getIssue("2")).relationships.dependencies).toEqual([
 		"1",
 	]);
 	const ready = await execute(["ready", "--filter", "spec=spec-1"], {
 		tracker,
 	});
-	assert.equal(ready.ok, true);
+	expect(ready.ok).toBe(true);
 	if (!ready.ok) {
 		throw new Error("expected success");
 	}
-	assert.deepEqual(
-		(ready.data as ReadyData).items.map((item) => item.id),
-		["1"],
-	);
-	assert.deepEqual(
-		(await tracker.readLogs("spec-1")).map((log) => log.type),
-		["plan_applied"],
-	);
+	expect((ready.data as ReadyData).items.map((item) => item.id)).toEqual(["1"]);
+	expect((await tracker.readLogs("spec-1")).map((log) => log.type)).toEqual([
+		"plan_applied",
+	]);
 });
 
 test("apply plan rejects manifest-invalid command input before mutating the tracker", async () => {
@@ -392,16 +479,14 @@ test("apply plan rejects manifest-invalid command input before mutating the trac
 		stdin: JSON.stringify({ tickets: [] }),
 	});
 
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.code,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 	);
-	assert.deepEqual(
-		(await tracker.listIssues()).map((issue) => issue.id),
-		["spec-1"],
-	);
-	assert.deepEqual(await tracker.readLogs("spec-1"), []);
+	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
+	]);
+	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
 test("apply plan reports manifest-invalid command output instead of returning success", async () => {
@@ -432,16 +517,14 @@ test("apply plan reports manifest-invalid command output instead of returning su
 		manifest,
 	});
 
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.code,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
 	);
-	assert.equal((await tracker.getIssue("spec-1")).workflow.action, "none");
-	assert.deepEqual(
-		(await tracker.readLogs("spec-1")).map((log) => log.type),
-		["plan_applied"],
-	);
+	expect((await tracker.getIssue("spec-1")).workflow.action).toBe("none");
+	expect((await tracker.readLogs("spec-1")).map((log) => log.type)).toEqual([
+		"plan_applied",
+	]);
 });
 
 test("apply plan rejects invalid bundles before mutating the tracker", async () => {
@@ -471,13 +554,12 @@ test("apply plan rejects invalid bundles before mutating the tracker", async () 
 		tracker,
 	});
 
-	assert.equal(envelope.ok, false);
-	assert.equal(envelope.ok ? undefined : envelope.error.code, "INVALID_PLAN");
-	assert.deepEqual(
-		(await tracker.listIssues()).map((issue) => issue.id),
-		["spec-1"],
-	);
-	assert.deepEqual(await tracker.readLogs("spec-1"), []);
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe("INVALID_PLAN");
+	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
+	]);
+	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
 test("apply plan dispatches the bundle as one tracker-owned workflow intent", async () => {
@@ -503,11 +585,8 @@ test("apply plan dispatches the bundle as one tracker-owned workflow intent", as
 	const tracker: Tracker = failingTracker(base, {
 		applyPlan: async (input) => {
 			applyPlanCalls += 1;
-			assert.equal(input.specId, "spec-1");
-			assert.deepEqual(
-				input.tickets.map((ticket) => ticket.key),
-				["a"],
-			);
+			expect(input.specId).toBe("spec-1");
+			expect(input.tickets.map((ticket) => ticket.key)).toEqual(["a"]);
 			return base.applyPlan(input);
 		},
 		createIssue: async () => {
@@ -528,8 +607,8 @@ test("apply plan dispatches the bundle as one tracker-owned workflow intent", as
 		tracker,
 	});
 
-	assert.equal(envelope.ok, true);
-	assert.equal(applyPlanCalls, 1);
+	expect(envelope.ok).toBe(true);
+	expect(applyPlanCalls).toBe(1);
 });
 
 test("apply plan reports need-reconciliation instead of rolling back partial adapter drift", async () => {
@@ -569,19 +648,16 @@ test("apply plan reports need-reconciliation instead of rolling back partial ada
 		tracker,
 	});
 
-	assert.equal(envelope.ok, false);
-	assert.equal(
-		envelope.ok ? undefined : envelope.error.code,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"NEED_RECONCILIATION",
 	);
-	assert.deepEqual(
-		(await base.listIssues()).map((issue) => issue.id),
-		["spec-1", "1"],
-	);
-	assert.deepEqual((await base.getIssue("spec-1")).relationships.children, [
+	expect((await base.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
 		"1",
 	]);
-	assert.deepEqual(pickWorkflow((await base.getIssue("spec-1")).workflow), {
+	expect((await base.getIssue("spec-1")).relationships.children).toEqual(["1"]);
+	expect(pickWorkflow((await base.getIssue("spec-1")).workflow)).toEqual({
 		kind: "spec",
 		state: "ready",
 		action: "plan",
@@ -649,4 +725,26 @@ function failingTracker(
 		registerChange: base.registerChange.bind(base),
 	};
 	return Object.assign(tracker, overrides);
+}
+
+function createNoTouchTracker(): Tracker {
+	const touched = () => {
+		throw new Error("tracker should not be touched");
+	};
+	return {
+		createWorkflowIssue: touched,
+		startRun: touched,
+		completeRun: touched,
+		recordArtifacts: touched,
+		escalateWorkflow: touched,
+		resumeWorkflow: touched,
+		changeRelationship: touched,
+		applyPlan: touched,
+		recordCommand: touched,
+		advanceWorkflow: touched,
+		repairIssue: touched,
+		getIssue: touched,
+		listIssues: touched,
+		readLogs: touched,
+	};
 }

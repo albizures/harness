@@ -9,14 +9,17 @@ export {
 } from "./envelope.ts";
 export {
 	ManifestValidationError,
+	WorkflowModuleLoadError,
 	artifacts,
 	defineManifest,
 	loadManifest,
+	loadWorkflowModule,
 	validateManifest,
 	type ArtifactKind,
 	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,
+	type WorkflowModule,
 } from "./manifest.ts";
 export {
 	createGhCliGitHubTracker,
@@ -27,6 +30,11 @@ export {
 	type GitHubTrackerIssue,
 } from "./trackers/github/index.ts";
 export {
+	createTrackerAdapter,
+	createTrackerIntentModule,
+	type TrackerIntentModulePrimitives,
+} from "./tracker-intents.ts";
+export {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
 	NeedReconciliationError,
@@ -34,6 +42,8 @@ export {
 	type CreateIssueInput,
 	type IssueRelationships,
 	type Tracker,
+	type TrackerAdapterPrimitiveOperations,
+	type TrackerAdapterPrimitiveReads,
 	type TrackerApplyPlanIntent,
 	type TrackerApplyPlanResult,
 	type TrackerCompleteRunIntent,
@@ -45,6 +55,7 @@ export {
 	type TrackerRelationshipIntent,
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
+	type TrackerVerificationHooks,
 	type UpdateIssueInput,
 	type WorkflowArtifact,
 	type WorkflowChange,
@@ -52,6 +63,10 @@ export {
 	type WorkflowLog,
 	type WorkflowProjection,
 } from "./tracker.ts";
+export {
+	createFileSystemTracker,
+	type FileSystemTrackerOptions,
+} from "./trackers/filesystem.ts";
 export {
 	createInMemoryTracker,
 	createInMemoryTrackerFromEnvironment,

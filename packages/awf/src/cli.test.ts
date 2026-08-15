@@ -1,6 +1,15 @@
-import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import test from "node:test";
+import {
+	chmod,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, test } from "vitest";
 
 const cliPath = new URL("./cli.ts", import.meta.url);
 const validManifestPath = new URL(
@@ -11,6 +20,28 @@ const badManifestPath = new URL("./fixtures/bad.workflow.ts", import.meta.url)
 	.pathname;
 const linkManifestPath = new URL("./fixtures/link.workflow.ts", import.meta.url)
 	.pathname;
+const envMemoryWorkflowPath = new URL(
+	"./fixtures/env-memory.workflow.ts",
+	import.meta.url,
+).pathname;
+const missingManifestPath = new URL(
+	"./fixtures/missing-manifest.workflow.ts",
+	import.meta.url,
+).pathname;
+const defaultManifestSourcePath = new URL(
+	"./default-manifest.ts",
+	import.meta.url,
+).pathname;
+const memoryTrackerSourcePath = new URL("./trackers/memory.ts", import.meta.url)
+	.pathname;
+const filesystemTrackerSourcePath = new URL(
+	"./trackers/filesystem.ts",
+	import.meta.url,
+).pathname;
+
+const unreadableMode = 0o000;
+const ownerReadWriteMode = 0o600;
+const durableImplementationPrNumber = 93;
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",
@@ -21,16 +52,302 @@ function serializeCliSmokeInput(input: unknown): string {
 	return typeof input === "string" ? input : JSON.stringify(input);
 }
 
+async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+	const dir = await mkdtemp(join(tmpdir(), "awf-cli-"));
+	try {
+		return await fn(dir);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+}
+
+function configWithMemoryIssue(id: string): string {
+	return `import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
+import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
+
+export const manifest = defaultManifest;
+export const tracker = createInMemoryTracker({ issues: [{
+	id: ${JSON.stringify(id)},
+	title: "Configured ticket",
+	labels: [
+		"awf:agent-development:kind:ticket",
+		"awf:agent-development:state:ready",
+		"awf:agent-development:action:implement",
+	],
+}] });
+`;
+}
+
 test("CLI writes success envelopes to stdout", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "--help"], {
 		encoding: "utf8",
 	});
 
-	assert.equal(result.status, 0);
-	assert.equal(result.stderr, "");
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
-	assert.equal(envelope.ok, true);
-	assert.equal(envelope.data.name, "awf");
+	expect(envelope.ok).toBe(true);
+	expect(envelope.data.name).toBe("awf");
+});
+
+test("CLI discovers only ./awf.config.ts from the current working directory", async () => {
+	await withTempDir(async (dir) => {
+		await writeFile(join(dir, "awf.config.ts"), configWithMemoryIssue("91"));
+		const discovered = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "ready"],
+			{
+				cwd: dir,
+				encoding: "utf8",
+			},
+		);
+
+		expect(discovered.status).toBe(0);
+		expect(
+			JSON.parse(discovered.stdout).data.items.map(
+				(item: { id: string }) => item.id,
+			),
+		).toEqual(["91"]);
+
+		const child = join(dir, "child");
+		await mkdir(child);
+		const notDiscoveredFromParent = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "ready"],
+			{ cwd: child, encoding: "utf8" },
+		);
+
+		expect(notDiscoveredFromParent.status).toBe(0);
+		expect(JSON.parse(notDiscoveredFromParent.stdout).data.items).toEqual([]);
+	});
+});
+
+test("CLI global --config loads a workflow module before command execution", async () => {
+	await withTempDir(async (dir) => {
+		const configPath = join(dir, "custom.workflow.ts");
+		await writeFile(configPath, configWithMemoryIssue("92"));
+		const result = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "--config", configPath, "ready"],
+			{ cwd: dir, encoding: "utf8" },
+		);
+
+		expect(result.status).toBe(0);
+		expect(
+			JSON.parse(result.stdout).data.items.map(
+				(item: { id: string }) => item.id,
+			),
+		).toEqual(["92"]);
+	});
+});
+
+test("CLI defaults to the bundled manifest and ./.awf/tracker.json", async () => {
+	await withTempDir(async (dir) => {
+		const created = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "create", "spec", "--input", "-"],
+			{ cwd: dir, encoding: "utf8", input: "# Durable default\n" },
+		);
+
+		expect(created.status).toBe(0);
+		const trackerState = JSON.parse(
+			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
+		);
+		expect(trackerState.issues[0].title).toBe("Durable default");
+	});
+});
+
+test("CLI config that omits tracker uses the default filesystem tracker", async () => {
+	await withTempDir(async (dir) => {
+		await writeFile(
+			join(dir, "awf.config.ts"),
+			`import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
+export const manifest = defaultManifest;
+`,
+		);
+		const created = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "create", "spec", "--input", "-"],
+			{ cwd: dir, encoding: "utf8", input: "# Manifest-only config\n" },
+		);
+
+		expect(created.status).toBe(0);
+		const trackerState = JSON.parse(
+			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
+		);
+		expect(trackerState.issues[0].title).toBe("Manifest-only config");
+	});
+});
+
+test("CLI default filesystem tracker keeps workflow state across separate processes", async () => {
+	await withTempDir(async (dir) => {
+		const runCli = (args: Array<string>, input?: unknown) => {
+			const result = spawnSync(process.execPath, [cliPath.pathname, ...args], {
+				cwd: dir,
+				encoding: "utf8",
+				input: input === undefined ? undefined : serializeCliSmokeInput(input),
+			});
+			expect(result.status).toBe(0);
+			expect(result.stderr).toBe("");
+			const envelope = JSON.parse(result.stdout);
+			expect(envelope.ok).toBe(true);
+			return envelope.data;
+		};
+
+		const spec = runCli(
+			["create", "spec", "--input", "-"],
+			"# Durable spec\n",
+		).issue;
+		expect(spec.id).toBe("1");
+		expect(
+			runCli(["ready"]).items.map((item: { id: string }) => item.id),
+		).toEqual(["1"]);
+		expect(runCli(["get", spec.id]).issue.title).toBe("Durable spec");
+
+		const planned = runCli(["apply", "plan", spec.id, "--input", "-"], {
+			tickets: [{ key: "one", title: "Durable ticket", content: "Do it." }],
+		});
+		const ticketId = planned.tickets[0].id;
+		expect(
+			runCli(["ready"]).items.map((item: { id: string }) => item.id),
+		).toEqual([ticketId]);
+		expect(runCli(["get", ticketId]).issue.relationships.parent).toBe(spec.id);
+		expect(
+			runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
+		).toEqual(["spec_created", "plan_applied"]);
+
+		const started = runCli(["start", ticketId]);
+		expect(runCli(["ready"]).items).toEqual([]);
+		const failed = runCli(
+			["fail", ticketId, "--run", started.run.id, "--input", "-"],
+			{ reason: "transient" },
+		);
+		expect({
+			state: failed.issue.workflow.state,
+			action: failed.issue.workflow.action,
+		}).toEqual({ state: "ready", action: "implement" });
+
+		const restarted = runCli(["start", ticketId]);
+		const implemented = runCli(
+			["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
+			{ implementationPr: prArtifact(durableImplementationPrNumber) },
+		);
+		expect({
+			state: implemented.issue.workflow.state,
+			action: implemented.issue.workflow.action,
+		}).toEqual({ state: "ready", action: "review" });
+		const escalated = runCli(["escalate", ticketId, "--input", "-"], {
+			reason: "needs decision",
+		});
+		expect({
+			state: escalated.issue.workflow.state,
+			action: escalated.issue.workflow.action,
+		}).toEqual({ state: "need-human", action: "none" });
+		const resumed = runCli(["resume", ticketId, "--action", "fix"]);
+		expect({
+			state: resumed.issue.workflow.state,
+			action: resumed.issue.workflow.action,
+		}).toEqual({ state: "ready", action: "fix" });
+		expect(
+			runCli(["logs", ticketId]).logs.map((log: { type: string }) => log.type),
+		).toEqual([
+			"action_started",
+			"action_failed",
+			"action_started",
+			"action_succeeded",
+			"human_intervention_needed",
+			"action_resumed",
+		]);
+	});
+});
+
+test("CLI uses an explicit config-exported filesystem tracker across processes", async () => {
+	await withTempDir(async (dir) => {
+		const configPath = join(dir, "custom.workflow.ts");
+		await writeFile(
+			configPath,
+			`import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = defaultManifest;
+export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" });
+`,
+		);
+		const create = spawnSync(
+			process.execPath,
+			[
+				cliPath.pathname,
+				"--config",
+				configPath,
+				"create",
+				"spec",
+				"--input",
+				"-",
+			],
+			{ cwd: dir, encoding: "utf8", input: "# Config tracker\n" },
+		);
+		expect(create.status).toBe(0);
+		const createdId = JSON.parse(create.stdout).data.issue.id;
+
+		const get = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "--config", configPath, "get", createdId],
+			{ cwd: dir, encoding: "utf8" },
+		);
+		expect(get.status).toBe(0);
+		expect(JSON.parse(get.stdout).data.issue.title).toBe("Config tracker");
+		const trackerState = JSON.parse(
+			await readFile(join(dir, "custom-tracker.json"), "utf8"),
+		);
+		expect(trackerState.issues[0].id).toBe(createdId);
+	});
+});
+
+test("CLI returns clear failure envelopes for explicit bad config paths", async () => {
+	const missing = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", "./missing.workflow.ts", "ready"],
+		{ encoding: "utf8" },
+	);
+	expect(missing.status).toBe(1);
+	expect(JSON.parse(missing.stdout).error.code).toBe("CONFIG_LOAD_FAILED");
+
+	const invalid = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", badManifestPath, "ready"],
+		{ encoding: "utf8" },
+	);
+	expect(invalid.status).toBe(1);
+	expect(JSON.parse(invalid.stdout).error.code).toBe("CONFIG_LOAD_FAILED");
+
+	const manifestless = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", missingManifestPath, "ready"],
+		{ encoding: "utf8" },
+	);
+	expect(manifestless.status).toBe(1);
+	const envelope = JSON.parse(manifestless.stdout);
+	expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
+	expect(envelope.error.message).toMatch(/manifest/);
+
+	await withTempDir(async (dir) => {
+		const unreadablePath = join(dir, "unreadable.workflow.ts");
+		await writeFile(unreadablePath, configWithMemoryIssue("93"));
+		await chmod(unreadablePath, unreadableMode);
+		try {
+			const unreadable = spawnSync(
+				process.execPath,
+				[cliPath.pathname, "--config", unreadablePath, "ready"],
+				{ encoding: "utf8" },
+			);
+			expect(unreadable.status).toBe(1);
+			expect(JSON.parse(unreadable.stdout).error.code).toBe(
+				"CONFIG_LOAD_FAILED",
+			);
+		} finally {
+			await chmod(unreadablePath, ownerReadWriteMode);
+		}
+	});
 });
 
 test("CLI smoke path loads a fixture manifest and returns a JSON success envelope", () => {
@@ -40,9 +357,9 @@ test("CLI smoke path loads a fixture manifest and returns a JSON success envelop
 		{ encoding: "utf8" },
 	);
 
-	assert.equal(result.status, 0);
-	assert.equal(result.stderr, "");
-	assert.deepEqual(JSON.parse(result.stdout), {
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toEqual({
 		ok: true,
 		data: {
 			manifest: "agent-development",
@@ -59,17 +376,15 @@ test("CLI returns a stable validation error envelope for a generic link projecti
 		{ encoding: "utf8" },
 	);
 
-	assert.equal(result.status, 1);
-	assert.equal(result.stderr, "");
+	expect(result.status).toBe(1);
+	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
-	assert.equal(envelope.ok, false);
-	assert.equal(envelope.error.code, "MANIFEST_VALIDATION_FAILED");
-	assert.equal(
-		envelope.error.details.issues.at(-1).path,
+	expect(envelope.ok).toBe(false);
+	expect(envelope.error.code).toBe("MANIFEST_VALIDATION_FAILED");
+	expect(envelope.error.details.issues.at(-1).path).toBe(
 		"$.relationships[2].projection.type",
 	);
-	assert.match(
-		envelope.error.details.issues.at(-1).message,
+	expect(envelope.error.details.issues.at(-1).message).toMatch(
 		/parent-child or dependency/,
 	);
 });
@@ -81,59 +396,62 @@ test("CLI returns a stable validation error envelope for a bad manifest", () => 
 		{ encoding: "utf8" },
 	);
 
-	assert.equal(result.status, 1);
-	assert.equal(result.stderr, "");
+	expect(result.status).toBe(1);
+	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
-	assert.equal(envelope.ok, false);
-	assert.equal(envelope.error.code, "MANIFEST_VALIDATION_FAILED");
-	assert.match(JSON.stringify(envelope.error.details.issues), /wildcard/);
+	expect(envelope.ok).toBe(false);
+	expect(envelope.error.code).toBe("MANIFEST_VALIDATION_FAILED");
+	expect(JSON.stringify(envelope.error.details.issues)).toMatch(/wildcard/);
 });
 
 test("CLI smoke path seeds multiple in-memory issues and returns only legally executable ready items", () => {
-	const result = spawnSync(process.execPath, [cliPath.pathname, "ready"], {
-		encoding: "utf8",
-		env: {
-			...process.env,
-			AWF_MEMORY_ISSUES: JSON.stringify([
-				{
-					id: "1",
-					title: "Ready ticket",
-					labels: [
-						"awf:agent-development:kind:ticket",
-						"awf:agent-development:state:ready",
-						"awf:agent-development:action:implement",
-					],
-				},
-				{
-					id: "2",
-					title: "Dependency blocked ticket",
-					labels: [
-						"awf:agent-development:kind:ticket",
-						"awf:agent-development:state:ready",
-						"awf:agent-development:action:implement",
-					],
-					relationships: { dependencies: ["1"] },
-				},
-				{
-					id: "3",
-					title: "Running ticket",
-					workflow: {
-						kind: "ticket",
-						state: "running",
-						action: "implement",
-						activeRunId: "run-3",
+	const result = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", envMemoryWorkflowPath, "ready"],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				AWF_MEMORY_ISSUES: JSON.stringify([
+					{
+						id: "1",
+						title: "Ready ticket",
+						labels: [
+							"awf:agent-development:kind:ticket",
+							"awf:agent-development:state:ready",
+							"awf:agent-development:action:implement",
+						],
 					},
-				},
-			]),
+					{
+						id: "2",
+						title: "Dependency blocked ticket",
+						labels: [
+							"awf:agent-development:kind:ticket",
+							"awf:agent-development:state:ready",
+							"awf:agent-development:action:implement",
+						],
+						relationships: { dependencies: ["1"] },
+					},
+					{
+						id: "3",
+						title: "Running ticket",
+						workflow: {
+							kind: "ticket",
+							state: "running",
+							action: "implement",
+							activeRunId: "run-3",
+						},
+					},
+				]),
+			},
 		},
-	});
-
-	assert.equal(result.status, 0);
-	assert.equal(result.stderr, "");
-	assert.deepEqual(
-		JSON.parse(result.stdout).data.items.map((item: { id: string }) => item.id),
-		["1"],
 	);
+
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
+	expect(
+		JSON.parse(result.stdout).data.items.map((item: { id: string }) => item.id),
+	).toEqual(["1"]);
 });
 
 test("CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
@@ -156,7 +474,17 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 
 	const before = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "succeed", "42", "--run", "run-42", "--input", "-"],
+		[
+			cliPath.pathname,
+			"--config",
+			envMemoryWorkflowPath,
+			"succeed",
+			"42",
+			"--run",
+			"run-42",
+			"--input",
+			"-",
+		],
 		{
 			encoding: "utf8",
 			input: JSON.stringify({
@@ -165,35 +493,51 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 			env,
 		},
 	);
-	assert.equal(before.status, 1);
-	assert.equal(JSON.parse(before.stdout).error.code, "RUN_MISMATCH");
+	expect(before.status).toBe(1);
+	expect(JSON.parse(before.stdout).error.code).toBe("RUN_MISMATCH");
 
 	const diagnosed = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "reconcile", "42"],
+		[cliPath.pathname, "--config", envMemoryWorkflowPath, "reconcile", "42"],
 		{
 			encoding: "utf8",
 			env,
 		},
 	);
-	assert.equal(diagnosed.status, 0);
-	assert.equal(
-		JSON.parse(diagnosed.stdout).data.diagnostics[0].code,
+	expect(diagnosed.status).toBe(0);
+	expect(JSON.parse(diagnosed.stdout).data.diagnostics[0].code).toBe(
 		"MISSING_ACTIVE_RUN",
 	);
 
 	const applied = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "reconcile", "42", "--apply"],
+		[
+			cliPath.pathname,
+			"--config",
+			envMemoryWorkflowPath,
+			"reconcile",
+			"42",
+			"--apply",
+		],
 		{ encoding: "utf8", env },
 	);
-	assert.equal(applied.status, 0);
+	expect(applied.status).toBe(0);
 	const repairedIssue = JSON.parse(applied.stdout).data.issue;
-	assert.equal(repairedIssue.workflow.activeRunId, "run-42");
+	expect(repairedIssue.workflow.activeRunId).toBe("run-42");
 
 	const after = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "succeed", "42", "--run", "run-42", "--input", "-"],
+		[
+			cliPath.pathname,
+			"--config",
+			envMemoryWorkflowPath,
+			"succeed",
+			"42",
+			"--run",
+			"run-42",
+			"--input",
+			"-",
+		],
 		{
 			encoding: "utf8",
 			input: JSON.stringify({
@@ -207,14 +551,14 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 			},
 		},
 	);
-	assert.equal(after.status, 0, after.stdout || after.stderr);
-	assert.equal(JSON.parse(after.stdout).ok, true);
+	expect(after.status).toBe(0);
+	expect(JSON.parse(after.stdout).ok).toBe(true);
 });
 
 test("CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
 	const started = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "start", "42"],
+		[cliPath.pathname, "--config", envMemoryWorkflowPath, "start", "42"],
 		{
 			encoding: "utf8",
 			env: {
@@ -234,14 +578,24 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		},
 	);
 
-	assert.equal(started.status, 0);
-	assert.equal(started.stderr, "");
+	expect(started.status).toBe(0);
+	expect(started.stderr).toBe("");
 	const startEnvelope = JSON.parse(started.stdout);
-	assert.equal(startEnvelope.ok, true);
+	expect(startEnvelope.ok).toBe(true);
 	const runId = startEnvelope.data.run.id;
 	const succeeded = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "succeed", "42", "--run", runId, "--input", "-"],
+		[
+			cliPath.pathname,
+			"--config",
+			envMemoryWorkflowPath,
+			"succeed",
+			"42",
+			"--run",
+			runId,
+			"--input",
+			"-",
+		],
 		{
 			encoding: "utf8",
 			input: JSON.stringify({
@@ -266,37 +620,40 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 		},
 	);
 
-	assert.equal(succeeded.status, 0);
-	assert.equal(succeeded.stderr, "");
+	expect(succeeded.status).toBe(0);
+	expect(succeeded.stderr).toBe("");
 	const succeedEnvelope = JSON.parse(succeeded.stdout);
-	assert.equal(succeedEnvelope.ok, true);
-	const logged = spawnSync(process.execPath, [cliPath.pathname, "logs", "42"], {
-		encoding: "utf8",
-		env: {
-			...process.env,
-			AWF_MEMORY_ISSUES: JSON.stringify([
-				{
-					id: "42",
-					title: "Implement lifecycle",
-					workflow: {
-						kind: "ticket",
-						state: "ready",
-						action: "review",
+	expect(succeedEnvelope.ok).toBe(true);
+	const logged = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", envMemoryWorkflowPath, "logs", "42"],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				AWF_MEMORY_ISSUES: JSON.stringify([
+					{
+						id: "42",
+						title: "Implement lifecycle",
+						workflow: {
+							kind: "ticket",
+							state: "ready",
+							action: "review",
+						},
+						logs: [startEnvelope.data.log, succeedEnvelope.data.log],
 					},
-					logs: [startEnvelope.data.log, succeedEnvelope.data.log],
-				},
-			]),
+				]),
+			},
 		},
-	});
-
-	assert.equal(logged.status, 0);
-	assert.equal(logged.stderr, "");
-	const logsEnvelope = JSON.parse(logged.stdout);
-	assert.equal(logsEnvelope.ok, true);
-	assert.deepEqual(
-		logsEnvelope.data.logs.map((log: { type: string }) => log.type),
-		["action_started", "action_succeeded"],
 	);
+
+	expect(logged.status).toBe(0);
+	expect(logged.stderr).toBe("");
+	const logsEnvelope = JSON.parse(logged.stdout);
+	expect(logsEnvelope.ok).toBe(true);
+	expect(
+		logsEnvelope.data.logs.map((log: { type: string }) => log.type),
+	).toEqual(["action_started", "action_succeeded"]);
 });
 
 test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
@@ -307,15 +664,19 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 	) => {
 		const stdin =
 			input === undefined ? undefined : serializeCliSmokeInput(input);
-		const result = spawnSync(process.execPath, [cliPath.pathname, ...args], {
-			encoding: "utf8",
-			input: stdin,
-			env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
-		});
-		assert.equal(result.status, 0, result.stdout || result.stderr);
-		assert.equal(result.stderr, "");
+		const result = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "--config", envMemoryWorkflowPath, ...args],
+			{
+				encoding: "utf8",
+				input: stdin,
+				env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
+			},
+		);
+		expect(result.status).toBe(0);
+		expect(result.stderr).toBe("");
 		const envelope = JSON.parse(result.stdout);
-		assert.equal(envelope.ok, true, result.stdout);
+		expect(envelope.ok).toBe(true);
 		return envelope.data;
 	};
 
@@ -389,7 +750,7 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 		{ merged: true },
 	);
 	ticketIssue = completed.issue;
-	assert.equal(ticketIssue.workflow.state, "done");
+	expect(ticketIssue.workflow.state).toBe("done");
 	const specReadyForIntegration = {
 		...specAfterPlan,
 		workflow: { ...specAfterPlan.workflow, action: "integration-test" },
@@ -434,18 +795,18 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 		{ merged: true },
 	);
 	specIssue = completed.issue;
-	assert.equal(specIssue.workflow.state, "done");
-	assert.equal(specIssue.workflow.action, "none");
-});
+	expect(specIssue.workflow.state).toBe("done");
+	expect(specIssue.workflow.action).toBe("none");
+}, 15_000);
 
 test("CLI writes error envelopes to stdout and exits non-zero", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "unknown"], {
 		encoding: "utf8",
 	});
 
-	assert.equal(result.status, 1);
-	assert.equal(result.stderr, "");
-	assert.deepEqual(JSON.parse(result.stdout), {
+	expect(result.status).toBe(1);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toEqual({
 		ok: false,
 		error: {
 			code: "UNKNOWN_COMMAND",

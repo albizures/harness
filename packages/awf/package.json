@@ -8,7 +8,8 @@
 		"awf": "./dist/cli.js"
 	},
 	"exports": {
-		".": "./dist/index.js"
+		".": "./dist/index.js",
+		"./trackers/filesystem": "./dist/trackers/filesystem.js"
 	},
 	"files": [
 		"dist"
@@ -16,12 +17,16 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"test": "node --test src/*.test.ts",
+		"test": "pnpm run test:vitest",
+		"test:vitest": "vitest run --config vitest.config.ts",
 		"awf": "node ./dist/cli.js"
 	},
 	"dependencies": {
 		"jiti": "^2.7.0",
 		"type-fest": "^5.8.0",
 		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.10"
 	}
 }

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
@@ -18,16 +17,15 @@ test("conditional updates advance the projection version and reject stale expect
 		workflow: { state: "running", activeRunId: "run-1" },
 	});
 
-	assert.equal(updated.workflow.version, issue.workflow.version + 1);
-	assert.equal(updated.workflow.state, "running");
-	assert.equal(updated.workflow.activeRunId, "run-1");
-	await assert.rejects(
+	expect(updated.workflow.version).toBe(issue.workflow.version + 1);
+	expect(updated.workflow.state).toBe("running");
+	expect(updated.workflow.activeRunId).toBe("run-1");
+	await expect(
 		tracker.updateIssue(issue.id, {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
 			workflow: { state: "done" },
 		}),
-		ProjectionConflictError,
-	);
+	).rejects.toThrow(ProjectionConflictError);
 });
 
 test("workflow logs are append-only and read back in append order", async () => {
@@ -49,14 +47,8 @@ test("workflow logs are append-only and read back in append order", async () => 
 	});
 
 	const logs = await tracker.readLogs(issue.id);
-	assert.deepEqual(
-		logs.map((log) => log.sequence),
-		[1, 2],
-	);
-	assert.deepEqual(
-		logs.map((log) => log.type),
-		["started", "succeeded"],
-	);
+	expect(logs.map((log) => log.sequence)).toEqual([1, 2]);
+	expect(logs.map((log) => log.type)).toEqual(["started", "succeeded"]);
 });
 
 test("hierarchy and dependency relationships are projected on reads", async () => {
@@ -77,19 +69,16 @@ test("hierarchy and dependency relationships are projected on reads", async () =
 	await tracker.addChild(spec.id, ticket.id);
 	await tracker.addDependency(ticket.id, blocker.id);
 
-	assert.deepEqual((await tracker.getIssue(spec.id)).relationships.children, [
+	expect((await tracker.getIssue(spec.id)).relationships.children).toEqual([
 		ticket.id,
 	]);
-	assert.equal(
-		(await tracker.getIssue(ticket.id)).relationships.parent,
+	expect((await tracker.getIssue(ticket.id)).relationships.parent).toBe(
 		spec.id,
 	);
-	assert.deepEqual(
+	expect(
 		(await tracker.getIssue(ticket.id)).relationships.dependencies,
-		[blocker.id],
-	);
-	assert.deepEqual(
-		(await tracker.getIssue(blocker.id)).relationships.dependents,
+	).toEqual([blocker.id]);
+	expect((await tracker.getIssue(blocker.id)).relationships.dependents).toEqual(
 		[ticket.id],
 	);
 });
@@ -113,7 +102,7 @@ test("artifact and change registrations are returned with the normalized issue",
 	});
 
 	const read = await tracker.getIssue(issue.id);
-	assert.deepEqual(read.artifacts, [
+	expect(read.artifacts).toEqual([
 		{
 			id: "artifact-1",
 			kind: "file",
@@ -123,7 +112,7 @@ test("artifact and change registrations are returned with the normalized issue",
 			path: "docs/plan.md",
 		},
 	]);
-	assert.deepEqual(read.changes, [
+	expect(read.changes).toEqual([
 		{
 			id: "change-1",
 			kind: "git-ref",
@@ -148,8 +137,7 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 			},
 		],
 	});
-	await assert.rejects(
-		() => duplicate.getIssue("1"),
+	await expect(duplicate.getIssue("1")).rejects.toThrow(
 		CorruptWorkflowProjectionError,
 	);
 	const missing = createInMemoryTracker({
@@ -164,21 +152,18 @@ test("duplicate or malformed workflow projection fields are corruption", async (
 			},
 		],
 	});
-	await assert.rejects(
-		() => missing.getIssue("2"),
+	await expect(missing.getIssue("2")).rejects.toThrow(
 		CorruptWorkflowProjectionError,
 	);
-	assert.throws(
-		() =>
-			createInMemoryTracker({
-				issues: [
-					{
-						id: "3",
-						title: "Bad",
-						labels: "awf:agent-development:kind:ticket",
-					} as never,
-				],
-			}),
-		CorruptWorkflowProjectionError,
-	);
+	expect(() =>
+		createInMemoryTracker({
+			issues: [
+				{
+					id: "3",
+					title: "Bad",
+					labels: "awf:agent-development:kind:ticket",
+				} as never,
+			],
+		}),
+	).toThrow(CorruptWorkflowProjectionError);
 });

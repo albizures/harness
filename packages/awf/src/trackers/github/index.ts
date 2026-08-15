@@ -1,4 +1,5 @@
 import type { WorkflowManifest } from "../../manifest.ts";
+import { createTrackerAdapter } from "../../tracker-intents.ts";
 import type {
 	IssueRelationships,
 	Tracker,
@@ -68,7 +69,7 @@ export function createGitHubTracker({
 	api,
 	manifest,
 }: CreateGitHubTrackerOptions): TrackerAdapter {
-	return new GitHubTracker(api, manifest);
+	return createTrackerAdapter(new GitHubTracker(api, manifest));
 }
 
 export function createGhCliGitHubTracker(options: {

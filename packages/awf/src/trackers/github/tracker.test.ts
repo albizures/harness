@@ -1,14 +1,13 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import { execute } from "./commands.ts";
-import { defaultManifest } from "./default-manifest.ts";
+import { expect, test } from "vitest";
+import { execute } from "../../commands.ts";
+import { defaultManifest } from "../../default-manifest.ts";
 import {
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
-} from "./trackers/github/index.ts";
-import { CorruptWorkflowProjectionError } from "./tracker.ts";
+} from "./index.ts";
+import { CorruptWorkflowProjectionError } from "../../tracker.ts";
 
 const PROJECT_COMMENT_AND_TWO_LOGS = 3;
 
@@ -21,43 +20,43 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
 
-	assert.deepEqual(api.issue(1).labels.sort(), [
+	expect(api.issue(1).labels.sort()).toEqual([
 		"awf:agent-development:action:implement",
 		"awf:agent-development:kind:ticket",
 		"awf:agent-development:state:ready",
 	]);
-	assert.equal(api.issue(1).comments.length, 1);
-	assert.ok(
+	expect(api.issue(1).comments.length).toBe(1);
+	expect(
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
 				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
 			),
-	);
-	assert.equal(issue.workflow.kind, "ticket");
-	assert.equal(issue.workflow.version, 1);
+	).toBeTruthy();
+	expect(issue.workflow.kind).toBe("ticket");
+	expect(issue.workflow.version).toBe(1);
 
 	await tracker.updateIssue(issue.id, {
 		expect: { hash: issue.workflow.hash },
 		workflow: { state: "running", activeRunId: "run-1" },
 	});
 
-	assert.deepEqual(api.issue(1).labels.sort(), [
+	expect(api.issue(1).labels.sort()).toEqual([
 		"awf:agent-development:action:implement",
 		"awf:agent-development:kind:ticket",
 		"awf:agent-development:state:running",
 	]);
-	assert.equal(api.issue(1).comments.length, 1);
-	assert.ok(
+	expect(api.issue(1).comments.length).toBe(1);
+	expect(
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
 				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
 			),
-	);
+	).toBeTruthy();
 	const updated = await tracker.getIssue("1");
-	assert.equal(updated.workflow.activeRunId, "run-1");
-	assert.equal(updated.workflow.version, 2);
+	expect(updated.workflow.activeRunId).toBe("run-1");
+	expect(updated.workflow.version).toBe(2);
 });
 
 test("projects optional reasons and removes stale canonical labels on update", async () => {
@@ -74,7 +73,7 @@ test("projects optional reasons and removes stale canonical labels on update", a
 		},
 	});
 
-	assert.deepEqual(api.issue(1).labels.sort(), [
+	expect(api.issue(1).labels.sort()).toEqual([
 		"awf:agent-development:action:none",
 		"awf:agent-development:kind:ticket",
 		"awf:agent-development:reason:dependencies",
@@ -91,7 +90,7 @@ test("projects optional reasons and removes stale canonical labels on update", a
 		},
 	});
 
-	assert.deepEqual(api.issue(1).labels.sort(), [
+	expect(api.issue(1).labels.sort()).toEqual([
 		"awf:agent-development:action:plan",
 		"awf:agent-development:kind:spec",
 		"awf:agent-development:state:ready",
@@ -110,7 +109,7 @@ test("listIssues requires reconciliation for malformed reserved GitHub labels", 
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
 
-	await assert.rejects(tracker.listIssues(), /NEED_RECONCILIATION/);
+	await expect(tracker.listIssues()).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("appends logs as strict machine comments", async () => {
@@ -127,18 +126,16 @@ test("appends logs as strict machine comments", async () => {
 		payload: { ok: true },
 	});
 
-	assert.equal(api.issue(1).comments.length, PROJECT_COMMENT_AND_TWO_LOGS);
-	assert.equal(
-		api.issue(1).comments[1]?.body,
+	expect(api.issue(1).comments.length).toBe(PROJECT_COMMENT_AND_TWO_LOGS);
+	expect(api.issue(1).comments[1]?.body).toBe(
 		'<!-- awf:log v1 agent-development -->\n{"issueId":"1","runId":"run-1","sequence":1,"type":"started"}',
 	);
-	assert.deepEqual(
+	expect(
 		(await tracker.readLogs(issue.id)).map((log) => [log.sequence, log.type]),
-		[
-			[1, "started"],
-			[2, "succeeded"],
-		],
-	);
+	).toEqual([
+		[1, "started"],
+		[2, "succeeded"],
+	]);
 });
 
 test("uses native hierarchy and dependency capabilities", async () => {
@@ -160,14 +157,12 @@ test("uses native hierarchy and dependency capabilities", async () => {
 	await tracker.addChild("1", "2");
 	await tracker.addDependency("2", "3");
 
-	assert.deepEqual((await tracker.getIssue("1")).relationships.children, ["2"]);
-	assert.equal((await tracker.getIssue("2")).relationships.parent, "1");
-	assert.deepEqual((await tracker.getIssue("2")).relationships.dependencies, [
+	expect((await tracker.getIssue("1")).relationships.children).toEqual(["2"]);
+	expect((await tracker.getIssue("2")).relationships.parent).toBe("1");
+	expect((await tracker.getIssue("2")).relationships.dependencies).toEqual([
 		"3",
 	]);
-	assert.deepEqual((await tracker.getIssue("3")).relationships.dependents, [
-		"2",
-	]);
+	expect((await tracker.getIssue("3")).relationships.dependents).toEqual(["2"]);
 });
 
 test("listIssues ignores unrelated GitHub issues without workflow projection labels", async () => {
@@ -181,17 +176,16 @@ test("listIssues ignores unrelated GitHub issues without workflow projection lab
 
 	api.issue(1).comments.push({ id: 99, body: "Human note about awf labels" });
 
-	assert.deepEqual(
-		(await tracker.listIssues()).map((issue) => issue.id),
-		["2"],
-	);
+	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual(["2"]);
 });
 
 test("capability validation fails when native issue relationships are unavailable", async () => {
 	const api = createMockGitHubApi({
 		capabilities: { subIssues: false, dependencies: true },
 	});
-	await assert.rejects(validateGitHubTrackerCapabilities(api), /sub-issues/);
+	await expect(validateGitHubTrackerCapabilities(api)).rejects.toThrow(
+		/sub-issues/,
+	);
 });
 
 test("manual reserved-label corruption requires reconciliation", async () => {
@@ -203,12 +197,10 @@ test("manual reserved-label corruption requires reconciliation", async () => {
 	});
 	api.issue(1).labels.push("awf:agent-development:state:running");
 
-	await assert.rejects(
-		tracker.getIssue("1"),
-		(error: unknown) =>
-			error instanceof CorruptWorkflowProjectionError &&
-			error.message.includes("NEED_RECONCILIATION"),
+	await expect(tracker.getIssue("1")).rejects.toThrow(
+		CorruptWorkflowProjectionError,
 	);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("machine-comment corruption requires reconciliation", async () => {
@@ -221,7 +213,7 @@ test("machine-comment corruption requires reconciliation", async () => {
 	api.issue(1).comments[0].body =
 		"<!-- awf:current v1 agent-development -->\nnot-json";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("malformed canonical and legacy workflow-owned machine comments require reconciliation", async () => {
@@ -236,13 +228,13 @@ test("malformed canonical and legacy workflow-owned machine comments require rec
 		id: 100,
 		body: "<!-- awf:log v2 agent-development -->\n{}",
 	});
-	await assert.rejects(tracker.readLogs("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[1].body = "<!-- awf:agent-development:log -->\n{}";
-	await assert.rejects(tracker.readLogs("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[1].body = "<!-- awf:current v1 agent-development -->";
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("machine-comment markers validate type version and workflow id", async () => {
@@ -260,7 +252,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 				"<!-- awf:log v1 agent-development -->",
 			) ?? "";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[0].body =
 		api
@@ -270,7 +262,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 				"<!-- awf:current v2 agent-development -->",
 			) ?? "";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
 	api.issue(1).comments[0].body =
 		api
@@ -280,7 +272,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 				"<!-- awf:current v1 other-workflow -->",
 			) ?? "";
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("registers and validates pull-request artifacts", async () => {
@@ -291,19 +283,15 @@ test("registers and validates pull-request artifacts", async () => {
 		workflow: { kind: "ticket", state: "running", action: "implement" },
 	});
 
-	await assert.rejects(
+	await expect(
 		tracker.registerArtifact("1", { kind: "pull-request", uri: "not a pr" }),
-		/Pull request artifact/,
-	);
+	).rejects.toThrow(/Pull request artifact/);
 	await tracker.registerArtifact("1", {
 		kind: "pull-request",
 		uri: "https://github.com/albizures/harness/pull/1",
 	});
 
-	assert.equal(
-		(await tracker.getIssue("1")).artifacts[0]?.kind,
-		"pull-request",
-	);
+	expect((await tracker.getIssue("1")).artifacts[0]?.kind).toBe("pull-request");
 });
 
 test("preserves structured artifact fields through GitHub projection reads and logs", async () => {
@@ -330,12 +318,12 @@ test("preserves structured artifact fields through GitHub projection reads and l
 		payload: { artifacts: [artifact] },
 	});
 
-	assert.deepEqual((await tracker.getIssue("1")).artifacts, [artifact]);
-	assert.deepEqual((await tracker.readLogs("1"))[0]?.payload, {
+	expect((await tracker.getIssue("1")).artifacts).toEqual([artifact]);
+	expect((await tracker.readLogs("1"))[0]?.payload).toEqual({
 		artifacts: [artifact],
 	});
-	assert.match(api.issue(1).comments[0]?.body ?? "", /external-artifact-id/u);
-	assert.match(api.issue(1).comments[1]?.body ?? "", /"artifacts":\[/u);
+	expect(api.issue(1).comments[0]?.body ?? "").toMatch(/external-artifact-id/u);
+	expect(api.issue(1).comments[1]?.body ?? "").toMatch(/"artifacts":\[/u);
 });
 
 test("malformed machine-owned artifact data requires reconciliation", async () => {
@@ -346,8 +334,8 @@ test("malformed machine-owned artifact data requires reconciliation", async () =
 		workflow: { kind: "ticket", state: "running", action: "implement" },
 	});
 	const [marker, json] = api.issue(1).comments[0]?.body.split("\n") ?? [];
-	assert.ok(marker);
-	assert.ok(json);
+	expect(marker).toBeTruthy();
+	expect(json).toBeTruthy();
 	const metadata = JSON.parse(json) as Record<string, unknown>;
 	metadata.artifacts = [
 		{
@@ -359,24 +347,22 @@ test("malformed machine-owned artifact data requires reconciliation", async () =
 	];
 	api.issue(1).comments[0].body = `${marker}\n${JSON.stringify(metadata)}`;
 
-	await assert.rejects(tracker.getIssue("1"), /NEED_RECONCILIATION/);
+	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
 test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub repository", {
 	skip: process.env.AWF_GITHUB_SMOKE !== "1",
 }, async () => {
 	const repo = process.env.AWF_GITHUB_SMOKE_REPO;
-	assert.ok(repo, "set AWF_GITHUB_SMOKE_REPO=owner/repo");
+	expect(repo).toBeTruthy();
 	// Documented fixture contract: point AWF_GITHUB_SMOKE_REPO at a disposable
 	// repository with GitHub sub-issues/dependencies enabled and gh authenticated.
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
-	const { createGhCliGitHubTracker } = await import(
-		"./trackers/github/index.ts"
-	);
+	const { createGhCliGitHubTracker } = await import("./index.ts");
 	const [owner, name] = repo.split("/");
-	assert.ok(owner);
-	assert.ok(name);
+	expect(owner).toBeTruthy();
+	expect(name).toBeTruthy();
 	const tracker = createGhCliGitHubTracker({
 		owner,
 		repo: name,
@@ -386,24 +372,29 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 		tracker,
 		stdin: "# Smoke spec\n",
 	});
-	assert.equal(created.ok, true);
+	expect(created.ok).toBe(true);
+	if (!created.ok) {
+		throw new Error("expected create success");
+	}
 	const createdData = created.data as { issue: { id: string } };
 	const id = createdData.issue.id;
-	assert.equal((await execute(["get", id], { tracker })).ok, true);
+	expect((await execute(["get", id], { tracker })).ok).toBe(true);
 	const started = await execute(["start", id], { tracker });
-	assert.equal(started.ok, true);
+	expect(started.ok).toBe(true);
+	if (!started.ok) {
+		throw new Error("expected start success");
+	}
 	const startedData = started.data as { run: { id: string } };
 	const runId = startedData.run.id;
-	assert.equal((await execute(["logs", id], { tracker })).ok, true);
-	assert.equal(
+	expect((await execute(["logs", id], { tracker })).ok).toBe(true);
+	expect(
 		(
 			await execute(["succeed", id, "--run", runId, "--input", "-"], {
 				tracker,
 				stdin: JSON.stringify({ tickets: [] }),
 			})
 		).ok,
-		true,
-	);
+	).toBe(true);
 });
 
 function createMockGitHubApi(
@@ -420,7 +411,7 @@ function createMockGitHubApi(
 	};
 	const requireIssue = (number: number): MockIssue => {
 		const issue = issues.get(number);
-		assert.ok(issue, `missing issue ${number}`);
+		expect(issue).toBeTruthy();
 		return issue;
 	};
 	return {

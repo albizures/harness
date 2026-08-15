@@ -1,24 +1,28 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { bindCliExecution } from "./cli-config.ts";
 import { execute } from "./commands.ts";
 import { serializeEnvelope } from "./envelope.ts";
 import { CorruptWorkflowProjectionError } from "./tracker.ts";
-import { createInMemoryTrackerFromEnvironment } from "./trackers/memory.ts";
 
 declare const process: {
 	argv: Array<string>;
-	env: Record<string, string | undefined>;
 	stdout: { write: (chunk: string) => void };
+	cwd: () => string;
 	exitCode?: number;
 };
 
 try {
-	const args = process.argv.slice(2);
-	const tracker = createInMemoryTrackerFromEnvironment(process.env);
-	const envelope = await execute(args, {
-		tracker,
-		stdin: readStdinForDashInput(args),
-	});
+	const rawArgs = process.argv.slice(2);
+	const binding = await bindCliExecution(rawArgs, process.cwd());
+	const envelope =
+		"ok" in binding
+			? binding
+			: await execute(binding.args, {
+					manifest: binding.manifest,
+					tracker: binding.tracker,
+					stdin: readStdinForDashInput(binding.args),
+				});
 	process.stdout.write(serializeEnvelope(envelope));
 	process.exitCode = envelope.ok ? 0 : 1;
 } catch (error) {
