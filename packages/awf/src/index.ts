@@ -30,6 +30,7 @@ export {
 	type GitHubTrackerIssue,
 } from "./trackers/github/index.ts";
 export {
+	createTrackerAdapter,
 	createTrackerIntentModule,
 	type TrackerIntentModulePrimitives,
 } from "./tracker-intents.ts";

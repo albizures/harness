@@ -3,6 +3,7 @@ import {
 	NeedReconciliationError,
 	ProjectionConflictError,
 	type Tracker,
+	type TrackerAdapter,
 	type TrackerAdapterPrimitiveReads,
 	type TrackerAdapterPrimitiveOperations,
 	type TrackerApplyPlanIntent,
@@ -35,6 +36,26 @@ export function createTrackerIntentModule(
 	primitives: TrackerIntentModulePrimitives,
 ): Tracker {
 	return new PrimitiveTrackerIntentModule(primitives);
+}
+
+export function createTrackerAdapter(
+	primitives: TrackerIntentModulePrimitives,
+): TrackerAdapter {
+	const intents = createTrackerIntentModule(primitives);
+	return new Proxy(primitives as TrackerAdapter, {
+		get(target, property, receiver) {
+			const intentValue = Reflect.get(intents, property, intents);
+			if (intentValue !== undefined) {
+				return typeof intentValue === "function"
+					? intentValue.bind(intents)
+					: intentValue;
+			}
+			const primitiveValue = Reflect.get(target, property, receiver);
+			return typeof primitiveValue === "function"
+				? primitiveValue.bind(target)
+				: primitiveValue;
+		},
+	});
 }
 
 class PrimitiveTrackerIntentModule implements Tracker {
@@ -150,33 +171,71 @@ class PrimitiveTrackerIntentModule implements Tracker {
 	}
 
 	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {
-		if (input.type === "add-child") {
-			await this.primitives.addChild(input.parentId, input.childId);
-			await this.primitives.verification?.verifyChild?.(
-				input.parentId,
-				input.childId,
-				true,
+		try {
+			if (input.type === "add-child") {
+				await this.primitives.addChild(input.parentId, input.childId);
+				await this.verifyChild(input.parentId, input.childId, true);
+			} else if (input.type === "remove-child") {
+				await this.primitives.removeChild(input.parentId, input.childId);
+				await this.verifyChild(input.parentId, input.childId, false);
+			} else if (input.type === "add-dependency") {
+				await this.primitives.addDependency(input.issueId, input.blockedById);
+				await this.verifyDependency(input.issueId, input.blockedById, true);
+			} else {
+				await this.primitives.removeDependency(input.issueId, input.blockedById);
+				await this.verifyDependency(input.issueId, input.blockedById, false);
+			}
+		} catch (error) {
+			throw relationshipIntentError(error);
+		}
+	}
+
+	private async verifyChild(
+		parentId: string,
+		childId: string,
+		expected: boolean,
+	): Promise<void> {
+		if (this.primitives.verification?.verifyChild !== undefined) {
+			await this.primitives.verification.verifyChild(parentId, childId, expected);
+			return;
+		}
+		const [parent, child] = await Promise.all([
+			this.primitives.getIssue(parentId),
+			this.primitives.getIssue(childId),
+		]);
+		const present =
+			parent.relationships.children.includes(childId) &&
+			child.relationships.parent === parentId;
+		if (present !== expected) {
+			throw new NeedReconciliationError(
+				`NEED_RECONCILIATION: child relationship '${parentId}' -> '${childId}' could not be verified.`,
 			);
-		} else if (input.type === "remove-child") {
-			await this.primitives.removeChild(input.parentId, input.childId);
-			await this.primitives.verification?.verifyChild?.(
-				input.parentId,
-				input.childId,
-				false,
+		}
+	}
+
+	private async verifyDependency(
+		issueId: string,
+		blockedById: string,
+		expected: boolean,
+	): Promise<void> {
+		if (this.primitives.verification?.verifyDependency !== undefined) {
+			await this.primitives.verification.verifyDependency(
+				issueId,
+				blockedById,
+				expected,
 			);
-		} else if (input.type === "add-dependency") {
-			await this.primitives.addDependency(input.issueId, input.blockedById);
-			await this.primitives.verification?.verifyDependency?.(
-				input.issueId,
-				input.blockedById,
-				true,
-			);
-		} else {
-			await this.primitives.removeDependency(input.issueId, input.blockedById);
-			await this.primitives.verification?.verifyDependency?.(
-				input.issueId,
-				input.blockedById,
-				false,
+			return;
+		}
+		const [issue, blocker] = await Promise.all([
+			this.primitives.getIssue(issueId),
+			this.primitives.getIssue(blockedById),
+		]);
+		const present =
+			issue.relationships.dependencies.includes(blockedById) &&
+			blocker.relationships.dependents.includes(issueId);
+		if (present !== expected) {
+			throw new NeedReconciliationError(
+				`NEED_RECONCILIATION: dependency relationship '${issueId}' -> '${blockedById}' could not be verified.`,
 			);
 		}
 	}
@@ -237,11 +296,7 @@ class PrimitiveTrackerIntentModule implements Tracker {
 				...input.log,
 				payload: { ...asObject(input.log.payload), tickets, artifacts },
 			});
-			await this.primitives.verification?.verifyPlanApplication?.(
-				input.specId,
-				tickets,
-				input.tickets,
-			);
+			await this.verifyPlanApplication(input.specId, tickets, input.tickets);
 			return {
 				spec: await this.primitives.getIssue(input.specId),
 				tickets,
@@ -259,6 +314,50 @@ class PrimitiveTrackerIntentModule implements Tracker {
 			throw new NeedReconciliationError(
 				`NEED_RECONCILIATION: plan application intent failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
+		}
+	}
+
+	private async verifyPlanApplication(
+		specId: string,
+		tickets: Array<{ key: string; id: string }>,
+		inputs: TrackerApplyPlanIntent["tickets"],
+	): Promise<void> {
+		if (this.primitives.verification?.verifyPlanApplication !== undefined) {
+			await this.primitives.verification.verifyPlanApplication(
+				specId,
+				tickets,
+				inputs,
+			);
+			return;
+		}
+		const spec = await this.primitives.getIssue(specId);
+		for (const ticket of tickets) {
+			if (!spec.relationships.children.includes(ticket.id)) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: plan child relationships could not be verified.",
+				);
+			}
+		}
+		const idsByKey = new Map(tickets.map((ticket) => [ticket.key, ticket.id]));
+		for (const input of inputs) {
+			const issueId = idsByKey.get(input.key);
+			if (issueId === undefined) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+				);
+			}
+			const issue = await this.primitives.getIssue(issueId);
+			for (const dependencyKey of input.dependsOn ?? []) {
+				const blockedById = idsByKey.get(dependencyKey);
+				if (
+					blockedById === undefined ||
+					!issue.relationships.dependencies.includes(blockedById)
+				) {
+					throw new NeedReconciliationError(
+						"NEED_RECONCILIATION: plan dependency relationships could not be verified.",
+					);
+				}
+			}
 		}
 	}
 
@@ -289,4 +388,17 @@ function asObject(value: unknown): Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: {};
+}
+
+function relationshipIntentError(error: unknown): Error {
+	if (
+		error instanceof NeedReconciliationError ||
+		error instanceof ProjectionConflictError ||
+		error instanceof IssueNotFoundError
+	) {
+		return error;
+	}
+	return new NeedReconciliationError(
+		`NEED_RECONCILIATION: relationship intent failed: ${error instanceof Error ? error.message : String(error)}`,
+	);
 }

@@ -6,6 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { createTrackerAdapter } from "../tracker-intents.ts";
 import {
 	CorruptWorkflowProjectionError,
 	type TrackerAdapter,
@@ -28,8 +29,8 @@ export function createFileSystemTracker(
 ): TrackerAdapter {
 	const filePath = resolve(options.path);
 	const state = readState(filePath);
-	return new WorkflowStateTracker(state, () =>
-		writeState(filePath, state.snapshot()),
+	return createTrackerAdapter(
+		new WorkflowStateTracker(state, () => writeState(filePath, state.snapshot())),
 	);
 }
 

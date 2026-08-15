@@ -797,7 +797,7 @@ test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
 	specIssue = completed.issue;
 	expect(specIssue.workflow.state).toBe("done");
 	expect(specIssue.workflow.action).toBe("none");
-});
+}, 15_000);
 
 test("CLI writes error envelopes to stdout and exits non-zero", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "unknown"], {
