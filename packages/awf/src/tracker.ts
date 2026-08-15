@@ -299,7 +299,14 @@ export type Tracker = {
  * workflow intents plus reads. These primitives are retained for adapter
  * implementations, reconciliation/test setup, and projection repair internals.
  */
-export type TrackerAdapterPrimitives = {
+export type TrackerAdapterPrimitiveReads = {
+	getIssue: (id: string) => Promise<WorkflowIssue>;
+	listIssues: () => Promise<Array<WorkflowIssue>>;
+	readLogs: (id: string) => Promise<Array<WorkflowLog>>;
+	inspectIssue?: (id: string) => Promise<TrackerIssueInspection>;
+};
+
+export type TrackerAdapterPrimitiveOperations = {
 	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	updateIssue: (id: string, input: UpdateIssueInput) => Promise<WorkflowIssue>;
 	appendLog: (
@@ -321,7 +328,27 @@ export type TrackerAdapterPrimitives = {
 	) => Promise<WorkflowChange>;
 };
 
-export type TrackerAdapter = Tracker & TrackerAdapterPrimitives;
+export type TrackerVerificationHooks = {
+	verifyChild?: (
+		parentId: string,
+		childId: string,
+		expected: boolean,
+	) => void | Promise<void>;
+	verifyDependency?: (
+		issueId: string,
+		blockedById: string,
+		expected: boolean,
+	) => void | Promise<void>;
+	verifyPlanApplication?: (
+		specId: string,
+		tickets: Array<{ key: string; id: string }>,
+		inputs: TrackerApplyPlanIntent["tickets"],
+	) => void | Promise<void>;
+};
+
+export type TrackerAdapterPrimitives = TrackerAdapterPrimitiveOperations;
+
+export type TrackerAdapter = Tracker & TrackerAdapterPrimitiveOperations;
 
 export class ProjectionConflictError extends Error {
 	constructor(

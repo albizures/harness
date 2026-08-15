@@ -30,6 +30,10 @@ export {
 	type GitHubTrackerIssue,
 } from "./trackers/github/index.ts";
 export {
+	createTrackerIntentModule,
+	type TrackerIntentModulePrimitives,
+} from "./tracker-intents.ts";
+export {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
 	NeedReconciliationError,
@@ -37,6 +41,8 @@ export {
 	type CreateIssueInput,
 	type IssueRelationships,
 	type Tracker,
+	type TrackerAdapterPrimitiveOperations,
+	type TrackerAdapterPrimitiveReads,
 	type TrackerApplyPlanIntent,
 	type TrackerApplyPlanResult,
 	type TrackerCompleteRunIntent,
@@ -48,6 +54,7 @@ export {
 	type TrackerRelationshipIntent,
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
+	type TrackerVerificationHooks,
 	type UpdateIssueInput,
 	type WorkflowArtifact,
 	type WorkflowChange,

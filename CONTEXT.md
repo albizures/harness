@@ -116,6 +116,10 @@ _Avoid_: handoff issue, handoff entity
 The Workflow runtime's lowest-common-denominator interface for issue tracker primitives such as issues, labels or fields, comments, children, dependencies, changes, and logs. Workflow-specific mapping details live inside tracker adapters, not in parent-agent commands.
 _Avoid_: GitHub API wrapper, workflow API
 
+**Tracker Intent Module**:
+The Workflow runtime module that executes high-level Tracker API intents, such as starting a Workflow run, completing a Workflow run, recording artifacts, changing relationships, or applying a plan, by coordinating tracker adapter primitives and verifying Workflow issue invariants.
+_Avoid_: adapter helper, tracker service, command wrapper
+
 **File-backed Tracker Adapter**:
 A Tracker API implementation that stores Workflow issues and their workflow data durably on the local filesystem for local or development use, rather than keeping them only in process memory or delegating to an external tracker.
 _Avoid_: filesystem memory tracker, local GitHub replacement

@@ -26,20 +26,11 @@ export type FileSystemTrackerOptions = {
 export function createFileSystemTracker(
 	options: FileSystemTrackerOptions,
 ): TrackerAdapter {
-	return new FileSystemTracker(resolve(options.path));
-}
-
-class FileSystemTracker extends WorkflowStateTracker {
-	private readonly filePath: string;
-
-	constructor(filePath: string) {
-		super(readState(filePath));
-		this.filePath = filePath;
-	}
-
-	protected override afterMutation(): void {
-		writeState(this.filePath, this.state.snapshot());
-	}
+	const filePath = resolve(options.path);
+	const state = readState(filePath);
+	return new WorkflowStateTracker(state, () =>
+		writeState(filePath, state.snapshot()),
+	);
 }
 
 function readState(filePath: string): WorkflowTrackerState {

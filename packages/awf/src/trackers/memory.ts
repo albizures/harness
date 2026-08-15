@@ -1,9 +1,9 @@
+import { createTrackerIntentModule } from "../tracker-intents.ts";
 import {
 	CorruptWorkflowProjectionError,
-	NeedReconciliationError,
-	ProjectionConflictError,
 	type CreateIssueInput,
 	type SeedIssueInput,
+	type Tracker,
 	type TrackerAdapter,
 	type TrackerApplyPlanIntent,
 	type TrackerApplyPlanResult,
@@ -26,7 +26,7 @@ import {
 	type WorkflowIssue,
 	type WorkflowLog,
 } from "../tracker.ts";
-import { WorkflowTrackerState, asObject } from "./state.ts";
+import { WorkflowTrackerState } from "./state.ts";
 
 export function createInMemoryTracker(
 	seed: { issues?: Array<SeedIssueInput> } = {},
@@ -51,217 +51,117 @@ export function createInMemoryTrackerFromEnvironment(
 }
 
 export class WorkflowStateTracker implements TrackerAdapter {
-	protected readonly state: WorkflowTrackerState;
+	private readonly state: WorkflowTrackerState;
+	private readonly intentModule: Tracker;
+	private readonly onMutation: () => void;
 
-	constructor(state: WorkflowTrackerState) {
+	constructor(state: WorkflowTrackerState, onMutation: () => void = () => {}) {
 		this.state = state;
-	}
-
-	protected afterMutation(): void {
-		// In-memory trackers have no durable side effect.
+		this.onMutation = onMutation;
+		this.intentModule = createTrackerIntentModule({
+			createIssue: (input) => this.createIssue(input),
+			updateIssue: (id, input) => this.updateIssue(id, input),
+			appendLog: (id, input) => this.appendLog(id, input),
+			addChild: (parentId, childId) => this.addChild(parentId, childId),
+			removeChild: (parentId, childId) => this.removeChild(parentId, childId),
+			addDependency: (issueId, blockedById) =>
+				this.addDependency(issueId, blockedById),
+			removeDependency: (issueId, blockedById) =>
+				this.removeDependency(issueId, blockedById),
+			deleteIssue: (id) => this.deleteIssue(id),
+			registerArtifact: (issueId, input) =>
+				this.registerArtifact(issueId, input),
+			registerChange: (issueId, input) => this.registerChange(issueId, input),
+			getIssue: (id) => this.getIssue(id),
+			listIssues: () => this.listIssues(),
+			readLogs: (id) => this.readLogs(id),
+			inspectIssue: (id) => this.inspectIssue(id),
+			verification: {
+				verifyChild: (parentId, childId, expected) =>
+					this.state.verifyChild(parentId, childId, expected),
+				verifyDependency: (issueId, blockedById, expected) =>
+					this.state.verifyDependency(issueId, blockedById, expected),
+				verifyPlanApplication: (specId, tickets, inputs) =>
+					this.state.verifyPlanApplication(specId, tickets, inputs),
+			},
+		});
 	}
 
 	async createWorkflowIssue(
 		input: TrackerCreateWorkflowIssueIntent,
 	): Promise<{ issue: WorkflowIssue; log?: WorkflowLog }> {
-		const issue = await this.createIssue(input);
-		const log =
-			input.initialLog === undefined
-				? undefined
-				: await this.appendLog(issue.id, input.initialLog);
-		return {
-			issue: log === undefined ? issue : await this.getIssue(issue.id),
-			log,
-		};
+		return this.intentModule.createWorkflowIssue(input);
 	}
 
 	async startRun(
 		id: string,
 		input: TrackerStartRunIntent,
 	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const issue = await this.updateIssue(id, {
-			expect: input.expect,
-			workflow: { ...input.workflow, activeRunId: input.runId },
-		});
-		const log = await this.appendLog(id, input.log);
-		return { issue, log };
+		return this.intentModule.startRun(id, input);
 	}
 
 	async completeRun(
 		id: string,
 		input: TrackerCompleteRunIntent,
 	): Promise<TrackerRecordArtifactsResult> {
-		await this.updateIssue(id, {
-			expect: input.expect,
-			workflow: { ...input.workflow, activeRunId: undefined },
-		});
-		return this.recordArtifacts(id, input);
+		return this.intentModule.completeRun(id, input);
 	}
 
 	async recordArtifacts(
 		id: string,
 		input: TrackerRecordArtifactsIntent,
 	): Promise<TrackerRecordArtifactsResult> {
-		const artifacts: Array<WorkflowArtifact> = [];
-		for (const artifact of input.artifacts ?? []) {
-			artifacts.push(await this.registerArtifact(id, artifact));
-		}
-		const changes: Array<WorkflowChange> = [];
-		for (const change of input.changes ?? []) {
-			changes.push(await this.registerChange(id, change));
-		}
-		const log = await this.appendLog(id, input.log);
-		return {
-			issue: await this.getIssue(id),
-			log,
-			artifacts,
-			changes,
-		};
+		return this.intentModule.recordArtifacts(id, input);
 	}
 
 	async escalateWorkflow(
 		id: string,
 		input: TrackerEscalateIntent,
 	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const issue = await this.updateIssue(id, {
-			expect: input.expect,
-			workflow: input.workflow,
-		});
-		const log = await this.appendLog(id, input.log);
-		return { issue, log };
+		return this.intentModule.escalateWorkflow(id, input);
 	}
 
 	async resumeWorkflow(
 		id: string,
 		input: TrackerResumeIntent,
 	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const issue = await this.updateIssue(id, {
-			expect: input.expect,
-			workflow: input.workflow,
-		});
-		const log = await this.appendLog(id, input.log);
-		return { issue, log };
+		return this.intentModule.resumeWorkflow(id, input);
 	}
 
 	async recordCommand(
 		id: string,
 		input: TrackerRecordCommandIntent,
 	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const log = await this.appendLog(id, input.log);
-		return { issue: await this.getIssue(id), log };
+		return this.intentModule.recordCommand(id, input);
 	}
 
 	async advanceWorkflow(
 		id: string,
 		input: TrackerAdvanceWorkflowIntent,
 	): Promise<WorkflowIssue> {
-		return this.updateIssue(id, input);
+		return this.intentModule.advanceWorkflow(id, input);
 	}
 
 	async repairIssue(
 		id: string,
 		input: TrackerRepairIssueIntent,
 	): Promise<WorkflowIssue> {
-		return this.updateIssue(id, input);
+		return this.intentModule.repairIssue(id, input);
 	}
 
 	async changeRelationship(input: TrackerRelationshipIntent): Promise<void> {
-		if (input.type === "add-child") {
-			await this.addChild(input.parentId, input.childId);
-			this.state.verifyChild(input.parentId, input.childId, true);
-		} else if (input.type === "remove-child") {
-			await this.removeChild(input.parentId, input.childId);
-			this.state.verifyChild(input.parentId, input.childId, false);
-		} else if (input.type === "add-dependency") {
-			await this.addDependency(input.issueId, input.blockedById);
-			this.state.verifyDependency(input.issueId, input.blockedById, true);
-		} else {
-			await this.removeDependency(input.issueId, input.blockedById);
-			this.state.verifyDependency(input.issueId, input.blockedById, false);
-		}
+		return this.intentModule.changeRelationship(input);
 	}
 
 	async applyPlan(
 		input: TrackerApplyPlanIntent,
 	): Promise<TrackerApplyPlanResult> {
-		const created: Array<{ key: string; id: string }> = [];
-		try {
-			for (const ticket of input.tickets) {
-				const issue = await this.createIssue({
-					title: ticket.title,
-					body: ticket.body,
-					workflow: ticket.workflow,
-				});
-				created.push({ key: ticket.key, id: issue.id });
-				await this.changeRelationship({
-					type: "add-child",
-					parentId: input.specId,
-					childId: issue.id,
-				});
-			}
-			const idsByKey = new Map(
-				created.map((ticket) => [ticket.key, ticket.id]),
-			);
-			for (const ticket of input.tickets) {
-				const issueId = idsByKey.get(ticket.key);
-				if (issueId === undefined) {
-					throw new NeedReconciliationError(
-						"NEED_RECONCILIATION: plan ticket creation could not be verified.",
-					);
-				}
-				for (const dependencyKey of ticket.dependsOn ?? []) {
-					const blockedById = idsByKey.get(dependencyKey);
-					if (blockedById === undefined) {
-						throw new NeedReconciliationError(
-							"NEED_RECONCILIATION: plan dependency resolution failed.",
-						);
-					}
-					await this.changeRelationship({
-						type: "add-dependency",
-						issueId,
-						blockedById,
-					});
-				}
-			}
-			await this.updateIssue(input.specId, {
-				expect: input.expect,
-				workflow: input.specWorkflow,
-			});
-			const artifacts: Array<WorkflowArtifact> = [];
-			for (const artifact of input.artifacts ?? []) {
-				artifacts.push(await this.registerArtifact(input.specId, artifact));
-			}
-			const log = await this.appendLog(input.specId, {
-				...input.log,
-				payload: {
-					...asObject(input.log.payload),
-					tickets: created,
-					artifacts,
-				},
-			});
-			this.state.verifyPlanApplication(input.specId, created, input.tickets);
-			return {
-				spec: await this.getIssue(input.specId),
-				tickets: created,
-				artifacts,
-				log,
-			};
-		} catch (error) {
-			if (
-				error instanceof NeedReconciliationError ||
-				error instanceof ProjectionConflictError
-			) {
-				throw error;
-			}
-			throw new NeedReconciliationError(
-				`NEED_RECONCILIATION: plan application intent failed: ${error instanceof Error ? error.message : String(error)}`,
-			);
-		}
+		return this.intentModule.applyPlan(input);
 	}
 
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {
 		const result = this.state.createIssue(input);
-		this.afterMutation();
+		this.onMutation();
 		return result;
 	}
 
@@ -282,7 +182,7 @@ export class WorkflowStateTracker implements TrackerAdapter {
 		input: UpdateIssueInput,
 	): Promise<WorkflowIssue> {
 		const result = this.state.updateIssue(id, input);
-		this.afterMutation();
+		this.onMutation();
 		return result;
 	}
 
@@ -291,7 +191,7 @@ export class WorkflowStateTracker implements TrackerAdapter {
 		input: Omit<WorkflowLog, "sequence" | "issueId">,
 	): Promise<WorkflowLog> {
 		const result = this.state.appendLog(id, input);
-		this.afterMutation();
+		this.onMutation();
 		return result;
 	}
 
@@ -301,27 +201,27 @@ export class WorkflowStateTracker implements TrackerAdapter {
 
 	async addChild(parentId: string, childId: string): Promise<void> {
 		this.state.addChild(parentId, childId);
-		this.afterMutation();
+		this.onMutation();
 	}
 
 	async removeChild(parentId: string, childId: string): Promise<void> {
 		this.state.removeChild(parentId, childId);
-		this.afterMutation();
+		this.onMutation();
 	}
 
 	async addDependency(issueId: string, blockedById: string): Promise<void> {
 		this.state.addDependency(issueId, blockedById);
-		this.afterMutation();
+		this.onMutation();
 	}
 
 	async removeDependency(issueId: string, blockedById: string): Promise<void> {
 		this.state.removeDependency(issueId, blockedById);
-		this.afterMutation();
+		this.onMutation();
 	}
 
 	async deleteIssue(id: string): Promise<void> {
 		this.state.deleteIssue(id);
-		this.afterMutation();
+		this.onMutation();
 	}
 
 	async registerArtifact(
@@ -329,7 +229,7 @@ export class WorkflowStateTracker implements TrackerAdapter {
 		input: WorkflowArtifactInput,
 	): Promise<WorkflowArtifact> {
 		const result = this.state.registerArtifact(issueId, input);
-		this.afterMutation();
+		this.onMutation();
 		return result;
 	}
 
@@ -338,7 +238,7 @@ export class WorkflowStateTracker implements TrackerAdapter {
 		input: Omit<WorkflowChange, "id">,
 	): Promise<WorkflowChange> {
 		const result = this.state.registerChange(issueId, input);
-		this.afterMutation();
+		this.onMutation();
 		return result;
 	}
 }
