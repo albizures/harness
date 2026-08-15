@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { bindCliExecution } from "./cli-config.ts";
 import { execute } from "./commands.ts";
-import { serializeEnvelope } from "./envelope.ts";
+import { parseOutputFormat, serializeCliOutput } from "./output.ts";
 import { CorruptWorkflowProjectionError } from "./tracker.ts";
 
 declare const process: {
@@ -14,7 +14,8 @@ declare const process: {
 
 try {
 	const rawArgs = process.argv.slice(2);
-	const binding = await bindCliExecution(rawArgs, process.cwd());
+	const output = parseOutputFormat(rawArgs);
+	const binding = await bindCliExecution(output.args, process.cwd());
 	const envelope =
 		"ok" in binding
 			? binding
@@ -23,18 +24,25 @@ try {
 					tracker: binding.tracker,
 					stdin: readStdinForDashInput(binding.args),
 				});
-	process.stdout.write(serializeEnvelope(envelope));
+	process.stdout.write(serializeCliOutput(envelope, output.format));
 	process.exitCode = envelope.ok ? 0 : 1;
 } catch (error) {
 	if (
 		error instanceof CorruptWorkflowProjectionError ||
 		error instanceof SyntaxError
 	) {
+		const output = parseOutputFormat(process.argv.slice(2));
 		process.stdout.write(
-			serializeEnvelope({
-				ok: false,
-				error: { code: "CORRUPT_WORKFLOW_PROJECTION", message: error.message },
-			}),
+			serializeCliOutput(
+				{
+					ok: false,
+					error: {
+						code: "CORRUPT_WORKFLOW_PROJECTION",
+						message: error.message,
+					},
+				},
+				output.format,
+			),
 		);
 		process.exitCode = 1;
 	} else {

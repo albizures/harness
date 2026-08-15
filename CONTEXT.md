@@ -104,6 +104,10 @@ _Avoid_: hard-coded workflow, loose configuration, workflow code
 A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
 _Avoid_: executable manifest, manifest hooks
 
+**AWF config file**:
+The project-local TypeScript file, conventionally `awf.config.ts`, that the AWF CLI loads as a Workflow module for the current working directory.
+_Avoid_: global config, manifest file, workflow definition file
+
 **Bundled workflow**:
 A Workflow definition shipped with the CLI package. The first bundled workflow is the agent-development workflow using Spec and Ticket workflow issue kinds, with Handoff represented as an artifact rather than a workflow issue kind.
 _Avoid_: built-in special case, example-only workflow
