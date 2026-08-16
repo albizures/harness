@@ -57,9 +57,7 @@ export class WorkflowStateTracker {
 			verifyPlanApplication: (
 				specId: string,
 				tickets: Array<{ key: string; id: string }>,
-				inputs: Parameters<
-					WorkflowTrackerState["verifyPlanApplication"]
-				>[2],
+				inputs: Parameters<WorkflowTrackerState["verifyPlanApplication"]>[2],
 			) => this.state.verifyPlanApplication(specId, tickets, inputs),
 		};
 	}

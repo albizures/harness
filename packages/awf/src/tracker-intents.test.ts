@@ -38,9 +38,9 @@ test("tracker adapter composition exposes public intents without adapter-owned c
 	expect(await tracker.readLogs("1")).toEqual([
 		expect.objectContaining({ issueId: "1", sequence: 1, type: "created" }),
 	]);
-	expect(await tracker.createIssue(workflowIssueSeed("primitive", "Primitive"))).toEqual(
-		expect.objectContaining({ id: "primitive", title: "Primitive" }),
-	);
+	expect(
+		await tracker.createIssue(workflowIssueSeed("primitive", "Primitive")),
+	).toEqual(expect.objectContaining({ id: "primitive", title: "Primitive" }));
 });
 
 test("tracker intent module composes adapter primitives and verification hooks", async () => {
@@ -484,7 +484,11 @@ test("tracker intent module completes runs before recording outputs and terminal
 			},
 			registerArtifact: async (issueId, input) => {
 				calls.push(`registerArtifact:${issueId}:${input.kind}:${input.uri}`);
-				const artifact = { ...input, type: input.type ?? input.kind, id: "artifact-1" };
+				const artifact = {
+					...input,
+					type: input.type ?? input.kind,
+					id: "artifact-1",
+				};
 				storedIssue = {
 					...storedIssue,
 					artifacts: [...storedIssue.artifacts, artifact],
@@ -526,7 +530,11 @@ test("tracker intent module completes runs before recording outputs and terminal
 		activeRunId: undefined,
 	});
 	expect(result.artifacts).toEqual([
-		expect.objectContaining({ id: "artifact-1", kind: "file", uri: "artifact.md" }),
+		expect.objectContaining({
+			id: "artifact-1",
+			kind: "file",
+			uri: "artifact.md",
+		}),
 	]);
 	expect(result.changes).toEqual([
 		expect.objectContaining({
@@ -552,7 +560,11 @@ test("tracker intent module records artifacts, changes, and workflow logs togeth
 		primitiveStubs({
 			registerArtifact: async (issueId, input) => {
 				calls.push(`registerArtifact:${issueId}:${input.kind}:${input.uri}`);
-				const artifact = { ...input, type: input.type ?? input.kind, id: "artifact-1" };
+				const artifact = {
+					...input,
+					type: input.type ?? input.kind,
+					id: "artifact-1",
+				};
 				storedIssue = {
 					...storedIssue,
 					artifacts: [...storedIssue.artifacts, artifact],
@@ -587,7 +599,10 @@ test("tracker intent module records artifacts, changes, and workflow logs togeth
 
 	expect(result.issue.artifacts).toEqual(result.artifacts);
 	expect(result.issue.changes).toEqual(result.changes);
-	expect(result.log).toMatchObject({ type: "artifacts-recorded", issueId: "1" });
+	expect(result.log).toMatchObject({
+		type: "artifacts-recorded",
+		issueId: "1",
+	});
 	expect(calls).toEqual([
 		"registerArtifact:1:file:notes.md",
 		"registerChange:1:pull-request:https://github.com/o/r/pull/2",

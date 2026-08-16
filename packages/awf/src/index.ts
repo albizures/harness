@@ -18,12 +18,10 @@ export {
 export {
 	ManifestValidationError,
 	WorkflowModuleLoadError,
-	artifacts,
 	defineManifest,
 	loadManifest,
 	loadWorkflowModule,
 	validateManifest,
-	type ArtifactKind,
 	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,

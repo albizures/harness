@@ -3,7 +3,7 @@ import { parseJsonRecord } from "./json.ts";
 import {
 	validateArtifactReferenceValue,
 	type ArtifactKind,
-} from "./manifest.ts";
+} from "./artifact.ts";
 
 export type WorkflowProjection = {
 	kind: string;

@@ -182,7 +182,10 @@ class PrimitiveTrackerIntentModule implements Tracker {
 				await this.primitives.addDependency(input.issueId, input.blockedById);
 				await this.verifyDependency(input.issueId, input.blockedById, true);
 			} else {
-				await this.primitives.removeDependency(input.issueId, input.blockedById);
+				await this.primitives.removeDependency(
+					input.issueId,
+					input.blockedById,
+				);
 				await this.verifyDependency(input.issueId, input.blockedById, false);
 			}
 		} catch (error) {
@@ -196,7 +199,11 @@ class PrimitiveTrackerIntentModule implements Tracker {
 		expected: boolean,
 	): Promise<void> {
 		if (this.primitives.verification?.verifyChild !== undefined) {
-			await this.primitives.verification.verifyChild(parentId, childId, expected);
+			await this.primitives.verification.verifyChild(
+				parentId,
+				childId,
+				expected,
+			);
 			return;
 		}
 		const [parent, child] = await Promise.all([

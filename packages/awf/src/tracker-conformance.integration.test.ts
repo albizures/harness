@@ -5,20 +5,21 @@ import { expect, test } from "vitest";
 import {
 	NeedReconciliationError,
 	ProjectionConflictError,
-	type SeedIssueInput,
+	TrackerAdapter,
+	TrackerCreateWorkflowIssueIntent,
 	type Tracker,
 } from "./tracker.ts";
 import { createFileSystemTracker } from "./trackers/filesystem.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
 
 type TrackerFixture = {
-	tracker: Tracker;
+	tracker: TrackerAdapter;
 	cleanup?: () => Promise<void>;
 };
 
 type TrackerFamily = {
 	name: string;
-	create: (seed?: Array<SeedIssueInput>) => Promise<TrackerFixture>;
+	create: (seed?: Array<TrackerCreateWorkflowIssueIntent>) => Promise<TrackerFixture>;
 };
 
 const trackerFamilies: Array<TrackerFamily> = [
@@ -311,8 +312,8 @@ for (const family of trackerFamilies) {
 
 async function withTracker(
 	family: TrackerFamily,
-	fn: (tracker: Tracker) => Promise<void>,
-	seed?: Array<SeedIssueInput>,
+	fn: (tracker: TrackerAdapter) => Promise<void>,
+	seed?: Array<TrackerCreateWorkflowIssueIntent>,
 ): Promise<void> {
 	const fixture = await family.create(seed);
 	try {

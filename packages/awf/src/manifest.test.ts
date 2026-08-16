@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
 import {
-	artifacts,
 	defineManifest,
 	loadManifest,
 	loadWorkflowModule,
 	ManifestValidationError,
 	validateManifest,
 } from "./manifest.ts";
+import { artifacts} from './artifact.ts'
 
 const validFixture = new URL("./fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;

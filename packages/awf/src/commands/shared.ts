@@ -8,14 +8,16 @@ import {
 } from "../envelope.ts";
 import { jsonRecordSchema, jsonValueSchema } from "../json.ts";
 import {
-	artifacts as artifactSchemas,
-	type ArtifactKind,
 	type ManifestCommand,
 	type PayloadZodSchema,
 	type ManifestNamedReadinessFilter,
 	type ManifestTransition,
 	type WorkflowManifest,
 } from "../manifest.ts";
+import {
+	type ArtifactKind,
+	artifacts as artifactSchemas,
+} from '../artifact.ts'
 import {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,

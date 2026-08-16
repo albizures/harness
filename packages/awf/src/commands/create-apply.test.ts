@@ -679,7 +679,9 @@ test("apply plan rejects malformed dependency payloads before applying tracker r
 		],
 	});
 	expect(applyPlanCalls).toBe(0);
-	expect((await base.listIssues()).map((issue) => issue.id)).toEqual(["spec-1"]);
+	expect((await base.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
+	]);
 	expect(await base.readLogs("spec-1")).toEqual([]);
 });
 
@@ -688,7 +690,9 @@ test("apply plan reports malformed ticket payload paths", async () => {
 	const plan = join(dir, "plan.json");
 	await writeFile(
 		plan,
-		JSON.stringify({ tickets: [{ key: "a", title: "A", content: "A" }, "bad"] }),
+		JSON.stringify({
+			tickets: [{ key: "a", title: "A", content: "A" }, "bad"],
+		}),
 		"utf8",
 	);
 	const tracker = createInMemoryTracker({
