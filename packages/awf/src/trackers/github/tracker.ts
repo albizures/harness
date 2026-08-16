@@ -1,3 +1,4 @@
+import { parseJsonValue } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
@@ -171,6 +172,9 @@ export class GitHubTracker {
 		const logs = await this.readLogs(id);
 		const log = cloneJson({
 			...input,
+			...(input.payload === undefined
+				? {}
+				: { payload: parseJsonValue(input.payload) }),
 			issueId: id,
 			sequence: logs.length + 1,
 		}) as WorkflowLog;

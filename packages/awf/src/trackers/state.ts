@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
+import { jsonRecordSchema, parseJsonValue } from "../json.ts";
 import {
 	CorruptWorkflowProjectionError,
 	IssueNotFoundError,
@@ -126,6 +127,9 @@ export class WorkflowTrackerState {
 		const issue = this.requireHealthyIssue(id);
 		const log = cloneJson({
 			...input,
+			...(input.payload === undefined
+				? {}
+				: { payload: parseJsonValue(input.payload) }),
 			issueId: id,
 			sequence: issue.logs.length + 1,
 		}) as WorkflowLog;
@@ -563,10 +567,8 @@ function cloneJson(value: unknown): unknown {
 export function asObject(
 	value: JsonValue | undefined,
 ): Record<string, JsonValue> {
-	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-		return value as Record<string, JsonValue>;
-	}
-	return {};
+	const parsed = jsonRecordSchema.safeParse(value);
+	return parsed.success ? parsed.data : {};
 }
 
 function pushUnique(values: Array<string>, value: string): void {

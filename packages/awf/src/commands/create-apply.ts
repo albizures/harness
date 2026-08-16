@@ -1,5 +1,4 @@
 import { isAbsolute, relative } from "node:path";
-import type { JsonValue } from "type-fest";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
 import {
@@ -17,11 +16,11 @@ import {
 	parseJsonInput,
 	parsePlanInput,
 	parseSpecInput,
-	parsePayloadValue,
+	parseWorkflowCommandInput,
 	planApplicationTarget,
 	readInput,
-	structuredArtifactInput,
-	validatePlan,
+	parseStructuredArtifactInput,
+	validatePlanPayload,
 	validateWorkflowCommandInput,
 	validateWorkflowCommandOutput,
 	workflowCommand,
@@ -127,18 +126,18 @@ export async function createGenericWorkflowIssueCommand(
 	if (!parsed.ok) {
 		return parsed;
 	}
-	const inputValidation = validateWorkflowCommandInput(command, parsed.data);
-	if (inputValidation !== undefined) {
-		return inputValidation;
+	const payload = parseWorkflowCommandInput(command, parsed.data);
+	if (!payload.ok) {
+		return payload;
 	}
 	try {
 		const { issue, log } = await tracker.createWorkflowIssue({
-			title: genericIssueTitle(parsed.data, command.cli?.target ?? kind.id),
-			body: genericIssueBody(parsed.data, raw),
+			title: genericIssueTitle(payload.data, command.cli?.target ?? kind.id),
+			body: genericIssueBody(payload.data, raw),
 			workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
 			initialLog: {
 				type: `${command.id}_created`,
-				payload: { input: parsed.data },
+				payload: { input: payload.data },
 			},
 		});
 		if (log === undefined) {
@@ -177,9 +176,9 @@ export async function applyGenericWorkflowCommand(
 	if (!parsed.ok) {
 		return parsed;
 	}
-	const inputValidation = validateWorkflowCommandInput(command, parsed.data);
-	if (inputValidation !== undefined) {
-		return inputValidation;
+	const payload = parseWorkflowCommandInput(command, parsed.data);
+	if (!payload.ok) {
+		return payload;
 	}
 	try {
 		const issue = await tracker.getIssue(issueId);
@@ -192,7 +191,7 @@ export async function applyGenericWorkflowCommand(
 		const result = await tracker.recordCommand(issueId, {
 			log: {
 				type: `${command.id}_applied`,
-				payload: { input: parsed.data },
+				payload: { input: payload.data },
 			},
 		});
 		const data = { issue: result.issue, log: result.log, outcome: "APPLIED" };
@@ -286,46 +285,47 @@ export async function createHandoffCommand(
 	}
 	const command =
 		commandOverride ?? workflowCommand(manifest, "handoff-create");
-	const payload = parsePayloadValue(parsed.data, command?.input, "$input");
-	if (payload.issues.length > 0) {
+	const payload = parseWorkflowCommandInput(command, parsed.data);
+	if (!payload.ok) {
+		return payload;
+	}
+	if (!isRecord(payload.data)) {
+		return failure(
+			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+			"Workflow command input is invalid.",
+			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
+		);
+	}
+	const artifactInput = parseStructuredArtifactInput(
+		payload.data.handoff,
+		"handoff",
+		"Handoff",
+		"$.handoff",
+	);
+	if (artifactInput.issue !== undefined || artifactInput.value === undefined) {
 		return failure(
 			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 			"Workflow command input is invalid.",
 			{
-				...(command === undefined ? {} : { command: command.id }),
-				issues: payload.issues,
+				issues: [
+					artifactInput.issue ?? {
+						path: "$.handoff",
+						message: "Value is required.",
+					},
+				],
 			},
-		);
-	}
-	if (!isRecord(payload.value)) {
-		return failure(
-			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
-			"Workflow command input is invalid.",
-			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
-		);
-	}
-	const artifactInput = structuredArtifactInput(
-		payload.value.handoff as JsonValue | undefined,
-		"handoff",
-		"Handoff",
-	);
-	if (artifactInput === undefined) {
-		return failure(
-			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
-			"Workflow command input is invalid.",
-			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
 		);
 	}
 
 	try {
 		await tracker.getIssue(sourceId);
 		const { artifacts, log } = await tracker.recordArtifacts(sourceId, {
-			artifacts: [artifactInput],
+			artifacts: [artifactInput.value],
 			log: {
 				type: "handoff_created",
 				payload: {
-					input: payload.value as JsonValue,
-					artifact: artifactInput,
+					input: payload.data,
+					artifact: artifactInput.value,
 				},
 			},
 		});
@@ -388,13 +388,13 @@ export async function applyPlanCommand(
 	if (spec.workflow.kind !== "spec" || spec.workflow.action !== "plan") {
 		return invalidTransition(specId, "apply-plan");
 	}
-	const plan = parsePlanInput(raw);
-	const validationIssues = validatePlan(plan);
+	const validationIssues = validatePlanPayload(parsedInput.data);
 	if (validationIssues.length > 0) {
 		return failure("INVALID_PLAN", "Plan bundle is invalid.", {
-			issues: validationIssues as JsonValue,
+			issues: validationIssues,
 		});
 	}
+	const plan = parsePlanInput(raw);
 
 	const ticketKind = manifest.kinds.find((kind) => kind.id === "ticket");
 	if (ticketKind === undefined) {
@@ -421,7 +421,7 @@ export async function applyPlanCommand(
 					kind: "ticket",
 					...initialWorkflowTarget(ticketKind.initial),
 				},
-				dependsOn: ticket.dependsOn as Array<string> | undefined,
+				dependsOn: ticket.dependsOn,
 			})),
 			artifacts: [planBundleArtifactInput(inputPath, plan.tickets.length)],
 			log: {

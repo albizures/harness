@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { expect, test } from "vitest";
 import { execute } from "../commands.ts";
 import { defaultManifest } from "../default-manifest.ts";
@@ -158,6 +159,186 @@ test("explicit escalation moves work to need-human none and logs the reason", as
 		from: { state: "ready", action: "review" },
 		to: { state: "need-human", action: "none" },
 	});
+});
+
+test("terminal command rejects malformed bundled pull request artifacts before mutation", async () => {
+	const manifest = {
+		...defaultManifest,
+		kinds: defaultManifest.kinds.map((kind) =>
+			kind.id === "ticket"
+				? {
+						...kind,
+						transitions: kind.transitions.map((transition) =>
+							transition.from.state === "running" &&
+							transition.from.action === "implement" &&
+							transition.event === "succeed"
+								? {
+										...transition,
+										input: z.strictObject({ implementationPr: z.unknown() }),
+									}
+								: transition,
+						),
+					}
+				: kind,
+		),
+	};
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Implement lifecycle",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					activeRunId: "run-1",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({
+				implementationPr: { type: "pull-request", ref: "not-a-pr" },
+			}),
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"INVALID_ACTION_INPUT",
+	);
+	expect(envelope.ok ? undefined : envelope.error.details?.issues).toEqual([
+		{
+			path: "$.implementationPr.url",
+			message: "Artifact reference must include url.",
+		},
+	]);
+	expect((await tracker.getIssue("123")).workflow).toEqual({
+		kind: "ticket",
+		state: "running",
+		action: "implement",
+		activeRunId: "run-1",
+		version: 1,
+		hash: expect.any(String),
+	});
+	expect(await tracker.readLogs("123")).toEqual([]);
+	expect((await tracker.getIssue("123")).artifacts).toEqual([]);
+});
+
+test("terminal command rejects schema-valid non-JSON-compatible parsed input before mutation", async () => {
+	const manifest = {
+		...defaultManifest,
+		kinds: defaultManifest.kinds.map((kind) =>
+			kind.id === "ticket"
+				? {
+						...kind,
+						transitions: kind.transitions.map((transition) =>
+							transition.from.state === "running" &&
+							transition.from.action === "implement" &&
+							transition.event === "succeed"
+								? {
+										...transition,
+										input: z.strictObject({
+											implementationPr: z.string().transform(() => new Date(0)),
+										}),
+									}
+								: transition,
+						),
+					}
+				: kind,
+		),
+	};
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Implement lifecycle",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					activeRunId: "run-1",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{ tracker, manifest, stdin: JSON.stringify({ implementationPr: "ok" }) },
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"INVALID_ACTION_INPUT",
+	);
+	expect((await tracker.getIssue("123")).workflow).toEqual({
+		kind: "ticket",
+		state: "running",
+		action: "implement",
+		activeRunId: "run-1",
+		version: 1,
+		hash: expect.any(String),
+	});
+	expect(await tracker.readLogs("123")).toEqual([]);
+	expect((await tracker.getIssue("123")).artifacts).toEqual([]);
+});
+
+test("escalation validates input shape and JSON-compatible parsed input before mutation", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "shape",
+				title: "Escalate shape",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+			{
+				id: "json",
+				title: "Escalate json",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+		],
+	});
+
+	const shapeInvalid = await execute(["escalate", "shape", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({ reason: "blocked", extra: true }),
+	});
+	expect(shapeInvalid.ok).toBe(false);
+	expect(shapeInvalid.ok ? undefined : shapeInvalid.error.code).toBe(
+		"INVALID_ACTION_INPUT",
+	);
+	expect(await tracker.readLogs("shape")).toEqual([]);
+	expect((await tracker.getIssue("shape")).workflow.state).toBe("ready");
+
+	const manifest = {
+		...defaultManifest,
+		lifecycle: {
+			...defaultManifest.lifecycle,
+			escalation: {
+				...defaultManifest.lifecycle?.escalation,
+				input: z.strictObject({
+					reason: z.string().transform(() => Symbol("not-json")),
+				}),
+			},
+		},
+	};
+	const jsonInvalid = await execute(["escalate", "json", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: JSON.stringify({ reason: "blocked" }),
+	});
+	expect(jsonInvalid.ok).toBe(false);
+	expect(jsonInvalid.ok ? undefined : jsonInvalid.error.code).toBe(
+		"INVALID_ACTION_INPUT",
+	);
+	expect(await tracker.readLogs("json")).toEqual([]);
+	expect((await tracker.getIssue("json")).workflow.state).toBe("ready");
 });
 
 test("explicit resume chooses a valid next ready action", async () => {

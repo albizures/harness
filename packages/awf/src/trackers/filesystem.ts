@@ -6,6 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { isJsonRecord, isJsonValue } from "../json.ts";
 import { createTrackerAdapter } from "../tracker-intents.ts";
 import {
 	CorruptWorkflowProjectionError,
@@ -30,7 +31,9 @@ export function createFileSystemTracker(
 	const filePath = resolve(options.path);
 	const state = readState(filePath);
 	return createTrackerAdapter(
-		new WorkflowStateTracker(state, () => writeState(filePath, state.snapshot())),
+		new WorkflowStateTracker(state, () =>
+			writeState(filePath, state.snapshot()),
+		),
 	);
 }
 
@@ -120,7 +123,35 @@ function isStoredIssueLike(value: unknown): boolean {
 		issue.relationships !== null &&
 		typeof issue.relationships === "object" &&
 		Array.isArray(issue.artifacts) &&
+		issue.artifacts.every(isStoredArtifactLike) &&
 		Array.isArray(issue.changes) &&
-		Array.isArray(issue.logs)
+		Array.isArray(issue.logs) &&
+		issue.logs.every(isStoredLogLike)
+	);
+}
+
+function isStoredArtifactLike(value: unknown): boolean {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const artifact = value as Record<string, unknown>;
+	return (
+		typeof artifact.id === "string" &&
+		typeof artifact.kind === "string" &&
+		typeof artifact.uri === "string" &&
+		(artifact.metadata === undefined || isJsonRecord(artifact.metadata))
+	);
+}
+
+function isStoredLogLike(value: unknown): boolean {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const log = value as Record<string, unknown>;
+	return (
+		typeof log.sequence === "number" &&
+		typeof log.issueId === "string" &&
+		typeof log.type === "string" &&
+		(log.payload === undefined || isJsonValue(log.payload))
 	);
 }

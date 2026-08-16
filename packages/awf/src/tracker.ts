@@ -1,4 +1,5 @@
 import type { JsonValue } from "type-fest";
+import { parseJsonRecord } from "./json.ts";
 import {
 	validateArtifactReferenceValue,
 	type ArtifactKind,
@@ -50,6 +51,9 @@ export function normalizeWorkflowArtifactInput(
 	return {
 		...compatibilityStructuredArtifactFields(input.kind, input.uri),
 		...input,
+		...(input.metadata === undefined
+			? {}
+			: { metadata: parseJsonRecord(input.metadata) }),
 		type: input.type ?? input.kind,
 		id,
 	};
@@ -64,6 +68,9 @@ export function validateWorkflowArtifactInput(
 	}
 	if (input.type !== undefined && input.type !== input.kind) {
 		throw new Error(`Artifact type must be '${input.kind}'.`);
+	}
+	if (input.metadata !== undefined) {
+		parseJsonRecord(input.metadata);
 	}
 	for (const [field, value] of structuredArtifactFields(input.kind, input)) {
 		const fieldIssue = validateArtifactReferenceValue(value, input.kind);

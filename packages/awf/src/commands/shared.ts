@@ -1,13 +1,20 @@
 import { readFile } from "node:fs/promises";
 import type { JsonValue } from "type-fest";
-import { failure, success, type Envelope } from "../envelope.ts";
-import type {
-	ArtifactKind,
-	ManifestCommand,
-	PayloadZodSchema,
-	ManifestNamedReadinessFilter,
-	ManifestTransition,
-	WorkflowManifest,
+import {
+	failure,
+	success,
+	type Envelope,
+	type ErrorEnvelope,
+} from "../envelope.ts";
+import { jsonRecordSchema, jsonValueSchema } from "../json.ts";
+import {
+	artifacts as artifactSchemas,
+	type ArtifactKind,
+	type ManifestCommand,
+	type PayloadZodSchema,
+	type ManifestNamedReadinessFilter,
+	type ManifestTransition,
+	type WorkflowManifest,
 } from "../manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
@@ -50,13 +57,14 @@ export function workflowCommandByCli(
 	);
 }
 
-export function validateWorkflowCommandInput(
+export function parseWorkflowCommandInput(
 	command: ManifestCommand | undefined,
-	value: JsonValue,
-): Envelope | undefined {
+	value: unknown,
+): Envelope<JsonValue> {
 	const result = parsePayloadValue(value, command?.input, "$input");
-	if (result.issues.length === 0) {
-		return undefined;
+	const jsonValue = jsonValueSchema.safeParse(result.value);
+	if (result.issues.length === 0 && jsonValue.success) {
+		return success(jsonValue.data);
 	}
 	return failure(
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
@@ -68,9 +76,17 @@ export function validateWorkflowCommandInput(
 	);
 }
 
+export function validateWorkflowCommandInput(
+	command: ManifestCommand | undefined,
+	value: unknown,
+): Envelope | undefined {
+	const result = parseWorkflowCommandInput(command, value);
+	return result.ok ? undefined : result;
+}
+
 export function validateWorkflowCommandOutput(
 	command: ManifestCommand | undefined,
-	value: JsonValue,
+	value: unknown,
 ): Envelope | undefined {
 	const result = parsePayloadValue(value, command?.output, "$output");
 	if (result.issues.length === 0) {
@@ -102,7 +118,7 @@ export type PlanTicket = {
 	key: string;
 	title: string;
 	content: string;
-	dependsOn?: Array<unknown>;
+	dependsOn?: Array<string>;
 };
 
 export function parseSpecInput(raw: string): SpecInput {
@@ -122,21 +138,7 @@ export function parseSpecInput(raw: string): SpecInput {
 }
 
 export function parsePlanInput(raw: string): PlanBundle {
-	const parsed = parseJsonObject(raw);
-	const tickets = Array.isArray(parsed?.tickets) ? parsed.tickets : [];
-	return {
-		tickets: tickets.map((ticket): PlanTicket => {
-			const record = isRecord(ticket) ? ticket : {};
-			return {
-				key: typeof record.key === "string" ? record.key : "",
-				title: typeof record.title === "string" ? record.title : "",
-				content: readTicketContent(record),
-				...(Array.isArray(record.dependsOn)
-					? { dependsOn: record.dependsOn }
-					: {}),
-			};
-		}),
-	};
+	return parsePlanPayload(parseJsonObject(raw) ?? {});
 }
 
 export function readTicketContent(record: Record<string, unknown>): string {
@@ -183,9 +185,11 @@ export function genericIssueBody(input: JsonValue, raw: string): string {
 	return raw;
 }
 
-export function parseJsonInput(raw: string, code: string): Envelope<JsonValue> {
+export type JsonInputEnvelope = { ok: true; data: unknown } | ErrorEnvelope;
+
+export function parseJsonInput(raw: string, code: string): JsonInputEnvelope {
 	try {
-		return success(JSON.parse(raw) as JsonValue);
+		return { ok: true, data: JSON.parse(raw) as unknown };
 	} catch (error) {
 		return failure(code, "Input must be valid JSON.", {
 			message: error instanceof Error ? error.message : String(error),
@@ -205,16 +209,24 @@ export function parsePayloadValue(
 	schema: PayloadZodSchema | undefined,
 	path: string,
 ): ParsedPayload {
-	if (schema === undefined) {
-		return { value, issues: [] };
+	const schemaResult = schema?.safeParse(value);
+	if (schemaResult?.success === false) {
+		return {
+			value,
+			issues: schemaResult.error.issues.map((issue) => ({
+				path: formatPayloadPath(path, issue.path),
+				message: issue.message,
+			})),
+		};
 	}
-	const result = schema.safeParse(value);
-	if (result.success) {
-		return { value: result.data, issues: [] };
+	const parsedValue = schemaResult?.data ?? value;
+	const jsonResult = jsonValueSchema.safeParse(parsedValue);
+	if (jsonResult.success) {
+		return { value: jsonResult.data, issues: [] };
 	}
 	return {
-		value,
-		issues: result.error.issues.map((issue) => ({
+		value: parsedValue,
+		issues: jsonResult.error.issues.map((issue) => ({
 			path: formatPayloadPath(path, issue.path),
 			message: issue.message,
 		})),
@@ -250,7 +262,7 @@ export function titleFromMarkdown(markdown: string): string {
 export function validateBundledTerminalInput(
 	issue: Awaited<ReturnType<Tracker["getIssue"]>>,
 	event: "succeed" | "fail",
-	input: JsonValue,
+	input: unknown,
 ): RuntimeValidationIssue | undefined {
 	if (!isRecord(input)) {
 		return undefined;
@@ -297,55 +309,136 @@ export type BundledArtifactInput = {
 
 export function bundledArtifactInputs(
 	workflow: WorkflowFields,
-	input: JsonValue,
+	input: unknown,
 ): Array<BundledArtifactInput> {
+	return parseBundledArtifactInputs(workflow, input).artifacts;
+}
+
+export function parseBundledArtifactInputs(
+	workflow: WorkflowFields,
+	input: unknown,
+): {
+	artifacts: Array<BundledArtifactInput>;
+	issues: Array<RuntimeValidationIssue>;
+} {
 	if (!isRecord(input)) {
-		return [];
+		return { artifacts: [], issues: [] };
 	}
 	const artifacts: Array<BundledArtifactInput> = [];
+	const issues: Array<RuntimeValidationIssue> = [];
 	if (workflow.kind === "ticket" && workflow.action === "implement") {
 		const artifact = pullRequestArtifactInput(
 			input.implementationPr,
 			"Implementation PR",
+			"$.implementationPr",
 		);
-		if (artifact !== undefined) {
-			artifacts.push(artifact);
+		if (artifact.issue !== undefined) {
+			issues.push(artifact.issue);
+		}
+		if (artifact.value !== undefined) {
+			artifacts.push(artifact.value);
 		}
 	}
 	if (workflow.kind === "spec" && workflow.action === "integration-test") {
-		const artifact = pullRequestArtifactInput(input.specPr, "Spec PR");
-		if (artifact !== undefined) {
-			artifacts.push(artifact);
+		const artifact = pullRequestArtifactInput(
+			input.specPr,
+			"Spec PR",
+			"$.specPr",
+		);
+		if (artifact.issue !== undefined) {
+			issues.push(artifact.issue);
+		}
+		if (artifact.value !== undefined) {
+			artifacts.push(artifact.value);
 		}
 	}
-	return artifacts;
+	return { artifacts, issues };
 }
 
 function pullRequestArtifactInput(
-	value: JsonValue | undefined,
+	value: unknown,
 	name: string,
-): BundledArtifactInput | undefined {
-	return structuredArtifactInput(value, "pull-request", name);
+	path: string,
+): { value?: BundledArtifactInput; issue?: RuntimeValidationIssue } {
+	return parseStructuredArtifactInput(value, "pull-request", name, path);
 }
 
 export function structuredArtifactInput(
-	value: JsonValue | undefined,
+	value: unknown,
 	kind: ArtifactKind,
 	name: string,
 ): BundledArtifactInput | undefined {
-	if (!isRecord(value) || value.type !== kind) {
-		return undefined;
+	return parseStructuredArtifactInput(value, kind, name, "$input").value;
+}
+
+export function parseStructuredArtifactInput(
+	value: unknown,
+	kind: ArtifactKind,
+	name: string,
+	path: string,
+): { value?: BundledArtifactInput; issue?: RuntimeValidationIssue } {
+	if (value === undefined) {
+		return {};
 	}
-	const uri = artifactReferenceUri(value);
+	const schemaResult = artifactSchema(kind).safeParse(value);
+	if (!schemaResult.success) {
+		const issue = schemaResult.error.issues[0];
+		return {
+			issue: {
+				path: issue === undefined ? path : formatPayloadPath(path, issue.path),
+				message: issue?.message ?? "Invalid artifact reference.",
+			},
+		};
+	}
+	const jsonResult = jsonRecordSchema.safeParse(schemaResult.data);
+	if (!jsonResult.success) {
+		const issue = jsonResult.error.issues[0];
+		return {
+			issue: {
+				path: issue === undefined ? path : formatPayloadPath(path, issue.path),
+				message:
+					issue?.message ?? "Artifact reference must be JSON-compatible.",
+			},
+		};
+	}
+	const data = jsonResult.data;
+	const uri = artifactReferenceUri(data);
 	if (uri === undefined) {
-		return undefined;
+		return {
+			issue: { path, message: "Artifact reference must include a URI field." },
+		};
 	}
 	return {
-		...value,
-		kind,
-		uri,
-		name,
-	} as BundledArtifactInput;
+		value: {
+			...data,
+			kind,
+			uri,
+			name,
+		},
+	};
+}
+
+function artifactSchema(kind: ArtifactKind): PayloadZodSchema {
+	switch (kind) {
+		case "url":
+			return artifactSchemas.url();
+		case "file":
+			return artifactSchemas.file();
+		case "issue":
+			return artifactSchemas.issue();
+		case "pull-request":
+			return artifactSchemas.pullRequest();
+		case "git-ref":
+			return artifactSchemas.gitRef();
+		case "markdown":
+			return artifactSchemas.markdown();
+		case "inline":
+			return artifactSchemas.inline();
+		case "handoff":
+			return artifactSchemas.handoff();
+		case "finding":
+			return artifactSchemas.finding();
+	}
 }
 
 export function artifactReferenceUri(
@@ -358,6 +451,79 @@ export function artifactReferenceUri(
 		}
 	}
 	return undefined;
+}
+
+export function validatePlanPayload(
+	payload: unknown,
+): Array<{ path: string; message: string }> {
+	const shapeIssues: Array<{ path: string; message: string }> = [];
+	if (!isRecord(payload)) {
+		return [{ path: "$", message: "Plan input must be an object." }];
+	}
+	if (!Array.isArray(payload.tickets)) {
+		return [{ path: "$.tickets", message: "Plan tickets must be an array." }];
+	}
+	if (payload.tickets.length === 0) {
+		shapeIssues.push({
+			path: "$.tickets",
+			message: "Plan must include at least one ticket.",
+		});
+	}
+	for (const [index, ticket] of payload.tickets.entries()) {
+		const path = `$.tickets[${index}]`;
+		if (!isRecord(ticket)) {
+			shapeIssues.push({ path, message: "Ticket must be an object." });
+			continue;
+		}
+		if (typeof ticket.key !== "string") {
+			shapeIssues.push({
+				path: `${path}.key`,
+				message: "Ticket key must be a string.",
+			});
+		}
+		if (typeof ticket.title !== "string") {
+			shapeIssues.push({
+				path: `${path}.title`,
+				message: "Ticket title must be a string.",
+			});
+		}
+		if (ticket.content !== undefined && typeof ticket.content !== "string") {
+			shapeIssues.push({
+				path: `${path}.content`,
+				message: "Ticket content must be a string.",
+			});
+		}
+		if (ticket.body !== undefined && typeof ticket.body !== "string") {
+			shapeIssues.push({
+				path: `${path}.body`,
+				message: "Ticket body must be a string.",
+			});
+		}
+		if (ticket.dependsOn !== undefined) {
+			if (!Array.isArray(ticket.dependsOn)) {
+				shapeIssues.push({
+					path: `${path}.dependsOn`,
+					message: "Ticket dependsOn must be an array of ticket keys.",
+				});
+			} else {
+				for (const [
+					dependencyIndex,
+					dependency,
+				] of ticket.dependsOn.entries()) {
+					if (typeof dependency !== "string") {
+						shapeIssues.push({
+							path: `${path}.dependsOn[${dependencyIndex}]`,
+							message: "Dependency reference must be a string.",
+						});
+					}
+				}
+			}
+		}
+	}
+	if (shapeIssues.length > 0) {
+		return shapeIssues;
+	}
+	return validatePlan(parsePlanPayload(payload));
 }
 
 export function validatePlan(
@@ -400,15 +566,23 @@ export function validatePlan(
 		}
 	}
 	for (const [index, ticket] of plan.tickets.entries()) {
-		for (const dependency of ticket.dependsOn ?? []) {
-			if (typeof dependency !== "string" || dependency.trim() === "") {
+		for (const [dependencyIndex, dependency] of (
+			ticket.dependsOn ?? []
+		).entries()) {
+			const path = `$.tickets[${index}].dependsOn[${dependencyIndex}]`;
+			if (typeof dependency !== "string") {
 				issues.push({
-					path: `$.tickets[${index}].dependsOn`,
-					message: "Dependency references must be non-empty strings.",
+					path,
+					message: "Dependency reference must be a string.",
+				});
+			} else if (dependency.trim() === "") {
+				issues.push({
+					path,
+					message: "Dependency reference must be non-empty.",
 				});
 			} else if (!keys.has(dependency)) {
 				issues.push({
-					path: `$.tickets[${index}].dependsOn`,
+					path,
 					message: `Unknown dependency '${dependency}'.`,
 				});
 			}
@@ -422,6 +596,29 @@ export function validatePlan(
 		});
 	}
 	return issues;
+}
+
+function parsePlanPayload(payload: Record<string, unknown>): PlanBundle {
+	const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+	return {
+		tickets: tickets.map((ticket): PlanTicket => {
+			const record = isRecord(ticket) ? ticket : {};
+			return {
+				key: typeof record.key === "string" ? record.key : "",
+				title: typeof record.title === "string" ? record.title : "",
+				content: readTicketContent(record),
+				...(isStringArray(record.dependsOn)
+					? { dependsOn: record.dependsOn }
+					: {}),
+			};
+		}),
+	};
+}
+
+function isStringArray(value: unknown): value is Array<string> {
+	return (
+		Array.isArray(value) && value.every((item) => typeof item === "string")
+	);
 }
 
 export function findDependencyCycle(

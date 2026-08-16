@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
+import { isJsonRecord, isJsonValue, jsonRecordSchema } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
@@ -356,7 +357,8 @@ export function isWorkflowLog(value: unknown): value is WorkflowLog {
 		typeof value.sequence === "number" &&
 		typeof value.issueId === "string" &&
 		typeof value.type === "string" &&
-		(value.runId === undefined || typeof value.runId === "string")
+		(value.runId === undefined || typeof value.runId === "string") &&
+		(value.payload === undefined || isJsonValue(value.payload))
 	);
 }
 
@@ -418,21 +420,6 @@ const ARTIFACT_KINDS = new Set([
 
 function isArtifactKind(value: unknown): boolean {
 	return typeof value === "string" && ARTIFACT_KINDS.has(value);
-}
-
-function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
-	return isRecord(value) && Object.values(value).every(isJsonValue);
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-	return (
-		value === null ||
-		typeof value === "string" ||
-		typeof value === "number" ||
-		typeof value === "boolean" ||
-		(Array.isArray(value) && value.every(isJsonValue)) ||
-		isJsonRecord(value)
-	);
 }
 
 export function validateProjectionShape(
@@ -543,8 +530,6 @@ export function cloneJson(value: unknown): unknown {
 export function asObject(
 	value: JsonValue | undefined,
 ): Record<string, JsonValue> {
-	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-		return value as Record<string, JsonValue>;
-	}
-	return {};
+	const parsed = jsonRecordSchema.safeParse(value);
+	return parsed.success ? parsed.data : {};
 }

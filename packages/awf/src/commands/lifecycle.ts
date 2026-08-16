@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { JsonValue } from "type-fest";
+import { z } from "zod";
 import { failure, success, type Envelope } from "../envelope.ts";
+import { parseJsonValue } from "../json.ts";
 import type { WorkflowManifest } from "../manifest.ts";
 import type { Tracker } from "../tracker.ts";
 import {
-	bundledArtifactInputs,
+	parseBundledArtifactInputs,
 	cleanCurrentTarget,
 	cleanTransitionTarget,
 	defaultRetryTarget,
@@ -12,7 +13,6 @@ import {
 	findTransition,
 	invalidTransition,
 	isReadyAction,
-	isRecord,
 	isTerminalLog,
 	lifecycleError,
 	parseJsonInput,
@@ -27,6 +27,12 @@ import {
 	validateBundledTerminalInput,
 	workflowTarget,
 } from "./shared.ts";
+
+const escalationInputSchema = z.strictObject({
+	reason: z.string().refine((value) => value.trim() !== "", {
+		message: "Escalation reason must be a non-empty string.",
+	}),
+});
 
 export async function startCommand(
 	id: string | undefined,
@@ -91,6 +97,19 @@ export async function terminalCommand(
 		if (parsedInput?.ok === false) {
 			return parsedInput;
 		}
+		const parsedInputJson =
+			parsedInput === undefined
+				? undefined
+				: parsePayloadValue(parsedInput.data, undefined, "$");
+		if (parsedInputJson?.issues.length) {
+			return failure(
+				"INVALID_ACTION_INPUT",
+				"Action completion input is invalid.",
+				{
+					issues: parsedInputJson.issues,
+				},
+			);
+		}
 		const logs = await tracker.readLogs(id);
 		const existing = logs.find(
 			(log) => log.runId === runId && isTerminalLog(log.type),
@@ -99,8 +118,11 @@ export async function terminalCommand(
 		if (existing !== undefined) {
 			if (
 				existing.type === logType &&
-				(parsedInput === undefined ||
-					terminalLogInputMatches(existing.payload, parsedInput.data))
+				(parsedInputJson === undefined ||
+					terminalLogInputMatches(
+						existing.payload,
+						parseJsonValue(parsedInputJson.value),
+					))
 			) {
 				const issue = await tracker.getIssue(id);
 				return success({
@@ -155,7 +177,14 @@ export async function terminalCommand(
 			"$",
 		);
 		const validationIssues = [...payload.issues];
-		const terminalInput = payload.value as JsonValue;
+		if (validationIssues.length > 0) {
+			return failure(
+				"INVALID_ACTION_INPUT",
+				"Action completion input is invalid.",
+				{ issues: validationIssues },
+			);
+		}
+		const terminalInput = parseJsonValue(payload.value);
 		const semanticIssue = validateBundledTerminalInput(
 			issue,
 			event,
@@ -164,6 +193,11 @@ export async function terminalCommand(
 		if (semanticIssue !== undefined) {
 			validationIssues.push(semanticIssue);
 		}
+		const bundledArtifacts = parseBundledArtifactInputs(
+			issue.workflow,
+			terminalInput,
+		);
+		validationIssues.push(...bundledArtifacts.issues);
 		if (validationIssues.length > 0) {
 			return failure(
 				"INVALID_ACTION_INPUT",
@@ -184,7 +218,7 @@ export async function terminalCommand(
 			},
 			runId,
 			workflow: target,
-			artifacts: bundledArtifactInputs(issue.workflow, terminalInput),
+			artifacts: bundledArtifacts.artifacts,
 			log: {
 				type: logType,
 				runId,
@@ -226,18 +260,14 @@ export async function escalateCommand(
 		if (parsedInput.ok === false) {
 			return parsedInput;
 		}
-		if (
-			!isRecord(parsedInput.data) ||
-			typeof parsedInput.data.reason !== "string" ||
-			parsedInput.data.reason.trim() === ""
-		) {
+		const payload = parsePayloadValue(
+			parsedInput.data,
+			manifest.lifecycle?.escalation?.input ?? escalationInputSchema,
+			"$",
+		);
+		if (payload.issues.length > 0) {
 			return failure("INVALID_ACTION_INPUT", "Escalation input is invalid.", {
-				issues: [
-					{
-						path: "$.reason",
-						message: "Escalation reason must be a non-empty string.",
-					},
-				],
+				issues: payload.issues,
 			});
 		}
 		const issue = await tracker.getIssue(id);
@@ -258,7 +288,7 @@ export async function escalateCommand(
 				type: "human_intervention_needed",
 				payload: {
 					event: "escalate",
-					input: parsedInput.data as JsonValue,
+					input: parseJsonValue(payload.value),
 					from,
 					to,
 				},

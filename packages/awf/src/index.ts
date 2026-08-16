@@ -8,6 +8,14 @@ export {
 	type SuccessEnvelope,
 } from "./envelope.ts";
 export {
+	isJsonRecord,
+	isJsonValue,
+	jsonRecordSchema,
+	jsonValueSchema,
+	parseJsonRecord,
+	parseJsonValue,
+} from "./json.ts";
+export {
 	ManifestValidationError,
 	WorkflowModuleLoadError,
 	artifacts,

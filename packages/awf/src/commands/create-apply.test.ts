@@ -153,6 +153,33 @@ test("create spec validates the bundled manifest-declared input before mutating"
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
+test("create command input rejects Zod-parsed values that are not JSON-compatible", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest = manifestWithCommandSchema("spec-create", {
+		input: z.strictObject({
+			spec: z.strictObject({
+				type: z.literal("markdown"),
+				ref: z.string().transform((value) => new Date(value)),
+			}),
+		}),
+	});
+
+	const envelope = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: "2024-01-01T00:00:00.000Z",
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(envelope.ok ? undefined : envelope.error.details?.issues).toEqual([
+		{ path: "$input", message: "Invalid input" },
+	]);
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
 test("create handoff validates input and attaches a Handoff artifact to the source issue", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -196,6 +223,50 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 	expect((await tracker.readLogs("ticket-1")).map((log) => log.type)).toEqual([
 		"handoff_created",
 	]);
+});
+
+test("create handoff rejects malformed Handoff artifact data before recording", async () => {
+	const manifest = {
+		...defaultManifest,
+		commands: defaultManifest.commands.map((command) =>
+			command.id === "handoff-create"
+				? {
+						...command,
+						input: z.strictObject({ handoff: z.unknown() }),
+					}
+				: command,
+		),
+	};
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ticket-1",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
+		],
+	});
+
+	const envelope = await execute(
+		["create", "handoff", "--source", "ticket-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({
+				handoff: { type: "handoff", metadata: { summary: "missing ref" } },
+			}),
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(envelope.ok ? undefined : envelope.error.details?.issues).toEqual([
+		{ path: "$.handoff.ref", message: "Artifact reference must include ref." },
+	]);
+	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([]);
+	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
 test("create handoff records artifact and log through one tracker intent", async () => {
@@ -562,6 +633,94 @@ test("apply plan rejects invalid bundles before mutating the tracker", async () 
 	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
+test("apply plan rejects malformed dependency payloads before applying tracker relationships", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "awf-bad-dependency-"));
+	const plan = join(dir, "plan.json");
+	await writeFile(
+		plan,
+		JSON.stringify({
+			tickets: [
+				{ key: "a", title: "A", content: "A", dependsOn: "not-an-array" },
+			],
+		}),
+		"utf8",
+	);
+	const base = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-1",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			},
+		],
+	});
+	let applyPlanCalls = 0;
+	const tracker: Tracker = failingTracker(base, {
+		applyPlan: async () => {
+			applyPlanCalls += 1;
+			throw new Error("applyPlan should not be called");
+		},
+	});
+	const manifest = manifestWithPlanCommandSchema({ input: undefined });
+
+	const envelope = await execute(["apply", "plan", "spec-1", "--input", plan], {
+		tracker,
+		manifest,
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe("INVALID_PLAN");
+	expect(envelope.ok ? undefined : envelope.error.details).toEqual({
+		issues: [
+			{
+				path: "$.tickets[0].dependsOn",
+				message: "Ticket dependsOn must be an array of ticket keys.",
+			},
+		],
+	});
+	expect(applyPlanCalls).toBe(0);
+	expect((await base.listIssues()).map((issue) => issue.id)).toEqual(["spec-1"]);
+	expect(await base.readLogs("spec-1")).toEqual([]);
+});
+
+test("apply plan reports malformed ticket payload paths", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "awf-malformed-ticket-"));
+	const plan = join(dir, "plan.json");
+	await writeFile(
+		plan,
+		JSON.stringify({ tickets: [{ key: "a", title: "A", content: "A" }, "bad"] }),
+		"utf8",
+	);
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec-1",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			},
+		],
+	});
+	const manifest = manifestWithPlanCommandSchema({ input: undefined });
+
+	const envelope = await execute(["apply", "plan", "spec-1", "--input", plan], {
+		tracker,
+		manifest,
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.details).toEqual({
+		issues: [
+			{
+				path: "$.tickets[1]",
+				message: "Ticket must be an object.",
+			},
+		],
+	});
+	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual([
+		"spec-1",
+	]);
+});
+
 test("apply plan dispatches the bundle as one tracker-owned workflow intent", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-one-intent-"));
 	const plan = join(dir, "plan.json");
@@ -609,6 +768,209 @@ test("apply plan dispatches the bundle as one tracker-owned workflow intent", as
 
 	expect(envelope.ok).toBe(true);
 	expect(applyPlanCalls).toBe(1);
+});
+
+test("generic create rejects invalid JSON before mutating the tracker", async () => {
+	const tracker = createNoTouchTracker();
+	const manifest = manifestWithGenericCommands();
+
+	const envelope = await execute(["create", "note", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: "{not json}",
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+});
+
+test("generic create rejects schema-invalid input before creating a Workflow issue", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest = manifestWithGenericCommands({
+		createInput: z.strictObject({ title: z.string(), body: z.string() }),
+	});
+
+	const envelope = await execute(["create", "note", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: JSON.stringify({ title: 123, body: "Body" }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
+test("generic create rejects non-JSON-compatible parsed input before creating a Workflow issue", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest = manifestWithGenericCommands({
+		createInput: z
+			.strictObject({ title: z.string(), createdAt: z.string() })
+			.transform((value) => ({
+				...value,
+				createdAt: new Date(value.createdAt),
+			})),
+	});
+
+	const envelope = await execute(["create", "note", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: JSON.stringify({
+			title: "Dated note",
+			createdAt: "2024-01-01T00:00:00.000Z",
+		}),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
+test("generic create stores the manifest-parsed JSON-compatible payload", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest = manifestWithGenericCommands({
+		createInput: z
+			.strictObject({ name: z.string(), markdown: z.string() })
+			.transform((value) => ({
+				title: value.name,
+				body: value.markdown,
+			})),
+	});
+
+	const envelope = await execute(["create", "note", "--input", "-"], {
+		tracker,
+		manifest,
+		stdin: JSON.stringify({ name: "Parsed title", markdown: "Parsed body" }),
+	});
+
+	expect(envelope.ok).toBe(true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	const issue = (envelope.data as CreateSpecData).issue;
+	expect(issue.title).toBe("Parsed title");
+	expect(issue.body).toBe("Parsed body");
+	expect((await tracker.readLogs(issue.id))[0]?.payload).toEqual({
+		input: { title: "Parsed title", body: "Parsed body" },
+	});
+});
+
+test("generic apply rejects invalid JSON before reading or mutating the tracker", async () => {
+	const tracker = createNoTouchTracker();
+	const manifest = manifestWithGenericCommands();
+
+	const envelope = await execute(
+		["apply", "annotate", "ticket-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: "{not json}",
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+});
+
+test("generic apply rejects schema-invalid input before writing logs", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ticket-1",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	const manifest = manifestWithGenericCommands({
+		applyInput: z.strictObject({ comment: z.string().min(1) }),
+	});
+
+	const envelope = await execute(
+		["apply", "annotate", "ticket-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({ comment: "" }),
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.readLogs("ticket-1")).toEqual([]);
+});
+
+test("generic apply rejects non-JSON-compatible parsed input before writing logs", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ticket-1",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	const manifest = manifestWithGenericCommands({
+		applyInput: z
+			.strictObject({ comment: z.string() })
+			.transform((value) => ({ ...value, marker: 1n })),
+	});
+
+	const envelope = await execute(
+		["apply", "annotate", "ticket-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({ comment: "Add context." }),
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.readLogs("ticket-1")).toEqual([]);
+});
+
+test("generic apply logs the manifest-parsed JSON-compatible payload", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ticket-1",
+				title: "Ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	const manifest = manifestWithGenericCommands({
+		applyInput: z
+			.strictObject({ comment: z.string() })
+			.transform((value) => ({ note: value.comment })),
+	});
+
+	const envelope = await execute(
+		["apply", "annotate", "ticket-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({ comment: "Add context." }),
+		},
+	);
+
+	expect(envelope.ok).toBe(true);
+	expect((await tracker.readLogs("ticket-1"))[0]?.payload).toEqual({
+		input: { note: "Add context." },
+	});
 });
 
 test("apply plan reports need-reconciliation instead of rolling back partial adapter drift", async () => {
@@ -668,6 +1030,32 @@ function manifestWithPlanCommandSchema(
 	schemas: Pick<WorkflowManifest["commands"][number], "input" | "output">,
 ): WorkflowManifest {
 	return manifestWithCommandSchema("plan-apply", schemas);
+}
+
+function manifestWithGenericCommands(
+	options: {
+		createInput?: WorkflowManifest["commands"][number]["input"];
+		applyInput?: WorkflowManifest["commands"][number]["input"];
+	} = {},
+): WorkflowManifest {
+	return {
+		...defaultManifest,
+		commands: [
+			...defaultManifest.commands,
+			{
+				id: "note-create",
+				cli: { verb: "create", target: "note" },
+				target: { kind: "ticket", action: "implement" },
+				input: options.createInput,
+			},
+			{
+				id: "ticket-annotate",
+				cli: { verb: "apply", target: "annotate" },
+				target: { kind: "ticket", action: "implement" },
+				input: options.applyInput,
+			},
+		],
+	};
 }
 
 function manifestWithCommandSchema(

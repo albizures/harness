@@ -75,18 +75,16 @@ for (const family of trackerFamilies) {
 				log: { type: "action_resumed", runId: "run-1" },
 			});
 
-			expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject({
-				kind: "ticket",
-				state: "ready",
-				action: "implement",
-			});
+			expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject(
+				{
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+				},
+			);
 			expect(
 				(await tracker.readLogs(created.issue.id)).map((log) => log.type),
-			).toEqual([
-				"workflow_created",
-				"action_started",
-				"action_resumed",
-			]);
+			).toEqual(["workflow_created", "action_started", "action_resumed"]);
 		});
 	});
 
@@ -124,10 +122,9 @@ for (const family of trackerFamilies) {
 				const setupId = result.tickets[0]?.id ?? "missing-setup";
 				const finishId = result.tickets[1]?.id ?? "missing-finish";
 				expect((await tracker.getIssue("spec-1")).workflow.action).toBe("none");
-				expect((await tracker.getIssue("spec-1")).relationships.children).toEqual([
-					setupId,
-					finishId,
-				]);
+				expect(
+					(await tracker.getIssue("spec-1")).relationships.children,
+				).toEqual([setupId, finishId]);
 				expect(
 					(await tracker.getIssue(finishId)).relationships.dependencies,
 				).toEqual([setupId]);
@@ -150,6 +147,44 @@ for (const family of trackerFamilies) {
 				},
 			],
 		);
+	});
+
+	test(`${family.name}: public Tracker API preserves JSON-compatible artifact metadata and log payloads`, async () => {
+		await withTracker(family, async (tracker) => {
+			const created = await tracker.createWorkflowIssue({
+				title: "JSON conformance ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				initialLog: {
+					type: "workflow_created",
+					payload: { nested: { values: ["one", 2, true, null] } },
+				},
+			});
+
+			const artifact = await tracker.registerArtifact(created.issue.id, {
+				kind: "file",
+				uri: "docs/result.md",
+				metadata: {
+					count: 2,
+					nested: { ok: true, values: ["alpha", null] },
+				},
+			});
+			await tracker.recordCommand(created.issue.id, {
+				log: {
+					type: "json_payload_recorded",
+					payload: { artifact, flags: [true, false], empty: null },
+				},
+			});
+
+			expect((await tracker.getIssue(created.issue.id)).artifacts).toEqual([
+				artifact,
+			]);
+			expect(
+				(await tracker.readLogs(created.issue.id)).map((log) => log.payload),
+			).toEqual([
+				{ nested: { values: ["one", 2, true, null] } },
+				{ artifact, flags: [true, false], empty: null },
+			]);
+		});
 	});
 
 	test(`${family.name}: public Tracker API records artifacts, changes, and terminal logs`, async () => {
@@ -225,7 +260,10 @@ for (const family of trackerFamilies) {
 				await expect(
 					tracker.applyPlan({
 						specId: "spec-1",
-						expect: { version: spec.workflow.version, hash: spec.workflow.hash },
+						expect: {
+							version: spec.workflow.version,
+							hash: spec.workflow.hash,
+						},
 						specWorkflow: { state: "ready", action: "none" },
 						tickets: [
 							{
@@ -238,16 +276,18 @@ for (const family of trackerFamilies) {
 								},
 							},
 						],
-						artifacts: [{ kind: "file", uri: "https://example.com/not-a-file" }],
+						artifacts: [
+							{ kind: "file", uri: "https://example.com/not-a-file" },
+						],
 						log: { type: "plan_applied" },
 					}),
 				).rejects.toThrow(NeedReconciliationError);
 				const partialChildren = (await tracker.getIssue("spec-1")).relationships
 					.children;
 				expect(partialChildren).toHaveLength(1);
-				expect(await tracker.getIssue(partialChildren[0] ?? "missing-child")).toMatchObject(
-					{ title: "A" },
-				);
+				expect(
+					await tracker.getIssue(partialChildren[0] ?? "missing-child"),
+				).toMatchObject({ title: "A" });
 				const issueIds = (await tracker.listIssues()).map((issue) => issue.id);
 				expect(issueIds).toHaveLength(3);
 				expect(issueIds).toEqual(

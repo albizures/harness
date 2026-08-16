@@ -206,6 +206,46 @@ test("file-backed tracker writes a complete JSON state file without leftover tem
 	});
 });
 
+test("file-backed tracker rejects non-JSON artifact metadata in stored state", async () => {
+	await withTempDir(async (dir) => {
+		const file = join(dir, "tracker.json");
+		await writeFile(
+			file,
+			JSON.stringify({
+				version: 1,
+				nextIssueNumber: 2,
+				issues: [
+					{
+						id: "1",
+						title: "Corrupt metadata",
+						workflow: { kind: "ticket", state: "ready", action: "none" },
+						relationships: {
+							children: [],
+							dependencies: [],
+							dependents: [],
+						},
+						artifacts: [
+							{
+								id: "artifact-1",
+								kind: "file",
+								uri: "docs/result.md",
+								metadata: [],
+							},
+						],
+						changes: [],
+						logs: [],
+					},
+				],
+			}),
+			"utf8",
+		);
+
+		expect(() => createFileSystemTracker({ path: file })).toThrow(
+			/unsupported or malformed schema/,
+		);
+	});
+});
+
 test("file-backed tracker rejects corrupted JSON clearly", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");

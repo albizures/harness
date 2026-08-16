@@ -102,7 +102,10 @@ export type WorkflowManifest = {
 	};
 	lifecycle?: {
 		retry?: { allow?: Array<LifecyclePolicyTarget> };
-		escalation?: { allow?: Array<LifecyclePolicyTarget> };
+		escalation?: {
+			allow?: Array<LifecyclePolicyTarget>;
+			input?: PayloadSchema;
+		};
 		resume?: {
 			allow?: Array<{ kind: Identifier; actions: Array<Identifier> }>;
 		};
@@ -376,6 +379,7 @@ const manifestSchema = z.strictObject({
 			escalation: z
 				.strictObject({
 					allow: z.array(lifecyclePolicyTargetSchema).optional(),
+					input: payloadZodSchemaSchema.optional(),
 				})
 				.optional(),
 			resume: z
