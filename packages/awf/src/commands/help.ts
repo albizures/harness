@@ -89,7 +89,7 @@ export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 				},
 			];
 		}),
-	];
+	].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function manifestCommandUsage(command: ManifestCommand): string {

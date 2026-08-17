@@ -11,39 +11,42 @@ export type TrackerProjectionExpectation = NonNullable<
 	UpdateIssueInput["expect"]
 >;
 
+export type TrackerLog = Omit<WorkflowLog, "sequence" | "issueId">
+export type TrackerWorkflow = Partial<Omit<WorkflowProjection, "version" | "hash">>
+
 export type TrackerCreateWorkflowIssueIntent = CreateIssueInput & {
-	initialLog?: Omit<WorkflowLog, "sequence" | "issueId">;
+	initialLog?: TrackerLog;
 };
 
 export type TrackerStartRunIntent = {
 	expect: TrackerProjectionExpectation;
 	runId: string;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	workflow: TrackerWorkflow;
+	log: TrackerLog;
 };
 
 export type TrackerCompleteRunIntent = {
 	expect: TrackerProjectionExpectation;
 	runId: string;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	workflow: TrackerWorkflow;
 	artifacts?: Array<WorkflowArtifactInput>;
 	changes?: Array<Omit<WorkflowChange, "id">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerRecordArtifactsIntent = {
 	artifacts?: Array<WorkflowArtifactInput>;
 	changes?: Array<Omit<WorkflowChange, "id">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerRecordCommandIntent = {
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerAdvanceWorkflowIntent = {
 	expect: TrackerProjectionExpectation;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	workflow: TrackerWorkflow;
 };
 
 export type TrackerRepairIssueIntent = TrackerAdvanceWorkflowIntent;
@@ -57,8 +60,8 @@ export type TrackerRecordArtifactsResult = {
 
 export type TrackerEscalateIntent = {
 	expect: TrackerProjectionExpectation;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	workflow: TrackerWorkflow;
+	log: TrackerLog;
 };
 
 export type TrackerResumeIntent = TrackerEscalateIntent;
@@ -72,7 +75,7 @@ export type TrackerRelationshipIntent =
 export type TrackerApplyPlanIntent = {
 	specId: string;
 	expect: TrackerProjectionExpectation;
-	specWorkflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	specWorkflow: TrackerWorkflow;
 	tickets: Array<{
 		key: string;
 		title: string;
@@ -81,7 +84,7 @@ export type TrackerApplyPlanIntent = {
 		dependsOn?: Array<string>;
 	}>;
 	artifacts?: Array<WorkflowArtifactInput>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerApplyPlanResult = {
@@ -161,7 +164,7 @@ export type TrackerAdapterPrimitiveOperations = {
 	updateIssue: (id: string, input: UpdateIssueInput) => Promise<WorkflowIssue>;
 	appendLog: (
 		id: string,
-		input: Omit<WorkflowLog, "sequence" | "issueId">,
+		input: TrackerLog,
 	) => Promise<WorkflowLog>;
 	addChild: (parentId: string, childId: string) => Promise<void>;
 	removeChild: (parentId: string, childId: string) => Promise<void>;

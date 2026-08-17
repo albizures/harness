@@ -42,8 +42,6 @@ export type ManifestCommand = {
 	output?: PayloadSchema;
 };
 
-export type ManifestCommandDefinition = ManifestCommand;
-
 export type ManifestReadinessFilter = {
 	kind?: Identifier;
 	state?: Identifier;
@@ -111,7 +109,7 @@ export type WorkflowManifestDefinition = Omit<
 > & {
 	github?: { reservedPrefix?: string };
 	kinds: Array<ManifestKindDefinition>;
-	commands: Array<ManifestCommandDefinition>;
+	commands: Array<ManifestCommand>;
 };
 
 export type ValidationIssue = { path: string; message: string };

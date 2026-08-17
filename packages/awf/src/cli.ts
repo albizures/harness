@@ -24,6 +24,7 @@ try {
 					tracker: binding.tracker,
 					stdin: readStdinForDashInput(binding.args),
 				});
+
 	process.stdout.write(serializeCliOutput(envelope, output.format));
 	process.exitCode = envelope.ok ? 0 : 1;
 } catch (error) {
