@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
-} from "./tracker.ts";
+} from "./workflow/projection.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
 
 test("conditional updates advance the projection version and reject stale expectations", async () => {

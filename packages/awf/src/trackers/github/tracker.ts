@@ -1,21 +1,14 @@
 import { parseJsonValue } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest.ts";
 import {
-	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
-	ProjectionConflictError,
-	normalizeWorkflowArtifactInput,
-	type CreateIssueInput,
 	type TrackerApplyPlanIntent,
 	type TrackerIssueInspection,
-	type UpdateIssueInput,
-	type WorkflowArtifact,
-	type WorkflowArtifactInput,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
-	type WorkflowProjection,
 } from "../../tracker.ts";
+import { normalizeWorkflowArtifactInput, WorkflowArtifact, WorkflowArtifactInput } from "../../workflow/artifact.ts";
+import { WorkflowChange } from "../../workflow/change.ts";
+import { CreateIssueInput, IssueNotFoundError, UpdateIssueInput, WorkflowIssue } from "../../workflow/issue.ts";
+import { WorkflowLog } from "../../workflow/log.ts";
+import { CorruptWorkflowProjectionError, ProjectionConflictError, WorkflowProjection } from "../../workflow/projection.ts";
 import type { GitHubTrackerApi, GitHubTrackerIssue } from "./index.ts";
 import {
 	hasWorkflowProjectionLabels,

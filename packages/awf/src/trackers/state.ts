@@ -2,24 +2,15 @@ import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
 import { jsonRecordSchema, parseJsonValue } from "../json.ts";
 import {
-	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
 	NeedReconciliationError,
-	ProjectionConflictError,
-	normalizeWorkflowArtifactInput,
-	type CreateIssueInput,
-	type IssueRelationships,
-	type SeedIssueInput,
 	type TrackerApplyPlanIntent,
 	type TrackerIssueInspection,
-	type UpdateIssueInput,
-	type WorkflowArtifact,
-	type WorkflowArtifactInput,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
-	type WorkflowProjection,
 } from "../tracker.ts";
+import { CreateIssueInput, IssueNotFoundError, IssueRelationships, SeedIssueInput, UpdateIssueInput, WorkflowIssue } from "../workflow/issue.ts";
+import { CorruptWorkflowProjectionError, ProjectionConflictError, WorkflowProjection } from "../workflow/projection.ts";
+import { WorkflowLog } from "../workflow/log.ts";
+import { normalizeWorkflowArtifactInput, WorkflowArtifact, WorkflowArtifactInput } from "../workflow/artifact.ts";
+import { WorkflowChange } from "../workflow/change.ts";
 
 export class WorkflowTrackerState {
 	private readonly issues = new Map<string, StoredIssue>();

@@ -17,15 +17,14 @@ import {
 import {
 	type ArtifactKind,
 	artifacts as artifactSchemas,
-} from '../artifact.ts'
+} from '../workflow/artifact.ts'
 import {
-	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
 	NeedReconciliationError,
-	ProjectionConflictError,
 	type Tracker,
 	type TrackerAdapter,
 } from "../tracker.ts";
+import { IssueNotFoundError } from "../workflow/issue.ts";
+import { CorruptWorkflowProjectionError, ProjectionConflictError } from "../workflow/projection.ts";
 export type WorkflowFields = {
 	kind: string;
 	state: string;

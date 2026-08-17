@@ -7,7 +7,7 @@ import {
 	ManifestValidationError,
 	validateManifest,
 } from "./manifest.ts";
-import { artifacts} from './artifact.ts'
+import { artifacts} from './workflow/artifact.ts'
 
 const validFixture = new URL("./fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;

@@ -8,15 +8,13 @@ import {
 import { dirname, resolve } from "node:path";
 import { isJsonRecord, isJsonValue } from "../json.ts";
 import { createTrackerAdapter } from "../tracker-intents.ts";
-import {
-	CorruptWorkflowProjectionError,
-	type TrackerAdapter,
-} from "../tracker.ts";
+import { type TrackerAdapter } from "../tracker.ts";
 import { WorkflowStateTracker } from "./memory.ts";
 import {
 	WorkflowTrackerState,
 	type WorkflowTrackerStateSnapshot,
 } from "./state.ts";
+import { CorruptWorkflowProjectionError } from "../workflow/projection.ts";
 
 const HEX_RADIX = 16;
 const RANDOM_SUFFIX_START = 2;

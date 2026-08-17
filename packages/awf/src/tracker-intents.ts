@@ -1,7 +1,5 @@
 import {
-	IssueNotFoundError,
 	NeedReconciliationError,
-	ProjectionConflictError,
 	type Tracker,
 	type TrackerAdapter,
 	type TrackerAdapterPrimitiveReads,
@@ -21,11 +19,12 @@ import {
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
-	type WorkflowArtifact,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
 } from "./tracker.ts";
+import { WorkflowArtifact } from "./workflow/artifact.ts";
+import { WorkflowChange } from "./workflow/change.ts";
+import { IssueNotFoundError, WorkflowIssue } from "./workflow/issue.ts";
+import { WorkflowLog } from "./workflow/log.ts";
+import { ProjectionConflictError } from "./workflow/projection.ts";
 
 export type TrackerIntentModulePrimitives = TrackerAdapterPrimitiveOperations &
 	TrackerAdapterPrimitiveReads & {

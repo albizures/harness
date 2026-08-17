@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { bindCliExecution } from "./cli-config.ts";
 import { execute } from "./commands.ts";
 import { parseOutputFormat, serializeCliOutput } from "./output.ts";
-import { CorruptWorkflowProjectionError } from "./tracker.ts";
+import { CorruptWorkflowProjectionError } from "./workflow/projection.ts";
 
 declare const process: {
 	argv: Array<string>;

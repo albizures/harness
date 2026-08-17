@@ -1,17 +1,13 @@
 import { createTrackerAdapter } from "../tracker-intents.ts";
 import {
-	CorruptWorkflowProjectionError,
-	type CreateIssueInput,
-	type SeedIssueInput,
 	type TrackerAdapter,
 	type TrackerIssueInspection,
-	type UpdateIssueInput,
-	type WorkflowArtifact,
-	type WorkflowArtifactInput,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
 } from "../tracker.ts";
+import { WorkflowArtifact, WorkflowArtifactInput } from "../workflow/artifact.ts";
+import { WorkflowChange } from "../workflow/change.ts";
+import { CreateIssueInput, SeedIssueInput, UpdateIssueInput, WorkflowIssue } from "../workflow/issue.ts";
+import { WorkflowLog } from "../workflow/log.ts";
+import { CorruptWorkflowProjectionError } from "../workflow/projection.ts";
 import { WorkflowTrackerState } from "./state.ts";
 
 export function createInMemoryTracker(

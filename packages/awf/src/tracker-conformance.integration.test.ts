@@ -4,13 +4,12 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
 	NeedReconciliationError,
-	ProjectionConflictError,
 	TrackerAdapter,
 	TrackerCreateWorkflowIssueIntent,
-	type Tracker,
 } from "./tracker.ts";
 import { createFileSystemTracker } from "./trackers/filesystem.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
+import { ProjectionConflictError } from "./workflow/projection.ts";
 
 type TrackerFixture = {
 	tracker: TrackerAdapter;

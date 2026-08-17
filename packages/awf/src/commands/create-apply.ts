@@ -2,7 +2,6 @@ import { isAbsolute, relative } from "node:path";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
 import {
-	IssueNotFoundError,
 	NeedReconciliationError,
 	type Tracker,
 } from "../tracker.ts";
@@ -28,6 +27,7 @@ import {
 	readOption,
 	workflowTarget,
 } from "./shared.ts";
+import { IssueNotFoundError } from "../workflow/issue.ts";
 
 export async function manifestCommand(
 	args: Array<string>,

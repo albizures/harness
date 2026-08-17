@@ -1,168 +1,11 @@
-import type { JsonValue } from "type-fest";
-import { parseJsonRecord } from "./json.ts";
 import {
-	validateArtifactReferenceValue,
-	type ArtifactKind,
-} from "./artifact.ts";
-
-export type WorkflowProjection = {
-	kind: string;
-	state: string;
-	action: string;
-	reason?: string;
-	activeRunId?: string;
-	version: number;
-	hash: string;
-};
-
-export type IssueRelationships = {
-	parent?: string;
-	children: Array<string>;
-	dependencies: Array<string>;
-	dependents: Array<string>;
-};
-
-export type StructuredWorkflowArtifactReference = {
-	type: ArtifactKind;
-	ref?: string;
-	url?: string;
-	path?: string;
-	id?: string;
-	title?: string;
-	metadata?: Record<string, JsonValue>;
-};
-
-export type WorkflowArtifact = {
-	id: string;
-	kind: ArtifactKind;
-	uri: string;
-	name?: string;
-} & Partial<StructuredWorkflowArtifactReference>;
-
-export type WorkflowArtifactInput = Omit<WorkflowArtifact, "id"> & {
-	id?: string;
-};
-
-export function normalizeWorkflowArtifactInput(
-	input: WorkflowArtifactInput,
-	id: string,
-): WorkflowArtifact {
-	validateWorkflowArtifactInput(input);
-	return {
-		...compatibilityStructuredArtifactFields(input.kind, input.uri),
-		...input,
-		...(input.metadata === undefined
-			? {}
-			: { metadata: parseJsonRecord(input.metadata) }),
-		type: input.type ?? input.kind,
-		id,
-	};
-}
-
-export function validateWorkflowArtifactInput(
-	input: WorkflowArtifactInput,
-): void {
-	const uriIssue = validateArtifactReferenceValue(input.uri, input.kind);
-	if (uriIssue !== undefined) {
-		throw new Error(uriIssue);
-	}
-	if (input.type !== undefined && input.type !== input.kind) {
-		throw new Error(`Artifact type must be '${input.kind}'.`);
-	}
-	if (input.metadata !== undefined) {
-		parseJsonRecord(input.metadata);
-	}
-	for (const [field, value] of structuredArtifactFields(input.kind, input)) {
-		const fieldIssue = validateArtifactReferenceValue(value, input.kind);
-		if (fieldIssue !== undefined) {
-			throw new Error(`${field}: ${fieldIssue}`);
-		}
-	}
-}
-
-function structuredArtifactFields(
-	kind: ArtifactKind,
-	input: WorkflowArtifactInput,
-): Array<["ref" | "url" | "path", string]> {
-	const field = structuredArtifactField(kind);
-	const value = input[field];
-	return value === undefined ? [] : [[field, value]];
-}
-
-function structuredArtifactField(kind: ArtifactKind): "ref" | "url" | "path" {
-	if (kind === "pull-request" || kind === "url") {
-		return "url";
-	}
-	if (kind === "file") {
-		return "path";
-	}
-	return "ref";
-}
-
-function compatibilityStructuredArtifactFields(
-	kind: ArtifactKind,
-	uri: string,
-): Partial<StructuredWorkflowArtifactReference> {
-	if (kind === "pull-request" || kind === "url") {
-		return { type: kind, url: uri };
-	}
-	if (kind === "file") {
-		return { type: kind, path: uri };
-	}
-	return { type: kind, ref: uri };
-}
-
-export type WorkflowChange = {
-	id: string;
-	kind: ArtifactKind;
-	uri: string;
-	summary?: string;
-};
-
-export type WorkflowIssue = {
-	id: string;
-	title: string;
-	body?: string;
-	workflow: WorkflowProjection;
-	relationships: IssueRelationships;
-	artifacts: Array<WorkflowArtifact>;
-	changes: Array<WorkflowChange>;
-};
-
-export type WorkflowLog = {
-	sequence: number;
-	issueId: string;
-	type: string;
-	runId?: string;
-	payload?: JsonValue;
-};
-
-export type CreateIssueInput = {
-	id?: string;
-	title: string;
-	body?: string;
-	workflow: Omit<WorkflowProjection, "version" | "hash"> & { version?: number };
-	relationships?: Partial<IssueRelationships>;
-	logs?: Array<Omit<WorkflowLog, "issueId">>;
-};
-
-export type SeedIssueInput =
-	| CreateIssueInput
-	| {
-			id: string;
-			title: string;
-			body?: string;
-			labels: Array<string>;
-			relationships?: Partial<IssueRelationships>;
-			version?: number;
-	  };
-
-export type UpdateIssueInput = {
-	expect?: { version?: number; hash?: string };
-	title?: string;
-	body?: string;
-	workflow?: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-};
+	WorkflowArtifact,
+	WorkflowArtifactInput,
+} from "./workflow/artifact.ts";
+import { WorkflowChange } from "./workflow/change.ts";
+import { CreateIssueInput, UpdateIssueInput, WorkflowIssue } from "./workflow/issue.ts";
+import { WorkflowLog } from "./workflow/log.ts";
+import { WorkflowProjection } from "./workflow/projection.ts";
 
 export type TrackerProjectionExpectation = NonNullable<
 	UpdateIssueInput["expect"]
@@ -357,15 +200,6 @@ export type TrackerAdapterPrimitives = TrackerAdapterPrimitiveOperations;
 
 export type TrackerAdapter = Tracker & TrackerAdapterPrimitiveOperations;
 
-export class ProjectionConflictError extends Error {
-	constructor(
-		message = "Workflow projection expectation does not match current projection.",
-	) {
-		super(message);
-		this.name = "ProjectionConflictError";
-	}
-}
-
 export class NeedReconciliationError extends Error {
 	constructor(
 		message = "NEED_RECONCILIATION: tracker intent verification failed.",
@@ -375,16 +209,3 @@ export class NeedReconciliationError extends Error {
 	}
 }
 
-export class CorruptWorkflowProjectionError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "CorruptWorkflowProjectionError";
-	}
-}
-
-export class IssueNotFoundError extends Error {
-	constructor(id: string) {
-		super(`Workflow issue '${id}' was not found.`);
-		this.name = "IssueNotFoundError";
-	}
-}

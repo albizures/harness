@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, test } from "vitest";
-import { CorruptWorkflowProjectionError } from "../tracker.ts";
+import { CorruptWorkflowProjectionError } from "../workflow/projection.ts";
 import { createFileSystemTracker } from "./filesystem.ts";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {

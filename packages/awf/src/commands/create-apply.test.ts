@@ -10,10 +10,10 @@ import {
 	NeedReconciliationError,
 	type Tracker,
 	type TrackerAdapter,
-	type WorkflowArtifact,
-	type WorkflowIssue,
 } from "../tracker.ts";
 import { createInMemoryTracker } from "../trackers/memory.ts";
+import { WorkflowIssue } from "../workflow/issue.ts";
+import { WorkflowArtifact } from "../workflow/artifact.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {

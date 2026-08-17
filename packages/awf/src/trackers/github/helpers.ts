@@ -2,15 +2,11 @@ import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
 import { isJsonRecord, isJsonValue, jsonRecordSchema } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest.ts";
-import {
-	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
-	type IssueRelationships,
-	type WorkflowArtifact,
-	type WorkflowChange,
-	type WorkflowLog,
-	type WorkflowProjection,
-} from "../../tracker.ts";
+import { CorruptWorkflowProjectionError, WorkflowProjection } from "../../workflow/projection.ts";
+import { WorkflowChange } from "../../workflow/change.ts";
+import { WorkflowArtifact } from "../../workflow/artifact.ts";
+import { WorkflowLog } from "../../workflow/log.ts";
+import { IssueNotFoundError, IssueRelationships } from "../../workflow/issue.ts";
 
 const PROJECTION_SCHEMA_VERSION = 1;
 const MACHINE_COMMENT_VERSION = 1;

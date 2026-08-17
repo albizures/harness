@@ -1,5 +1,29 @@
+import { JsonValue } from "type-fest";
 import { z } from "zod";
+import { parseJsonRecord } from "../json.ts";
 export type PayloadZodSchema = z.ZodType<unknown>;
+
+export type StructuredWorkflowArtifactReference = {
+	type: ArtifactKind;
+	ref?: string;
+	url?: string;
+	path?: string;
+	id?: string;
+	title?: string;
+	metadata?: Record<string, JsonValue>;
+};
+
+export type WorkflowArtifact = {
+	id: string;
+	kind: ArtifactKind;
+	uri: string;
+	name?: string;
+} & Partial<StructuredWorkflowArtifactReference>;
+
+
+export type WorkflowArtifactInput = Omit<WorkflowArtifact, "id"> & {
+	id?: string;
+};
 
 export type ArtifactKind =
 	| "markdown"
@@ -176,4 +200,77 @@ function validateStructuredField(
 	if (message !== undefined) {
 		context.addIssue({ code: "custom", path: [field], message });
 	}
+}
+
+
+
+
+
+export function normalizeWorkflowArtifactInput(
+	input: WorkflowArtifactInput,
+	id: string,
+): WorkflowArtifact {
+	validateWorkflowArtifactInput(input);
+	return {
+		...compatibilityStructuredArtifactFields(input.kind, input.uri),
+		...input,
+		...(input.metadata === undefined
+			? {}
+			: { metadata: parseJsonRecord(input.metadata) }),
+		type: input.type ?? input.kind,
+		id,
+	};
+}
+
+export function validateWorkflowArtifactInput(
+	input: WorkflowArtifactInput,
+): void {
+	const uriIssue = validateArtifactReferenceValue(input.uri, input.kind);
+	if (uriIssue !== undefined) {
+		throw new Error(uriIssue);
+	}
+	if (input.type !== undefined && input.type !== input.kind) {
+		throw new Error(`Artifact type must be '${input.kind}'.`);
+	}
+	if (input.metadata !== undefined) {
+		parseJsonRecord(input.metadata);
+	}
+	for (const [field, value] of structuredArtifactFields(input.kind, input)) {
+		const fieldIssue = validateArtifactReferenceValue(value, input.kind);
+		if (fieldIssue !== undefined) {
+			throw new Error(`${field}: ${fieldIssue}`);
+		}
+	}
+}
+
+function structuredArtifactFields(
+	kind: ArtifactKind,
+	input: WorkflowArtifactInput,
+): Array<["ref" | "url" | "path", string]> {
+	const field = structuredArtifactField(kind);
+	const value = input[field];
+	return value === undefined ? [] : [[field, value]];
+}
+
+function structuredArtifactField(kind: ArtifactKind): "ref" | "url" | "path" {
+	if (kind === "pull-request" || kind === "url") {
+		return "url";
+	}
+	if (kind === "file") {
+		return "path";
+	}
+	return "ref";
+}
+
+function compatibilityStructuredArtifactFields(
+	kind: ArtifactKind,
+	uri: string,
+): Partial<StructuredWorkflowArtifactReference> {
+	if (kind === "pull-request" || kind === "url") {
+		return { type: kind, url: uri };
+	}
+	if (kind === "file") {
+		return { type: kind, path: uri };
+	}
+	return { type: kind, ref: uri };
 }

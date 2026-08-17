@@ -7,8 +7,7 @@ import {
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
 } from "./index.ts";
-import { CorruptWorkflowProjectionError } from "../../tracker.ts";
-import { report } from "process";
+import { CorruptWorkflowProjectionError } from "../../workflow/projection.ts";
 
 const PROJECT_COMMENT_AND_TWO_LOGS = 3;
 
