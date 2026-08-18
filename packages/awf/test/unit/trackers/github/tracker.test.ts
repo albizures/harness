@@ -1,13 +1,13 @@
 import { assert, expect, test } from "vitest";
-import { execute } from "../../commands.ts";
-import { defaultManifest } from "../../default-manifest.ts";
+import { execute } from "../../../../src/commands.ts";
+import { defaultManifest } from "../../../../src/default-manifest.ts";
 import {
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
-} from "./index.ts";
-import { CorruptWorkflowProjectionError } from "../../workflow/projection.ts";
+} from "../../../../src/trackers/github/index.ts";
+import { CorruptWorkflowProjectionError } from "../../../../src/workflow/projection.ts";
 
 const PROJECT_COMMENT_AND_TWO_LOGS = 3;
 
@@ -359,7 +359,9 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 	// repository with GitHub sub-issues/dependencies enabled and gh authenticated.
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
-	const { createGhCliGitHubTracker } = await import("./index.ts");
+	const { createGhCliGitHubTracker } = await import(
+		"../../../../src/trackers/github/index.ts"
+	);
 	const [owner, name] = repo.split("/");
 	expect(owner).toBeTruthy();
 	expect(name).toBeTruthy();

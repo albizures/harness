@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { execute } from "./commands.ts";
-import { defaultManifest } from "./default-manifest.ts";
-import type { Tracker } from "./tracker.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+import { execute } from "../../src/commands.ts";
+import { defaultManifest } from "../../src/default-manifest.ts";
+import type { Tracker } from "../../src/tracker.ts";
+import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
 test("fixed handoff runtime command is not publicly accepted", async () => {
 	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);

@@ -6,21 +6,21 @@ import {
 	loadWorkflowModule,
 	ManifestValidationError,
 	validateManifest,
-} from "./manifest.ts";
-import { artifacts } from "./workflow/artifact.ts";
+} from "../../src/manifest.ts";
+import { artifacts } from "../../src/workflow/artifact.ts";
 
-const validFixture = new URL("./fixtures/valid.workflow.ts", import.meta.url)
+const validFixture = new URL("../fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;
-const linkFixture = new URL("./fixtures/link.workflow.ts", import.meta.url)
+const linkFixture = new URL("../fixtures/link.workflow.ts", import.meta.url)
 	.pathname;
-const moduleFixture = new URL("./fixtures/module.workflow.ts", import.meta.url)
+const moduleFixture = new URL("../fixtures/module.workflow.ts", import.meta.url)
 	.pathname;
 const missingManifestFixture = new URL(
-	"./fixtures/missing-manifest.workflow.ts",
+	"../fixtures/missing-manifest.workflow.ts",
 	import.meta.url,
 ).pathname;
 const invalidTrackerFixture = new URL(
-	"./fixtures/invalid-tracker.workflow.ts",
+	"../fixtures/invalid-tracker.workflow.ts",
 	import.meta.url,
 ).pathname;
 

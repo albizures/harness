@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
-import { execute } from "../commands.ts";
-import { defineManifest, type WorkflowManifest } from "../manifest.ts";
-import type { Tracker } from "../tracker.ts";
-import { createInMemoryTracker } from "../trackers/memory.ts";
+import { execute } from "../../../src/commands.ts";
+import {
+	defineManifest,
+	type WorkflowManifest,
+} from "../../../src/manifest.ts";
+import type { Tracker } from "../../../src/tracker.ts";
+import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 
 const defaultTicketOnlyReadyManifest = defineManifest({
 	version: "v1",

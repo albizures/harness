@@ -3,17 +3,17 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { expect, test } from "vitest";
 import { z } from "zod";
-import { execute, type CommandHandlers } from "../commands.ts";
-import { defaultManifest } from "../default-manifest.ts";
-import type { WorkflowManifest } from "../manifest.ts";
+import { execute, type CommandHandlers } from "../../../src/commands.ts";
+import { defaultManifest } from "../../../src/default-manifest.ts";
+import type { WorkflowManifest } from "../../../src/manifest.ts";
 import {
 	NeedReconciliationError,
 	type Tracker,
 	type TrackerAdapter,
-} from "../tracker.ts";
-import { createInMemoryTracker } from "../trackers/memory.ts";
-import type { WorkflowIssue } from "../workflow/issue.ts";
-import type { WorkflowArtifact } from "../workflow/artifact.ts";
+} from "../../../src/tracker.ts";
+import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+import type { WorkflowIssue } from "../../../src/workflow/issue.ts";
+import type { WorkflowArtifact } from "../../../src/workflow/artifact.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {

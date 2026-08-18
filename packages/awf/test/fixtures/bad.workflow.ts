@@ -1,4 +1,4 @@
-import { defineManifest, type WorkflowManifest } from "../manifest.ts";
+import { defineManifest, type WorkflowManifest } from "../../src/manifest.ts";
 
 export const manifest = defineManifest({
 	version: "v1",

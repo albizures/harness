@@ -15,9 +15,11 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "tsc -p tsconfig.json",
+		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"test": "pnpm run test:vitest",
+		"test": "pnpm run test:unit && pnpm run test:integration",
+		"test:unit": "vitest run --config vitest.config.ts test/unit",
+		"test:integration": "vitest run --config vitest.config.ts test/integration",
 		"test:vitest": "vitest run --config vitest.config.ts",
 		"awf": "node ./dist/cli.js"
 	},

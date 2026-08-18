@@ -6,10 +6,10 @@ import {
 	NeedReconciliationError,
 	type TrackerAdapter,
 	type TrackerCreateWorkflowIssueIntent,
-} from "./tracker.ts";
-import { createFileSystemTracker } from "./trackers/filesystem.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
-import { ProjectionConflictError } from "./workflow/projection.ts";
+} from "../../src/tracker.ts";
+import { createFileSystemTracker } from "../../src/trackers/filesystem.ts";
+import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+import { ProjectionConflictError } from "../../src/workflow/projection.ts";
 
 type TrackerFixture = {
 	tracker: TrackerAdapter;

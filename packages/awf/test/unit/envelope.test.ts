@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { serializeEnvelope } from "./envelope.ts";
+import { serializeEnvelope } from "../../src/envelope.ts";
 
 test("envelopes serialize as one JSON stdout line", () => {
 	expect(serializeEnvelope({ ok: true, data: { smoke: true } })).toBe(

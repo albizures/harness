@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { execute } from "./commands.ts";
-import type { Tracker } from "./tracker.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+import { execute } from "../../src/commands.ts";
+import type { Tracker } from "../../src/tracker.ts";
+import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });

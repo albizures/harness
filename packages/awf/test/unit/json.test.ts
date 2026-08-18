@@ -6,7 +6,7 @@ import {
 	jsonValueSchema,
 	parseJsonRecord,
 	parseJsonValue,
-} from "./json.ts";
+} from "../../src/json.ts";
 
 const jsonCompatibleValues = [
 	null,

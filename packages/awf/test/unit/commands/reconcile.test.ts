@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { execute } from "../commands.ts";
-import { createInMemoryTracker } from "../trackers/memory.ts";
+import { execute } from "../../../src/commands.ts";
+import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",

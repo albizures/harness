@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 import { z } from "zod";
-import { execute } from "./commands.ts";
-import { defineManifest } from "./manifest.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+import { execute } from "../../src/commands.ts";
+import { defineManifest } from "../../src/manifest.ts";
+import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
 const syntheticManifest = defineManifest({
 	version: "v1",

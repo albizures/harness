@@ -2,8 +2,8 @@ import { expect, test } from "vitest";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
-} from "./workflow/projection.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+} from "../../src/workflow/projection.ts";
+import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
 test("conditional updates advance the projection version and reject stale expectations", async () => {
 	const tracker = createInMemoryTracker();

@@ -3,17 +3,17 @@ import {
 	createTrackerAdapter,
 	createTrackerIntentModule,
 	type TrackerIntentModulePrimitives,
-} from "./tracker-intents.ts";
-import { NeedReconciliationError } from "./tracker.ts";
-import { WorkflowTrackerState } from "./trackers/state.ts";
+} from "../../src/tracker-intents.ts";
+import { NeedReconciliationError } from "../../src/tracker.ts";
+import { WorkflowTrackerState } from "../../src/trackers/state.ts";
 import type {
 	CreateIssueInput,
 	UpdateIssueInput,
 	WorkflowIssue,
-} from "./workflow/issue.ts";
-import type { WorkflowLog } from "./workflow/log.ts";
-import type { WorkflowArtifactInput } from "./workflow/artifact.ts";
-import type { WorkflowChange } from "./workflow/change.ts";
+} from "../../src/workflow/issue.ts";
+import type { WorkflowLog } from "../../src/workflow/log.ts";
+import type { WorkflowArtifactInput } from "../../src/workflow/artifact.ts";
+import type { WorkflowChange } from "../../src/workflow/change.ts";
 
 test("tracker adapter composition exposes public intents without adapter-owned choreography", async () => {
 	const state = new WorkflowTrackerState();

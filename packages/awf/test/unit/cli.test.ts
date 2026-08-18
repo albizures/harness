@@ -11,32 +11,37 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 
-const cliPath = new URL("./cli.ts", import.meta.url);
+const cliPath = new URL("../../src/cli.ts", import.meta.url);
 const validManifestPath = new URL(
-	"./fixtures/valid.workflow.ts",
+	"../fixtures/valid.workflow.ts",
 	import.meta.url,
 ).pathname;
-const badManifestPath = new URL("./fixtures/bad.workflow.ts", import.meta.url)
+const badManifestPath = new URL("../fixtures/bad.workflow.ts", import.meta.url)
 	.pathname;
-const linkManifestPath = new URL("./fixtures/link.workflow.ts", import.meta.url)
-	.pathname;
+const linkManifestPath = new URL(
+	"../fixtures/link.workflow.ts",
+	import.meta.url,
+).pathname;
 const envMemoryWorkflowPath = new URL(
-	"./fixtures/env-memory.workflow.ts",
+	"../fixtures/env-memory.workflow.ts",
 	import.meta.url,
 ).pathname;
 const missingManifestPath = new URL(
-	"./fixtures/missing-manifest.workflow.ts",
+	"../fixtures/missing-manifest.workflow.ts",
 	import.meta.url,
 ).pathname;
 const defaultManifestSourcePath = new URL(
-	"./default-manifest.ts",
+	"../../src/default-manifest.ts",
 	import.meta.url,
 ).pathname;
-const manifestSourcePath = new URL("./manifest.ts", import.meta.url).pathname;
-const memoryTrackerSourcePath = new URL("./trackers/memory.ts", import.meta.url)
+const manifestSourcePath = new URL("../../src/manifest.ts", import.meta.url)
 	.pathname;
+const memoryTrackerSourcePath = new URL(
+	"../../src/trackers/memory.ts",
+	import.meta.url,
+).pathname;
 const filesystemTrackerSourcePath = new URL(
-	"./trackers/filesystem.ts",
+	"../../src/trackers/filesystem.ts",
 	import.meta.url,
 ).pathname;
 

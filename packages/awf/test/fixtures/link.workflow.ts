@@ -1,5 +1,5 @@
-import { defaultManifest } from "../default-manifest.ts";
-import type { WorkflowManifest } from "../manifest.ts";
+import { defaultManifest } from "../../src/default-manifest.ts";
+import type { WorkflowManifest } from "../../src/manifest.ts";
 
 export const manifest = {
 	...defaultManifest,

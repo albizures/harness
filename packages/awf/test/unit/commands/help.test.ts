@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { defaultManifest } from "../default-manifest.ts";
-import { defineManifest } from "../manifest.ts";
-import { execute } from "../commands.ts";
-import { helpCommands, helpReadiness } from "./help.ts";
+import { defaultManifest } from "../../../src/default-manifest.ts";
+import { defineManifest } from "../../../src/manifest.ts";
+import { execute } from "../../../src/commands.ts";
+import { helpCommands, helpReadiness } from "../../../src/commands/help.ts";
 
 test("help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
