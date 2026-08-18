@@ -133,6 +133,10 @@ export type WorkflowManifest = {
 	relationships?: Array<ManifestRelationship>;
 };
 
+export function getKind(manifest: WorkflowManifest, name: string) {
+	return manifest.kinds.find((candidate) => candidate.id === name);
+}
+
 export type WorkflowManifestDefinition = Omit<
 	WorkflowManifest,
 	"github" | "kinds" | "commands"

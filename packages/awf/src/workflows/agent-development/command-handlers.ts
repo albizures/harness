@@ -1,299 +1,56 @@
 import { isAbsolute, relative } from "node:path";
-import type {
-	CommandHandlerContext,
-	CommandHandlers,
-} from "./command-handlers.ts";
 import {
-	lifecycleTransitionHandlerKey,
-	type LifecycleTransitionHandlers,
-} from "./lifecycle-handlers.ts";
-import { failure, success, type Envelope } from "./envelope.ts";
+	readInput,
+	type CommandHandler,
+	type CommandHandlerContext,
+	type CommandHandlers,
+} from "../../command-handlers.ts";
+import { type Envelope, failure, success } from "../../envelope.ts";
+import { getKind, type ManifestCommand, type ManifestTransition } from "../../manifest.ts";
+import { NeedReconciliationError, type Tracker } from "../../tracker.ts";
 import {
-	defineManifest,
-	type ManifestCommand,
-	type ManifestTransition,
-} from "./manifest.ts";
-import { NeedReconciliationError, type Tracker } from "./tracker.ts";
-import { artifacts } from "./workflow/artifact.ts";
-import { IssueNotFoundError, type WorkflowIssue } from "./workflow/issue.ts";
-import { z } from "zod";
+	IssueNotFoundError,
+	type WorkflowIssue,
+} from "../../workflow/issue.ts";
 import {
 	initialWorkflowTarget,
 	invalidTransition,
 	isRecord,
 	lifecycleError,
 	parseJsonInput,
+	parseJsonObject,
 	parseStructuredArtifactInput,
-	type RuntimeValidationIssue,
-	readInput,
 	readOption,
 	validateWorkflowCommandInput,
 	validateWorkflowCommandOutput,
 	workflowTarget,
-	type StructuredArtifactInput,
-} from "./commands/shared.ts";
+} from "../../commands/shared.ts";
+import { agentDevelopmentManifest } from "./manifest.ts";
 
-const states = ["ready", "running", "done", "need-human"] as const;
-const actions = [
-	"plan",
-	"implement",
-	"review",
-	"fix",
-	"merge",
-	"integration-test",
-	"none",
-] as const;
+type SpecInput = { title: string; content: string };
+type PlanBundle = { tickets: Array<PlanTicket> };
+type PlanTicket = {
+	key: string;
+	title: string;
+	content: string;
+	dependsOn?: Array<string>;
+};
 
-const ticketImplementationInput = artifacts.object({
-	implementationPr: artifacts.pullRequest(),
-});
+type Metadata = { ticketCount: number };
 
-const reviewApprovedInput = artifacts.object({ verdict: z.string() });
-
-const reviewChangesInput = artifacts.object({
-	verdict: z.string(),
-	findings: artifacts.array(artifacts.finding()),
-});
-
-const fixInput = artifacts.object({ summary: z.string() });
-
-const integrationPassedInput = artifacts.object({
-	verdict: z.string(),
-	specPr: artifacts.pullRequest(),
-});
-
-const integrationChangesNeededInput = artifacts.object({
-	verdict: z.string(),
-	findings: artifacts.array(artifacts.finding()),
-});
-
-const mergeInput = artifacts.object({ merged: z.boolean() });
-const specCreateInput = artifacts.object({ spec: artifacts.markdown() });
-const specCreateOutput = z.looseObject({
-	issue: z.looseObject({ id: z.string() }),
-});
-
-const planTicketInput = artifacts.object({
-	key: z.string(),
-	title: z.string(),
-	content: z.string(),
-	dependsOn: z.array(z.string()).optional(),
-});
-
-const planApplyInput = artifacts.object({
-	tickets: artifacts.array(planTicketInput),
-});
-const planApplyOutput = z.looseObject({
-	tickets: artifacts.array(
-		artifacts.object({ key: z.string(), id: z.string() }),
-	),
-});
-
-const handoffCreateInput = artifacts.object({ handoff: artifacts.handoff() });
-const handoffCreateOutput = z.looseObject({
-	artifact: z.looseObject({
-		id: z.string(),
-		kind: z.literal("handoff"),
-		type: z.literal("handoff"),
-		uri: z.string(),
-		ref: z.string(),
-	}),
-});
-
-export const agentDevelopmentManifest = defineManifest({
-	version: "v1",
-	workflow: { id: "agent-development" },
-	vocabulary: {
-		states: [...states],
-		actions: [...actions],
-		reasons: ["dependencies"],
-		events: ["start", "succeed", "fail"],
-	},
-	github: { reservedPrefix: "awf" },
-	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
-	readiness: {
-		filters: [
-			{ kind: "spec", state: "ready", action: "plan" },
-			{ kind: "spec", state: "ready", action: "integration-test" },
-			{ kind: "spec", state: "ready", action: "merge" },
-			{ kind: "ticket", state: "ready", action: "implement" },
-			{ kind: "ticket", state: "ready", action: "review" },
-			{ kind: "ticket", state: "ready", action: "fix" },
-			{ kind: "ticket", state: "ready", action: "merge" },
-		],
-		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
-		relationshipPolicies: [
-			{
-				relationship: "children",
-				where: { kind: "spec", state: "ready", action: "integration-test" },
-				children: { all: { kind: "ticket", state: "done" }, min: 1 },
-				gate: "children",
-			},
-		],
-	},
-	lifecycle: {
-		relationshipPolicies: [
-			{
-				relationship: "parent",
-				child: { kind: "ticket", state: "done", action: "none" },
-				parent: { kind: "spec", state: "ready", action: "none" },
-				siblings: { all: { kind: "ticket", state: "done" }, min: 1 },
-				to: { state: "ready", action: "integration-test" },
-			},
-		],
-	},
-	kinds: [
-		{
-			id: "spec",
-			label: "Spec",
-			initial: { state: "ready", action: "plan" },
-			transitions: [
-				{
-					from: { state: "ready", action: "plan" },
-					event: "start",
-					to: { state: "running", action: "plan" },
-				},
-				{
-					from: { state: "ready", action: "plan" },
-					event: "succeed",
-					to: { state: "ready", action: "none" },
-				},
-				{
-					from: { state: "running", action: "plan" },
-					event: "succeed",
-					to: { state: "ready", action: "none" },
-				},
-				{
-					from: { state: "ready", action: "integration-test" },
-					event: "start",
-					to: { state: "running", action: "integration-test" },
-				},
-				{
-					from: { state: "running", action: "integration-test" },
-					event: "succeed",
-					input: integrationPassedInput,
-					to: { state: "ready", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "integration-test" },
-					event: "fail",
-					input: integrationChangesNeededInput,
-					to: { state: "ready", action: "plan" },
-				},
-				{
-					from: { state: "ready", action: "merge" },
-					event: "start",
-					to: { state: "running", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "merge" },
-					event: "succeed",
-					input: mergeInput,
-					to: { state: "done", action: "none" },
-				},
-			],
-		},
-		{
-			id: "ticket",
-			label: "Ticket",
-			initial: { state: "ready", action: "implement" },
-			transitions: [
-				{
-					from: { state: "ready", action: "implement" },
-					event: "start",
-					to: { state: "running", action: "implement" },
-				},
-				{
-					from: { state: "running", action: "implement" },
-					event: "succeed",
-					input: ticketImplementationInput,
-					to: { state: "ready", action: "review" },
-				},
-				{
-					from: { state: "ready", action: "review" },
-					event: "start",
-					to: { state: "running", action: "review" },
-				},
-				{
-					from: { state: "running", action: "review" },
-					event: "succeed",
-					input: reviewApprovedInput,
-					to: { state: "ready", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "review" },
-					event: "fail",
-					input: reviewChangesInput,
-					to: { state: "ready", action: "fix" },
-				},
-				{
-					from: { state: "ready", action: "fix" },
-					event: "start",
-					to: { state: "running", action: "fix" },
-				},
-				{
-					from: { state: "running", action: "fix" },
-					event: "succeed",
-					input: fixInput,
-					to: { state: "ready", action: "review" },
-				},
-				{
-					from: { state: "ready", action: "merge" },
-					event: "start",
-					to: { state: "running", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "merge" },
-					event: "succeed",
-					input: mergeInput,
-					to: { state: "done", action: "none" },
-				},
-				{
-					from: { state: "running", action: "implement" },
-					event: "fail",
-					to: { state: "ready", action: "implement" },
-				},
-			],
-		},
-	],
-	commands: [
-		{
-			id: "spec-create",
-			cli: { verb: "create", target: "spec" },
-			target: { kind: "spec", action: "plan" },
-			input: specCreateInput,
-			output: specCreateOutput,
-		},
-		{
-			id: "plan-apply",
-			cli: { verb: "apply", target: "plan" },
-			target: { kind: "spec", action: "plan" },
-			input: planApplyInput,
-			output: planApplyOutput,
-		},
-		{
-			id: "handoff-create",
-			cli: { verb: "create", target: "handoff", source: true },
-			target: { kind: "ticket", action: "review" },
-			input: handoffCreateInput,
-			output: handoffCreateOutput,
-		},
-	],
-	relationships: [
-		{
-			id: "spec-tickets",
-			from: "spec",
-			to: "ticket",
-			projection: { type: "parent-child", direction: "outbound" },
-		},
-		{
-			id: "ticket-dependencies",
-			from: "ticket",
-			to: "ticket",
-			projection: { type: "dependency", direction: "outbound" },
-		},
-	],
-});
+type PlanBundleArtifactReference =
+	| {
+			type: "inline";
+			ref: string;
+			title: string;
+			metadata: Metadata;
+	  }
+	| {
+			type: "file";
+			path: string;
+			title: string;
+			metadata: Metadata;
+	  };
 
 export const agentDevelopmentCommandHandlers: CommandHandlers = {
 	"spec-create": rawCommandHandler(createSpecCommand),
@@ -301,186 +58,25 @@ export const agentDevelopmentCommandHandlers: CommandHandlers = {
 	"plan-apply": rawCommandHandler(applyPlanCommand),
 };
 
-export const agentDevelopmentLifecycleHandlers: LifecycleTransitionHandlers = {
-	[lifecycleTransitionHandlerKey(
-		"ticket",
-		{ state: "running", action: "implement" },
-		"succeed",
-	)]: bundledTerminalHandler,
-	[lifecycleTransitionHandlerKey(
-		"ticket",
-		{ state: "running", action: "review" },
-		"succeed",
-	)]: bundledTerminalHandler,
-	[lifecycleTransitionHandlerKey(
-		"ticket",
-		{ state: "running", action: "review" },
-		"fail",
-	)]: bundledTerminalHandler,
-	[lifecycleTransitionHandlerKey(
-		"spec",
-		{ state: "running", action: "integration-test" },
-		"succeed",
-	)]: bundledTerminalHandler,
-	[lifecycleTransitionHandlerKey(
-		"spec",
-		{ state: "running", action: "integration-test" },
-		"fail",
-	)]: bundledTerminalHandler,
-};
+function rawCommandHandler(handler: CommandHandler): CommandHandlers[string] {
+	handler.rawInput = true;
 
-export const manifest = agentDevelopmentManifest;
-export const commandHandlers = agentDevelopmentCommandHandlers;
-export const lifecycleHandlers = agentDevelopmentLifecycleHandlers;
-
-function bundledTerminalHandler({
-	issue,
-	event,
-	input,
-}: Parameters<LifecycleTransitionHandlers[string]>[0]) {
-	const validationIssues: Array<RuntimeValidationIssue> = [];
-	const semanticIssue = validateBundledTerminalInput(
-		issue,
-		event === "fail" ? "fail" : "succeed",
-		input,
-	);
-	if (semanticIssue !== undefined) {
-		validationIssues.push(semanticIssue);
-	}
-	const bundledArtifacts = parseBundledArtifactInputs(issue.workflow, input);
-	validationIssues.push(...bundledArtifacts.issues);
-	if (validationIssues.length > 0) {
-		return failure(
-			"INVALID_ACTION_INPUT",
-			"Action completion input is invalid.",
-			{
-				issues: validationIssues,
-			},
-		);
-	}
-	return { artifacts: bundledArtifacts.artifacts };
+	return handler;
 }
 
-function validateBundledTerminalInput(
-	issue: WorkflowIssue,
-	event: "succeed" | "fail",
-	input: unknown,
-): RuntimeValidationIssue | undefined {
-	if (!isRecord(input)) {
-		return undefined;
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "implement" &&
-		event === "succeed" &&
-		issue.artifacts.some((artifact) => artifact.kind === "pull-request")
-	) {
-		return {
-			path: "$.implementationPr",
-			message: "Ticket already has an implementation pull request artifact.",
-		};
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "review" &&
-		input.verdict !== (event === "succeed" ? "approved" : "changes-requested")
-	) {
-		return {
-			path: "$.verdict",
-			message: "Review verdict does not match the terminal event.",
-		};
-	}
-	if (
-		issue.workflow.kind === "spec" &&
-		issue.workflow.action === "integration-test" &&
-		input.verdict !== (event === "succeed" ? "passed" : "changes-needed")
-	) {
-		return {
-			path: "$.verdict",
-			message: "Integration verdict does not match the terminal event.",
-		};
-	}
-	return undefined;
-}
+async function createSpecCommand(
+	context: CommandHandlerContext,
+): Promise<Envelope> {
+	const { tracker, manifest, command } = context;
 
-function parseBundledArtifactInputs(
-	workflow: WorkflowIssue["workflow"],
-	input: unknown,
-): {
-	artifacts: Array<StructuredArtifactInput>;
-	issues: Array<RuntimeValidationIssue>;
-} {
-	if (!isRecord(input)) {
-		return { artifacts: [], issues: [] };
-	}
-	const artifacts: Array<StructuredArtifactInput> = [];
-	const issues: Array<RuntimeValidationIssue> = [];
-	if (workflow.kind === "ticket" && workflow.action === "implement") {
-		const artifact = parseStructuredArtifactInput(
-			input.implementationPr,
-			"pull-request",
-			"Implementation PR",
-			"$.implementationPr",
-		);
-		if (artifact.issue !== undefined) {
-			issues.push(artifact.issue);
-		}
-		if (artifact.value !== undefined) {
-			artifacts.push(artifact.value);
-		}
-	}
-	if (workflow.kind === "spec" && workflow.action === "integration-test") {
-		const artifact = parseStructuredArtifactInput(
-			input.specPr,
-			"pull-request",
-			"Spec PR",
-			"$.specPr",
-		);
-		if (artifact.issue !== undefined) {
-			issues.push(artifact.issue);
-		}
-		if (artifact.value !== undefined) {
-			artifacts.push(artifact.value);
-		}
-	}
-	return { artifacts, issues };
-}
-
-function rawCommandHandler(
-	handler: (context: RawContext) => Promise<Envelope>,
-): CommandHandlers[string] {
-	return Object.assign(
-		(context: CommandHandlerContext) =>
-			handler({
-				...context,
-				args: context.args ?? [],
-				stdin: context.stdin,
-			}),
-		{ rawInput: true as const },
-	);
-}
-
-async function createSpecCommand({
-	args,
-	tracker,
-	manifest,
-	stdin,
-	command,
-}: RawContext): Promise<Envelope> {
-	const inputPath = readOption(args, "--input");
-	if (inputPath === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: "awf create spec --input <file|->",
-		});
-	}
-	const kind = manifest.kinds.find((candidate) => candidate.id === "spec");
+	const kind = getKind(manifest, 'spec')
 	if (kind === undefined) {
 		return failure(
 			"MANIFEST_UNSUPPORTED",
 			"Manifest does not define spec kind.",
 		);
 	}
-	const raw = await readInput(inputPath, stdin);
+	const [inputPath, raw] = await readInput(context);
 	const inputValidation = validateWorkflowCommandInput(command, {
 		spec: { type: "markdown", ref: raw },
 	});
@@ -523,20 +119,17 @@ async function createSpecCommand({
 	}
 }
 
-async function createHandoffCommand({
-	args,
-	tracker,
-	stdin,
-	command,
-}: RawContext): Promise<Envelope> {
+async function createHandoffCommand(
+	context: CommandHandlerContext,
+): Promise<Envelope> {
+	const { args = [], tracker, stdin, command } = context;
 	const sourceId = readOption(args, "--source");
-	const inputPath = readOption(args, "--input");
-	if (sourceId === undefined || inputPath === undefined) {
+	if (sourceId === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
 			usage: "awf create handoff --source <issue> --input <handoff.json>",
 		});
 	}
-	const raw = await readInput(inputPath, stdin);
+	const [, raw] = await readInput(context);
 	const parsed = parseJsonInput(
 		raw,
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
@@ -611,21 +204,19 @@ async function createHandoffCommand({
 	}
 }
 
-async function applyPlanCommand({
-	args,
-	tracker,
-	manifest,
-	stdin,
-	command,
-}: RawContext): Promise<Envelope> {
+async function applyPlanCommand(
+	context: CommandHandlerContext,
+): Promise<Envelope> {
+	const { args = [], tracker, manifest, stdin, command } = context;
 	const specId = args[2];
-	const inputPath = readOption(args, "--input");
-	if (specId === undefined || inputPath === undefined) {
+
+	if (specId === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
 			usage: "awf apply plan <spec> --input <file|->",
 		});
 	}
-	const raw = await readInput(inputPath, stdin);
+
+	const [inputPath, raw] = await readInput(context);
 	const parsedInput = parseJsonInput(
 		raw,
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
@@ -752,14 +343,6 @@ async function applyPlanCommand({
 	}
 }
 
-type SpecInput = { title: string; content: string };
-type PlanBundle = { tickets: Array<PlanTicket> };
-type PlanTicket = {
-	key: string;
-	title: string;
-	content: string;
-	dependsOn?: Array<string>;
-};
 
 function parseSpecInput(raw: string): SpecInput {
 	const parsed = parseJsonObject(raw);
@@ -779,15 +362,6 @@ function parseSpecInput(raw: string): SpecInput {
 
 function parsePlanInput(raw: string): PlanBundle {
 	return parsePlanPayload(parseJsonObject(raw) ?? {});
-}
-
-function parseJsonObject(raw: string): Record<string, unknown> | undefined {
-	try {
-		const parsed = JSON.parse(raw) as unknown;
-		return isRecord(parsed) ? parsed : undefined;
-	} catch {
-		return undefined;
-	}
 }
 
 function titleFromMarkdown(markdown: string): string {
@@ -1046,11 +620,6 @@ function findWorkflowTransition(
 	);
 }
 
-type RawContext = CommandHandlerContext & {
-	args: Array<string>;
-	stdin: string | undefined;
-};
-
 function validateOrSucceed(
 	command: ManifestCommand,
 	data: Parameters<typeof success>[0],
@@ -1058,20 +627,6 @@ function validateOrSucceed(
 	const outputValidation = validateWorkflowCommandOutput(command, data);
 	return outputValidation ?? success(data);
 }
-
-type PlanBundleArtifactReference =
-	| {
-			type: "inline";
-			ref: string;
-			title: string;
-			metadata: { ticketCount: number };
-	  }
-	| {
-			type: "file";
-			path: string;
-			title: string;
-			metadata: { ticketCount: number };
-	  };
 
 function planBundleArtifactInput(inputPath: string, ticketCount: number) {
 	const reference = planBundleArtifactReference(inputPath, ticketCount);

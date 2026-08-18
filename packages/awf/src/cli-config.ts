@@ -7,7 +7,7 @@ import {
 	agentDevelopmentCommandHandlers,
 	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
-} from "./agent-development-workflow.ts";
+} from "./workflows/agent-development/index.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import { failure, type Envelope } from "./envelope.ts";
 import {

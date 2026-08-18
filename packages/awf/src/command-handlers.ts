@@ -2,6 +2,10 @@ import type { JsonValue } from "type-fest";
 import type { Envelope } from "./envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "./manifest.ts";
 import type { Tracker } from "./tracker.ts";
+import {
+	readOption,
+	readInput as internalReadInput,
+} from "./commands/shared.ts";
 
 export type CommandHandlerContext = {
 	command: ManifestCommand;
@@ -26,3 +30,17 @@ export type CommandHandler = ((
 };
 
 export type CommandHandlers = Record<string, CommandHandler>;
+
+export async function readInput(
+	context: CommandHandlerContext,
+): Promise<[path: string, content: string]> {
+	const { args = [], stdin } = context;
+	const inputPath = readOption(args, "--input");
+	if (inputPath === undefined) {
+		throw new Error("No input file available");
+	}
+
+	const raw = await internalReadInput(inputPath, stdin);
+
+	return [inputPath, raw];
+}
