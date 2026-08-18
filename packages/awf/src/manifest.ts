@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 import { z } from "zod";
+import type { CommandHandler, CommandHandlers } from "./command-handlers.ts";
 import type { Tracker } from "./tracker.ts";
 
 export type Identifier = string;
@@ -134,6 +135,7 @@ export class WorkflowModuleLoadError extends Error {
 export type WorkflowModule = {
 	manifest: WorkflowManifest;
 	tracker?: Tracker;
+	commandHandlers?: CommandHandlers;
 };
 
 const payloadZodSchemaSchema = z.custom<PayloadZodSchema>(isPayloadZodSchema, {
@@ -285,9 +287,11 @@ export async function loadWorkflowModule(
 	modulePath: string,
 ): Promise<WorkflowModule> {
 	const loaded = await importWorkflowModule(modulePath);
+	const manifest = loadAndValidateManifest(loaded);
 	return {
-		manifest: loadAndValidateManifest(loaded),
+		manifest,
 		tracker: extractTracker(loaded),
+		commandHandlers: extractCommandHandlers(loaded, manifest),
 	};
 }
 
@@ -500,6 +504,39 @@ function extractTracker(loaded: unknown): Tracker | undefined {
 		);
 	}
 	return loaded.tracker;
+}
+
+function extractCommandHandlers(
+	loaded: unknown,
+	manifest: WorkflowManifest,
+): CommandHandlers | undefined {
+	if (!isRecord(loaded) || !("commandHandlers" in loaded)) {
+		return undefined;
+	}
+	if (loaded.commandHandlers === undefined) {
+		return undefined;
+	}
+	if (!isRecord(loaded.commandHandlers)) {
+		throw new WorkflowModuleLoadError(
+			"Workflow module export 'commandHandlers' must be an object of functions keyed by manifest command id.",
+		);
+	}
+	const commandIds = new Set(manifest.commands.map((command) => command.id));
+	const handlers: CommandHandlers = {};
+	for (const [id, handler] of Object.entries(loaded.commandHandlers)) {
+		if (!commandIds.has(id)) {
+			throw new WorkflowModuleLoadError(
+				`Workflow module command handler '${id}' does not match a manifest command id.`,
+			);
+		}
+		if (typeof handler !== "function") {
+			throw new WorkflowModuleLoadError(
+				`Workflow module command handler '${id}' must be a function.`,
+			);
+		}
+		handlers[id] = handler as CommandHandler;
+	}
+	return handlers;
 }
 
 function isTracker(value: unknown): value is Tracker {

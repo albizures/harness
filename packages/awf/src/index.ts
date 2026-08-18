@@ -1,3 +1,9 @@
+export type {
+	CommandHandler,
+	CommandHandlerContext,
+	CommandHandlerResult,
+	CommandHandlers,
+} from "./command-handlers.ts";
 export { execute, type ExecuteOptions } from "./commands.ts";
 export {
 	failure,

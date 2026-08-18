@@ -1,3 +1,4 @@
+import type { CommandHandlers } from "./command-handlers.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
 import { validateManifest, type WorkflowManifest } from "./manifest.ts";
@@ -19,9 +20,12 @@ import { readyCommand } from "./commands/ready.ts";
 import { reconcileCommand } from "./commands/reconcile.ts";
 import { readOption } from "./commands/shared.ts";
 
+export type { CommandHandlers } from "./command-handlers.ts";
+
 export type ExecuteOptions = {
 	tracker?: Tracker;
 	manifest?: WorkflowManifest;
+	commandHandlers?: CommandHandlers;
 	stdin?: string;
 };
 
@@ -75,7 +79,13 @@ export async function execute(
 		return readyCommand(parseReadyOptions(args), tracker, manifest);
 	}
 	if (args[0] === "create" || args[0] === "apply") {
-		return manifestCommand(args, tracker, manifest, options.stdin);
+		return manifestCommand(
+			args,
+			tracker,
+			manifest,
+			options.stdin,
+			options.commandHandlers,
+		);
 	}
 	if (args[0] === "start") {
 		return startCommand(args[1], tracker, manifest);

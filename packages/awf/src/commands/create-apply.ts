@@ -1,4 +1,6 @@
 import { isAbsolute, relative } from "node:path";
+import type { JsonValue } from "type-fest";
+import type { CommandHandlers } from "../command-handlers.ts";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
 import { NeedReconciliationError, type Tracker } from "../tracker.ts";
@@ -31,6 +33,7 @@ export async function manifestCommand(
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
+	commandHandlers: CommandHandlers = {},
 ): Promise<Envelope> {
 	const verb = args[0] as "create" | "apply";
 	const target = args[1];
@@ -42,6 +45,17 @@ export async function manifestCommand(
 			{
 				command: `${verb} ${target}`,
 			},
+		);
+	}
+	const handler = commandHandlers[command.id];
+	if (handler !== undefined) {
+		return handledManifestCommand(
+			args,
+			tracker,
+			manifest,
+			stdin,
+			command,
+			handler,
 		);
 	}
 	if (command.id === "spec-create") {
@@ -90,6 +104,69 @@ export async function manifestCommand(
 		command,
 	);
 }
+
+async function handledManifestCommand(
+	args: Array<string>,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+	command: ManifestCommand,
+	handler: NonNullable<CommandHandlers[string]>,
+): Promise<Envelope> {
+	const verb = args[0] as "create" | "apply";
+	const issueId = verb === "apply" ? args[2] : undefined;
+	const inputPath = readOption(args, "--input");
+	if (inputPath === undefined || (verb === "apply" && issueId === undefined)) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage:
+				verb === "create"
+					? `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`
+					: `awf apply ${command.cli?.target ?? command.target.action} <issue> --input <file|->`,
+		});
+	}
+	const raw = await readInput(inputPath, stdin);
+	const parsed = parseJsonInput(
+		raw,
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	const payload = parseWorkflowCommandInput(command, parsed.data);
+	if (!payload.ok) {
+		return payload;
+	}
+	const result = await handler({
+		command,
+		manifest,
+		tracker,
+		input: payload.data,
+		...(issueId === undefined ? {} : { issueId }),
+	});
+	if (isEnvelope(result)) {
+		if (!result.ok) {
+			return result;
+		}
+		return validateHandlerSuccess(command, result.data);
+	}
+	return validateHandlerSuccess(command, result);
+}
+
+function validateHandlerSuccess(
+	command: ManifestCommand,
+	data: JsonValue,
+): Envelope {
+	const outputValidation = validateWorkflowCommandOutput(command, data);
+	if (outputValidation !== undefined) {
+		return outputValidation;
+	}
+	return success(data);
+}
+
+function isEnvelope(value: unknown): value is Envelope {
+	return isRecord(value) && typeof value.ok === "boolean";
+}
+
 export async function createGenericWorkflowIssueCommand(
 	inputPath: string | undefined,
 	tracker: Tracker,

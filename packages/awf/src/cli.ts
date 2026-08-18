@@ -22,6 +22,7 @@ try {
 			: await execute(binding.args, {
 					manifest: binding.manifest,
 					tracker: binding.tracker,
+					commandHandlers: binding.commandHandlers,
 					stdin: readStdinForDashInput(binding.args),
 				});
 

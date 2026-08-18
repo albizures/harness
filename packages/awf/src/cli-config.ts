@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JsonValue } from "type-fest";
+import type { CommandHandlers } from "./command-handlers.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import { failure, type Envelope } from "./envelope.ts";
 import {
@@ -16,6 +17,7 @@ export type CliBinding = {
 	args: Array<string>;
 	manifest: WorkflowManifest;
 	tracker: Tracker;
+	commandHandlers: CommandHandlers;
 };
 
 export async function bindCliExecution(
@@ -36,6 +38,7 @@ export async function bindCliExecution(
 			args: parsed.args,
 			manifest: defaultManifest,
 			tracker: defaultTracker(),
+			commandHandlers: {},
 		};
 	}
 
@@ -49,6 +52,7 @@ export async function bindCliExecution(
 			args: parsed.args,
 			manifest: workflowModule.manifest,
 			tracker: workflowModule.tracker ?? defaultTracker(),
+			commandHandlers: workflowModule.commandHandlers ?? {},
 		};
 	} catch (error) {
 		return configFailure(

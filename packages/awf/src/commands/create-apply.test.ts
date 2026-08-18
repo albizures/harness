@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { expect, test } from "vitest";
 import { z } from "zod";
-import { execute } from "../commands.ts";
+import { execute, type CommandHandlers } from "../commands.ts";
 import { defaultManifest } from "../default-manifest.ts";
 import type { WorkflowManifest } from "../manifest.ts";
 import {
@@ -981,6 +981,193 @@ test("generic apply logs the manifest-parsed JSON-compatible payload", async () 
 	});
 });
 
+test("command handlers receive manifest-validated input and core validates successful output", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest = genericWorkflowManifest({
+		createInput: z
+			.strictObject({ name: z.string(), text: z.string() })
+			.transform((value) => ({ title: value.name, body: value.text })),
+		createOutput: z.strictObject({ externalId: z.string(), title: z.string() }),
+	});
+	const seen: Array<unknown> = [];
+	const commandHandlers: CommandHandlers = {
+		"memo-create": async ({ input, command, tracker: handlerTracker }) => {
+			const record = input as Record<string, unknown>;
+			seen.push({
+				input,
+				command: command.id,
+				sameTracker: handlerTracker === tracker,
+			});
+			return { externalId: "memo-1", title: record.title as string };
+		},
+	};
+
+	const envelope = await execute(["create", "memo", "--input", "-"], {
+		tracker,
+		manifest,
+		commandHandlers,
+		stdin: JSON.stringify({ name: "Meeting", text: "Notes" }),
+	});
+
+	expect(envelope).toEqual({
+		ok: true,
+		data: { externalId: "memo-1", title: "Meeting" },
+	});
+	expect(seen).toEqual([
+		{
+			input: { title: "Meeting", body: "Notes" },
+			command: "memo-create",
+			sameTracker: true,
+		},
+	]);
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
+test("command handlers are not invoked when input validation fails", async () => {
+	let calls = 0;
+	const envelope = await execute(["create", "memo", "--input", "-"], {
+		tracker: createInMemoryTracker(),
+		manifest: genericWorkflowManifest({
+			createInput: z.strictObject({ title: z.string() }),
+		}),
+		commandHandlers: {
+			"memo-create": async () => {
+				calls += 1;
+				return { ignored: true };
+			},
+		},
+		stdin: JSON.stringify({ title: 123 }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(calls).toBe(0);
+});
+
+test("handler success output validation failures are returned as errors", async () => {
+	const envelope = await execute(["create", "memo", "--input", "-"], {
+		tracker: createInMemoryTracker(),
+		manifest: genericWorkflowManifest({
+			createInput: z.strictObject({ title: z.string() }),
+			createOutput: z.strictObject({ externalId: z.string() }),
+		}),
+		commandHandlers: {
+			"memo-create": async () => ({ externalId: 42 }),
+		},
+		stdin: JSON.stringify({ title: "Meeting" }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
+	);
+});
+
+test("handler failure envelopes pass through without output validation", async () => {
+	const envelope = await execute(["apply", "memo", "item-1", "--input", "-"], {
+		tracker: createInMemoryTracker({
+			issues: [
+				{
+					id: "item-1",
+					title: "Item",
+					workflow: { kind: "item", state: "ready", action: "review" },
+				},
+			],
+		}),
+		manifest: genericWorkflowManifest({
+			applyInput: z.strictObject({ summary: z.string() }),
+			applyOutput: z.strictObject({ impossible: z.string() }),
+		}),
+		commandHandlers: {
+			"memo-apply": async ({ issueId, input }) => {
+				const record = input as Record<string, unknown>;
+				return {
+					ok: false,
+					error: {
+						code: "REMOTE_REJECTED",
+						message: "Remote rejected the update.",
+						details: {
+							issueId: issueId ?? "",
+							summary: record.summary as string,
+						},
+					},
+				};
+			},
+		},
+		stdin: JSON.stringify({ summary: "Needs more work." }),
+	});
+
+	expect(envelope).toEqual({
+		ok: false,
+		error: {
+			code: "REMOTE_REJECTED",
+			message: "Remote rejected the update.",
+			details: { issueId: "item-1", summary: "Needs more work." },
+		},
+	});
+});
+
+test("commands without handlers continue to use generic behavior", async () => {
+	const tracker = createInMemoryTracker();
+	const manifest = genericWorkflowManifest({
+		createInput: z.strictObject({ title: z.string(), body: z.string() }),
+	});
+
+	const envelope = await execute(["create", "memo", "--input", "-"], {
+		tracker,
+		manifest,
+		commandHandlers: {},
+		stdin: JSON.stringify({ title: "Fallback", body: "Generic body" }),
+	});
+
+	expect(envelope.ok).toBe(true);
+	if (!envelope.ok) {
+		throw new Error("expected success");
+	}
+	expect((envelope.data as CreateSpecData).issue.title).toBe("Fallback");
+});
+
+test("apply command handlers receive the parsed issue id", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "item-1",
+				title: "Item",
+				workflow: { kind: "item", state: "ready", action: "review" },
+			},
+		],
+	});
+	const manifest = genericWorkflowManifest({
+		applyInput: z
+			.strictObject({ note: z.string() })
+			.transform((value) => ({ comment: value.note })),
+		applyOutput: z.strictObject({ issueId: z.string(), comment: z.string() }),
+	});
+
+	const envelope = await execute(["apply", "memo", "item-1", "--input", "-"], {
+		tracker,
+		manifest,
+		commandHandlers: {
+			"memo-apply": async ({ issueId, input }) => {
+				const record = input as Record<string, unknown>;
+				return {
+					issueId: issueId ?? "",
+					comment: record.comment as string,
+				};
+			},
+		},
+		stdin: JSON.stringify({ note: "Looks good." }),
+	});
+
+	expect(envelope).toEqual({
+		ok: true,
+		data: { issueId: "item-1", comment: "Looks good." },
+	});
+	expect(await tracker.readLogs("item-1")).toEqual([]);
+});
+
 test("apply plan reports need-reconciliation instead of rolling back partial adapter drift", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-reconcile-"));
 	const plan = join(dir, "plan.json");
@@ -1061,6 +1248,57 @@ function manifestWithGenericCommands(
 				cli: { verb: "apply", target: "annotate" },
 				target: { kind: "ticket", action: "implement" },
 				input: options.applyInput,
+			},
+		],
+	};
+}
+
+function genericWorkflowManifest(
+	options: {
+		createInput?: WorkflowManifest["commands"][number]["input"];
+		createOutput?: WorkflowManifest["commands"][number]["output"];
+		applyInput?: WorkflowManifest["commands"][number]["input"];
+		applyOutput?: WorkflowManifest["commands"][number]["output"];
+	} = {},
+): WorkflowManifest {
+	return {
+		version: "v1",
+		workflow: { id: "handler-seam" },
+		vocabulary: {
+			states: ["ready", "done"],
+			actions: ["draft", "review"],
+			events: ["finished"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "item",
+				label: "Item",
+				initial: { state: "ready", action: "draft" },
+				transitions: [
+					{
+						from: { state: "ready", action: "review" },
+						event: "finished",
+						to: { state: "done" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "memo-create",
+				cli: { verb: "create", target: "memo" },
+				target: { kind: "item", action: "draft" },
+				input: options.createInput,
+				output: options.createOutput,
+			},
+			{
+				id: "memo-apply",
+				cli: { verb: "apply", target: "memo" },
+				target: { kind: "item", action: "review" },
+				input: options.applyInput,
+				output: options.applyOutput,
 			},
 		],
 	};

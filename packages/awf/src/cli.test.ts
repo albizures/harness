@@ -32,6 +32,7 @@ const defaultManifestSourcePath = new URL(
 	"./default-manifest.ts",
 	import.meta.url,
 ).pathname;
+const manifestSourcePath = new URL("./manifest.ts", import.meta.url).pathname;
 const memoryTrackerSourcePath = new URL("./trackers/memory.ts", import.meta.url)
 	.pathname;
 const filesystemTrackerSourcePath = new URL(
@@ -42,6 +43,7 @@ const filesystemTrackerSourcePath = new URL(
 const unreadableMode = 0o000;
 const ownerReadWriteMode = 0o600;
 const durableImplementationPrNumber = 93;
+const bundledGoldenSmokeTimeoutMs = 15_000;
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",
@@ -169,6 +171,63 @@ test("CLI defaults to the bundled manifest and ./.awf/tracker.json", async () =>
 			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
 		);
 		expect(trackerState.issues[0].title).toBe("Durable default");
+	});
+});
+
+test("CLI config-exported command handlers are invoked by manifest command id", async () => {
+	await withTempDir(async (dir) => {
+		const configPath = join(dir, "custom.workflow.ts");
+		await writeFile(
+			configPath,
+			`import { z } from "zod";
+import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
+
+export const manifest = defineManifest({
+	version: "v1",
+	workflow: { id: "cli-handler" },
+	vocabulary: { states: ["ready"], actions: ["draft"], events: ["saved"] },
+	concurrency: { perIssue: 1 },
+	kinds: [{
+		id: "item",
+		label: "Item",
+		initial: { state: "ready", action: "draft" },
+		transitions: [],
+	}],
+	commands: [{
+		id: "memo-create",
+		cli: { verb: "create", target: "memo" },
+		target: { kind: "item", action: "draft" },
+		input: z.strictObject({ title: z.string() }),
+		output: z.strictObject({ title: z.string(), handled: z.literal(true) }),
+	}],
+});
+
+export const commandHandlers = {
+	"memo-create": async ({ input }) => ({ title: input.title, handled: true }),
+};
+`,
+		);
+
+		const result = spawnSync(
+			process.execPath,
+			[
+				cliPath.pathname,
+				"--json",
+				"--config",
+				configPath,
+				"create",
+				"memo",
+				"--input",
+				"-",
+			],
+			{ cwd: dir, encoding: "utf8", input: JSON.stringify({ title: "Note" }) },
+		);
+
+		expect(result.status).toBe(0);
+		expect(JSON.parse(result.stdout)).toEqual({
+			ok: true,
+			data: { title: "Note", handled: true },
+		});
 	});
 });
 
@@ -702,148 +761,158 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 	).toEqual(["action_started", "action_succeeded"]);
 });
 
-test("CLI smoke path drives one tiny Spec with one Ticket to Spec done", () => {
-	const runCli = (
-		args: Array<string>,
-		issues: Array<unknown>,
-		input?: unknown,
-	) => {
-		const stdin =
-			input === undefined ? undefined : serializeCliSmokeInput(input);
-		const result = spawnSync(
-			process.execPath,
-			[cliPath.pathname, "--json", "--config", envMemoryWorkflowPath, ...args],
+test(
+	"CLI smoke path drives one tiny Spec with one Ticket to Spec done",
+	() => {
+		const runCli = (
+			args: Array<string>,
+			issues: Array<unknown>,
+			input?: unknown,
+		) => {
+			const stdin =
+				input === undefined ? undefined : serializeCliSmokeInput(input);
+			const result = spawnSync(
+				process.execPath,
+				[
+					cliPath.pathname,
+					"--json",
+					"--config",
+					envMemoryWorkflowPath,
+					...args,
+				],
+				{
+					encoding: "utf8",
+					input: stdin,
+					env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
+				},
+			);
+			expect(result.status).toBe(0);
+			expect(result.stderr).toBe("");
+			const envelope = JSON.parse(result.stdout);
+			expect(envelope.ok).toBe(true);
+			return envelope.data;
+		};
+
+		const implementationPrNumber = 39;
+		const specPrNumber = 40;
+
+		const created = runCli(
+			["create", "spec", "--input", "-"],
+			[],
+			"# Tiny spec\n",
+		);
+		const planned = runCli(
+			["apply", "plan", created.issue.id, "--input", "-"],
+			[created.issue],
+			{ tickets: [{ key: "one", title: "One", content: "Do one thing." }] },
+		);
+		const specAfterPlan = planned.spec;
+		const ticket = {
+			id: planned.tickets[0].id,
+			title: "One",
+			body: "Do one thing.",
+			workflow: { kind: "ticket", state: "ready", action: "implement" },
+			relationships: { parent: specAfterPlan.id },
+		};
+
+		let started = runCli(["start", ticket.id], [specAfterPlan, ticket]);
+		let completed = runCli(
+			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+			[
+				specAfterPlan,
+				{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
+			],
+			{ implementationPr: prArtifact(implementationPrNumber) },
+		);
+		let ticketIssue = completed.issue;
+		let ticketLogs = [started.log, completed.log];
+
+		started = runCli(
+			["start", ticket.id],
+			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
+		);
+		completed = runCli(
+			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+			[
+				specAfterPlan,
+				{
+					...ticketIssue,
+					workflow: started.issue.workflow,
+					logs: [...ticketLogs, started.log],
+				},
+			],
+			{ verdict: "approved" },
+		);
+		ticketIssue = completed.issue;
+		ticketLogs = [...ticketLogs, started.log, completed.log];
+
+		started = runCli(
+			["start", ticket.id],
+			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
+		);
+		completed = runCli(
+			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+			[
+				specAfterPlan,
+				{
+					...ticketIssue,
+					workflow: started.issue.workflow,
+					logs: [...ticketLogs, started.log],
+				},
+			],
+			{ merged: true },
+		);
+		ticketIssue = completed.issue;
+		expect(ticketIssue.workflow.state).toBe("done");
+		const specReadyForIntegration = {
+			...specAfterPlan,
+			workflow: { ...specAfterPlan.workflow, action: "integration-test" },
+		};
+
+		started = runCli(
+			["start", specAfterPlan.id],
+			[specReadyForIntegration, ticketIssue],
+		);
+		completed = runCli(
+			["succeed", specAfterPlan.id, "--run", started.run.id, "--input", "-"],
+			[
+				{
+					...specReadyForIntegration,
+					workflow: started.issue.workflow,
+					logs: [started.log],
+				},
+				ticketIssue,
+			],
 			{
-				encoding: "utf8",
-				input: stdin,
-				env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
+				verdict: "passed",
+				specPr: prArtifact(specPrNumber),
 			},
 		);
-		expect(result.status).toBe(0);
-		expect(result.stderr).toBe("");
-		const envelope = JSON.parse(result.stdout);
-		expect(envelope.ok).toBe(true);
-		return envelope.data;
-	};
+		let specIssue = completed.issue;
+		const specLogs = [started.log, completed.log];
 
-	const implementationPrNumber = 39;
-	const specPrNumber = 40;
-
-	const created = runCli(
-		["create", "spec", "--input", "-"],
-		[],
-		"# Tiny spec\n",
-	);
-	const planned = runCli(
-		["apply", "plan", created.issue.id, "--input", "-"],
-		[created.issue],
-		{ tickets: [{ key: "one", title: "One", content: "Do one thing." }] },
-	);
-	const specAfterPlan = planned.spec;
-	const ticket = {
-		id: planned.tickets[0].id,
-		title: "One",
-		body: "Do one thing.",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
-		relationships: { parent: specAfterPlan.id },
-	};
-
-	let started = runCli(["start", ticket.id], [specAfterPlan, ticket]);
-	let completed = runCli(
-		["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
-		[
-			specAfterPlan,
-			{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
-		],
-		{ implementationPr: prArtifact(implementationPrNumber) },
-	);
-	let ticketIssue = completed.issue;
-	let ticketLogs = [started.log, completed.log];
-
-	started = runCli(
-		["start", ticket.id],
-		[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
-	);
-	completed = runCli(
-		["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
-		[
-			specAfterPlan,
-			{
-				...ticketIssue,
-				workflow: started.issue.workflow,
-				logs: [...ticketLogs, started.log],
-			},
-		],
-		{ verdict: "approved" },
-	);
-	ticketIssue = completed.issue;
-	ticketLogs = [...ticketLogs, started.log, completed.log];
-
-	started = runCli(
-		["start", ticket.id],
-		[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
-	);
-	completed = runCli(
-		["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
-		[
-			specAfterPlan,
-			{
-				...ticketIssue,
-				workflow: started.issue.workflow,
-				logs: [...ticketLogs, started.log],
-			},
-		],
-		{ merged: true },
-	);
-	ticketIssue = completed.issue;
-	expect(ticketIssue.workflow.state).toBe("done");
-	const specReadyForIntegration = {
-		...specAfterPlan,
-		workflow: { ...specAfterPlan.workflow, action: "integration-test" },
-	};
-
-	started = runCli(
-		["start", specAfterPlan.id],
-		[specReadyForIntegration, ticketIssue],
-	);
-	completed = runCli(
-		["succeed", specAfterPlan.id, "--run", started.run.id, "--input", "-"],
-		[
-			{
-				...specReadyForIntegration,
-				workflow: started.issue.workflow,
-				logs: [started.log],
-			},
-			ticketIssue,
-		],
-		{
-			verdict: "passed",
-			specPr: prArtifact(specPrNumber),
-		},
-	);
-	let specIssue = completed.issue;
-	const specLogs = [started.log, completed.log];
-
-	started = runCli(
-		["start", specIssue.id],
-		[{ ...specIssue, logs: specLogs }, ticketIssue],
-	);
-	completed = runCli(
-		["succeed", specIssue.id, "--run", started.run.id, "--input", "-"],
-		[
-			{
-				...specIssue,
-				workflow: started.issue.workflow,
-				logs: [...specLogs, started.log],
-			},
-			ticketIssue,
-		],
-		{ merged: true },
-	);
-	specIssue = completed.issue;
-	expect(specIssue.workflow.state).toBe("done");
-	expect(specIssue.workflow.action).toBe("none");
-}, 15_000);
+		started = runCli(
+			["start", specIssue.id],
+			[{ ...specIssue, logs: specLogs }, ticketIssue],
+		);
+		completed = runCli(
+			["succeed", specIssue.id, "--run", started.run.id, "--input", "-"],
+			[
+				{
+					...specIssue,
+					workflow: started.issue.workflow,
+					logs: [...specLogs, started.log],
+				},
+				ticketIssue,
+			],
+			{ merged: true },
+		);
+		specIssue = completed.issue;
+		expect(specIssue.workflow.state).toBe("done");
+		expect(specIssue.workflow.action).toBe("none");
+	},
+	bundledGoldenSmokeTimeoutMs,
+);
 
 test("CLI writes plain text errors to stdout and exits non-zero by default", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "unknown"], {
