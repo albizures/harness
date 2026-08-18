@@ -1,16 +1,16 @@
-import { WorkflowArtifact } from "./artifact.ts";
-import { WorkflowChange } from "./change.ts";
-import { WorkflowLog } from "./log.ts";
-import { WorkflowProjection } from "./projection.ts";
+import type { WorkflowArtifact } from "./artifact.ts";
+import type { WorkflowChange } from "./change.ts";
+import type { WorkflowLog } from "./log.ts";
+import type { WorkflowProjection } from "./projection.ts";
 
 export type WorkflowIssue = {
-  id: string;
-  title: string;
-  body?: string;
-  workflow: WorkflowProjection;
-  relationships: IssueRelationships;
-  artifacts: Array<WorkflowArtifact>;
-  changes: Array<WorkflowChange>;
+	id: string;
+	title: string;
+	body?: string;
+	workflow: WorkflowProjection;
+	relationships: IssueRelationships;
+	artifacts: Array<WorkflowArtifact>;
+	changes: Array<WorkflowChange>;
 };
 
 export type CreateIssueInput = {
@@ -21,7 +21,6 @@ export type CreateIssueInput = {
 	relationships?: Partial<IssueRelationships>;
 	logs?: Array<Omit<WorkflowLog, "issueId">>;
 };
-
 
 export type SeedIssueInput =
 	| CreateIssueInput
@@ -47,7 +46,6 @@ export type IssueRelationships = {
 	dependencies: Array<string>;
 	dependents: Array<string>;
 };
-
 
 export class IssueNotFoundError extends Error {
 	constructor(id: string) {

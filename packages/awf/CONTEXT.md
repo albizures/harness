@@ -13,8 +13,20 @@ A project- or package-provided declarative definition of entity kinds, labels, s
 _Avoid_: hard-coded workflow, loose configuration, workflow code
 
 **Workflow module**:
-A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
+A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker` or `commandHandlers`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
 _Avoid_: executable manifest, manifest hooks
+
+**Command handler**:
+A Workflow module runtime binding keyed by a declarative Workflow command id that implements command-specific create/apply behavior when AWF's generic behavior is not enough. A Command handler receives AWF-parsed and manifest-validated input plus a constrained facade of AWF primitives; it is not part of the Workflow definition and does not parse raw CLI arguments.
+_Avoid_: manifest command hook, executable command declaration, custom CLI parser
+
+**Lifecycle transition handler**:
+A Workflow module runtime binding for semantic work around a lifecycle transition, such as validating transition input beyond schema shape, extracting artifact references, or requesting generic follow-up workflow operations. The AWF core owns lifecycle command execution and transition mutation; the handler supplies workflow-specific semantics without direct tracker mutation.
+_Avoid_: custom lifecycle command, bundled terminal special case, raw tracker hook
+
+**Readiness policy**:
+A declarative Workflow definition rule that decides which Workflow issues are executable now, including workflow-field filters, named relationship filters, dependency gates, active-run gates, concurrency gates, and relationship-driven gates such as waiting for children to finish. It is evaluated by the Workflow runtime and should remain explainable without executing workflow-module code.
+_Avoid_: ready callback, schedulability plugin, hidden queue logic
 
 **AWF config file**:
 The project-local TypeScript file, conventionally `awf.config.ts`, that the AWF CLI loads as a Workflow module for the current working directory.

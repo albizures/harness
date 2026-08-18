@@ -6,11 +6,26 @@ import {
 	type TrackerApplyPlanIntent,
 	type TrackerIssueInspection,
 } from "../tracker.ts";
-import { CreateIssueInput, IssueNotFoundError, IssueRelationships, SeedIssueInput, UpdateIssueInput, WorkflowIssue } from "../workflow/issue.ts";
-import { CorruptWorkflowProjectionError, ProjectionConflictError, WorkflowProjection } from "../workflow/projection.ts";
-import { WorkflowLog } from "../workflow/log.ts";
-import { normalizeWorkflowArtifactInput, WorkflowArtifact, WorkflowArtifactInput } from "../workflow/artifact.ts";
-import { WorkflowChange } from "../workflow/change.ts";
+import {
+	IssueNotFoundError,
+	type CreateIssueInput,
+	type IssueRelationships,
+	type SeedIssueInput,
+	type UpdateIssueInput,
+	type WorkflowIssue,
+} from "../workflow/issue.ts";
+import {
+	CorruptWorkflowProjectionError,
+	ProjectionConflictError,
+	type WorkflowProjection,
+} from "../workflow/projection.ts";
+import type { WorkflowLog } from "../workflow/log.ts";
+import {
+	normalizeWorkflowArtifactInput,
+	type WorkflowArtifact,
+	type WorkflowArtifactInput,
+} from "../workflow/artifact.ts";
+import type { WorkflowChange } from "../workflow/change.ts";
 
 export class WorkflowTrackerState {
 	private readonly issues = new Map<string, StoredIssue>();

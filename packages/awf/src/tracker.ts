@@ -1,18 +1,24 @@
-import {
+import type {
 	WorkflowArtifact,
 	WorkflowArtifactInput,
 } from "./workflow/artifact.ts";
-import { WorkflowChange } from "./workflow/change.ts";
-import { CreateIssueInput, UpdateIssueInput, WorkflowIssue } from "./workflow/issue.ts";
-import { WorkflowLog } from "./workflow/log.ts";
-import { WorkflowProjection } from "./workflow/projection.ts";
+import type { WorkflowChange } from "./workflow/change.ts";
+import type {
+	CreateIssueInput,
+	UpdateIssueInput,
+	WorkflowIssue,
+} from "./workflow/issue.ts";
+import type { WorkflowLog } from "./workflow/log.ts";
+import type { WorkflowProjection } from "./workflow/projection.ts";
 
 export type TrackerProjectionExpectation = NonNullable<
 	UpdateIssueInput["expect"]
 >;
 
-export type TrackerLog = Omit<WorkflowLog, "sequence" | "issueId">
-export type TrackerWorkflow = Partial<Omit<WorkflowProjection, "version" | "hash">>
+export type TrackerLog = Omit<WorkflowLog, "sequence" | "issueId">;
+export type TrackerWorkflow = Partial<
+	Omit<WorkflowProjection, "version" | "hash">
+>;
 
 export type TrackerCreateWorkflowIssueIntent = CreateIssueInput & {
 	initialLog?: TrackerLog;
@@ -162,10 +168,7 @@ export type TrackerAdapterPrimitiveReads = {
 export type TrackerAdapterPrimitiveOperations = {
 	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	updateIssue: (id: string, input: UpdateIssueInput) => Promise<WorkflowIssue>;
-	appendLog: (
-		id: string,
-		input: TrackerLog,
-	) => Promise<WorkflowLog>;
+	appendLog: (id: string, input: TrackerLog) => Promise<WorkflowLog>;
 	addChild: (parentId: string, childId: string) => Promise<void>;
 	removeChild: (parentId: string, childId: string) => Promise<void>;
 	addDependency: (issueId: string, blockedById: string) => Promise<void>;
@@ -211,4 +214,3 @@ export class NeedReconciliationError extends Error {
 		this.name = "NeedReconciliationError";
 	}
 }
-

@@ -1,4 +1,4 @@
-import { JsonValue } from "type-fest";
+import type { JsonValue } from "type-fest";
 import { z } from "zod";
 import { parseJsonRecord } from "../json.ts";
 export type PayloadZodSchema = z.ZodType<unknown>;
@@ -19,7 +19,6 @@ export type WorkflowArtifact = {
 	uri: string;
 	name?: string;
 } & Partial<StructuredWorkflowArtifactReference>;
-
 
 export type WorkflowArtifactInput = Omit<WorkflowArtifact, "id"> & {
 	id?: string;
@@ -201,10 +200,6 @@ function validateStructuredField(
 		context.addIssue({ code: "custom", path: [field], message });
 	}
 }
-
-
-
-
 
 export function normalizeWorkflowArtifactInput(
 	input: WorkflowArtifactInput,

@@ -1,4 +1,4 @@
-import { ArtifactKind } from "./artifact.ts";
+import type { ArtifactKind } from "./artifact.ts";
 
 export type WorkflowChange = {
 	id: string;

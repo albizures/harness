@@ -20,10 +20,10 @@ import {
 	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
 } from "./tracker.ts";
-import { WorkflowArtifact } from "./workflow/artifact.ts";
-import { WorkflowChange } from "./workflow/change.ts";
-import { IssueNotFoundError, WorkflowIssue } from "./workflow/issue.ts";
-import { WorkflowLog } from "./workflow/log.ts";
+import type { WorkflowArtifact } from "./workflow/artifact.ts";
+import type { WorkflowChange } from "./workflow/change.ts";
+import { IssueNotFoundError, type WorkflowIssue } from "./workflow/issue.ts";
+import type { WorkflowLog } from "./workflow/log.ts";
 import { ProjectionConflictError } from "./workflow/projection.ts";
 
 export type TrackerIntentModulePrimitives = TrackerAdapterPrimitiveOperations &
