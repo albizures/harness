@@ -1,6 +1,6 @@
 import { failure, success, type Envelope } from "../envelope.ts";
-import { type Tracker } from "../tracker.ts";
-import { IssueNotFoundError } from '../workflow/issue.ts'
+import type { Tracker } from "../tracker.ts";
+import { IssueNotFoundError } from "../workflow/issue.ts";
 
 export async function logsCommand(
 	id: string | undefined,

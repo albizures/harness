@@ -8,7 +8,7 @@ import {
 import { dirname, resolve } from "node:path";
 import { isJsonRecord, isJsonValue } from "../json.ts";
 import { createTrackerAdapter } from "../tracker-intents.ts";
-import { type TrackerAdapter } from "../tracker.ts";
+import type { TrackerAdapter } from "../tracker.ts";
 import { WorkflowStateTracker } from "./memory.ts";
 import {
 	WorkflowTrackerState,

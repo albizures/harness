@@ -1,10 +1,7 @@
 import type { WorkflowManifest } from "../../manifest.ts";
 import { createTrackerAdapter } from "../../tracker-intents.ts";
-import type {
-	Tracker,
-	TrackerAdapter,
-} from "../../tracker.ts";
-import { IssueRelationships } from "../../workflow/issue.ts";
+import type { Tracker, TrackerAdapter } from "../../tracker.ts";
+import type { IssueRelationships } from "../../workflow/issue.ts";
 import { GhCliGitHubTrackerApi } from "./gh-cli.ts";
 import { validateGitHubTrackerCapabilities } from "./helpers.ts";
 import { GitHubTracker } from "./tracker.ts";

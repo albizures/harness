@@ -354,7 +354,7 @@ test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub r
 	skip: process.env.AWF_GITHUB_SMOKE !== "1",
 }, async () => {
 	const repo = process.env.AWF_GITHUB_SMOKE_REPO;
-	assert(repo)
+	assert(repo);
 	// Documented fixture contract: point AWF_GITHUB_SMOKE_REPO at a disposable
 	// repository with GitHub sub-issues/dependencies enabled and gh authenticated.
 	// This path exercises the tracker through command semantics and verifies
@@ -411,7 +411,7 @@ function createMockGitHubApi(
 	};
 	const requireIssue = (number: number): MockIssue => {
 		const issue = issues.get(number);
-		assert(issue)
+		assert(issue);
 		return issue;
 	};
 	return {

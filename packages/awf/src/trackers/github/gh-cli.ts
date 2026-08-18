@@ -7,7 +7,10 @@ import type {
 	GitHubTrackerIssue,
 } from "./index.ts";
 import { isRecord } from "./helpers.ts";
-import { IssueNotFoundError, IssueRelationships } from "../../workflow/issue.ts";
+import {
+	IssueNotFoundError,
+	type IssueRelationships,
+} from "../../workflow/issue.ts";
 
 const execFileAsync = promisify(execFile);
 const BYTES_PER_KIB = 1024;
