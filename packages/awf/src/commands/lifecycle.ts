@@ -10,7 +10,6 @@ import type { Tracker, TrackerLog } from "../tracker.ts";
 import type { WorkflowArtifactInput } from "../workflow/artifact.ts";
 import type { WorkflowChange } from "../workflow/change.ts";
 import {
-	parseBundledArtifactInputs,
 	cleanCurrentTarget,
 	cleanTransitionTarget,
 	defaultRetryTarget,
@@ -23,13 +22,12 @@ import {
 	parseJsonInput,
 	parsePayloadValue,
 	policyViolation,
-	progressParentSpecAfterTicketDone,
+	progressRelationshipsAfterLifecycleTransition,
 	readInput,
 	resumePolicyAllows,
 	retryPolicyAllows,
 	terminalLogInputMatches,
 	terminalLogType,
-	validateBundledTerminalInput,
 	workflowTarget,
 } from "./shared.ts";
 
@@ -243,26 +241,6 @@ export async function terminalCommand(
 			);
 		}
 		const terminalInput = parseJsonValue(payload.value);
-		const semanticIssue = validateBundledTerminalInput(
-			issue,
-			event,
-			terminalInput,
-		);
-		if (semanticIssue !== undefined) {
-			validationIssues.push(semanticIssue);
-		}
-		const bundledArtifacts = parseBundledArtifactInputs(
-			issue.workflow,
-			terminalInput,
-		);
-		validationIssues.push(...bundledArtifacts.issues);
-		if (validationIssues.length > 0) {
-			return failure(
-				"INVALID_ACTION_INPUT",
-				"Action completion input is invalid.",
-				{ issues: validationIssues },
-			);
-		}
 		const target =
 			retryTarget ??
 			(transition === undefined ? undefined : workflowTarget(transition.to));
@@ -277,7 +255,6 @@ export async function terminalCommand(
 				},
 				runId,
 				workflow: target,
-				artifacts: bundledArtifacts.artifacts,
 				log: {
 					type: logType,
 					runId,
@@ -288,7 +265,12 @@ export async function terminalCommand(
 					},
 				},
 			});
-			await progressParentSpecAfterTicketDone(tracker, issue, result.issue);
+			await progressRelationshipsAfterLifecycleTransition(
+				tracker,
+				manifest,
+				issue,
+				result.issue,
+			);
 			return success({
 				issue: result.issue,
 				run: { id: runId, status: event },
@@ -333,14 +315,19 @@ export async function terminalCommand(
 				recordLifecycleLogEffect(
 					id,
 					log,
-					[...bundledArtifacts.artifacts, ...handler.contribution.artifacts],
+					handler.contribution.artifacts,
 					handler.contribution.changes,
 				),
 				...handler.contribution.effects,
 			],
 		});
 		const updated = result.issues[id] ?? (await tracker.getIssue(id));
-		await progressParentSpecAfterTicketDone(tracker, issue, updated);
+		await progressRelationshipsAfterLifecycleTransition(
+			tracker,
+			manifest,
+			issue,
+			updated,
+		);
 		return success({
 			issue: updated,
 			run: { id: runId, status: event },

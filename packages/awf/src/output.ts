@@ -112,17 +112,33 @@ function formatIssueResult(data: Record<string, JsonValue>): string {
 			`Run: ${data.run.id}${typeof data.run.status === "string" ? ` (${data.run.status})` : ""}`,
 		);
 	}
-	if (Array.isArray(data.tickets)) {
-		lines.push("Tickets:");
-		for (const ticket of data.tickets) {
-			if (isRecord(ticket)) {
-				lines.push(
-					`  ${String(ticket.id ?? "")} ${String(ticket.title ?? "")}`.trimEnd(),
-				);
-			}
+	for (const items of issueReferenceArrays(data)) {
+		lines.push("Created issues:");
+		for (const item of items) {
+			lines.push(
+				`  ${String(item.id ?? "")} ${String(item.title ?? "")}`.trimEnd(),
+			);
 		}
 	}
 	return lines.join("\n");
+}
+
+function issueReferenceArrays(
+	data: Record<string, JsonValue>,
+): Array<Array<Record<string, JsonValue>>> {
+	return Object.entries(data).flatMap(([key, value]) => {
+		if (key === "issue" || key === "run" || key === "log") {
+			return [];
+		}
+		if (!Array.isArray(value)) {
+			return [];
+		}
+		const items = value.filter(
+			(item): item is Record<string, JsonValue> =>
+				isRecord(item) && typeof item.id === "string",
+		);
+		return items.length === 0 ? [] : [items];
+	});
 }
 
 function formatIssue(issue: Record<string, JsonValue>): string {

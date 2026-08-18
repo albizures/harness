@@ -3,11 +3,19 @@ import type {
 	CommandHandlerContext,
 	CommandHandlers,
 } from "./command-handlers.ts";
+import {
+	lifecycleTransitionHandlerKey,
+	type LifecycleTransitionHandlers,
+} from "./lifecycle-handlers.ts";
 import { failure, success, type Envelope } from "./envelope.ts";
-import { defineManifest, type ManifestCommand } from "./manifest.ts";
+import {
+	defineManifest,
+	type ManifestCommand,
+	type ManifestTransition,
+} from "./manifest.ts";
 import { NeedReconciliationError, type Tracker } from "./tracker.ts";
 import { artifacts } from "./workflow/artifact.ts";
-import { IssueNotFoundError } from "./workflow/issue.ts";
+import { IssueNotFoundError, type WorkflowIssue } from "./workflow/issue.ts";
 import { z } from "zod";
 import {
 	initialWorkflowTarget,
@@ -15,16 +23,14 @@ import {
 	isRecord,
 	lifecycleError,
 	parseJsonInput,
-	parsePlanInput,
-	parseSpecInput,
 	parseStructuredArtifactInput,
-	planApplicationTarget,
+	type RuntimeValidationIssue,
 	readInput,
 	readOption,
-	validatePlanPayload,
 	validateWorkflowCommandInput,
 	validateWorkflowCommandOutput,
 	workflowTarget,
+	type StructuredArtifactInput,
 } from "./commands/shared.ts";
 
 const states = ["ready", "running", "done", "need-human"] as const;
@@ -116,6 +122,25 @@ export const agentDevelopmentManifest = defineManifest({
 			{ kind: "ticket", state: "ready", action: "merge" },
 		],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
+		relationshipPolicies: [
+			{
+				relationship: "children",
+				where: { kind: "spec", state: "ready", action: "integration-test" },
+				children: { all: { kind: "ticket", state: "done" }, min: 1 },
+				gate: "children",
+			},
+		],
+	},
+	lifecycle: {
+		relationshipPolicies: [
+			{
+				relationship: "parent",
+				child: { kind: "ticket", state: "done", action: "none" },
+				parent: { kind: "spec", state: "ready", action: "none" },
+				siblings: { all: { kind: "ticket", state: "done" }, min: 1 },
+				to: { state: "ready", action: "integration-test" },
+			},
+		],
 	},
 	kinds: [
 		{
@@ -248,7 +273,7 @@ export const agentDevelopmentManifest = defineManifest({
 		},
 		{
 			id: "handoff-create",
-			cli: { verb: "create", target: "handoff" },
+			cli: { verb: "create", target: "handoff", source: true },
 			target: { kind: "ticket", action: "review" },
 			input: handoffCreateInput,
 			output: handoffCreateOutput,
@@ -276,8 +301,150 @@ export const agentDevelopmentCommandHandlers: CommandHandlers = {
 	"plan-apply": rawCommandHandler(applyPlanCommand),
 };
 
+export const agentDevelopmentLifecycleHandlers: LifecycleTransitionHandlers = {
+	[lifecycleTransitionHandlerKey(
+		"ticket",
+		{ state: "running", action: "implement" },
+		"succeed",
+	)]: bundledTerminalHandler,
+	[lifecycleTransitionHandlerKey(
+		"ticket",
+		{ state: "running", action: "review" },
+		"succeed",
+	)]: bundledTerminalHandler,
+	[lifecycleTransitionHandlerKey(
+		"ticket",
+		{ state: "running", action: "review" },
+		"fail",
+	)]: bundledTerminalHandler,
+	[lifecycleTransitionHandlerKey(
+		"spec",
+		{ state: "running", action: "integration-test" },
+		"succeed",
+	)]: bundledTerminalHandler,
+	[lifecycleTransitionHandlerKey(
+		"spec",
+		{ state: "running", action: "integration-test" },
+		"fail",
+	)]: bundledTerminalHandler,
+};
+
 export const manifest = agentDevelopmentManifest;
 export const commandHandlers = agentDevelopmentCommandHandlers;
+export const lifecycleHandlers = agentDevelopmentLifecycleHandlers;
+
+function bundledTerminalHandler({
+	issue,
+	event,
+	input,
+}: Parameters<LifecycleTransitionHandlers[string]>[0]) {
+	const validationIssues: Array<RuntimeValidationIssue> = [];
+	const semanticIssue = validateBundledTerminalInput(
+		issue,
+		event === "fail" ? "fail" : "succeed",
+		input,
+	);
+	if (semanticIssue !== undefined) {
+		validationIssues.push(semanticIssue);
+	}
+	const bundledArtifacts = parseBundledArtifactInputs(issue.workflow, input);
+	validationIssues.push(...bundledArtifacts.issues);
+	if (validationIssues.length > 0) {
+		return failure(
+			"INVALID_ACTION_INPUT",
+			"Action completion input is invalid.",
+			{
+				issues: validationIssues,
+			},
+		);
+	}
+	return { artifacts: bundledArtifacts.artifacts };
+}
+
+function validateBundledTerminalInput(
+	issue: WorkflowIssue,
+	event: "succeed" | "fail",
+	input: unknown,
+): RuntimeValidationIssue | undefined {
+	if (!isRecord(input)) {
+		return undefined;
+	}
+	if (
+		issue.workflow.kind === "ticket" &&
+		issue.workflow.action === "implement" &&
+		event === "succeed" &&
+		issue.artifacts.some((artifact) => artifact.kind === "pull-request")
+	) {
+		return {
+			path: "$.implementationPr",
+			message: "Ticket already has an implementation pull request artifact.",
+		};
+	}
+	if (
+		issue.workflow.kind === "ticket" &&
+		issue.workflow.action === "review" &&
+		input.verdict !== (event === "succeed" ? "approved" : "changes-requested")
+	) {
+		return {
+			path: "$.verdict",
+			message: "Review verdict does not match the terminal event.",
+		};
+	}
+	if (
+		issue.workflow.kind === "spec" &&
+		issue.workflow.action === "integration-test" &&
+		input.verdict !== (event === "succeed" ? "passed" : "changes-needed")
+	) {
+		return {
+			path: "$.verdict",
+			message: "Integration verdict does not match the terminal event.",
+		};
+	}
+	return undefined;
+}
+
+function parseBundledArtifactInputs(
+	workflow: WorkflowIssue["workflow"],
+	input: unknown,
+): {
+	artifacts: Array<StructuredArtifactInput>;
+	issues: Array<RuntimeValidationIssue>;
+} {
+	if (!isRecord(input)) {
+		return { artifacts: [], issues: [] };
+	}
+	const artifacts: Array<StructuredArtifactInput> = [];
+	const issues: Array<RuntimeValidationIssue> = [];
+	if (workflow.kind === "ticket" && workflow.action === "implement") {
+		const artifact = parseStructuredArtifactInput(
+			input.implementationPr,
+			"pull-request",
+			"Implementation PR",
+			"$.implementationPr",
+		);
+		if (artifact.issue !== undefined) {
+			issues.push(artifact.issue);
+		}
+		if (artifact.value !== undefined) {
+			artifacts.push(artifact.value);
+		}
+	}
+	if (workflow.kind === "spec" && workflow.action === "integration-test") {
+		const artifact = parseStructuredArtifactInput(
+			input.specPr,
+			"pull-request",
+			"Spec PR",
+			"$.specPr",
+		);
+		if (artifact.issue !== undefined) {
+			issues.push(artifact.issue);
+		}
+		if (artifact.value !== undefined) {
+			artifacts.push(artifact.value);
+		}
+	}
+	return { artifacts, issues };
+}
 
 function rawCommandHandler(
 	handler: (context: RawContext) => Promise<Envelope>,
@@ -499,7 +666,7 @@ async function applyPlanCommand({
 			"Manifest does not define ticket kind.",
 		);
 	}
-	const target = planApplicationTarget(manifest, spec.workflow);
+	const target = planApplicationTarget(spec.workflow);
 	if (target === undefined) {
 		return invalidTransition(specId, "apply-plan");
 	}
@@ -583,6 +750,300 @@ async function applyPlanCommand({
 	} catch (error) {
 		return lifecycleError(specId, error);
 	}
+}
+
+type SpecInput = { title: string; content: string };
+type PlanBundle = { tickets: Array<PlanTicket> };
+type PlanTicket = {
+	key: string;
+	title: string;
+	content: string;
+	dependsOn?: Array<string>;
+};
+
+function parseSpecInput(raw: string): SpecInput {
+	const parsed = parseJsonObject(raw);
+	if (parsed !== undefined) {
+		const contentValue = parsed.content ?? parsed.body ?? parsed.markdown;
+		const content = typeof contentValue === "string" ? contentValue : raw;
+		return {
+			title:
+				typeof parsed.title === "string" && parsed.title.trim() !== ""
+					? parsed.title
+					: titleFromMarkdown(content),
+			content,
+		};
+	}
+	return { title: titleFromMarkdown(raw), content: raw };
+}
+
+function parsePlanInput(raw: string): PlanBundle {
+	return parsePlanPayload(parseJsonObject(raw) ?? {});
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | undefined {
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		return isRecord(parsed) ? parsed : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function titleFromMarkdown(markdown: string): string {
+	const heading = markdown
+		.split(/\r?\n/u)
+		.map((line) => line.match(/^#\s+(.+)$/u)?.[1]?.trim())
+		.find((title) => title !== undefined && title !== "");
+	return heading ?? "Spec";
+}
+
+function validatePlanPayload(
+	payload: unknown,
+): Array<{ path: string; message: string }> {
+	const shapeIssues: Array<{ path: string; message: string }> = [];
+	if (!isRecord(payload)) {
+		return [{ path: "$", message: "Plan input must be an object." }];
+	}
+	if (!Array.isArray(payload.tickets)) {
+		return [{ path: "$.tickets", message: "Plan tickets must be an array." }];
+	}
+	if (payload.tickets.length === 0) {
+		shapeIssues.push({
+			path: "$.tickets",
+			message: "Plan must include at least one ticket.",
+		});
+	}
+	for (const [index, ticket] of payload.tickets.entries()) {
+		const path = `$.tickets[${index}]`;
+		if (!isRecord(ticket)) {
+			shapeIssues.push({ path, message: "Ticket must be an object." });
+			continue;
+		}
+		if (typeof ticket.key !== "string") {
+			shapeIssues.push({
+				path: `${path}.key`,
+				message: "Ticket key must be a string.",
+			});
+		}
+		if (typeof ticket.title !== "string") {
+			shapeIssues.push({
+				path: `${path}.title`,
+				message: "Ticket title must be a string.",
+			});
+		}
+		if (ticket.content !== undefined && typeof ticket.content !== "string") {
+			shapeIssues.push({
+				path: `${path}.content`,
+				message: "Ticket content must be a string.",
+			});
+		}
+		if (ticket.body !== undefined && typeof ticket.body !== "string") {
+			shapeIssues.push({
+				path: `${path}.body`,
+				message: "Ticket body must be a string.",
+			});
+		}
+		if (ticket.dependsOn !== undefined) {
+			if (!Array.isArray(ticket.dependsOn)) {
+				shapeIssues.push({
+					path: `${path}.dependsOn`,
+					message: "Ticket dependsOn must be an array of ticket keys.",
+				});
+			} else {
+				for (const [
+					dependencyIndex,
+					dependency,
+				] of ticket.dependsOn.entries()) {
+					if (typeof dependency !== "string") {
+						shapeIssues.push({
+							path: `${path}.dependsOn[${dependencyIndex}]`,
+							message: "Dependency reference must be a string.",
+						});
+					}
+				}
+			}
+		}
+	}
+	if (shapeIssues.length > 0) {
+		return shapeIssues;
+	}
+	return validatePlan(parsePlanPayload(payload));
+}
+
+function validatePlan(
+	plan: PlanBundle,
+): Array<{ path: string; message: string }> {
+	const issues: Array<{ path: string; message: string }> = [];
+	if (plan.tickets.length === 0) {
+		issues.push({
+			path: "$.tickets",
+			message: "Plan must include at least one ticket.",
+		});
+	}
+	const keys = new Set<string>();
+	for (const [index, ticket] of plan.tickets.entries()) {
+		const path = `$.tickets[${index}]`;
+		if (ticket.key.trim() === "") {
+			issues.push({
+				path: `${path}.key`,
+				message: "Ticket key must be non-empty.",
+			});
+		} else if (keys.has(ticket.key)) {
+			issues.push({
+				path: `${path}.key`,
+				message: "Ticket key must be unique.",
+			});
+		} else {
+			keys.add(ticket.key);
+		}
+		if (ticket.title.trim() === "") {
+			issues.push({
+				path: `${path}.title`,
+				message: "Ticket title must be non-empty.",
+			});
+		}
+		if (ticket.content.trim() === "") {
+			issues.push({
+				path: `${path}.content`,
+				message: "Ticket content must be non-empty.",
+			});
+		}
+	}
+	for (const [index, ticket] of plan.tickets.entries()) {
+		for (const [dependencyIndex, dependency] of (
+			ticket.dependsOn ?? []
+		).entries()) {
+			const path = `$.tickets[${index}].dependsOn[${dependencyIndex}]`;
+			if (typeof dependency !== "string") {
+				issues.push({
+					path,
+					message: "Dependency reference must be a string.",
+				});
+			} else if (dependency.trim() === "") {
+				issues.push({
+					path,
+					message: "Dependency reference must be non-empty.",
+				});
+			} else if (!keys.has(dependency)) {
+				issues.push({
+					path,
+					message: `Unknown dependency '${dependency}'.`,
+				});
+			}
+		}
+	}
+	const cycle = findDependencyCycle(plan);
+	if (cycle !== undefined) {
+		issues.push({
+			path: "$.tickets",
+			message: `Dependency graph must be acyclic (${cycle.join(" -> ")}).`,
+		});
+	}
+	return issues;
+}
+
+function parsePlanPayload(payload: Record<string, unknown>): PlanBundle {
+	const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+	return {
+		tickets: tickets.map((ticket): PlanTicket => {
+			const record = isRecord(ticket) ? ticket : {};
+			return {
+				key: typeof record.key === "string" ? record.key : "",
+				title: typeof record.title === "string" ? record.title : "",
+				content: readTicketContent(record),
+				...(isStringArray(record.dependsOn)
+					? { dependsOn: record.dependsOn }
+					: {}),
+			};
+		}),
+	};
+}
+
+function readTicketContent(record: Record<string, unknown>): string {
+	if (typeof record.content === "string") {
+		return record.content;
+	}
+	if (typeof record.body === "string") {
+		return record.body;
+	}
+	return "";
+}
+
+function isStringArray(value: unknown): value is Array<string> {
+	return (
+		Array.isArray(value) && value.every((item) => typeof item === "string")
+	);
+}
+
+function findDependencyCycle(plan: PlanBundle): Array<string> | undefined {
+	const byKey = new Map(plan.tickets.map((ticket) => [ticket.key, ticket]));
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	const stack: Array<string> = [];
+	function visit(key: string): Array<string> | undefined {
+		if (visiting.has(key)) {
+			return [...stack.slice(stack.indexOf(key)), key];
+		}
+		if (visited.has(key)) {
+			return undefined;
+		}
+		visiting.add(key);
+		stack.push(key);
+		for (const dependency of byKey.get(key)?.dependsOn ?? []) {
+			if (typeof dependency !== "string" || !byKey.has(dependency)) {
+				continue;
+			}
+			const cycle = visit(dependency);
+			if (cycle !== undefined) {
+				return cycle;
+			}
+		}
+		stack.pop();
+		visiting.delete(key);
+		visited.add(key);
+		return undefined;
+	}
+	for (const key of byKey.keys()) {
+		const cycle = visit(key);
+		if (cycle !== undefined) {
+			return cycle;
+		}
+	}
+	return undefined;
+}
+
+function planApplicationTarget(
+	workflow: WorkflowIssue["workflow"],
+): ManifestTransition["to"] | undefined {
+	const direct = findWorkflowTransition(workflow, "succeed");
+	if (direct !== undefined) {
+		return direct.to;
+	}
+	const started = findWorkflowTransition(workflow, "start");
+	if (started === undefined) {
+		return undefined;
+	}
+	return findWorkflowTransition(
+		{ ...workflow, ...workflowTarget(started.to) },
+		"succeed",
+	)?.to;
+}
+
+function findWorkflowTransition(
+	workflow: WorkflowIssue["workflow"],
+	event: string,
+): ManifestTransition | undefined {
+	const kind = agentDevelopmentManifest.kinds.find(
+		(candidate) => candidate.id === workflow.kind,
+	);
+	return kind?.transitions.find(
+		(transition) =>
+			transition.event === event &&
+			transition.from.state === workflow.state &&
+			transition.from.action === workflow.action &&
+			transition.from.reason === workflow.reason,
+	);
 }
 
 type RawContext = CommandHandlerContext & {

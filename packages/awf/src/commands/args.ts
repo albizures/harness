@@ -2,7 +2,7 @@ import { failure, type Envelope } from "../envelope.ts";
 import { readOption, unknownCommand } from "./shared.ts";
 
 const maxReconcileArgumentCount = 3;
-const createHandoffArgumentCount = 6;
+const createWithSourceArgumentCount = 6;
 export function validateKnownCommand(
 	args: Array<string>,
 ): Envelope | undefined {
@@ -89,7 +89,7 @@ function validateManifestCommandArguments(
 				!source.startsWith("-") &&
 				input !== undefined &&
 				input !== "" &&
-				args.length === createHandoffArgumentCount &&
+				args.length === createWithSourceArgumentCount &&
 				args.every((arg) => allowed.has(arg))
 			) {
 				return undefined;

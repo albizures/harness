@@ -5,6 +5,7 @@ import type { CommandHandlers } from "./command-handlers.ts";
 import type { LifecycleTransitionHandlers } from "./lifecycle-handlers.ts";
 import {
 	agentDevelopmentCommandHandlers,
+	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
 } from "./agent-development-workflow.ts";
 import { defaultManifest } from "./default-manifest.ts";
@@ -45,6 +46,7 @@ export async function bindCliExecution(
 			manifest: defaultManifest,
 			tracker: defaultTracker(),
 			commandHandlers: agentDevelopmentCommandHandlers,
+			lifecycleHandlers: agentDevelopmentLifecycleHandlers,
 		};
 	}
 
@@ -59,6 +61,11 @@ export async function bindCliExecution(
 			agentDevelopmentManifest.workflow.id
 				? agentDevelopmentCommandHandlers
 				: {};
+		const bundledLifecycleHandlers =
+			workflowModule.manifest.workflow.id ===
+			agentDevelopmentManifest.workflow.id
+				? agentDevelopmentLifecycleHandlers
+				: {};
 		return {
 			args: parsed.args,
 			manifest: workflowModule.manifest,
@@ -67,7 +74,10 @@ export async function bindCliExecution(
 				...bundledHandlers,
 				...workflowModule.commandHandlers,
 			},
-			lifecycleHandlers: workflowModule.lifecycleHandlers,
+			lifecycleHandlers: {
+				...bundledLifecycleHandlers,
+				...workflowModule.lifecycleHandlers,
+			},
 		};
 	} catch (error) {
 		return configFailure(

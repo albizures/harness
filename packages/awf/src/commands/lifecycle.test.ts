@@ -2,6 +2,7 @@ import { z } from "zod";
 import { expect, test } from "vitest";
 import { execute } from "../commands.ts";
 import { defaultManifest } from "../default-manifest.ts";
+import { defineManifest } from "../manifest.ts";
 import { createInMemoryTracker } from "../trackers/memory.ts";
 
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
@@ -41,6 +42,93 @@ test("start moves a ready issue to running, stores one active run, and appends a
 	const logs = await tracker.readLogs("123");
 	expect(logs.map((log) => log.type)).toEqual(["action_started"]);
 	expect(logs[0]?.runId).toBe(data.run.id);
+});
+
+test("succeed applies generic relationship-driven lifecycle progression", async () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "generic-parent-progression" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["wait", "do", "verify", "none"],
+			events: ["start", "succeed"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		readiness: { filters: [] },
+		lifecycle: {
+			relationshipPolicies: [
+				{
+					relationship: "parent",
+					child: { kind: "task", state: "done", action: "none" },
+					parent: { kind: "goal", state: "ready", action: "wait" },
+					siblings: { all: { kind: "task", state: "done" }, min: 2 },
+					to: { state: "ready", action: "verify" },
+				},
+			],
+		},
+		kinds: [
+			{
+				id: "goal",
+				label: "Goal",
+				initial: { state: "ready", action: "wait" },
+				transitions: [],
+			},
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "do" },
+				transitions: [
+					{
+						from: { state: "running", action: "do" },
+						event: "succeed",
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [],
+	});
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "goal",
+				title: "Goal",
+				workflow: { kind: "goal", state: "ready", action: "wait" },
+				relationships: { children: ["done", "finishing"] },
+			},
+			{
+				id: "done",
+				title: "Already done",
+				workflow: { kind: "task", state: "done", action: "none" },
+				relationships: { parent: "goal" },
+			},
+			{
+				id: "finishing",
+				title: "Finishing",
+				workflow: {
+					kind: "task",
+					state: "running",
+					action: "do",
+					activeRunId: "run-1",
+				},
+				relationships: { parent: "goal" },
+			},
+		],
+	});
+
+	const envelope = await execute(["succeed", "finishing", "--run", "run-1"], {
+		tracker,
+		manifest,
+	});
+
+	expect(envelope.ok).toBe(true);
+	const goal = await tracker.getIssue("goal");
+	expect({
+		kind: goal.workflow.kind,
+		state: goal.workflow.state,
+		action: goal.workflow.action,
+	}).toEqual({ kind: "goal", state: "ready", action: "verify" });
 });
 
 test("succeed applies the manifest terminal transition for the active run", async () => {

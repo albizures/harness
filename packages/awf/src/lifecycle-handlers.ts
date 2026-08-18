@@ -31,8 +31,9 @@ export type LifecycleTransitionHandler = (
 	context: LifecycleTransitionHandlerContext,
 ) =>
 	| LifecycleTransitionHandlerContribution
+	| ErrorEnvelope
 	| undefined
-	| Promise<LifecycleTransitionHandlerContribution | undefined>;
+	| Promise<LifecycleTransitionHandlerContribution | ErrorEnvelope | undefined>;
 
 export type LifecycleTransitionHandlers = Record<
 	string,
@@ -78,7 +79,7 @@ export async function runLifecycleTransitionHandler(
 	if (handler === undefined) {
 		return { ok: true, contribution: emptyContribution() };
 	}
-	let raw: LifecycleTransitionHandlerContribution | undefined;
+	let raw: LifecycleTransitionHandlerContribution | ErrorEnvelope | undefined;
 	try {
 		raw = await handler(context);
 	} catch (error) {
@@ -94,6 +95,9 @@ export async function runLifecycleTransitionHandler(
 				message: error instanceof Error ? error.message : String(error),
 			},
 		);
+	}
+	if (isErrorEnvelope(raw)) {
+		return raw;
 	}
 	return parseLifecycleHandlerContribution(raw);
 }
@@ -171,4 +175,14 @@ function parseLifecycleHandlerContribution(
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+	return (
+		isPlainObject(value) &&
+		value.ok === false &&
+		isPlainObject(value.error) &&
+		typeof value.error.code === "string" &&
+		typeof value.error.message === "string"
+	);
 }

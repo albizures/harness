@@ -5,6 +5,7 @@ export type {
 	CommandHandlers,
 } from "./command-handlers.ts";
 export { execute, type ExecuteOptions } from "./commands.ts";
+export { defaultManifest } from "./default-manifest.ts";
 export {
 	failure,
 	serializeEnvelope,

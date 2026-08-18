@@ -231,6 +231,85 @@ export const commandHandlers = {
 	});
 });
 
+test("CLI config-exported lifecycle handlers are invoked by transition key", async () => {
+	await withTempDir(async (dir) => {
+		const configPath = join(dir, "custom.workflow.ts");
+		await writeFile(
+			configPath,
+			`import { z } from "zod";
+import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
+import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
+
+export const manifest = defineManifest({
+	version: "v1",
+	workflow: { id: "cli-lifecycle-handler" },
+	vocabulary: { states: ["running", "done"], actions: ["publish", "none"], events: ["succeed"] },
+	concurrency: { perIssue: 1 },
+	kinds: [{
+		id: "article",
+		label: "Article",
+		initial: { state: "running", action: "publish" },
+		transitions: [{
+			from: { state: "running", action: "publish" },
+			event: "succeed",
+			input: z.strictObject({ summary: z.string() }),
+			to: { state: "done", action: "none" },
+		}],
+	}],
+	commands: [],
+});
+
+export const tracker = createInMemoryTracker({
+	issues: [{
+		id: "article-1",
+		title: "Article",
+		workflow: {
+			kind: "article",
+			state: "running",
+			action: "publish",
+			activeRunId: "run-1",
+		},
+	}],
+});
+
+export const lifecycleHandlers = {
+	"article:running/publish:succeed": ({ input }) => ({
+		log: { summary: input.summary, external: true },
+		artifacts: [{ kind: "inline", uri: "handler:summary", name: "Handler summary" }],
+	}),
+};
+`,
+		);
+
+		const result = spawnSync(
+			process.execPath,
+			[
+				cliPath.pathname,
+				"--json",
+				"--config",
+				configPath,
+				"succeed",
+				"article-1",
+				"--run",
+				"run-1",
+				"--input",
+				"-",
+			],
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({ summary: "Published externally" }),
+			},
+		);
+
+		expect(result.status).toBe(0);
+		expect(JSON.parse(result.stdout).data.log.payload).toMatchObject({
+			summary: "Published externally",
+			external: true,
+		});
+	});
+});
+
 test("CLI config that omits tracker uses the default filesystem tracker", async () => {
 	await withTempDir(async (dir) => {
 		await writeFile(

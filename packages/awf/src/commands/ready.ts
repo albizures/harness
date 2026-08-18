@@ -10,7 +10,6 @@ import {
 	readinessBlocking,
 	readinessFilters,
 	readyItem,
-	specPostTicketGateIsOpen,
 	validateNamedReadinessFilterDeclarations,
 	validateNamedReadinessFilterValues,
 } from "./shared.ts";
@@ -42,7 +41,6 @@ export async function readyCommand(
 	const readyLike = issues
 		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
 		.filter((issue) => issue.workflow.activeRunId === undefined)
-		.filter((issue) => specPostTicketGateIsOpen(issue, byId))
 		.filter((issue) =>
 			matchesNamedReadinessFilters(issue, options.filters, manifest),
 		);

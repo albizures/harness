@@ -42,7 +42,7 @@ export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
 
 export type ManifestCommand = {
 	id: Identifier;
-	cli?: { verb: "create" | "apply"; target: Identifier };
+	cli?: { verb: "create" | "apply"; target: Identifier; source?: boolean };
 	target: { kind: Identifier; action: Identifier };
 	input?: PayloadSchema;
 	output?: PayloadSchema;
@@ -61,6 +61,20 @@ export type ManifestNamedReadinessFilter = {
 	relationship: "parent";
 };
 
+export type ManifestWorkflowFilter = {
+	kind?: Identifier;
+	state?: Identifier;
+	action?: Identifier;
+	reason?: Identifier;
+};
+
+export type ManifestReadinessRelationshipPolicy = {
+	relationship: "children";
+	where: ManifestWorkflowFilter;
+	children: { all: ManifestWorkflowFilter; min?: number };
+	gate?: Identifier;
+};
+
 export type ManifestRelationship = {
 	id: Identifier;
 	from: Identifier;
@@ -72,6 +86,14 @@ export type ManifestRelationship = {
 };
 
 export type LifecyclePolicyTarget = { kind: Identifier; action: Identifier };
+
+export type ManifestLifecycleRelationshipPolicy = {
+	relationship: "parent";
+	child: ManifestWorkflowFilter;
+	parent: ManifestWorkflowFilter;
+	siblings: { all: ManifestWorkflowFilter; min?: number };
+	to: ManifestStateReference;
+};
 
 export type WorkflowManifest = {
 	version: "v1";
@@ -93,6 +115,7 @@ export type WorkflowManifest = {
 	readiness?: {
 		filters: Array<ManifestReadinessFilter>;
 		namedFilters?: Array<ManifestNamedReadinessFilter>;
+		relationshipPolicies?: Array<ManifestReadinessRelationshipPolicy>;
 	};
 	lifecycle?: {
 		retry?: { allow?: Array<LifecyclePolicyTarget> };
@@ -103,6 +126,7 @@ export type WorkflowManifest = {
 		resume?: {
 			allow?: Array<{ kind: Identifier; actions: Array<Identifier> }>;
 		};
+		relationshipPolicies?: Array<ManifestLifecycleRelationshipPolicy>;
 	};
 	kinds: Array<ManifestKind>;
 	commands: Array<ManifestCommand>;
@@ -159,6 +183,13 @@ const lifecyclePolicyTargetSchema = z.strictObject({
 	action: z.string(),
 });
 
+const workflowFilterSchema = z.strictObject({
+	kind: z.string().optional(),
+	state: z.string().optional(),
+	action: z.string().optional(),
+	reason: z.string().optional(),
+});
+
 const manifestSchema = z.strictObject({
 	version: z.literal("v1"),
 	workflow: z.strictObject({ id: z.string() }),
@@ -180,20 +211,26 @@ const manifestSchema = z.strictObject({
 	}),
 	readiness: z
 		.strictObject({
-			filters: z.array(
-				z.strictObject({
-					kind: z.string().optional(),
-					state: z.string().optional(),
-					action: z.string().optional(),
-					reason: z.string().optional(),
-				}),
-			),
+			filters: z.array(workflowFilterSchema),
 			namedFilters: z
 				.array(
 					z.strictObject({
 						name: z.string(),
 						kind: z.string(),
 						relationship: z.literal("parent"),
+					}),
+				)
+				.optional(),
+			relationshipPolicies: z
+				.array(
+					z.strictObject({
+						relationship: z.literal("children"),
+						where: workflowFilterSchema,
+						children: z.strictObject({
+							all: workflowFilterSchema,
+							min: z.number().int().nonnegative().optional(),
+						}),
+						gate: z.string().optional(),
 					}),
 				)
 				.optional(),
@@ -224,6 +261,20 @@ const manifestSchema = z.strictObject({
 						.optional(),
 				})
 				.optional(),
+			relationshipPolicies: z
+				.array(
+					z.strictObject({
+						relationship: z.literal("parent"),
+						child: workflowFilterSchema,
+						parent: workflowFilterSchema,
+						siblings: z.strictObject({
+							all: workflowFilterSchema,
+							min: z.number().int().nonnegative().optional(),
+						}),
+						to: stateReferenceSchema,
+					}),
+				)
+				.optional(),
 		})
 		.optional(),
 	kinds: z.array(
@@ -248,6 +299,7 @@ const manifestSchema = z.strictObject({
 				.strictObject({
 					verb: z.enum(["create", "apply"]),
 					target: z.string(),
+					source: z.boolean().optional(),
 				})
 				.optional(),
 			target: z.strictObject({ kind: z.string(), action: z.string() }),
@@ -400,6 +452,14 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 	}
 
 	validateReadiness(value.readiness, kindIds, states, actions, reasons, issues);
+	validateLifecyclePolicies(
+		value.lifecycle,
+		kindIds,
+		states,
+		actions,
+		reasons,
+		issues,
+	);
 
 	const commandIds = new Set<string>();
 	const commandDeclarations = new Set<string>();
@@ -921,6 +981,174 @@ function validateReadiness(
 				"Named readiness filter relationship must be parent.",
 			);
 		}
+	}
+	for (const [index, policy] of readArray(
+		value.relationshipPolicies ?? [],
+		"$.readiness.relationshipPolicies",
+		issues,
+	).entries()) {
+		const path = `$.readiness.relationshipPolicies[${index}]`;
+		if (!isRecord(policy)) {
+			issue(issues, path, "Readiness relationship policy must be an object.");
+			continue;
+		}
+		if (policy.relationship !== "children") {
+			issue(
+				issues,
+				`${path}.relationship`,
+				"Readiness relationship policy relationship must be children.",
+			);
+		}
+		validateWorkflowFilter(
+			policy.where,
+			`${path}.where`,
+			kindIds,
+			states,
+			actions,
+			reasons,
+			issues,
+		);
+		if (!isRecord(policy.children)) {
+			issue(
+				issues,
+				`${path}.children`,
+				"Readiness relationship policy children rule must be an object.",
+			);
+		} else {
+			validateWorkflowFilter(
+				policy.children.all,
+				`${path}.children.all`,
+				kindIds,
+				states,
+				actions,
+				reasons,
+				issues,
+			);
+			validateMinimum(policy.children.min, `${path}.children.min`, issues);
+		}
+		if (policy.gate !== undefined) {
+			validateId(policy.gate, `${path}.gate`, issues);
+		}
+	}
+}
+
+function validateLifecyclePolicies(
+	value: unknown,
+	kindIds: Set<string>,
+	states: Set<string>,
+	actions: Set<string>,
+	reasons: Set<string>,
+	issues: Array<ValidationIssue>,
+): void {
+	if (!isRecord(value)) {
+		return;
+	}
+	for (const [index, policy] of readArray(
+		value.relationshipPolicies ?? [],
+		"$.lifecycle.relationshipPolicies",
+		issues,
+	).entries()) {
+		const path = `$.lifecycle.relationshipPolicies[${index}]`;
+		if (!isRecord(policy)) {
+			issue(issues, path, "Lifecycle relationship policy must be an object.");
+			continue;
+		}
+		if (policy.relationship !== "parent") {
+			issue(
+				issues,
+				`${path}.relationship`,
+				"Lifecycle relationship policy relationship must be parent.",
+			);
+		}
+		validateWorkflowFilter(
+			policy.child,
+			`${path}.child`,
+			kindIds,
+			states,
+			actions,
+			reasons,
+			issues,
+		);
+		validateWorkflowFilter(
+			policy.parent,
+			`${path}.parent`,
+			kindIds,
+			states,
+			actions,
+			reasons,
+			issues,
+		);
+		if (!isRecord(policy.siblings)) {
+			issue(
+				issues,
+				`${path}.siblings`,
+				"Lifecycle relationship policy siblings rule must be an object.",
+			);
+		} else {
+			validateWorkflowFilter(
+				policy.siblings.all,
+				`${path}.siblings.all`,
+				kindIds,
+				states,
+				actions,
+				reasons,
+				issues,
+			);
+			validateMinimum(policy.siblings.min, `${path}.siblings.min`, issues);
+		}
+		validateStateRef(
+			policy.to,
+			`${path}.to`,
+			states,
+			actions,
+			reasons,
+			issues,
+			false,
+		);
+	}
+}
+
+function validateWorkflowFilter(
+	value: unknown,
+	path: string,
+	kindIds: Set<string>,
+	states: Set<string>,
+	actions: Set<string>,
+	reasons: Set<string>,
+	issues: Array<ValidationIssue>,
+): void {
+	if (!isRecord(value)) {
+		issue(issues, path, "Workflow filter must be an object.");
+		return;
+	}
+	if (value.kind !== undefined && !kindIds.has(String(value.kind))) {
+		issue(issues, `${path}.kind`, "Workflow filter kind must be known.");
+	}
+	if (value.state !== undefined && !states.has(String(value.state))) {
+		issue(issues, `${path}.state`, "Workflow filter state must be known.");
+	}
+	if (value.action !== undefined && !actions.has(String(value.action))) {
+		issue(issues, `${path}.action`, "Workflow filter action must be known.");
+	}
+	if (value.reason !== undefined && !reasons.has(String(value.reason))) {
+		issue(issues, `${path}.reason`, "Workflow filter reason must be known.");
+	}
+}
+
+function validateMinimum(
+	value: unknown,
+	path: string,
+	issues: Array<ValidationIssue>,
+): void {
+	if (
+		value !== undefined &&
+		(typeof value !== "number" || !Number.isInteger(value) || value < 0)
+	) {
+		issue(
+			issues,
+			path,
+			"Relationship policy minimum must be a non-negative integer.",
+		);
 	}
 }
 

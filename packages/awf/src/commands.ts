@@ -2,6 +2,7 @@ import type { CommandHandlers } from "./command-handlers.ts";
 import type { LifecycleTransitionHandlers } from "./lifecycle-handlers.ts";
 import {
 	agentDevelopmentCommandHandlers,
+	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
 } from "./agent-development-workflow.ts";
 import { defaultManifest } from "./default-manifest.ts";
@@ -39,6 +40,20 @@ function defaultCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
 	return manifest.workflow.id === agentDevelopmentManifest.workflow.id
 		? agentDevelopmentCommandHandlers
 		: {};
+}
+
+function lifecycleHandlersFor(
+	manifest: WorkflowManifest,
+	options: ExecuteOptions,
+): LifecycleTransitionHandlers | undefined {
+	const bundled =
+		manifest.workflow.id === agentDevelopmentManifest.workflow.id
+			? agentDevelopmentLifecycleHandlers
+			: undefined;
+	if (bundled === undefined) {
+		return options.lifecycleHandlers;
+	}
+	return { ...bundled, ...options.lifecycleHandlers };
 }
 
 export async function execute(
@@ -108,7 +123,7 @@ export async function execute(
 			tracker,
 			manifest,
 			options.stdin,
-			options.lifecycleHandlers,
+			lifecycleHandlersFor(manifest, options),
 		);
 	}
 	if (args[0] === "escalate") {

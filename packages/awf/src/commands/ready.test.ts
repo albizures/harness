@@ -199,7 +199,25 @@ test("ready reports dependency-gated Tickets as blocked context while keeping du
 	});
 	await tracker.addDependency("blocked", "blocker");
 
-	const envelope = await execute(["ready"], { tracker });
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			vocabulary: {
+				...defaultTicketOnlyReadyManifest.vocabulary,
+				actions: [
+					...defaultTicketOnlyReadyManifest.vocabulary.actions,
+					"review",
+				],
+			},
+			readiness: {
+				filters: [
+					{ kind: "ticket", state: "ready", action: "implement" },
+					{ kind: "ticket", state: "ready", action: "review" },
+				],
+			},
+		},
+	});
 
 	expect(envelope.ok).toBe(true);
 	expect((envelope.ok ? envelope.data : {}) as Record<string, unknown>).toEqual(
@@ -249,6 +267,95 @@ test("ready reports dependency-gated Tickets as blocked context while keeping du
 	});
 });
 
+test("ready applies generic manifest relationship policies without bundled Spec special cases", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "goal-ready",
+				title: "Goal ready",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				relationships: { children: ["done-task"] },
+			},
+			{
+				id: "goal-blocked",
+				title: "Goal blocked",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				relationships: { children: ["open-task"] },
+			},
+			{
+				id: "done-task",
+				title: "Done task",
+				workflow: { kind: "ticket", state: "done", action: "none" },
+				relationships: { parent: "goal-ready" },
+			},
+			{
+				id: "open-task",
+				title: "Open task",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				relationships: { parent: "goal-blocked" },
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			readiness: {
+				filters: [{ kind: "spec", state: "ready", action: "plan" }],
+				relationshipPolicies: [
+					{
+						relationship: "children",
+						where: { kind: "spec", state: "ready", action: "plan" },
+						children: { all: { kind: "ticket", state: "done" }, min: 1 },
+						gate: "children-done",
+					},
+				],
+			},
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		items: [
+			{
+				id: "goal-ready",
+				title: "Goal ready",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				suggestedCommand: {
+					argv: ["start", "goal-ready"],
+					display: "awf start goal-ready",
+				},
+			},
+		],
+		blocked: [
+			{
+				id: "goal-blocked",
+				title: "Goal blocked",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				blocking: [
+					{
+						gate: "children-done",
+						relationship: "children",
+						minimum: 1,
+						blockedBy: [
+							{
+								id: "open-task",
+								title: "Open task",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "implement",
+								},
+							},
+						],
+					},
+				],
+			},
+		],
+	});
+});
+
 test("ready excludes ready/none Specs as unschedulable waiting work", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -265,7 +372,10 @@ test("ready excludes ready/none Specs as unschedulable waiting work", async () =
 		],
 	});
 
-	const envelope = await execute(["ready"], { tracker });
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: defaultTicketOnlyReadyManifest,
+	});
 
 	expect(envelope.ok).toBe(true);
 	if (!envelope.ok) {

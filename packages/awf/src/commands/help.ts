@@ -96,8 +96,8 @@ function manifestCommandUsage(command: ManifestCommand): string {
 	if (command.cli?.verb === "apply") {
 		return `awf apply ${command.cli.target} <issue> --input <file|->`;
 	}
-	if (command.id === "handoff-create") {
-		return `awf create ${command.cli?.target ?? "handoff"} --source <issue> --input <file|->`;
+	if (command.cli?.source === true) {
+		return `awf create ${command.cli.target} --source <issue> --input <file|->`;
 	}
 	return `awf create ${command.cli?.target ?? "target"} --input <file|->`;
 }

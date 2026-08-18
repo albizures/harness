@@ -12,17 +12,14 @@ import type {
 	PayloadZodSchema,
 	ManifestNamedReadinessFilter,
 	ManifestTransition,
+	ManifestWorkflowFilter,
 	WorkflowManifest,
 } from "../manifest.ts";
 import {
 	type ArtifactKind,
 	artifacts as artifactSchemas,
 } from "../workflow/artifact.ts";
-import {
-	NeedReconciliationError,
-	type Tracker,
-	type TrackerAdapter,
-} from "../tracker.ts";
+import { NeedReconciliationError, type Tracker } from "../tracker.ts";
 import { IssueNotFoundError } from "../workflow/issue.ts";
 import {
 	CorruptWorkflowProjectionError,
@@ -114,45 +111,6 @@ export async function readInput(
 		return stdin ?? "";
 	}
 	return readFile(path, "utf8");
-}
-
-export type SpecInput = { title: string; content: string };
-export type PlanBundle = { tickets: Array<PlanTicket> };
-export type PlanTicket = {
-	key: string;
-	title: string;
-	content: string;
-	dependsOn?: Array<string>;
-};
-
-export function parseSpecInput(raw: string): SpecInput {
-	const parsed = parseJsonObject(raw);
-	if (parsed !== undefined) {
-		const contentValue = parsed.content ?? parsed.body ?? parsed.markdown;
-		const content = typeof contentValue === "string" ? contentValue : raw;
-		return {
-			title:
-				typeof parsed.title === "string" && parsed.title.trim() !== ""
-					? parsed.title
-					: titleFromMarkdown(content),
-			content,
-		};
-	}
-	return { title: titleFromMarkdown(raw), content: raw };
-}
-
-export function parsePlanInput(raw: string): PlanBundle {
-	return parsePlanPayload(parseJsonObject(raw) ?? {});
-}
-
-export function readTicketContent(record: Record<string, unknown>): string {
-	if (typeof record.content === "string") {
-		return record.content;
-	}
-	if (typeof record.body === "string") {
-		return record.body;
-	}
-	return "";
 }
 
 export function parseJsonObject(
@@ -255,123 +213,17 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function titleFromMarkdown(markdown: string): string {
-	const heading = markdown
-		.split(/\r?\n/u)
-		.map((line) => line.match(/^#\s+(.+)$/u)?.[1]?.trim())
-		.find((title) => title !== undefined && title !== "");
-	return heading ?? "Spec";
-}
-
-export function validateBundledTerminalInput(
-	issue: Awaited<ReturnType<Tracker["getIssue"]>>,
-	event: "succeed" | "fail",
-	input: unknown,
-): RuntimeValidationIssue | undefined {
-	if (!isRecord(input)) {
-		return undefined;
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "implement" &&
-		event === "succeed" &&
-		issue.artifacts.some((artifact) => artifact.kind === "pull-request")
-	) {
-		return {
-			path: "$.implementationPr",
-			message: "Ticket already has an implementation pull request artifact.",
-		};
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "review" &&
-		input.verdict !== (event === "succeed" ? "approved" : "changes-requested")
-	) {
-		return {
-			path: "$.verdict",
-			message: "Review verdict does not match the terminal event.",
-		};
-	}
-	if (
-		issue.workflow.kind === "spec" &&
-		issue.workflow.action === "integration-test" &&
-		input.verdict !== (event === "succeed" ? "passed" : "changes-needed")
-	) {
-		return {
-			path: "$.verdict",
-			message: "Integration verdict does not match the terminal event.",
-		};
-	}
-	return undefined;
-}
-
-export type BundledArtifactInput = {
+export type StructuredArtifactInput = {
 	kind: ArtifactKind;
 	uri: string;
 	name: string;
 } & Record<string, JsonValue>;
 
-export function bundledArtifactInputs(
-	workflow: WorkflowFields,
-	input: unknown,
-): Array<BundledArtifactInput> {
-	return parseBundledArtifactInputs(workflow, input).artifacts;
-}
-
-export function parseBundledArtifactInputs(
-	workflow: WorkflowFields,
-	input: unknown,
-): {
-	artifacts: Array<BundledArtifactInput>;
-	issues: Array<RuntimeValidationIssue>;
-} {
-	if (!isRecord(input)) {
-		return { artifacts: [], issues: [] };
-	}
-	const artifacts: Array<BundledArtifactInput> = [];
-	const issues: Array<RuntimeValidationIssue> = [];
-	if (workflow.kind === "ticket" && workflow.action === "implement") {
-		const artifact = pullRequestArtifactInput(
-			input.implementationPr,
-			"Implementation PR",
-			"$.implementationPr",
-		);
-		if (artifact.issue !== undefined) {
-			issues.push(artifact.issue);
-		}
-		if (artifact.value !== undefined) {
-			artifacts.push(artifact.value);
-		}
-	}
-	if (workflow.kind === "spec" && workflow.action === "integration-test") {
-		const artifact = pullRequestArtifactInput(
-			input.specPr,
-			"Spec PR",
-			"$.specPr",
-		);
-		if (artifact.issue !== undefined) {
-			issues.push(artifact.issue);
-		}
-		if (artifact.value !== undefined) {
-			artifacts.push(artifact.value);
-		}
-	}
-	return { artifacts, issues };
-}
-
-function pullRequestArtifactInput(
-	value: unknown,
-	name: string,
-	path: string,
-): { value?: BundledArtifactInput; issue?: RuntimeValidationIssue } {
-	return parseStructuredArtifactInput(value, "pull-request", name, path);
-}
-
 export function structuredArtifactInput(
 	value: unknown,
 	kind: ArtifactKind,
 	name: string,
-): BundledArtifactInput | undefined {
+): StructuredArtifactInput | undefined {
 	return parseStructuredArtifactInput(value, kind, name, "$input").value;
 }
 
@@ -380,7 +232,7 @@ export function parseStructuredArtifactInput(
 	kind: ArtifactKind,
 	name: string,
 	path: string,
-): { value?: BundledArtifactInput; issue?: RuntimeValidationIssue } {
+): { value?: StructuredArtifactInput; issue?: RuntimeValidationIssue } {
 	if (value === undefined) {
 		return {};
 	}
@@ -457,307 +309,40 @@ export function artifactReferenceUri(
 	return undefined;
 }
 
-export function validatePlanPayload(
-	payload: unknown,
-): Array<{ path: string; message: string }> {
-	const shapeIssues: Array<{ path: string; message: string }> = [];
-	if (!isRecord(payload)) {
-		return [{ path: "$", message: "Plan input must be an object." }];
-	}
-	if (!Array.isArray(payload.tickets)) {
-		return [{ path: "$.tickets", message: "Plan tickets must be an array." }];
-	}
-	if (payload.tickets.length === 0) {
-		shapeIssues.push({
-			path: "$.tickets",
-			message: "Plan must include at least one ticket.",
-		});
-	}
-	for (const [index, ticket] of payload.tickets.entries()) {
-		const path = `$.tickets[${index}]`;
-		if (!isRecord(ticket)) {
-			shapeIssues.push({ path, message: "Ticket must be an object." });
-			continue;
-		}
-		if (typeof ticket.key !== "string") {
-			shapeIssues.push({
-				path: `${path}.key`,
-				message: "Ticket key must be a string.",
-			});
-		}
-		if (typeof ticket.title !== "string") {
-			shapeIssues.push({
-				path: `${path}.title`,
-				message: "Ticket title must be a string.",
-			});
-		}
-		if (ticket.content !== undefined && typeof ticket.content !== "string") {
-			shapeIssues.push({
-				path: `${path}.content`,
-				message: "Ticket content must be a string.",
-			});
-		}
-		if (ticket.body !== undefined && typeof ticket.body !== "string") {
-			shapeIssues.push({
-				path: `${path}.body`,
-				message: "Ticket body must be a string.",
-			});
-		}
-		if (ticket.dependsOn !== undefined) {
-			if (!Array.isArray(ticket.dependsOn)) {
-				shapeIssues.push({
-					path: `${path}.dependsOn`,
-					message: "Ticket dependsOn must be an array of ticket keys.",
-				});
-			} else {
-				for (const [
-					dependencyIndex,
-					dependency,
-				] of ticket.dependsOn.entries()) {
-					if (typeof dependency !== "string") {
-						shapeIssues.push({
-							path: `${path}.dependsOn[${dependencyIndex}]`,
-							message: "Dependency reference must be a string.",
-						});
-					}
-				}
-			}
-		}
-	}
-	if (shapeIssues.length > 0) {
-		return shapeIssues;
-	}
-	return validatePlan(parsePlanPayload(payload));
-}
-
-export function validatePlan(
-	plan: PlanBundle,
-): Array<{ path: string; message: string }> {
-	const issues: Array<{ path: string; message: string }> = [];
-	if (plan.tickets.length === 0) {
-		issues.push({
-			path: "$.tickets",
-			message: "Plan must include at least one ticket.",
-		});
-	}
-	const keys = new Set<string>();
-	for (const [index, ticket] of plan.tickets.entries()) {
-		const path = `$.tickets[${index}]`;
-		if (ticket.key.trim() === "") {
-			issues.push({
-				path: `${path}.key`,
-				message: "Ticket key must be non-empty.",
-			});
-		} else if (keys.has(ticket.key)) {
-			issues.push({
-				path: `${path}.key`,
-				message: "Ticket key must be unique.",
-			});
-		} else {
-			keys.add(ticket.key);
-		}
-		if (ticket.title.trim() === "") {
-			issues.push({
-				path: `${path}.title`,
-				message: "Ticket title must be non-empty.",
-			});
-		}
-		if (ticket.content.trim() === "") {
-			issues.push({
-				path: `${path}.content`,
-				message: "Ticket content must be non-empty.",
-			});
-		}
-	}
-	for (const [index, ticket] of plan.tickets.entries()) {
-		for (const [dependencyIndex, dependency] of (
-			ticket.dependsOn ?? []
-		).entries()) {
-			const path = `$.tickets[${index}].dependsOn[${dependencyIndex}]`;
-			if (typeof dependency !== "string") {
-				issues.push({
-					path,
-					message: "Dependency reference must be a string.",
-				});
-			} else if (dependency.trim() === "") {
-				issues.push({
-					path,
-					message: "Dependency reference must be non-empty.",
-				});
-			} else if (!keys.has(dependency)) {
-				issues.push({
-					path,
-					message: `Unknown dependency '${dependency}'.`,
-				});
-			}
-		}
-	}
-	const cycle = findDependencyCycle(plan);
-	if (cycle !== undefined) {
-		issues.push({
-			path: "$.tickets",
-			message: `Dependency graph must be acyclic (${cycle.join(" -> ")}).`,
-		});
-	}
-	return issues;
-}
-
-function parsePlanPayload(payload: Record<string, unknown>): PlanBundle {
-	const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
-	return {
-		tickets: tickets.map((ticket): PlanTicket => {
-			const record = isRecord(ticket) ? ticket : {};
-			return {
-				key: typeof record.key === "string" ? record.key : "",
-				title: typeof record.title === "string" ? record.title : "",
-				content: readTicketContent(record),
-				...(isStringArray(record.dependsOn)
-					? { dependsOn: record.dependsOn }
-					: {}),
-			};
-		}),
-	};
-}
-
-function isStringArray(value: unknown): value is Array<string> {
-	return (
-		Array.isArray(value) && value.every((item) => typeof item === "string")
-	);
-}
-
-export function findDependencyCycle(
-	plan: PlanBundle,
-): Array<string> | undefined {
-	const byKey = new Map(plan.tickets.map((ticket) => [ticket.key, ticket]));
-	const visiting = new Set<string>();
-	const visited = new Set<string>();
-	const stack: Array<string> = [];
-	function visit(key: string): Array<string> | undefined {
-		if (visiting.has(key)) {
-			return [...stack.slice(stack.indexOf(key)), key];
-		}
-		if (visited.has(key)) {
-			return undefined;
-		}
-		visiting.add(key);
-		stack.push(key);
-		for (const dependency of byKey.get(key)?.dependsOn ?? []) {
-			if (typeof dependency !== "string" || !byKey.has(dependency)) {
-				continue;
-			}
-			const cycle = visit(dependency);
-			if (cycle !== undefined) {
-				return cycle;
-			}
-		}
-		stack.pop();
-		visiting.delete(key);
-		visited.add(key);
-		return undefined;
-	}
-	for (const key of byKey.keys()) {
-		const cycle = visit(key);
-		if (cycle !== undefined) {
-			return cycle;
-		}
-	}
-	return undefined;
-}
-
-export async function rollbackPlanApplication(
-	tracker: TrackerAdapter,
-	specId: string,
-	specWorkflow: WorkflowFields,
-	dependencies: Array<{ issueId: string; blockedById: string }>,
-	children: Array<string>,
-	createdIssueIds: Array<string>,
-): Promise<Array<string>> {
-	const errors: Array<string> = [];
-	for (const dependency of [...dependencies].reverse()) {
-		try {
-			await tracker.removeDependency(
-				dependency.issueId,
-				dependency.blockedById,
-			);
-		} catch (error) {
-			errors.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	for (const childId of [...children].reverse()) {
-		try {
-			await tracker.removeChild(specId, childId);
-		} catch (error) {
-			errors.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	for (const issueId of [...createdIssueIds].reverse()) {
-		try {
-			await tracker.deleteIssue(issueId);
-		} catch (error) {
-			errors.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	try {
-		await tracker.updateIssue(specId, {
-			workflow: {
-				state: specWorkflow.state,
-				action: specWorkflow.action,
-				reason: specWorkflow.reason,
-				activeRunId: specWorkflow.activeRunId,
-			},
-		});
-	} catch (error) {
-		errors.push(error instanceof Error ? error.message : String(error));
-	}
-	return errors;
-}
-
-export async function escalatePartialRollback(
-	tracker: TrackerAdapter,
-	specId: string,
-): Promise<void> {
-	try {
-		await tracker.updateIssue(specId, {
-			workflow: { state: "need-human", action: "none", activeRunId: undefined },
-		});
-	} catch {
-		// Best-effort escalation: the original partial rollback error remains the outcome.
-	}
-}
-
-export async function progressParentSpecAfterTicketDone(
+export async function progressRelationshipsAfterLifecycleTransition(
 	tracker: Tracker,
+	manifest: WorkflowManifest,
 	previous: Awaited<ReturnType<Tracker["getIssue"]>>,
 	updated: Awaited<ReturnType<Tracker["getIssue"]>>,
 ): Promise<void> {
-	const parentId = previous.relationships.parent;
-	if (
-		previous.workflow.kind !== "ticket" ||
-		updated.workflow.state !== "done" ||
-		updated.workflow.action !== "none" ||
-		parentId === undefined
-	) {
-		return;
+	for (const policy of manifest.lifecycle?.relationshipPolicies ?? []) {
+		if (
+			policy.relationship !== "parent" ||
+			previous.relationships.parent === undefined ||
+			!workflowMatchesFilter(updated.workflow, policy.child)
+		) {
+			continue;
+		}
+		const parent = await tracker.getIssue(previous.relationships.parent);
+		if (
+			!workflowMatchesFilter(parent.workflow, policy.parent) ||
+			!childrenSatisfyPolicy(
+				parent.relationships.children,
+				policy.siblings,
+				await Promise.all(
+					parent.relationships.children.map((childId) =>
+						tracker.getIssue(childId),
+					),
+				),
+			)
+		) {
+			continue;
+		}
+		await tracker.advanceWorkflow(parent.id, {
+			expect: { version: parent.workflow.version, hash: parent.workflow.hash },
+			workflow: workflowTarget(policy.to),
+		});
 	}
-	const parent = await tracker.getIssue(parentId);
-	if (
-		parent.workflow.kind !== "spec" ||
-		parent.workflow.state !== "ready" ||
-		parent.workflow.action !== "none" ||
-		parent.relationships.children.length === 0
-	) {
-		return;
-	}
-	const children = await Promise.all(
-		parent.relationships.children.map((childId) => tracker.getIssue(childId)),
-	);
-	if (!children.every((child) => isDone(child))) {
-		return;
-	}
-	await tracker.advanceWorkflow(parentId, {
-		expect: { version: parent.workflow.version, hash: parent.workflow.hash },
-		workflow: { state: "ready", action: "integration-test" },
-	});
 }
 
 export function readinessFilters(
@@ -904,7 +489,7 @@ export function readyItem(issue: {
 export function readinessBlocking(
 	issue: {
 		workflow: WorkflowFields;
-		relationships: { dependencies: Array<string> };
+		relationships: { dependencies: Array<string>; children: Array<string> };
 	},
 	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
 	manifest: WorkflowManifest,
@@ -912,6 +497,7 @@ export function readinessBlocking(
 ): Array<Record<string, JsonValue>> {
 	return [
 		...dependencyBlocking(issue, byId),
+		...relationshipReadinessBlocking(issue, byId, manifest),
 		...concurrencyBlocking(issue.workflow.kind, manifest, activeIssues),
 	];
 }
@@ -976,22 +562,80 @@ export function isDone(
 	return issue?.workflow.state === "done";
 }
 
-export function specPostTicketGateIsOpen(
+export function relationshipReadinessBlocking(
 	issue: {
 		workflow: WorkflowFields;
 		relationships: { children: Array<string> };
 	},
-	byId: Map<string, { workflow: WorkflowFields }>,
-): boolean {
-	if (
-		issue.workflow.kind !== "spec" ||
-		issue.workflow.action !== "integration-test"
-	) {
-		return true;
+	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+	manifest: WorkflowManifest,
+): Array<Record<string, JsonValue>> {
+	const blocking: Array<Record<string, JsonValue>> = [];
+	for (const policy of manifest.readiness?.relationshipPolicies ?? []) {
+		if (
+			policy.relationship !== "children" ||
+			!workflowMatchesFilter(issue.workflow, policy.where)
+		) {
+			continue;
+		}
+		const children = issue.relationships.children.map((id) => byId.get(id));
+		const minimum = policy.children.min ?? 0;
+		const missing = issue.relationships.children.filter(
+			(_id, index) => children[index] === undefined,
+		);
+		const unmatched = children.flatMap((child) =>
+			child !== undefined &&
+			!workflowMatchesFilter(child.workflow, policy.children.all)
+				? [child]
+				: [],
+		);
+		if (
+			children.length >= minimum &&
+			missing.length === 0 &&
+			unmatched.length === 0
+		) {
+			continue;
+		}
+		blocking.push({
+			gate: policy.gate ?? "relationship",
+			relationship: "children",
+			...(minimum === 0 ? {} : { minimum }),
+			...(missing.length === 0 ? {} : { missing }),
+			...(unmatched.length === 0
+				? {}
+				: {
+						blockedBy: unmatched.map((child) => ({
+							id: child.id,
+							title: child.title,
+							workflow: cleanWorkflowFields(child.workflow),
+						})),
+					}),
+		});
 	}
+	return blocking;
+}
+
+function childrenSatisfyPolicy(
+	childIds: Array<string>,
+	policy: { all: ManifestWorkflowFilter; min?: number },
+	children: Array<{ workflow: WorkflowFields }>,
+): boolean {
 	return (
-		issue.relationships.children.length > 0 &&
-		issue.relationships.children.every((id) => isDone(byId.get(id)))
+		childIds.length >= (policy.min ?? 0) &&
+		children.length === childIds.length &&
+		children.every((child) => workflowMatchesFilter(child.workflow, policy.all))
+	);
+}
+
+export function workflowMatchesFilter(
+	workflow: WorkflowFields,
+	filter: ManifestWorkflowFilter,
+): boolean {
+	return (
+		fieldMatches(filter.kind, workflow.kind) &&
+		fieldMatches(filter.state, workflow.state) &&
+		fieldMatches(filter.action, workflow.action) &&
+		fieldMatches(filter.reason, workflow.reason)
 	);
 }
 
@@ -1017,25 +661,6 @@ export function cleanWorkflowFields(
 			reason: workflow.reason,
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
-}
-
-export function planApplicationTarget(
-	manifest: WorkflowManifest,
-	workflow: WorkflowFields,
-): ManifestTransition["to"] | undefined {
-	const direct = findTransition(manifest, workflow, "succeed");
-	if (direct !== undefined) {
-		return direct.to;
-	}
-	const started = findTransition(manifest, workflow, "start");
-	if (started === undefined) {
-		return undefined;
-	}
-	return findTransition(
-		manifest,
-		{ ...workflow, ...workflowTarget(started.to) },
-		"succeed",
-	)?.to;
 }
 
 export function findTransition(
