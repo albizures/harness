@@ -1,14 +1,24 @@
 import { parseJsonValue } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest.ts";
+import type { TrackerIssueInspection } from "../../tracker.ts";
 import {
-	type TrackerApplyPlanIntent,
-	type TrackerIssueInspection,
-} from "../../tracker.ts";
-import { normalizeWorkflowArtifactInput, WorkflowArtifact, WorkflowArtifactInput } from "../../workflow/artifact.ts";
-import { WorkflowChange } from "../../workflow/change.ts";
-import { CreateIssueInput, IssueNotFoundError, UpdateIssueInput, WorkflowIssue } from "../../workflow/issue.ts";
-import { WorkflowLog } from "../../workflow/log.ts";
-import { CorruptWorkflowProjectionError, ProjectionConflictError, WorkflowProjection } from "../../workflow/projection.ts";
+	normalizeWorkflowArtifactInput,
+	type WorkflowArtifact,
+	type WorkflowArtifactInput,
+} from "../../workflow/artifact.ts";
+import type { WorkflowChange } from "../../workflow/change.ts";
+import {
+	type CreateIssueInput,
+	IssueNotFoundError,
+	type UpdateIssueInput,
+	type WorkflowIssue,
+} from "../../workflow/issue.ts";
+import type { WorkflowLog } from "../../workflow/log.ts";
+import {
+	CorruptWorkflowProjectionError,
+	ProjectionConflictError,
+	type WorkflowProjection,
+} from "../../workflow/projection.ts";
 import type { GitHubTrackerApi, GitHubTrackerIssue } from "./index.ts";
 import {
 	hasWorkflowProjectionLabels,
@@ -52,11 +62,6 @@ export class GitHubTracker {
 				blockedById: string,
 				expected: boolean,
 			) => this.verifyDependency(issueId, blockedById, expected),
-			verifyPlanApplication: (
-				specId: string,
-				tickets: Array<{ key: string; id: string }>,
-				inputs: TrackerApplyPlanIntent["tickets"],
-			) => this.verifyPlanApplication(specId, tickets, inputs),
 		};
 	}
 
@@ -449,45 +454,6 @@ export class GitHubTracker {
 				issueId,
 				`dependency relationship to '${blockedById}' could not be verified`,
 			);
-		}
-	}
-
-	private async verifyPlanApplication(
-		specId: string,
-		tickets: Array<{ key: string; id: string }>,
-		inputs: TrackerApplyPlanIntent["tickets"],
-	): Promise<void> {
-		const spec = await this.getIssue(specId);
-		for (const ticket of tickets) {
-			if (!spec.relationships.children.includes(ticket.id)) {
-				throw needsReconciliation(
-					specId,
-					"plan child relationships could not be verified",
-				);
-			}
-		}
-		const idsByKey = new Map(tickets.map((ticket) => [ticket.key, ticket.id]));
-		for (const input of inputs) {
-			const issueId = idsByKey.get(input.key);
-			if (issueId === undefined) {
-				throw needsReconciliation(
-					specId,
-					"plan ticket creation could not be verified",
-				);
-			}
-			const issue = await this.getIssue(issueId);
-			for (const dependencyKey of input.dependsOn ?? []) {
-				const blockedById = idsByKey.get(dependencyKey);
-				if (
-					blockedById === undefined ||
-					!issue.relationships.dependencies.includes(blockedById)
-				) {
-					throw needsReconciliation(
-						specId,
-						"plan dependency relationships could not be verified",
-					);
-				}
-			}
 		}
 	}
 }

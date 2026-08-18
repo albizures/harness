@@ -95,7 +95,7 @@ function createNoTouchTracker(): Tracker {
 		escalateWorkflow: touched,
 		resumeWorkflow: touched,
 		changeRelationship: touched,
-		applyPlan: touched,
+		applyWorkflowEffects: touched,
 		recordCommand: touched,
 		advanceWorkflow: touched,
 		repairIssue: touched,

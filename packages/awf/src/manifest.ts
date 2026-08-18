@@ -136,8 +136,6 @@ export type WorkflowModule = {
 	tracker?: Tracker;
 };
 
-
-
 const payloadZodSchemaSchema = z.custom<PayloadZodSchema>(isPayloadZodSchema, {
 	message: "Payload schema must be a Zod schema.",
 });
@@ -517,7 +515,7 @@ function isTracker(value: unknown): value is Tracker {
 		"escalateWorkflow",
 		"resumeWorkflow",
 		"changeRelationship",
-		"applyPlan",
+		"applyWorkflowEffects",
 		"advanceWorkflow",
 		"repairIssue",
 		"getIssue",

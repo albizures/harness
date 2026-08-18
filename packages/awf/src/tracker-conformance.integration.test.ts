@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
 	NeedReconciliationError,
-	TrackerAdapter,
-	TrackerCreateWorkflowIssueIntent,
+	type TrackerAdapter,
+	type TrackerCreateWorkflowIssueIntent,
 } from "./tracker.ts";
 import { createFileSystemTracker } from "./trackers/filesystem.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
@@ -18,7 +18,9 @@ type TrackerFixture = {
 
 type TrackerFamily = {
 	name: string;
-	create: (seed?: Array<TrackerCreateWorkflowIssueIntent>) => Promise<TrackerFixture>;
+	create: (
+		seed?: Array<TrackerCreateWorkflowIssueIntent>,
+	) => Promise<TrackerFixture>;
 };
 
 const trackerFamilies: Array<TrackerFamily> = [
@@ -94,33 +96,76 @@ for (const family of trackerFamilies) {
 			async (tracker) => {
 				const spec = await tracker.getIssue("spec-1");
 
-				const result = await tracker.applyPlan({
-					specId: "spec-1",
-					expect: { version: spec.workflow.version, hash: spec.workflow.hash },
-					specWorkflow: { state: "ready", action: "none" },
-					tickets: [
+				const result = await tracker.applyWorkflowEffects({
+					effects: [
 						{
+							type: "create-workflow-issue",
 							key: "setup",
-							title: "Set up",
-							workflow: { kind: "ticket", state: "ready", action: "implement" },
+							input: {
+								title: "Set up",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "implement",
+								},
+							},
 						},
 						{
+							type: "create-workflow-issue",
 							key: "finish",
-							title: "Finish",
-							workflow: { kind: "ticket", state: "ready", action: "implement" },
-							dependsOn: ["setup"],
+							input: {
+								title: "Finish",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "implement",
+								},
+							},
+						},
+						{
+							type: "add-child",
+							parent: { id: "spec-1" },
+							child: { key: "setup" },
+						},
+						{
+							type: "add-child",
+							parent: { id: "spec-1" },
+							child: { key: "finish" },
+						},
+						{
+							type: "add-dependency",
+							issue: { key: "finish" },
+							blockedBy: { key: "setup" },
+						},
+						{
+							type: "update-workflow",
+							issue: { id: "spec-1" },
+							expect: {
+								version: spec.workflow.version,
+								hash: spec.workflow.hash,
+							},
+							workflow: { state: "ready", action: "none" },
+						},
+						{
+							type: "record-artifacts",
+							issue: { id: "spec-1" },
+							artifacts: [
+								{ kind: "file", uri: "plans/workflow.json", name: "Workflow" },
+							],
+							log: {
+								type: "workflow_applied",
+								payload: { source: "workflow" },
+							},
 						},
 					],
-					artifacts: [{ kind: "file", uri: "plans/plan.json", name: "Plan" }],
-					log: { type: "plan_applied", payload: { source: "planner" } },
 				});
 
-				expect(result.tickets.map((ticket) => ticket.key)).toEqual([
+				expect(result.createdIssues.map((issue) => issue.key)).toEqual([
 					"setup",
 					"finish",
 				]);
-				const setupId = result.tickets[0]?.id ?? "missing-setup";
-				const finishId = result.tickets[1]?.id ?? "missing-finish";
+				const setupId = result.createdIssues[0]?.id ?? "missing-setup";
+				const finishId = result.createdIssues[1]?.id ?? "missing-finish";
 				expect((await tracker.getIssue("spec-1")).workflow.action).toBe("none");
 				expect(
 					(await tracker.getIssue("spec-1")).relationships.children,
@@ -128,15 +173,13 @@ for (const family of trackerFamilies) {
 				expect(
 					(await tracker.getIssue(finishId)).relationships.dependencies,
 				).toEqual([setupId]);
-				expect(result.artifacts[0]).toMatchObject({
+				expect(result.artifacts[0]?.artifact).toMatchObject({
 					kind: "file",
-					uri: "plans/plan.json",
-					name: "Plan",
+					uri: "plans/workflow.json",
+					name: "Workflow",
 				});
 				expect((await tracker.readLogs("spec-1"))[0]?.payload).toEqual({
-					source: "planner",
-					tickets: result.tickets,
-					artifacts: result.artifacts,
+					source: "workflow",
 				});
 			},
 			[
@@ -256,47 +299,42 @@ for (const family of trackerFamilies) {
 					}),
 				).rejects.toThrow(ProjectionConflictError);
 
-				const spec = await tracker.getIssue("spec-1");
 				await expect(
-					tracker.applyPlan({
-						specId: "spec-1",
-						expect: {
-							version: spec.workflow.version,
-							hash: spec.workflow.hash,
-						},
-						specWorkflow: { state: "ready", action: "none" },
-						tickets: [
+					tracker.applyWorkflowEffects({
+						effects: [
 							{
+								type: "create-workflow-issue",
 								key: "a",
-								title: "A",
-								workflow: {
-									kind: "ticket",
-									state: "ready",
-									action: "implement",
+								input: {
+									title: "A",
+									workflow: {
+										kind: "ticket",
+										state: "ready",
+										action: "implement",
+									},
 								},
 							},
+							{
+								type: "add-child",
+								parent: { id: "spec-1" },
+								child: { key: "a" },
+							},
+							{
+								type: "record-artifacts",
+								issue: { id: "spec-1" },
+								artifacts: [
+									{ kind: "file", uri: "https://example.com/not-a-file" },
+								],
+								log: { type: "workflow_applied" },
+							},
 						],
-						artifacts: [
-							{ kind: "file", uri: "https://example.com/not-a-file" },
-						],
-						log: { type: "plan_applied" },
 					}),
 				).rejects.toThrow(NeedReconciliationError);
 				const partialChildren = (await tracker.getIssue("spec-1")).relationships
 					.children;
-				expect(partialChildren).toHaveLength(1);
-				expect(
-					await tracker.getIssue(partialChildren[0] ?? "missing-child"),
-				).toMatchObject({ title: "A" });
+				expect(partialChildren).toHaveLength(0);
 				const issueIds = (await tracker.listIssues()).map((issue) => issue.id);
-				expect(issueIds).toHaveLength(3);
-				expect(issueIds).toEqual(
-					expect.arrayContaining([
-						"spec-1",
-						ticket.issue.id,
-						partialChildren[0],
-					]),
-				);
+				expect(issueIds).toEqual(["spec-1", ticket.issue.id]);
 			},
 			[
 				{

@@ -12,8 +12,8 @@ import {
 	type TrackerAdapter,
 } from "../tracker.ts";
 import { createInMemoryTracker } from "../trackers/memory.ts";
-import { WorkflowIssue } from "../workflow/issue.ts";
-import { WorkflowArtifact } from "../workflow/artifact.ts";
+import type { WorkflowIssue } from "../workflow/issue.ts";
+import type { WorkflowArtifact } from "../workflow/artifact.ts";
 
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {
@@ -654,11 +654,11 @@ test("apply plan rejects malformed dependency payloads before applying tracker r
 			},
 		],
 	});
-	let applyPlanCalls = 0;
+	let applyWorkflowEffectsCalls = 0;
 	const tracker: Tracker = failingTracker(base, {
-		applyPlan: async () => {
-			applyPlanCalls += 1;
-			throw new Error("applyPlan should not be called");
+		applyWorkflowEffects: async () => {
+			applyWorkflowEffectsCalls += 1;
+			throw new Error("applyWorkflowEffects should not be called");
 		},
 	});
 	const manifest = manifestWithPlanCommandSchema({ input: undefined });
@@ -678,7 +678,7 @@ test("apply plan rejects malformed dependency payloads before applying tracker r
 			},
 		],
 	});
-	expect(applyPlanCalls).toBe(0);
+	expect(applyWorkflowEffectsCalls).toBe(0);
 	expect((await base.listIssues()).map((issue) => issue.id)).toEqual([
 		"spec-1",
 	]);
@@ -744,13 +744,17 @@ test("apply plan dispatches the bundle as one tracker-owned workflow intent", as
 			},
 		],
 	});
-	let applyPlanCalls = 0;
+	let applyWorkflowEffectsCalls = 0;
 	const tracker: Tracker = failingTracker(base, {
-		applyPlan: async (input) => {
-			applyPlanCalls += 1;
-			expect(input.specId).toBe("spec-1");
-			expect(input.tickets.map((ticket) => ticket.key)).toEqual(["a"]);
-			return base.applyPlan(input);
+		applyWorkflowEffects: async (input) => {
+			applyWorkflowEffectsCalls += 1;
+			expect(input.effects.map((effect) => effect.type)).toEqual([
+				"create-workflow-issue",
+				"add-child",
+				"update-workflow",
+				"record-artifacts",
+			]);
+			return base.applyWorkflowEffects(input);
 		},
 		createIssue: async () => {
 			throw new Error("runtime must not create plan tickets directly");
@@ -771,7 +775,7 @@ test("apply plan dispatches the bundle as one tracker-owned workflow intent", as
 	});
 
 	expect(envelope.ok).toBe(true);
-	expect(applyPlanCalls).toBe(1);
+	expect(applyWorkflowEffectsCalls).toBe(1);
 });
 
 test("generic create rejects invalid JSON before mutating the tracker", async () => {
@@ -997,7 +1001,7 @@ test("apply plan reports need-reconciliation instead of rolling back partial ada
 		],
 	});
 	const tracker: Tracker = failingTracker(base, {
-		applyPlan: async () => {
+		applyWorkflowEffects: async () => {
 			const ticket = await base.createIssue({
 				title: "A",
 				body: "A",
@@ -1101,7 +1105,7 @@ function failingTracker(
 		advanceWorkflow: base.advanceWorkflow.bind(base),
 		repairIssue: base.repairIssue.bind(base),
 		changeRelationship: base.changeRelationship.bind(base),
-		applyPlan: base.applyPlan.bind(base),
+		applyWorkflowEffects: base.applyWorkflowEffects.bind(base),
 		createIssue: base.createIssue.bind(base),
 		getIssue: base.getIssue.bind(base),
 		listIssues: base.listIssues.bind(base),
@@ -1131,7 +1135,7 @@ function createNoTouchTracker(): Tracker {
 		escalateWorkflow: touched,
 		resumeWorkflow: touched,
 		changeRelationship: touched,
-		applyPlan: touched,
+		applyWorkflowEffects: touched,
 		recordCommand: touched,
 		advanceWorkflow: touched,
 		repairIssue: touched,

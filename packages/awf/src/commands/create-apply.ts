@@ -1,10 +1,7 @@
 import { isAbsolute, relative } from "node:path";
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
-import {
-	NeedReconciliationError,
-	type Tracker,
-} from "../tracker.ts";
+import { NeedReconciliationError, type Tracker } from "../tracker.ts";
 import {
 	genericIssueBody,
 	genericIssueTitle,
@@ -409,40 +406,81 @@ export async function applyPlanCommand(
 	}
 
 	try {
-		const applied = await tracker.applyPlan({
-			specId,
-			expect: { version: spec.workflow.version, hash: spec.workflow.hash },
-			specWorkflow: { ...workflowTarget(target), activeRunId: undefined },
-			tickets: plan.tickets.map((ticket) => ({
-				key: ticket.key,
-				title: ticket.title,
-				body: ticket.content,
-				workflow: {
-					kind: "ticket",
-					...initialWorkflowTarget(ticketKind.initial),
+		const effects = [
+			...plan.tickets.flatMap((ticket) => [
+				{
+					type: "create-workflow-issue" as const,
+					key: ticket.key,
+					input: {
+						title: ticket.title,
+						body: ticket.content,
+						workflow: {
+							kind: "ticket",
+							...initialWorkflowTarget(ticketKind.initial),
+						},
+					},
 				},
-				dependsOn: ticket.dependsOn,
-			})),
-			artifacts: [planBundleArtifactInput(inputPath, plan.tickets.length)],
-			log: {
-				type: "plan_applied",
-				payload: {
-					input: planBundleArtifactReference(inputPath, plan.tickets.length),
+				{
+					type: "add-child" as const,
+					parent: { id: specId },
+					child: { key: ticket.key },
+				},
+			]),
+			...plan.tickets.flatMap((ticket) =>
+				(ticket.dependsOn ?? []).map((dependencyKey) => ({
+					type: "add-dependency" as const,
+					issue: { key: ticket.key },
+					blockedBy: { key: dependencyKey },
+				})),
+			),
+			{
+				type: "update-workflow" as const,
+				issue: { id: specId },
+				expect: { version: spec.workflow.version, hash: spec.workflow.hash },
+				workflow: { ...workflowTarget(target), activeRunId: undefined },
+			},
+			{
+				type: "record-artifacts" as const,
+				issue: { id: specId },
+				artifacts: [planBundleArtifactInput(inputPath, plan.tickets.length)],
+				log: {
+					type: "plan_applied",
+					payload: {
+						input: planBundleArtifactReference(inputPath, plan.tickets.length),
+					},
 				},
 			},
+		];
+		const applied = await tracker.applyWorkflowEffects({ effects });
+		const tickets = plan.tickets.map((ticket) => {
+			const created = applied.createdIssues.find(
+				(issue) => issue.key === ticket.key,
+			);
+			if (created === undefined) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: workflow issue creation could not be verified.",
+				);
+			}
+			return { key: ticket.key, id: created.id };
 		});
-		const artifact = applied.artifacts[0];
+		const artifact = applied.artifacts[0]?.artifact;
 		if (artifact === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: plan bundle artifact was not recorded.",
 			);
 		}
+		const log = applied.logs.at(-1);
+		if (log === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: workflow log addition could not be verified.",
+			);
+		}
 		const data = {
 			outcome: "SUCCESS",
-			spec: applied.spec,
-			tickets: applied.tickets,
+			spec: applied.issues[specId] ?? (await tracker.getIssue(specId)),
+			tickets,
 			artifact,
-			log: applied.log,
+			log,
 		};
 		const outputValidation = validateWorkflowCommandOutput(command, data);
 		if (outputValidation !== undefined) {

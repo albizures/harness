@@ -6,10 +6,14 @@ import {
 } from "./tracker-intents.ts";
 import { NeedReconciliationError } from "./tracker.ts";
 import { WorkflowTrackerState } from "./trackers/state.ts";
-import { CreateIssueInput, UpdateIssueInput, WorkflowIssue } from "./workflow/issue.ts";
-import { WorkflowLog } from "./workflow/log.ts";
-import { WorkflowArtifactInput } from "./workflow/artifact.ts";
-import { WorkflowChange } from "./workflow/change.ts";
+import type {
+	CreateIssueInput,
+	UpdateIssueInput,
+	WorkflowIssue,
+} from "./workflow/issue.ts";
+import type { WorkflowLog } from "./workflow/log.ts";
+import type { WorkflowArtifactInput } from "./workflow/artifact.ts";
+import type { WorkflowChange } from "./workflow/change.ts";
 
 test("tracker adapter composition exposes public intents without adapter-owned choreography", async () => {
 	const state = new WorkflowTrackerState();
@@ -88,35 +92,56 @@ test("tracker intent module composes adapter primitives and verification hooks",
 				state.verifyDependency(issueId, blockedById, expected);
 				verified.push(`dependency:${issueId}:${blockedById}:${expected}`);
 			},
-			verifyPlanApplication: (specId, tickets, inputs) => {
-				state.verifyPlanApplication(specId, tickets, inputs);
-				verified.push(`plan:${specId}:${tickets.length}:${inputs.length}`);
+			verifyWorkflowEffects: (result, effects) => {
+				state.verifyWorkflowEffects(result, effects);
+				verified.push(
+					`effects:${result.createdIssues.length}:${effects.length}`,
+				);
 			},
 		},
 	});
 
 	const spec = await tracker.getIssue("spec-1");
-	const result = await tracker.applyPlan({
-		specId: spec.id,
-		expect: { version: spec.workflow.version, hash: spec.workflow.hash },
-		specWorkflow: { state: "waiting", action: "none" },
-		tickets: [
+	const result = await tracker.applyWorkflowEffects({
+		effects: [
 			{
+				type: "create-workflow-issue",
 				key: "first",
-				title: "First ticket",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				input: {
+					title: "First workflow issue",
+					workflow: { kind: "item", state: "ready", action: "process" },
+				},
 			},
 			{
+				type: "create-workflow-issue",
 				key: "second",
-				title: "Second ticket",
-				workflow: { kind: "ticket", state: "blocked", action: "none" },
-				dependsOn: ["first"],
+				input: {
+					title: "Second workflow issue",
+					workflow: { kind: "item", state: "blocked", action: "none" },
+				},
+			},
+			{ type: "add-child", parent: { id: spec.id }, child: { key: "first" } },
+			{ type: "add-child", parent: { id: spec.id }, child: { key: "second" } },
+			{
+				type: "add-dependency",
+				issue: { key: "second" },
+				blockedBy: { key: "first" },
+			},
+			{
+				type: "update-workflow",
+				issue: { id: spec.id },
+				expect: { version: spec.workflow.version, hash: spec.workflow.hash },
+				workflow: { state: "waiting", action: "none" },
+			},
+			{
+				type: "record-command",
+				issue: { id: spec.id },
+				log: { type: "applied" },
 			},
 		],
-		log: { type: "plan-applied" },
 	});
 
-	expect(result.tickets).toEqual([
+	expect(result.createdIssues.map(({ key, id }) => ({ key, id }))).toEqual([
 		{ key: "first", id: "1" },
 		{ key: "second", id: "2" },
 	]);
@@ -127,16 +152,16 @@ test("tracker intent module composes adapter primitives and verification hooks",
 	expect((await tracker.getIssue("2")).relationships.dependencies).toEqual([
 		"1",
 	]);
-	expect(result.log.payload).toMatchObject({ tickets: result.tickets });
+	expect(result.logs).toEqual([expect.objectContaining({ type: "applied" })]);
 	expect(verified).toEqual([
 		"child:spec-1:1:true",
 		"child:spec-1:2:true",
 		"dependency:2:1:true",
-		"plan:spec-1:2:2",
+		"effects:2:7",
 	]);
 });
 
-test("tracker intent module verifies plan application with adapter reads when hooks are absent", async () => {
+test("tracker intent module verifies generic workflow effects with adapter reads when hooks are absent", async () => {
 	const state = new WorkflowTrackerState([
 		{
 			id: "spec-1",
@@ -160,28 +185,49 @@ test("tracker intent module verifies plan application with adapter reads when ho
 	);
 	const spec = await tracker.getIssue("spec-1");
 
-	const result = await tracker.applyPlan({
-		specId: spec.id,
-		expect: { version: spec.workflow.version, hash: spec.workflow.hash },
-		specWorkflow: { state: "ready", action: "none" },
-		tickets: [
+	const result = await tracker.applyWorkflowEffects({
+		effects: [
 			{
+				type: "create-workflow-issue",
 				key: "setup",
-				title: "Set up",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				input: {
+					title: "Set up",
+					workflow: { kind: "item", state: "ready", action: "process" },
+				},
 			},
 			{
+				type: "create-workflow-issue",
 				key: "finish",
-				title: "Finish",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				dependsOn: ["setup"],
+				input: {
+					title: "Finish",
+					workflow: { kind: "item", state: "ready", action: "process" },
+				},
+			},
+			{ type: "add-child", parent: { id: spec.id }, child: { key: "setup" } },
+			{ type: "add-child", parent: { id: spec.id }, child: { key: "finish" } },
+			{
+				type: "add-dependency",
+				issue: { key: "finish" },
+				blockedBy: { key: "setup" },
+			},
+			{
+				type: "update-workflow",
+				issue: { id: spec.id },
+				expect: { version: spec.workflow.version, hash: spec.workflow.hash },
+				workflow: { state: "ready", action: "none" },
+			},
+			{
+				type: "record-artifacts",
+				issue: { id: spec.id },
+				artifacts: [
+					{ kind: "file", uri: "bundle.json", name: "Workflow bundle" },
+				],
+				log: { type: "workflow-applied", payload: { input: "bundle.json" } },
 			},
 		],
-		artifacts: [{ kind: "file", uri: "plan.json", name: "Plan bundle" }],
-		log: { type: "plan-applied", payload: { input: "plan.json" } },
 	});
 
-	expect(result.tickets).toEqual([
+	expect(result.createdIssues.map(({ key, id }) => ({ key, id }))).toEqual([
 		{ key: "setup", id: "1" },
 		{ key: "finish", id: "2" },
 	]);
@@ -194,17 +240,16 @@ test("tracker intent module verifies plan application with adapter reads when ho
 	]);
 	expect(result.artifacts).toEqual([
 		expect.objectContaining({
-			id: "artifact-1",
-			kind: "file",
-			uri: "plan.json",
-			name: "Plan bundle",
+			issueId: "spec-1",
+			artifact: expect.objectContaining({
+				id: "artifact-1",
+				kind: "file",
+				uri: "bundle.json",
+				name: "Workflow bundle",
+			}),
 		}),
 	]);
-	expect(result.log.payload).toEqual({
-		input: "plan.json",
-		tickets: result.tickets,
-		artifacts: result.artifacts,
-	});
+	expect(result.logs.at(-1)?.payload).toEqual({ input: "bundle.json" });
 });
 
 test("tracker intent module verifies relationship intents with adapter reads when hooks are absent", async () => {

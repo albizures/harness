@@ -78,26 +78,52 @@ export type TrackerRelationshipIntent =
 	| { type: "add-dependency"; issueId: string; blockedById: string }
 	| { type: "remove-dependency"; issueId: string; blockedById: string };
 
-export type TrackerApplyPlanIntent = {
-	specId: string;
-	expect: TrackerProjectionExpectation;
-	specWorkflow: TrackerWorkflow;
-	tickets: Array<{
-		key: string;
-		title: string;
-		body?: string;
-		workflow: CreateIssueInput["workflow"];
-		dependsOn?: Array<string>;
-	}>;
-	artifacts?: Array<WorkflowArtifactInput>;
-	log: TrackerLog;
+export type TrackerIssueRef = { id: string } | { key: string };
+
+export type TrackerWorkflowEffect =
+	| {
+			type: "create-workflow-issue";
+			key?: string;
+			input: CreateIssueInput;
+			initialLog?: TrackerLog;
+	  }
+	| {
+			type: "update-workflow";
+			issue: TrackerIssueRef;
+			expect: TrackerProjectionExpectation;
+			workflow: TrackerWorkflow;
+	  }
+	| {
+			type: "record-artifacts";
+			issue: TrackerIssueRef;
+			artifacts?: Array<WorkflowArtifactInput>;
+			changes?: Array<Omit<WorkflowChange, "id">>;
+			log: TrackerLog;
+	  }
+	| { type: "record-command"; issue: TrackerIssueRef; log: TrackerLog }
+	| { type: "add-child"; parent: TrackerIssueRef; child: TrackerIssueRef }
+	| { type: "remove-child"; parent: TrackerIssueRef; child: TrackerIssueRef }
+	| {
+			type: "add-dependency";
+			issue: TrackerIssueRef;
+			blockedBy: TrackerIssueRef;
+	  }
+	| {
+			type: "remove-dependency";
+			issue: TrackerIssueRef;
+			blockedBy: TrackerIssueRef;
+	  };
+
+export type TrackerApplyWorkflowEffectsIntent = {
+	effects: Array<TrackerWorkflowEffect>;
 };
 
-export type TrackerApplyPlanResult = {
-	spec: WorkflowIssue;
-	tickets: Array<{ key: string; id: string }>;
-	artifacts: Array<WorkflowArtifact>;
-	log: WorkflowLog;
+export type TrackerApplyWorkflowEffectsResult = {
+	issues: Record<string, WorkflowIssue>;
+	createdIssues: Array<{ key?: string; id: string; issue: WorkflowIssue }>;
+	artifacts: Array<{ issueId: string; artifact: WorkflowArtifact }>;
+	changes: Array<{ issueId: string; change: WorkflowChange }>;
+	logs: Array<WorkflowLog>;
 };
 
 export type TrackerIssueInspection = {
@@ -132,7 +158,9 @@ export type Tracker = {
 		input: TrackerResumeIntent,
 	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
 	changeRelationship: (input: TrackerRelationshipIntent) => Promise<void>;
-	applyPlan: (input: TrackerApplyPlanIntent) => Promise<TrackerApplyPlanResult>;
+	applyWorkflowEffects: (
+		input: TrackerApplyWorkflowEffectsIntent,
+	) => Promise<TrackerApplyWorkflowEffectsResult>;
 	recordCommand: (
 		id: string,
 		input: TrackerRecordCommandIntent,
@@ -195,10 +223,9 @@ export type TrackerVerificationHooks = {
 		blockedById: string,
 		expected: boolean,
 	) => void | Promise<void>;
-	verifyPlanApplication?: (
-		specId: string,
-		tickets: Array<{ key: string; id: string }>,
-		inputs: TrackerApplyPlanIntent["tickets"],
+	verifyWorkflowEffects?: (
+		result: TrackerApplyWorkflowEffectsResult,
+		effects: Array<TrackerWorkflowEffect>,
 	) => void | Promise<void>;
 };
 

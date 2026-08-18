@@ -55,11 +55,7 @@ export class WorkflowStateTracker {
 				blockedById: string,
 				expected: boolean,
 			) => this.state.verifyDependency(issueId, blockedById, expected),
-			verifyPlanApplication: (
-				specId: string,
-				tickets: Array<{ key: string; id: string }>,
-				inputs: Parameters<WorkflowTrackerState["verifyPlanApplication"]>[2],
-			) => this.state.verifyPlanApplication(specId, tickets, inputs),
+			verifyWorkflowEffects: this.state.verifyWorkflowEffects.bind(this.state),
 		};
 	}
 

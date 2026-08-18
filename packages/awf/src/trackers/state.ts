@@ -3,8 +3,9 @@ import type { JsonValue } from "type-fest";
 import { jsonRecordSchema, parseJsonValue } from "../json.ts";
 import {
 	NeedReconciliationError,
-	type TrackerApplyPlanIntent,
+	type TrackerApplyWorkflowEffectsResult,
 	type TrackerIssueInspection,
+	type TrackerWorkflowEffect,
 } from "../tracker.ts";
 import {
 	IssueNotFoundError,
@@ -253,38 +254,45 @@ export class WorkflowTrackerState {
 		}
 	}
 
-	verifyPlanApplication(
-		specId: string,
-		created: Array<{ key: string; id: string }>,
-		tickets: TrackerApplyPlanIntent["tickets"],
+	verifyWorkflowEffects(
+		result: TrackerApplyWorkflowEffectsResult,
+		_effects: Array<TrackerWorkflowEffect>,
 	): void {
-		const spec = this.getIssue(specId);
-		for (const ticket of created) {
-			if (!spec.relationships.children.includes(ticket.id)) {
+		for (const created of result.createdIssues) {
+			this.getIssue(created.id);
+		}
+		for (const { issueId, artifact } of result.artifacts) {
+			if (
+				!this.getIssue(issueId).artifacts.some(
+					(stored) => stored.id === artifact.id,
+				)
+			) {
 				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan child relationships could not be verified.",
+					"NEED_RECONCILIATION: workflow artifact recording could not be verified.",
 				);
 			}
 		}
-		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
-		for (const ticket of tickets) {
-			const issueId = idsByKey.get(ticket.key);
-			if (issueId === undefined) {
+		for (const { issueId, change } of result.changes) {
+			if (
+				!this.getIssue(issueId).changes.some(
+					(stored) => stored.id === change.id,
+				)
+			) {
 				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+					"NEED_RECONCILIATION: workflow change recording could not be verified.",
 				);
 			}
-			const issue = this.getIssue(issueId);
-			for (const dependencyKey of ticket.dependsOn ?? []) {
-				const blockedById = idsByKey.get(dependencyKey);
-				if (
-					blockedById === undefined ||
-					!issue.relationships.dependencies.includes(blockedById)
-				) {
-					throw new NeedReconciliationError(
-						"NEED_RECONCILIATION: plan dependency relationships could not be verified.",
-					);
-				}
+		}
+		for (const log of result.logs) {
+			if (
+				!this.readLogs(log.issueId).some(
+					(stored) =>
+						stored.sequence === log.sequence && stored.type === log.type,
+				)
+			) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: workflow log addition could not be verified.",
+				);
 			}
 		}
 	}

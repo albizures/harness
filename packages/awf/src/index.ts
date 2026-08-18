@@ -45,8 +45,8 @@ export {
 	type Tracker,
 	type TrackerAdapterPrimitiveOperations,
 	type TrackerAdapterPrimitiveReads,
-	type TrackerApplyPlanIntent,
-	type TrackerApplyPlanResult,
+	type TrackerApplyWorkflowEffectsIntent,
+	type TrackerApplyWorkflowEffectsResult,
 	type TrackerCompleteRunIntent,
 	type TrackerCreateWorkflowIssueIntent,
 	type TrackerEscalateIntent,
@@ -54,15 +54,25 @@ export {
 	type TrackerRecordArtifactsIntent,
 	type TrackerRecordArtifactsResult,
 	type TrackerRelationshipIntent,
+	type TrackerWorkflowEffect,
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
 } from "./tracker.ts";
-export { WorkflowLog } from './workflow/log.ts'
-export { WorkflowChange } from './workflow/change.ts'
-export { WorkflowArtifact } from './workflow/artifact.ts'
-export { CorruptWorkflowProjectionError, type WorkflowProjection } from './workflow/projection.ts'
-export { IssueNotFoundError, IssueRelationships, UpdateIssueInput, WorkflowIssue, CreateIssueInput } from './workflow/issue.ts'
+export { WorkflowLog } from "./workflow/log.ts";
+export { WorkflowChange } from "./workflow/change.ts";
+export { WorkflowArtifact } from "./workflow/artifact.ts";
+export {
+	CorruptWorkflowProjectionError,
+	type WorkflowProjection,
+} from "./workflow/projection.ts";
+export {
+	IssueNotFoundError,
+	IssueRelationships,
+	UpdateIssueInput,
+	WorkflowIssue,
+	CreateIssueInput,
+} from "./workflow/issue.ts";
 export {
 	createFileSystemTracker,
 	type FileSystemTrackerOptions,
