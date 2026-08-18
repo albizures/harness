@@ -7,7 +7,7 @@ import {
 	ManifestValidationError,
 	validateManifest,
 } from "./manifest.ts";
-import { artifacts} from './workflow/artifact.ts'
+import { artifacts } from "./workflow/artifact.ts";
 
 const validFixture = new URL("./fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;
@@ -42,6 +42,11 @@ test("loads a Workflow module manifest and optional concrete tracker binding", a
 
 	expect(workflowModule.manifest.workflow.id).toBe("agent-development");
 	expect(typeof workflowModule.tracker?.getIssue).toBe("function");
+	expect(
+		typeof workflowModule.lifecycleHandlers?.[
+			"ticket:running/implement:succeed"
+		],
+	).toBe("function");
 });
 
 test("Workflow module loading requires a manifest export", async () => {

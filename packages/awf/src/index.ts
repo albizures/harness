@@ -22,6 +22,15 @@ export {
 	parseJsonValue,
 } from "./json.ts";
 export {
+	findLifecycleTransitionHandler,
+	lifecycleTransitionHandlerKey,
+	runLifecycleTransitionHandler,
+	type LifecycleTransitionHandler,
+	type LifecycleTransitionHandlerContext,
+	type LifecycleTransitionHandlerContribution,
+	type LifecycleTransitionHandlers,
+} from "./lifecycle-handlers.ts";
+export {
 	ManifestValidationError,
 	WorkflowModuleLoadError,
 	defineManifest,

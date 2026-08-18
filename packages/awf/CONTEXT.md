@@ -17,8 +17,8 @@ A TypeScript module loaded by the AWF CLI that may export both the declarative W
 _Avoid_: executable manifest, manifest hooks
 
 **Command handler**:
-A Workflow module runtime binding keyed by a declarative Workflow command id that implements command-specific create/apply behavior when AWF's generic behavior is not enough. A Command handler receives AWF-parsed and manifest-validated input plus a constrained facade of AWF primitives; it is not part of the Workflow definition and does not parse raw CLI arguments.
-_Avoid_: manifest command hook, executable command declaration, custom CLI parser
+A Workflow module runtime binding keyed by a declarative Workflow command id that implements command-specific create/apply behavior when AWF's generic behavior is not enough. A normal Command handler receives AWF-parsed and manifest-validated input plus a constrained facade of AWF primitives; compatibility Command handlers may opt into owning raw CLI/input parsing for legacy command envelopes. It is not part of the Workflow definition.
+_Avoid_: manifest command hook, executable command declaration
 
 **Lifecycle transition handler**:
 A Workflow module runtime binding for semantic work around a lifecycle transition, such as validating transition input beyond schema shape, extracting artifact references, or requesting generic follow-up workflow operations. The AWF core owns lifecycle command execution and transition mutation; the handler supplies workflow-specific semantics without direct tracker mutation.

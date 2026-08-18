@@ -3,6 +3,11 @@ import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 import { z } from "zod";
 import type { CommandHandler, CommandHandlers } from "./command-handlers.ts";
+import type { LifecycleTransitionHandlers } from "./lifecycle-handlers.ts";
+import {
+	lifecycleTransitionHandlerKey,
+	type LifecycleTransitionHandler,
+} from "./lifecycle-handlers.ts";
 import type { Tracker } from "./tracker.ts";
 
 export type Identifier = string;
@@ -136,6 +141,7 @@ export type WorkflowModule = {
 	manifest: WorkflowManifest;
 	tracker?: Tracker;
 	commandHandlers?: CommandHandlers;
+	lifecycleHandlers?: LifecycleTransitionHandlers;
 };
 
 const payloadZodSchemaSchema = z.custom<PayloadZodSchema>(isPayloadZodSchema, {
@@ -292,6 +298,7 @@ export async function loadWorkflowModule(
 		manifest,
 		tracker: extractTracker(loaded),
 		commandHandlers: extractCommandHandlers(loaded, manifest),
+		lifecycleHandlers: extractLifecycleHandlers(loaded, manifest),
 	};
 }
 
@@ -535,6 +542,49 @@ function extractCommandHandlers(
 			);
 		}
 		handlers[id] = handler as CommandHandler;
+	}
+	return handlers;
+}
+
+function extractLifecycleHandlers(
+	loaded: unknown,
+	manifest: WorkflowManifest,
+): LifecycleTransitionHandlers | undefined {
+	if (!isRecord(loaded) || !("lifecycleHandlers" in loaded)) {
+		return undefined;
+	}
+	if (loaded.lifecycleHandlers === undefined) {
+		return undefined;
+	}
+	if (!isRecord(loaded.lifecycleHandlers)) {
+		throw new WorkflowModuleLoadError(
+			"Workflow module export 'lifecycleHandlers' must be an object of functions keyed by lifecycle transition.",
+		);
+	}
+	const transitionKeys = new Set(
+		manifest.kinds.flatMap((kind) =>
+			kind.transitions.map((transition) =>
+				lifecycleTransitionHandlerKey(
+					kind.id,
+					transition.from,
+					transition.event,
+				),
+			),
+		),
+	);
+	const handlers: LifecycleTransitionHandlers = {};
+	for (const [key, handler] of Object.entries(loaded.lifecycleHandlers)) {
+		if (!transitionKeys.has(key)) {
+			throw new WorkflowModuleLoadError(
+				`Workflow module lifecycle handler '${key}' does not match a manifest transition key.`,
+			);
+		}
+		if (typeof handler !== "function") {
+			throw new WorkflowModuleLoadError(
+				`Workflow module lifecycle handler '${key}' must be a function.`,
+			);
+		}
+		handlers[key] = handler as LifecycleTransitionHandler;
 	}
 	return handlers;
 }

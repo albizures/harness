@@ -1,4 +1,9 @@
 import type { CommandHandlers } from "./command-handlers.ts";
+import type { LifecycleTransitionHandlers } from "./lifecycle-handlers.ts";
+import {
+	agentDevelopmentCommandHandlers,
+	agentDevelopmentManifest,
+} from "./agent-development-workflow.ts";
 import { defaultManifest } from "./default-manifest.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
 import { validateManifest, type WorkflowManifest } from "./manifest.ts";
@@ -26,8 +31,15 @@ export type ExecuteOptions = {
 	tracker?: Tracker;
 	manifest?: WorkflowManifest;
 	commandHandlers?: CommandHandlers;
+	lifecycleHandlers?: LifecycleTransitionHandlers;
 	stdin?: string;
 };
+
+function defaultCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
+	return manifest.workflow.id === agentDevelopmentManifest.workflow.id
+		? agentDevelopmentCommandHandlers
+		: {};
+}
 
 export async function execute(
 	args: Array<string>,
@@ -79,16 +91,13 @@ export async function execute(
 		return readyCommand(parseReadyOptions(args), tracker, manifest);
 	}
 	if (args[0] === "create" || args[0] === "apply") {
-		return manifestCommand(
-			args,
-			tracker,
-			manifest,
-			options.stdin,
-			options.commandHandlers,
-		);
+		return manifestCommand(args, tracker, manifest, options.stdin, {
+			...defaultCommandHandlers(manifest),
+			...options.commandHandlers,
+		});
 	}
 	if (args[0] === "start") {
-		return startCommand(args[1], tracker, manifest);
+		return startCommand(args[1], tracker, manifest, options.lifecycleHandlers);
 	}
 	if (args[0] === "succeed" || args[0] === "fail") {
 		return terminalCommand(
@@ -99,6 +108,7 @@ export async function execute(
 			tracker,
 			manifest,
 			options.stdin,
+			options.lifecycleHandlers,
 		);
 	}
 	if (args[0] === "escalate") {

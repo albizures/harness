@@ -53,41 +53,53 @@ test("create spec creates a bundled workflow Spec from Markdown input", async ()
 	).toEqual(["spec_created"]);
 });
 
-test("create spec records one high-level tracker intent with initial current fields and log", async () => {
+test("create spec records one generic workflow effects intent with initial current fields and log", async () => {
 	const intents: Array<string> = [];
 	const tracker: Tracker = {
 		...createNoTouchTracker(),
-		createWorkflowIssue: async (input) => {
-			intents.push("createWorkflowIssue");
-			expect(input.title).toBe("Build lifecycle intents");
-			expect(input.workflow.kind).toBe("spec");
-			expect(input.workflow.state).toBe("ready");
-			expect(input.workflow.action).toBe("plan");
-			expect(input.initialLog?.type).toBe("spec_created");
+		applyWorkflowEffects: async ({ effects }) => {
+			intents.push("applyWorkflowEffects");
+			expect(effects).toHaveLength(1);
+			const effect = effects[0];
+			expect(effect?.type).toBe("create-workflow-issue");
+			if (effect?.type !== "create-workflow-issue") {
+				throw new Error("expected create workflow issue effect");
+			}
+			expect(effect.input.title).toBe("Build lifecycle intents");
+			expect(effect.input.workflow.kind).toBe("spec");
+			expect(effect.input.workflow.state).toBe("ready");
+			expect(effect.input.workflow.action).toBe("plan");
+			expect(effect.initialLog?.type).toBe("spec_created");
+			const issue: WorkflowIssue = {
+				id: "1",
+				title: effect.input.title,
+				body: effect.input.body,
+				workflow: {
+					...effect.input.workflow,
+					version: 1,
+					hash: "hash",
+				},
+				relationships: {
+					children: [],
+					dependencies: [],
+					dependents: [],
+				},
+				artifacts: [],
+				changes: [],
+			};
 			return {
-				issue: {
-					id: "1",
-					title: input.title,
-					body: input.body,
-					workflow: {
-						...input.workflow,
-						version: 1,
-						hash: "hash",
+				issues: { "1": issue },
+				createdIssues: [{ id: "1", issue }],
+				artifacts: [],
+				changes: [],
+				logs: [
+					{
+						...effect.initialLog,
+						issueId: "1",
+						sequence: 1,
+						type: effect.initialLog?.type ?? "missing",
 					},
-					relationships: {
-						children: [],
-						dependencies: [],
-						dependents: [],
-					},
-					artifacts: [],
-					changes: [],
-				},
-				log: {
-					...input.initialLog,
-					issueId: "1",
-					sequence: 1,
-					type: input.initialLog?.type ?? "missing",
-				},
+				],
 			};
 		},
 	};
@@ -98,7 +110,7 @@ test("create spec records one high-level tracker intent with initial current fie
 	});
 
 	expect(envelope.ok).toBe(true);
-	expect(intents).toEqual(["createWorkflowIssue"]);
+	expect(intents).toEqual(["applyWorkflowEffects"]);
 });
 
 test("create targets dispatch through manifest CLI declarations", async () => {
@@ -287,10 +299,16 @@ test("create handoff records artifact and log through one tracker intent", async
 			expect(id).toBe("123");
 			return issue;
 		},
-		recordArtifacts: async (id, input) => {
-			intents.push("recordArtifacts");
-			expect(id).toBe("123");
-			expect(input.artifacts).toEqual([
+		applyWorkflowEffects: async ({ effects }) => {
+			intents.push("applyWorkflowEffects");
+			expect(effects).toHaveLength(1);
+			const effect = effects[0];
+			expect(effect?.type).toBe("record-artifacts");
+			if (effect?.type !== "record-artifacts") {
+				throw new Error("expected record artifacts effect");
+			}
+			expect(effect.issue).toEqual({ id: "123" });
+			expect(effect.artifacts).toEqual([
 				{
 					kind: "handoff",
 					uri: "handoff.md",
@@ -299,21 +317,25 @@ test("create handoff records artifact and log through one tracker intent", async
 					ref: "handoff.md",
 				},
 			]);
-			expect(input.log.type).toBe("handoff_created");
+			expect(effect.log.type).toBe("handoff_created");
 			return {
-				issue,
+				issues: { "123": issue },
+				createdIssues: [],
 				artifacts: [
 					{
-						id: "artifact-1",
-						kind: "handoff",
-						uri: "handoff.md",
-						name: "Handoff",
-						type: "handoff",
-						ref: "handoff.md",
+						issueId: "123",
+						artifact: {
+							id: "artifact-1",
+							kind: "handoff",
+							uri: "handoff.md",
+							name: "Handoff",
+							type: "handoff",
+							ref: "handoff.md",
+						},
 					},
 				],
 				changes: [],
-				log: { ...input.log, issueId: id, sequence: 1 },
+				logs: [{ ...effect.log, issueId: "123", sequence: 1 }],
 			};
 		},
 	};
@@ -329,7 +351,7 @@ test("create handoff records artifact and log through one tracker intent", async
 	);
 
 	expect(envelope.ok).toBe(true);
-	expect(intents).toEqual(["recordArtifacts"]);
+	expect(intents).toEqual(["applyWorkflowEffects"]);
 });
 
 test("create handoff rejects invalid manifest-declared input before mutating", async () => {

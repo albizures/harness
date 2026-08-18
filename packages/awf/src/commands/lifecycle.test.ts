@@ -517,6 +517,178 @@ test("terminal retries are idempotent for identical outcomes and reject conflict
 	});
 });
 
+test("generic lifecycle transition handlers receive validated input and contribute log payload, artifacts, and effects", async () => {
+	const manifest = {
+		version: "v1" as const,
+		workflow: { id: "generic" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["do", "none"],
+			events: ["start", "succeed"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 as const },
+		kinds: [
+			{
+				id: "work",
+				label: "Work",
+				initial: { state: "ready", action: "do" },
+				transitions: [
+					{
+						from: { state: "ready", action: "do" },
+						event: "start",
+						to: { state: "running", action: "do" },
+					},
+					{
+						from: { state: "running", action: "do" },
+						event: "succeed",
+						input: z.strictObject({ n: z.string().transform(Number) }),
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [],
+	};
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Generic work",
+				workflow: {
+					kind: "work",
+					state: "running",
+					action: "do",
+					activeRunId: "run-1",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({ n: "2" }),
+			lifecycleHandlers: {
+				"work:running/do:succeed": ({ input }) => ({
+					log: { doubled: (input as { n: number }).n * 2 },
+					artifacts: [
+						{
+							kind: "inline",
+							uri: "handler:summary",
+							name: "Handler summary",
+							text: "done",
+						},
+					],
+					effects: [
+						{
+							type: "create-workflow-issue",
+							input: {
+								id: "child",
+								title: "Follow-up",
+								workflow: { kind: "work", state: "ready", action: "do" },
+							},
+						},
+					],
+				}),
+			},
+		},
+	);
+
+	expect(envelope.ok).toBe(true);
+	const updatedWorkflow = (await tracker.getIssue("123")).workflow;
+	expect(updatedWorkflow).toMatchObject({
+		kind: "work",
+		state: "done",
+		action: "none",
+	});
+	expect(updatedWorkflow.activeRunId).toBeUndefined();
+	expect((await tracker.getIssue("123")).artifacts).toMatchObject([
+		{ kind: "inline", uri: "handler:summary", name: "Handler summary" },
+	]);
+	expect((await tracker.readLogs("123"))[0]?.payload).toEqual({
+		event: "succeed",
+		input: { n: 2 },
+		to: { state: "done", action: "none" },
+		doubled: 4,
+	});
+	expect(await tracker.getIssue("child")).toMatchObject({
+		id: "child",
+		title: "Follow-up",
+		workflow: { kind: "work", state: "ready", action: "do" },
+	});
+});
+
+test("generic lifecycle transition handlers reject invalid contributions before mutation", async () => {
+	const manifest = {
+		version: "v1" as const,
+		workflow: { id: "generic" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["do", "none"],
+			events: ["succeed"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 as const },
+		kinds: [
+			{
+				id: "work",
+				label: "Work",
+				initial: { state: "running", action: "do" },
+				transitions: [
+					{
+						from: { state: "running", action: "do" },
+						event: "succeed",
+						input: z.strictObject({ ok: z.boolean() }),
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [],
+	};
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Generic work",
+				workflow: {
+					kind: "work",
+					state: "running",
+					action: "do",
+					activeRunId: "run-1",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(
+		["succeed", "123", "--run", "run-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({ ok: true }),
+			lifecycleHandlers: {
+				"work:running/do:succeed": () => ({ log: { bad: Symbol("x") } }),
+			},
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"LIFECYCLE_HANDLER_OUTPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.readLogs("123")).toEqual([]);
+	expect((await tracker.getIssue("123")).workflow).toMatchObject({
+		kind: "work",
+		state: "running",
+		action: "do",
+		activeRunId: "run-1",
+	});
+});
+
 test("default retry, explicit escalation, and explicit resume expose workflow logs and messages", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [

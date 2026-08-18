@@ -9,12 +9,20 @@ export type CommandHandlerContext = {
 	tracker: Tracker;
 	input: JsonValue;
 	issueId?: string;
+	args?: Array<string>;
+	stdin?: string;
 };
 
 export type CommandHandlerResult = Envelope | JsonValue;
 
-export type CommandHandler = (
+export type CommandHandler = ((
 	context: CommandHandlerContext,
-) => CommandHandlerResult | Promise<CommandHandlerResult>;
+) => CommandHandlerResult | Promise<CommandHandlerResult>) & {
+	/**
+	 * Raw handlers own CLI option/input parsing. Core still validates command
+	 * declaration and handler output, but does not assume JSON input semantics.
+	 */
+	rawInput?: true;
+};
 
 export type CommandHandlers = Record<string, CommandHandler>;

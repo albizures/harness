@@ -23,6 +23,7 @@ try {
 					manifest: binding.manifest,
 					tracker: binding.tracker,
 					commandHandlers: binding.commandHandlers,
+					lifecycleHandlers: binding.lifecycleHandlers,
 					stdin: readStdinForDashInput(binding.args),
 				});
 

@@ -3,3 +3,6 @@ import { createInMemoryTracker } from "../trackers/memory.ts";
 
 export const manifest = defaultManifest;
 export const tracker = createInMemoryTracker();
+export const lifecycleHandlers = {
+	"ticket:running/implement:succeed": () => ({ log: { handled: true } }),
+};
