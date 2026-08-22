@@ -20,7 +20,7 @@
 - 6e99d71: Require structured workflow artifact reference objects in manifest payload schemas and normalize tracker artifact storage to structured artifact records.
 - 6e99d71: Ensure GitHub workflow issue projection uses only canonical reserved current-field labels when listing and updating issues.
 - 6e99d71: Use canonical v1 GitHub machine comment markers for current workflow metadata and append-only workflow logs.
-- 87e38f6: Bind CLI execution to cwd `awf.config.ts` or global `--config`, falling back to the bundled workflow with `./.awf/tracker.json` when no tracker is configured.
+- 87e38f6: Bind CLI execution to cwd `awf.config.ts` or global `--config`; AWF now fails without an explicit workflow config, and the bundled `agent-development` workflow must be imported explicitly.
 - 6e99d71: Move plan application onto tracker-owned verified workflow intents that surface partial drift as NEED_RECONCILIATION.
 - 6e99d71: Align bundled workflow readiness with computed dependency and concurrency gates instead of durable blocked state.
 - 6e99d71: Remove legacy JSON-schema-like payload contracts from the public workflow manifest API and validate runtime payloads with manifest-owned Zod schemas.

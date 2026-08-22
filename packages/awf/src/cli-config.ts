@@ -8,7 +8,6 @@ import {
 	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
-import { defaultManifest } from "./default-manifest.ts";
 import { failure, type Envelope } from "./envelope.ts";
 import {
 	ManifestValidationError,
@@ -41,13 +40,11 @@ export async function bindCliExecution(
 
 	const configPath = parsed.configPath ?? discoverDefaultConfig(cwd);
 	if (configPath === undefined) {
-		return {
-			args: parsed.args,
-			manifest: defaultManifest,
-			tracker: defaultTracker(),
-			commandHandlers: agentDevelopmentCommandHandlers,
-			lifecycleHandlers: agentDevelopmentLifecycleHandlers,
-		};
+		return failure(
+			"CONFIG_LOAD_FAILED",
+			"AWF requires an explicit workflow config. Create ./awf.config.ts or pass --config <path>; to use the bundled agent-development workflow, explicitly export agentDevelopmentManifest from your config.",
+			{ expected: resolve(cwd, "awf.config.ts") },
+		);
 	}
 
 	if (parsed.explicit && !existsSync(configPath)) {

@@ -5,7 +5,11 @@ export type {
 	CommandHandlers,
 } from "./command-handlers.ts";
 export { execute, type ExecuteOptions } from "./commands.ts";
-export { defaultManifest } from "./default-manifest.ts";
+export {
+	agentDevelopmentCommandHandlers,
+	agentDevelopmentLifecycleHandlers,
+	agentDevelopmentManifest,
+} from "./workflows/agent-development/index.ts";
 export {
 	failure,
 	serializeEnvelope,

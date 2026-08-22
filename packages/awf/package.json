@@ -9,7 +9,8 @@
 	},
 	"exports": {
 		".": "./dist/index.js",
-		"./trackers/filesystem": "./dist/trackers/filesystem.js"
+		"./trackers/filesystem": "./dist/trackers/filesystem.js",
+		"./workflows/agent-development": "./dist/workflows/agent-development/index.js"
 	},
 	"files": [
 		"dist"

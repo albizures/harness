@@ -1,10 +1,18 @@
 import { z } from "zod";
 import { expect, test } from "vitest";
-import { execute } from "../../../src/commands.ts";
-import { defaultManifest } from "../../../src/default-manifest.ts";
+import { execute as rawExecute } from "../../../src/commands.ts";
+import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+
 import { defineManifest } from "../../../src/manifest.ts";
 import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 
+
+function execute(
+	args: Parameters<typeof rawExecute>[0],
+	options: Parameters<typeof rawExecute>[1] = {},
+): ReturnType<typeof rawExecute> {
+	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+}
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });
 const findingArtifact = (ref: string) => ({ type: "finding", ref });
@@ -251,8 +259,8 @@ test("explicit escalation moves work to need-human none and logs the reason", as
 
 test("terminal command rejects malformed bundled pull request artifacts before mutation", async () => {
 	const manifest = {
-		...defaultManifest,
-		kinds: defaultManifest.kinds.map((kind) =>
+		...agentDevelopmentManifest,
+		kinds: agentDevelopmentManifest.kinds.map((kind) =>
 			kind.id === "ticket"
 				? {
 						...kind,
@@ -320,8 +328,8 @@ test("terminal command rejects malformed bundled pull request artifacts before m
 
 test("terminal command rejects schema-valid non-JSON-compatible parsed input before mutation", async () => {
 	const manifest = {
-		...defaultManifest,
-		kinds: defaultManifest.kinds.map((kind) =>
+		...agentDevelopmentManifest,
+		kinds: agentDevelopmentManifest.kinds.map((kind) =>
 			kind.id === "ticket"
 				? {
 						...kind,
@@ -405,11 +413,11 @@ test("escalation validates input shape and JSON-compatible parsed input before m
 	expect((await tracker.getIssue("shape")).workflow.state).toBe("ready");
 
 	const manifest = {
-		...defaultManifest,
+		...agentDevelopmentManifest,
 		lifecycle: {
-			...defaultManifest.lifecycle,
+			...agentDevelopmentManifest.lifecycle,
 			escalation: {
-				...defaultManifest.lifecycle?.escalation,
+				...agentDevelopmentManifest.lifecycle?.escalation,
 				input: z.strictObject({
 					reason: z.string().transform(() => Symbol("not-json")),
 				}),
@@ -452,7 +460,7 @@ test("explicit resume chooses a valid next ready action", async () => {
 
 test("manifest lifecycle policy constrains retry escalation and resume", async () => {
 	const manifest = {
-		...defaultManifest,
+		...agentDevelopmentManifest,
 		lifecycle: {
 			retry: { allow: [{ kind: "ticket", action: "implement" }] },
 			escalation: { allow: [{ kind: "ticket", action: "implement" }] },
@@ -508,9 +516,9 @@ test("manifest lifecycle policy constrains retry escalation and resume", async (
 });
 
 test("bundled workflow vocabulary and transitions do not include durable blocked", () => {
-	expect(!defaultManifest.vocabulary.states.includes("blocked")).toBeTruthy();
+	expect(!agentDevelopmentManifest.vocabulary.states.includes("blocked")).toBeTruthy();
 	expect(
-		defaultManifest.kinds.every((kind) =>
+		agentDevelopmentManifest.kinds.every((kind) =>
 			kind.transitions.every(
 				(transition) =>
 					transition.from.state !== "blocked" &&

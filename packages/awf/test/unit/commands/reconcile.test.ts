@@ -1,6 +1,14 @@
 import { expect, test } from "vitest";
-import { execute } from "../../../src/commands.ts";
+import { execute as rawExecute } from "../../../src/commands.ts";
+import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+
+function execute(
+	args: Parameters<typeof rawExecute>[0],
+	options: Parameters<typeof rawExecute>[1] = {},
+): ReturnType<typeof rawExecute> {
+	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+}
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",

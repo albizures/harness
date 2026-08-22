@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { expect, test } from "vitest";
 import { z } from "zod";
-import { execute, type CommandHandlers } from "../../../src/commands.ts";
-import { defaultManifest } from "../../../src/default-manifest.ts";
+import { execute as rawExecute, type CommandHandlers } from "../../../src/commands.ts";
+import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+
 import type { WorkflowManifest } from "../../../src/manifest.ts";
 import {
 	NeedReconciliationError,
@@ -15,6 +16,13 @@ import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 import type { WorkflowIssue } from "../../../src/workflow/issue.ts";
 import type { WorkflowArtifact } from "../../../src/workflow/artifact.ts";
 
+
+function execute(
+	args: Parameters<typeof rawExecute>[0],
+	options: Parameters<typeof rawExecute>[1] = {},
+): ReturnType<typeof rawExecute> {
+	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+}
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {
 	outcome: string;
@@ -116,8 +124,8 @@ test("create spec records one generic workflow effects intent with initial curre
 test("create targets dispatch through manifest CLI declarations", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest: WorkflowManifest = {
-		...defaultManifest,
-		commands: defaultManifest.commands.map((command) =>
+		...agentDevelopmentManifest,
+		commands: agentDevelopmentManifest.commands.map((command) =>
 			command.id === "spec-create"
 				? { ...command, cli: { verb: "create", target: "brief" } }
 				: command,
@@ -239,8 +247,8 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 
 test("create handoff rejects malformed Handoff artifact data before recording", async () => {
 	const manifest = {
-		...defaultManifest,
-		commands: defaultManifest.commands.map((command) =>
+		...agentDevelopmentManifest,
+		commands: agentDevelopmentManifest.commands.map((command) =>
 			command.id === "handoff-create"
 				? {
 						...command,
@@ -392,8 +400,8 @@ test("apply targets dispatch through manifest CLI declarations", async () => {
 		],
 	});
 	const manifest: WorkflowManifest = {
-		...defaultManifest,
-		commands: defaultManifest.commands.map((command) =>
+		...agentDevelopmentManifest,
+		commands: agentDevelopmentManifest.commands.map((command) =>
 			command.id === "plan-apply"
 				? { ...command, cli: { verb: "apply", target: "roadmap" } }
 				: command,
@@ -454,8 +462,8 @@ test("apply plan requires the active manifest plan apply declaration before muta
 		],
 	});
 	const manifest: WorkflowManifest = {
-		...defaultManifest,
-		commands: defaultManifest.commands.map((command) =>
+		...agentDevelopmentManifest,
+		commands: agentDevelopmentManifest.commands.map((command) =>
 			command.id === "plan-apply" ? { ...command, cli: undefined } : command,
 		),
 	};
@@ -1256,9 +1264,9 @@ function manifestWithGenericCommands(
 	} = {},
 ): WorkflowManifest {
 	return {
-		...defaultManifest,
+		...agentDevelopmentManifest,
 		commands: [
-			...defaultManifest.commands,
+			...agentDevelopmentManifest.commands,
 			{
 				id: "note-create",
 				cli: { verb: "create", target: "note" },
@@ -1331,8 +1339,8 @@ function manifestWithCommandSchema(
 	schemas: Pick<WorkflowManifest["commands"][number], "input" | "output">,
 ): WorkflowManifest {
 	return {
-		...defaultManifest,
-		commands: defaultManifest.commands.map((command) =>
+		...agentDevelopmentManifest,
+		commands: agentDevelopmentManifest.commands.map((command) =>
 			command.id === id ? { ...command, ...schemas } : command,
 		),
 	};

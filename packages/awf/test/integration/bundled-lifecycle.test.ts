@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { execute } from "../../src/commands.ts";
 import type { Tracker } from "../../src/tracker.ts";
 import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
 
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });
@@ -10,7 +11,10 @@ const integrationImplementationPrNumber = 6;
 const integrationSpecPrNumber = 3;
 
 async function start(tracker: Tracker, id: string): Promise<string> {
-	const envelope = await execute(["start", id], { tracker });
+	const envelope = await execute(["start", id], {
+		tracker,
+		manifest: agentDevelopmentManifest,
+	});
 	expect(envelope.ok).toBe(true);
 	return (envelope as { ok: true; data: { run: { id: string } } }).data.run.id;
 }
@@ -24,6 +28,7 @@ async function terminal(
 ) {
 	const envelope = await execute([event, id, "--run", run, "--input", "-"], {
 		tracker,
+		manifest: agentDevelopmentManifest,
 		stdin: JSON.stringify(input),
 	});
 	expect(envelope.ok).toBe(true);
@@ -106,6 +111,7 @@ test("bundled Spec workflow waits for child Tickets before integration and merge
 	}>(
 		await execute(["apply", "plan", "s", "--input", "-"], {
 			tracker,
+			manifest: agentDevelopmentManifest,
 			stdin: JSON.stringify({
 				tickets: [{ key: "one", title: "One", content: "Do one thing." }],
 			}),

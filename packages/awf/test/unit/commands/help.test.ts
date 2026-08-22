@@ -1,9 +1,17 @@
 import { expect, test } from "vitest";
-import { defaultManifest } from "../../../src/default-manifest.ts";
+import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+
 import { defineManifest } from "../../../src/manifest.ts";
-import { execute } from "../../../src/commands.ts";
+import { execute as rawExecute } from "../../../src/commands.ts";
 import { helpCommands, helpReadiness } from "../../../src/commands/help.ts";
 
+
+function execute(
+	args: Parameters<typeof rawExecute>[0],
+	options: Parameters<typeof rawExecute>[1] = {},
+): ReturnType<typeof rawExecute> {
+	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+}
 test("help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
 
@@ -39,7 +47,7 @@ test("help returns a stable success envelope", async () => {
 
 test("help combines runtime commands with manifest CLI targets and readiness filters", () => {
 	const manifest = defineManifest({
-		...defaultManifest,
+		...agentDevelopmentManifest,
 		readiness: {
 			filters: [{ kind: "ticket", state: "ready", action: "implement" }],
 			namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],

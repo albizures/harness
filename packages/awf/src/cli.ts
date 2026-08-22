@@ -15,17 +15,9 @@ declare const process: {
 try {
 	const rawArgs = process.argv.slice(2);
 	const output = parseOutputFormat(rawArgs);
-	const binding = await bindCliExecution(output.args, process.cwd());
-	const envelope =
-		"ok" in binding
-			? binding
-			: await execute(binding.args, {
-					manifest: binding.manifest,
-					tracker: binding.tracker,
-					commandHandlers: binding.commandHandlers,
-					lifecycleHandlers: binding.lifecycleHandlers,
-					stdin: readStdinForDashInput(binding.args),
-				});
+	const envelope = commandDoesNotNeedConfig(output.args)
+		? await execute(output.args)
+		: await executeBoundCommand(output.args);
 
 	process.stdout.write(serializeCliOutput(envelope, output.format));
 	process.exitCode = envelope.ok ? 0 : 1;
@@ -51,6 +43,54 @@ try {
 	} else {
 		throw error;
 	}
+}
+
+async function executeBoundCommand(args: Array<string>) {
+	const binding = await bindCliExecution(args, process.cwd());
+	return "ok" in binding
+		? binding
+		: execute(binding.args, {
+				manifest: binding.manifest,
+				tracker: binding.tracker,
+				commandHandlers: binding.commandHandlers,
+				lifecycleHandlers: binding.lifecycleHandlers,
+				stdin: readStdinForDashInput(binding.args),
+			});
+}
+
+function commandDoesNotNeedConfig(args: Array<string>): boolean {
+	const commandArgs = argsWithoutConfigOption(args);
+	const command = commandArgs[0];
+	const knownConfigCommands = new Set([
+		undefined,
+		"--help",
+		"-h",
+		"get",
+		"logs",
+		"reconcile",
+		"ready",
+		"create",
+		"apply",
+		"start",
+		"succeed",
+		"fail",
+		"escalate",
+		"resume",
+	]);
+	return (
+		command === "--version" ||
+		command === "-v" ||
+		(command === "manifest" && commandArgs[1] === "validate") ||
+		!knownConfigCommands.has(command)
+	);
+}
+
+function argsWithoutConfigOption(args: Array<string>): Array<string> {
+	const index = args.indexOf("--config");
+	if (index === -1) {
+		return args;
+	}
+	return args.filter((_, argIndex) => argIndex !== index && argIndex !== index + 1);
 }
 
 function readStdinForDashInput(args: Array<string>): string | undefined {

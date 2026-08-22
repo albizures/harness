@@ -5,7 +5,6 @@ import {
 	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
-import { defaultManifest } from "./default-manifest.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
 import { validateManifest, type WorkflowManifest } from "./manifest.ts";
 import type { Tracker } from "./tracker.ts";
@@ -60,8 +59,14 @@ export async function execute(
 	args: Array<string>,
 	options: ExecuteOptions = {},
 ): Promise<Envelope> {
-	const manifest = options.manifest ?? defaultManifest;
+	const manifest = options.manifest;
 	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+		if (manifest === undefined) {
+			return failure(
+				"MANIFEST_REQUIRED",
+				"AWF requires an explicit workflow manifest for this command.",
+			);
+		}
 		return success({
 			name: "awf",
 			description: "Agent workflow CLI.",
@@ -84,15 +89,6 @@ export async function execute(
 	}
 
 	const tracker = options.tracker ?? createInMemoryTracker();
-	const manifestIssues = validateManifest(manifest);
-	if (manifestIssues.length > 0) {
-		return failure(
-			"MANIFEST_VALIDATION_FAILED",
-			"Workflow manifest validation failed.",
-			{ issues: manifestIssues },
-		);
-	}
-
 	if (args[0] === "get") {
 		return getIssueCommand(args[1], tracker);
 	}
@@ -101,6 +97,22 @@ export async function execute(
 	}
 	if (args[0] === "reconcile") {
 		return reconcileCommand(args[1], args.includes("--apply"), tracker);
+	}
+
+	if (manifest === undefined) {
+		return failure(
+			"MANIFEST_REQUIRED",
+			"AWF requires an explicit workflow manifest for this command.",
+		);
+	}
+
+	const manifestIssues = validateManifest(manifest);
+	if (manifestIssues.length > 0) {
+		return failure(
+			"MANIFEST_VALIDATION_FAILED",
+			"Workflow manifest validation failed.",
+			{ issues: manifestIssues },
+		);
 	}
 	if (args[0] === "ready") {
 		return readyCommand(parseReadyOptions(args), tracker, manifest);

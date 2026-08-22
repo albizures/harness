@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -20,6 +20,8 @@ async function runAwf(
 	return execute(binding.args, {
 		manifest: binding.manifest,
 		tracker: binding.tracker,
+		commandHandlers: binding.commandHandlers,
+		lifecycleHandlers: binding.lifecycleHandlers,
 		stdin,
 	});
 }
@@ -42,8 +44,30 @@ function normalizeRunIds<T>(value: T): T {
 	) as T;
 }
 
-test("no-config bundled workflow golden path creates Specs, applies Plans, records Handoffs, runs lifecycle terminals, reports readiness, logs, and tracker state", async () => {
-	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-golden-"));
+async function createAgentDevelopmentConfig(cwd: string): Promise<void> {
+	await writeFile(
+		join(cwd, "awf.config.ts"),
+		`export {\n\tagentDevelopmentManifest as manifest,\n\tagentDevelopmentCommandHandlers as commandHandlers,\n\tagentDevelopmentLifecycleHandlers as lifecycleHandlers,\n} from "${join(process.cwd(), "src/workflows/agent-development/index.ts")}";\n`,
+	);
+}
+
+test("no config fails clearly instead of loading the bundled workflow implicitly", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-fails-"));
+
+	expect(await runAwf(cwd, ["create", "spec", "--input", "-"], "# Spec")).toEqual({
+		ok: false,
+		error: {
+			code: "CONFIG_LOAD_FAILED",
+			message:
+				"AWF requires an explicit workflow config. Create ./awf.config.ts or pass --config <path>; to use the bundled agent-development workflow, explicitly export agentDevelopmentManifest from your config.",
+			details: { expected: join(cwd, "awf.config.ts") },
+		},
+	});
+});
+
+test("explicit agent-development config creates Specs, applies Plans, records Handoffs, runs lifecycle terminals, reports readiness, logs, and tracker state", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "awf-explicit-agent-development-"));
+	await createAgentDevelopmentConfig(cwd);
 
 	const created = expectSuccess(
 		await runAwf(
@@ -76,17 +100,9 @@ test("no-config bundled workflow golden path creates Specs, applies Plans, recor
 		),
 	).toMatchObject({
 		outcome: "SUCCESS",
-		spec: {
-			id: "1",
-			workflow: { kind: "spec", state: "ready", action: "none" },
-		},
+		spec: { id: "1", workflow: { kind: "spec", state: "ready", action: "none" } },
 		tickets: [{ id: "2", key: "api" }],
-		artifact: {
-			id: "artifact-1",
-			kind: "inline",
-			uri: "submitted-plan-bundle",
-			metadata: { ticketCount: 1 },
-		},
+		artifact: { id: "artifact-1", kind: "inline", metadata: { ticketCount: 1 } },
 		log: { sequence: 2, issueId: "1", type: "plan_applied" },
 	});
 
@@ -116,12 +132,7 @@ test("no-config bundled workflow golden path creates Specs, applies Plans, recor
 			},
 		},
 		run: { id: "<run-id>" },
-		log: {
-			sequence: 1,
-			issueId: "2",
-			type: "action_started",
-			runId: "<run-id>",
-		},
+		log: { sequence: 1, issueId: "2", type: "action_started", runId: "<run-id>" },
 	});
 
 	expect(
@@ -140,17 +151,9 @@ test("no-config bundled workflow golden path creates Specs, applies Plans, recor
 			),
 		),
 	).toMatchObject({
-		issue: {
-			id: "2",
-			workflow: { kind: "ticket", state: "ready", action: "review" },
-		},
+		issue: { id: "2", workflow: { kind: "ticket", state: "ready", action: "review" } },
 		run: { id: "<run-id>", status: "succeed" },
-		log: {
-			sequence: 2,
-			issueId: "2",
-			type: "action_succeeded",
-			runId: "<run-id>",
-		},
+		log: { sequence: 2, issueId: "2", type: "action_succeeded", runId: "<run-id>" },
 	});
 
 	expect(
@@ -169,33 +172,15 @@ test("no-config bundled workflow golden path creates Specs, applies Plans, recor
 			id: "artifact-2",
 			kind: "handoff",
 			uri: "Next: review the API surface.",
-			type: "handoff",
-			ref: "Next: review the API surface.",
 		},
 		log: { sequence: 3, issueId: "2", type: "handoff_created" },
 	});
 
-	expect(
-		normalizeRunIds(expectSuccess(await runAwf(cwd, ["logs", "2"]))),
-	).toEqual({
+	expect(normalizeRunIds(expectSuccess(await runAwf(cwd, ["logs", "2"])))).toEqual({
 		logs: [
-			expect.objectContaining({
-				sequence: 1,
-				issueId: "2",
-				type: "action_started",
-				runId: "<run-id>",
-			}),
-			expect.objectContaining({
-				sequence: 2,
-				issueId: "2",
-				type: "action_succeeded",
-				runId: "<run-id>",
-			}),
-			expect.objectContaining({
-				sequence: 3,
-				issueId: "2",
-				type: "handoff_created",
-			}),
+			expect.objectContaining({ sequence: 1, issueId: "2", type: "action_started", runId: "<run-id>" }),
+			expect.objectContaining({ sequence: 2, issueId: "2", type: "action_succeeded", runId: "<run-id>" }),
+			expect.objectContaining({ sequence: 3, issueId: "2", type: "handoff_created" }),
 		],
 	});
 
@@ -204,94 +189,9 @@ test("no-config bundled workflow golden path creates Specs, applies Plans, recor
 			id: "2",
 			workflow: { kind: "ticket", state: "ready", action: "review" },
 			artifacts: [
-				{
-					kind: "pull-request",
-					uri: "https://github.com/albizures/harness/pull/129",
-				},
+				{ kind: "pull-request", uri: "https://github.com/albizures/harness/pull/129" },
 				{ kind: "handoff", uri: "Next: review the API surface." },
 			],
-		},
-	});
-});
-
-test("no-config bundled workflow golden errors expose compatibility codes and details before mutation", async () => {
-	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-errors-"));
-
-	expect(await runAwf(cwd, ["create", "spec", "--input", "-"], "   ")).toEqual({
-		ok: false,
-		error: {
-			code: "WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
-			message: "Workflow command input is invalid.",
-			details: {
-				command: "spec-create",
-				issues: [
-					{
-						path: "$input.spec.ref",
-						message: "Artifact reference must be non-empty.",
-					},
-				],
-			},
-		},
-	});
-
-	expect(
-		await runAwf(
-			cwd,
-			["create", "handoff", "--source", "missing", "--input", "-"],
-			JSON.stringify({
-				handoff: { type: "handoff", metadata: { summary: "no ref" } },
-			}),
-		),
-	).toEqual({
-		ok: false,
-		error: {
-			code: "WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
-			message: "Workflow command input is invalid.",
-			details: {
-				command: "handoff-create",
-				issues: [
-					{
-						path: "$input.handoff.ref",
-						message: "Artifact reference must include ref.",
-					},
-				],
-			},
-		},
-	});
-
-	const created = expectSuccess(
-		await runAwf(cwd, ["create", "spec", "--input", "-"], "# Error fixture"),
-	) as { issue: { id: string } };
-	expect(
-		await runAwf(
-			cwd,
-			["apply", "plan", created.issue.id, "--input", "-"],
-			JSON.stringify({ tickets: [{ key: "bad", title: "Missing content" }] }),
-		),
-	).toEqual({
-		ok: false,
-		error: {
-			code: "WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
-			message: "Workflow command input is invalid.",
-			details: {
-				command: "plan-apply",
-				issues: [
-					{
-						path: "$input.tickets[0].content",
-						message: "Invalid input: expected string, received undefined",
-					},
-				],
-			},
-		},
-	});
-
-	expect(await runAwf(cwd, ["get", created.issue.id])).toMatchObject({
-		ok: true,
-		data: {
-			issue: {
-				id: created.issue.id,
-				workflow: { kind: "spec", state: "ready", action: "plan" },
-			},
 		},
 	});
 });

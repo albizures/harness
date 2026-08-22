@@ -1,9 +1,17 @@
 import { expect, test } from "vitest";
-import { execute } from "../../src/commands.ts";
-import { defaultManifest } from "../../src/default-manifest.ts";
+import { execute as rawExecute } from "../../src/commands.ts";
+import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
+
 import type { Tracker } from "../../src/tracker.ts";
 import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
+
+function execute(
+	args: Parameters<typeof rawExecute>[0],
+	options: Parameters<typeof rawExecute>[1] = {},
+): ReturnType<typeof rawExecute> {
+	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+}
 test("fixed handoff runtime command is not publicly accepted", async () => {
 	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);
 
@@ -20,7 +28,7 @@ test("fixed handoff runtime command is not publicly accepted", async () => {
 test("unknown manifest command targets are rejected before tracker mutation", async () => {
 	const envelope = await execute(["create", "ticket", "--input", "-"], {
 		tracker: createNoTouchTracker(),
-		manifest: defaultManifest,
+		manifest: agentDevelopmentManifest,
 		stdin: "# Ticket\n",
 	});
 

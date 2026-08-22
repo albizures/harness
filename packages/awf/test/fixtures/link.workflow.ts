@@ -1,10 +1,10 @@
-import { defaultManifest } from "../../src/default-manifest.ts";
 import type { WorkflowManifest } from "../../src/manifest.ts";
+import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
 
 export const manifest = {
-	...defaultManifest,
+	...agentDevelopmentManifest,
 	relationships: [
-		...(defaultManifest.relationships ?? []),
+		...(agentDevelopmentManifest.relationships ?? []),
 		{
 			id: "generic-link",
 			from: "spec",

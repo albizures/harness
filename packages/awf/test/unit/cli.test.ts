@@ -30,8 +30,8 @@ const missingManifestPath = new URL(
 	"../fixtures/missing-manifest.workflow.ts",
 	import.meta.url,
 ).pathname;
-const defaultManifestSourcePath = new URL(
-	"../../src/default-manifest.ts",
+const agentDevelopmentWorkflowSourcePath = new URL(
+	"../../src/workflows/agent-development/index.ts",
 	import.meta.url,
 ).pathname;
 const manifestSourcePath = new URL("../../src/manifest.ts", import.meta.url)
@@ -69,10 +69,10 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 function configWithMemoryIssue(id: string): string {
-	return `import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
+	return `import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
 import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
 
-export const manifest = defaultManifest;
+export const manifest = agentDevelopmentManifest;
 export const tracker = createInMemoryTracker({ issues: [{
 	id: ${JSON.stringify(id)},
 	title: "Configured ticket",
@@ -86,9 +86,11 @@ export const tracker = createInMemoryTracker({ issues: [{
 }
 
 test("CLI writes plain text to stdout by default", () => {
-	const result = spawnSync(process.execPath, [cliPath.pathname, "--help"], {
-		encoding: "utf8",
-	});
+	const result = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", validManifestPath, "--help"],
+		{ encoding: "utf8" },
+	);
 
 	expect(result.status).toBe(0);
 	expect(result.stderr).toBe("");
@@ -99,7 +101,7 @@ test("CLI writes plain text to stdout by default", () => {
 test("CLI writes JSON envelopes to stdout with --json", () => {
 	const result = spawnSync(
 		process.execPath,
-		[cliPath.pathname, "--json", "--help"],
+		[cliPath.pathname, "--json", "--config", validManifestPath, "--help"],
 		{
 			encoding: "utf8",
 		},
@@ -139,8 +141,10 @@ test("CLI discovers only ./awf.config.ts from the current working directory", as
 			{ cwd: child, encoding: "utf8" },
 		);
 
-		expect(notDiscoveredFromParent.status).toBe(0);
-		expect(JSON.parse(notDiscoveredFromParent.stdout).data.items).toEqual([]);
+		expect(notDiscoveredFromParent.status).toBe(1);
+		const envelope = JSON.parse(notDiscoveredFromParent.stdout);
+		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
+		expect(envelope.error.message).toMatch(/explicit workflow config/);
 	});
 });
 
@@ -163,19 +167,18 @@ test("CLI global --config loads a workflow module before command execution", asy
 	});
 });
 
-test("CLI defaults to the bundled manifest and ./.awf/tracker.json", async () => {
+test("CLI without a workflow config fails instead of defaulting to the bundled manifest", async () => {
 	await withTempDir(async (dir) => {
 		const created = spawnSync(
 			process.execPath,
 			[cliPath.pathname, "--json", "create", "spec", "--input", "-"],
-			{ cwd: dir, encoding: "utf8", input: "# Durable default\n" },
+			{ cwd: dir, encoding: "utf8", input: "# No default\n" },
 		);
 
-		expect(created.status).toBe(0);
-		const trackerState = JSON.parse(
-			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
-		);
-		expect(trackerState.issues[0].title).toBe("Durable default");
+		expect(created.status).toBe(1);
+		const envelope = JSON.parse(created.stdout);
+		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
+		expect(envelope.error.message).toMatch(/explicit workflow config/);
 	});
 });
 
@@ -319,8 +322,8 @@ test("CLI config that omits tracker uses the default filesystem tracker", async 
 	await withTempDir(async (dir) => {
 		await writeFile(
 			join(dir, "awf.config.ts"),
-			`import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
-export const manifest = defaultManifest;
+			`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
+export const manifest = agentDevelopmentManifest;
 `,
 		);
 		const created = spawnSync(
@@ -337,8 +340,14 @@ export const manifest = defaultManifest;
 	});
 });
 
-test("CLI default filesystem tracker keeps workflow state across separate processes", async () => {
+test("CLI config default filesystem tracker keeps workflow state across separate processes", async () => {
 	await withTempDir(async (dir) => {
+		await writeFile(
+			join(dir, "awf.config.ts"),
+			`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
+export const manifest = agentDevelopmentManifest;
+`,
+		);
 		const runCli = (args: Array<string>, input?: unknown) => {
 			const result = spawnSync(
 				process.execPath,
@@ -422,17 +431,17 @@ test("CLI default filesystem tracker keeps workflow state across separate proces
 			"action_resumed",
 		]);
 	});
-});
+}, bundledGoldenSmokeTimeoutMs);
 
 test("CLI uses an explicit config-exported filesystem tracker across processes", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
 			configPath,
-			`import { defaultManifest } from ${JSON.stringify(defaultManifestSourcePath)};
+			`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
 import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
 
-export const manifest = defaultManifest;
+export const manifest = agentDevelopmentManifest;
 export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" });
 `,
 		);
