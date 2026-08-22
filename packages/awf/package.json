@@ -21,6 +21,7 @@
 		"test": "pnpm run test:unit && pnpm run test:integration",
 		"test:unit": "vitest run --config vitest.config.ts test/unit",
 		"test:integration": "vitest run --config vitest.config.ts test/integration",
+		"test:coverage": "vitest run --config vitest.config.ts --coverage",
 		"test:vitest": "vitest run --config vitest.config.ts",
 		"awf": "node ./dist/cli.js"
 	},
@@ -30,6 +31,7 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"@vitest/coverage-v8": "4.1.10",
 		"vitest": "^4.1.10"
 	}
 }
