@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 
 const cliPath = new URL("../../src/cli.ts", import.meta.url);
 const validManifestPath = new URL(
@@ -85,7 +85,7 @@ export const tracker = createInMemoryTracker({ issues: [{
 `;
 }
 
-test("CLI writes plain text to stdout by default", () => {
+it("should ensure that CLI writes plain text to stdout by default", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--config", validManifestPath, "--help"],
@@ -98,7 +98,7 @@ test("CLI writes plain text to stdout by default", () => {
 	expect(result.stdout).toContain("Use --json for machine-readable output.");
 });
 
-test("CLI writes JSON envelopes to stdout with --json", () => {
+it("should ensure that CLI writes JSON envelopes to stdout with --json", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "--config", validManifestPath, "--help"],
@@ -114,7 +114,7 @@ test("CLI writes JSON envelopes to stdout with --json", () => {
 	expect(envelope.data.name).toBe("awf");
 });
 
-test("CLI discovers only ./awf.config.ts from the current working directory", async () => {
+it("should ensure that CLI discovers only ./awf.config.ts from the current working directory", async () => {
 	await withTempDir(async (dir) => {
 		await writeFile(join(dir, "awf.config.ts"), configWithMemoryIssue("91"));
 		const discovered = spawnSync(
@@ -148,7 +148,7 @@ test("CLI discovers only ./awf.config.ts from the current working directory", as
 	});
 });
 
-test("CLI global --config loads a workflow module before command execution", async () => {
+it("should ensure that CLI global --config loads a workflow module before command execution", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(configPath, configWithMemoryIssue("92"));
@@ -167,7 +167,7 @@ test("CLI global --config loads a workflow module before command execution", asy
 	});
 });
 
-test("CLI without a workflow config fails instead of defaulting to the bundled manifest", async () => {
+it("should ensure that CLI without a workflow config fails instead of defaulting to the bundled manifest", async () => {
 	await withTempDir(async (dir) => {
 		const created = spawnSync(
 			process.execPath,
@@ -182,7 +182,7 @@ test("CLI without a workflow config fails instead of defaulting to the bundled m
 	});
 });
 
-test("CLI config-exported command handlers are invoked by manifest command id", async () => {
+it("should ensure that CLI config-exported command handlers are invoked by manifest command id", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
@@ -239,7 +239,7 @@ export const commandHandlers = {
 	});
 });
 
-test("CLI config-exported lifecycle handlers are invoked by transition key", async () => {
+it("should ensure that CLI config-exported lifecycle handlers are invoked by transition key", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
@@ -318,7 +318,7 @@ export const lifecycleHandlers = {
 	});
 });
 
-test("CLI config that omits tracker uses the default filesystem tracker", async () => {
+it("should ensure that CLI config that omits tracker uses the default filesystem tracker", async () => {
 	await withTempDir(async (dir) => {
 		await writeFile(
 			join(dir, "awf.config.ts"),
@@ -340,7 +340,7 @@ export const manifest = agentDevelopmentManifest;
 	});
 });
 
-test("CLI config default filesystem tracker keeps workflow state across separate processes", async () => {
+it("should ensure that CLI config default filesystem tracker keeps workflow state across separate processes", async () => {
 	await withTempDir(async (dir) => {
 		await writeFile(
 			join(dir, "awf.config.ts"),
@@ -433,7 +433,7 @@ export const manifest = agentDevelopmentManifest;
 	});
 }, bundledGoldenSmokeTimeoutMs);
 
-test("CLI uses an explicit config-exported filesystem tracker across processes", async () => {
+it("should ensure that CLI uses an explicit config-exported filesystem tracker across processes", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
@@ -476,7 +476,7 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" }
 	});
 });
 
-test("CLI returns clear failure envelopes for explicit bad config paths", async () => {
+it("should ensure that CLI returns clear failure envelopes for explicit bad config paths", async () => {
 	const missing = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "--config", "./missing.workflow.ts", "ready"],
@@ -523,7 +523,7 @@ test("CLI returns clear failure envelopes for explicit bad config paths", async 
 	});
 });
 
-test("CLI smoke path loads a fixture manifest and returns a JSON success envelope", () => {
+it("should ensure that CLI smoke path loads a fixture manifest and returns a JSON success envelope", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "manifest", "validate", validManifestPath],
@@ -542,7 +542,7 @@ test("CLI smoke path loads a fixture manifest and returns a JSON success envelop
 	});
 });
 
-test("CLI returns a stable validation error envelope for a generic link projection", () => {
+it("should ensure that CLI returns a stable validation error envelope for a generic link projection", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "manifest", "validate", linkManifestPath],
@@ -562,7 +562,7 @@ test("CLI returns a stable validation error envelope for a generic link projecti
 	);
 });
 
-test("CLI returns a stable validation error envelope for a bad manifest", () => {
+it("should ensure that CLI returns a stable validation error envelope for a bad manifest", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "manifest", "validate", badManifestPath],
@@ -577,7 +577,7 @@ test("CLI returns a stable validation error envelope for a bad manifest", () => 
 	expect(JSON.stringify(envelope.error.details.issues)).toMatch(/wildcard/);
 });
 
-test("CLI smoke path seeds multiple in-memory issues and returns only legally executable ready items", () => {
+it("should ensure that CLI smoke path seeds multiple in-memory issues and returns only legally executable ready items", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "--config", envMemoryWorkflowPath, "ready"],
@@ -627,7 +627,7 @@ test("CLI smoke path seeds multiple in-memory issues and returns only legally ex
 	).toEqual(["1"]);
 });
 
-test("CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
+it("should ensure that CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
 	const issues = [
 		{
 			id: "42",
@@ -738,7 +738,7 @@ test("CLI smoke path reconciles a corrupt in-memory issue before normal commands
 	expect(JSON.parse(after.stdout).ok).toBe(true);
 });
 
-test("CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
+it("should ensure that CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
 	const started = spawnSync(
 		process.execPath,
 		[
@@ -854,8 +854,8 @@ test("CLI smoke path starts and succeeds a workflow run with logs oldest-first",
 	).toEqual(["action_started", "action_succeeded"]);
 });
 
-test(
-	"CLI smoke path drives one tiny Spec with one Ticket to Spec done",
+it(
+	"should ensure that CLI smoke path drives one tiny Spec with one Ticket to Spec done",
 	() => {
 		const runCli = (
 			args: Array<string>,
@@ -1007,7 +1007,7 @@ test(
 	bundledGoldenSmokeTimeoutMs,
 );
 
-test("CLI writes plain text errors to stdout and exits non-zero by default", () => {
+it("should ensure that CLI writes plain text errors to stdout and exits non-zero by default", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "unknown"], {
 		encoding: "utf8",
 	});
@@ -1017,7 +1017,7 @@ test("CLI writes plain text errors to stdout and exits non-zero by default", () 
 	expect(result.stdout).toContain("Error UNKNOWN_COMMAND: Unknown command.");
 });
 
-test("CLI writes error envelopes to stdout and exits non-zero with --json", () => {
+it("should ensure that CLI writes error envelopes to stdout and exits non-zero with --json", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--json", "unknown"],

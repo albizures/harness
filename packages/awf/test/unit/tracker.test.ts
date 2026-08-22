@@ -1,11 +1,11 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
 } from "../../src/workflow/projection.ts";
 import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
-test("conditional updates advance the projection version and reject stale expectations", async () => {
+it("should ensure that conditional updates advance the projection version and reject stale expectations", async () => {
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Implement tracker",
@@ -28,7 +28,7 @@ test("conditional updates advance the projection version and reject stale expect
 	).rejects.toThrow(ProjectionConflictError);
 });
 
-test("workflow logs are append-only and read back in append order", async () => {
+it("should ensure that workflow logs are append-only and read back in append order", async () => {
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Log me",
@@ -51,7 +51,7 @@ test("workflow logs are append-only and read back in append order", async () => 
 	expect(logs.map((log) => log.type)).toEqual(["started", "succeeded"]);
 });
 
-test("hierarchy and dependency relationships are projected on reads", async () => {
+it("should ensure that hierarchy and dependency relationships are projected on reads", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = await tracker.createIssue({
 		title: "Spec",
@@ -83,7 +83,7 @@ test("hierarchy and dependency relationships are projected on reads", async () =
 	);
 });
 
-test("artifact and change registrations are returned with the normalized issue", async () => {
+it("should ensure that artifact and change registrations are returned with the normalized issue", async () => {
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Artifacts",
@@ -122,7 +122,7 @@ test("artifact and change registrations are returned with the normalized issue",
 	]);
 });
 
-test("duplicate or malformed workflow projection fields are corruption", async () => {
+it("should ensure that duplicate or malformed workflow projection fields are corruption", async () => {
 	const duplicate = createInMemoryTracker({
 		issues: [
 			{

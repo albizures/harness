@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { bindCliExecution } from "../../src/cli-config.ts";
 import { execute } from "../../src/commands.ts";
 import type { Envelope } from "../../src/envelope.ts";
@@ -51,7 +51,7 @@ async function createAgentDevelopmentConfig(cwd: string): Promise<void> {
 	);
 }
 
-test("no config fails clearly instead of loading the bundled workflow implicitly", async () => {
+it("should ensure that no config fails clearly instead of loading the bundled workflow implicitly", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-fails-"));
 
 	expect(await runAwf(cwd, ["create", "spec", "--input", "-"], "# Spec")).toEqual({
@@ -65,7 +65,7 @@ test("no config fails clearly instead of loading the bundled workflow implicitly
 	});
 });
 
-test("explicit agent-development config creates Specs, applies Plans, records Handoffs, runs lifecycle terminals, reports readiness, logs, and tracker state", async () => {
+it("should ensure that explicit agent-development config creates Specs, applies Plans, records Handoffs, runs lifecycle terminals, reports readiness, logs, and tracker state", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "awf-explicit-agent-development-"));
 	await createAgentDevelopmentConfig(cwd);
 

@@ -1,8 +1,8 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute } from "../../../src/commands.ts";
 import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 
-test("get reads a workflow issue with a stable envelope shape", async () => {
+it("should ensure that get reads a workflow issue with a stable envelope shape", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -39,7 +39,7 @@ test("get reads a workflow issue with a stable envelope shape", async () => {
 	});
 });
 
-test("get returns derived run attempts even for crash-like running state", async () => {
+it("should ensure that get returns derived run attempts even for crash-like running state", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{

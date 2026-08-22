@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
@@ -15,7 +15,7 @@ const prArtifact = (n: number) => ({
 	url: `https://github.com/albizures/harness/pull/${n}`,
 });
 
-test("reconcile reports diagnostics read-only by default", async () => {
+it("should ensure that reconcile reports diagnostics read-only by default", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -50,7 +50,7 @@ test("reconcile reports diagnostics read-only by default", async () => {
 	);
 });
 
-test("reconcile --apply performs deterministic safe active-run repair", async () => {
+it("should ensure that reconcile --apply performs deterministic safe active-run repair", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -75,7 +75,7 @@ test("reconcile --apply performs deterministic safe active-run repair", async ()
 	).toBe(true);
 });
 
-test("reconcile leaves ambiguous active-run drift for humans", async () => {
+it("should ensure that reconcile leaves ambiguous active-run drift for humans", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -103,7 +103,7 @@ test("reconcile leaves ambiguous active-run drift for humans", async () => {
 	).toBe("need-human");
 });
 
-test("reconcile reports malformed logs and corrupt current metadata", async () => {
+it("should ensure that reconcile reports malformed logs and corrupt current metadata", async () => {
 	const malformedLogTracker = createInMemoryTracker({
 		issues: [
 			{
@@ -165,7 +165,7 @@ test("reconcile reports malformed logs and corrupt current metadata", async () =
 	}
 });
 
-test("normal commands do not silently repair drift before reconciliation", async () => {
+it("should ensure that normal commands do not silently repair drift before reconciliation", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{

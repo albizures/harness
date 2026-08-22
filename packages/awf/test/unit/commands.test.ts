@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
 
@@ -12,7 +12,7 @@ function execute(
 ): ReturnType<typeof rawExecute> {
 	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
 }
-test("fixed handoff runtime command is not publicly accepted", async () => {
+it("should ensure that fixed handoff runtime command is not publicly accepted", async () => {
 	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);
 
 	expect(envelope).toEqual({
@@ -25,7 +25,7 @@ test("fixed handoff runtime command is not publicly accepted", async () => {
 	});
 });
 
-test("unknown manifest command targets are rejected before tracker mutation", async () => {
+it("should ensure that unknown manifest command targets are rejected before tracker mutation", async () => {
 	const envelope = await execute(["create", "ticket", "--input", "-"], {
 		tracker: createNoTouchTracker(),
 		manifest: agentDevelopmentManifest,
@@ -42,7 +42,7 @@ test("unknown manifest command targets are rejected before tracker mutation", as
 	});
 });
 
-test("start records one high-level tracker intent instead of low-level writes", async () => {
+it("should ensure that start records one high-level tracker intent instead of low-level writes", async () => {
 	const seed = createInMemoryTracker({
 		issues: [
 			{
@@ -113,7 +113,7 @@ function createNoTouchTracker(): Tracker {
 	};
 }
 
-test("invalid arguments return a stable parse error envelope", async () => {
+it("should ensure that invalid arguments return a stable parse error envelope", async () => {
 	const envelope = await execute(["succeed", "123"]);
 
 	expect(envelope).toEqual({

@@ -1,4 +1,4 @@
-import { test, expect } from "vitest";
+import { it, expect } from "vitest";
 import {
 	createTrackerAdapter,
 	createTrackerIntentModule,
@@ -15,7 +15,7 @@ import type { WorkflowLog } from "../../src/workflow/log.ts";
 import type { WorkflowArtifactInput } from "../../src/workflow/artifact.ts";
 import type { WorkflowChange } from "../../src/workflow/change.ts";
 
-test("tracker adapter composition exposes public intents without adapter-owned choreography", async () => {
+it("should ensure that tracker adapter composition exposes public intents without adapter-owned choreography", async () => {
 	const state = new WorkflowTrackerState();
 	const primitives = primitiveStubs({
 		createIssue: async (input) => state.createIssue(input),
@@ -43,7 +43,7 @@ test("tracker adapter composition exposes public intents without adapter-owned c
 	).toEqual(expect.objectContaining({ id: "primitive", title: "Primitive" }));
 });
 
-test("tracker intent module composes adapter primitives and verification hooks", async () => {
+it("should ensure that tracker intent module composes adapter primitives and verification hooks", async () => {
 	const state = new WorkflowTrackerState([
 		{
 			id: "spec-1",
@@ -161,7 +161,7 @@ test("tracker intent module composes adapter primitives and verification hooks",
 	]);
 });
 
-test("tracker intent module verifies generic workflow effects with adapter reads when hooks are absent", async () => {
+it("should ensure that tracker intent module verifies generic workflow effects with adapter reads when hooks are absent", async () => {
 	const state = new WorkflowTrackerState([
 		{
 			id: "spec-1",
@@ -252,7 +252,7 @@ test("tracker intent module verifies generic workflow effects with adapter reads
 	expect(result.logs.at(-1)?.payload).toEqual({ input: "bundle.json" });
 });
 
-test("tracker intent module verifies relationship intents with adapter reads when hooks are absent", async () => {
+it("should ensure that tracker intent module verifies relationship intents with adapter reads when hooks are absent", async () => {
 	const state = new WorkflowTrackerState([
 		workflowIssueSeed("parent", "Parent"),
 		workflowIssueSeed("child", "Child"),
@@ -321,7 +321,7 @@ test("tracker intent module verifies relationship intents with adapter reads whe
 	]);
 });
 
-test("tracker intent module reports relationship verification mismatches as reconciliation", async () => {
+it("should ensure that tracker intent module reports relationship verification mismatches as reconciliation", async () => {
 	const state = new WorkflowTrackerState([
 		workflowIssueSeed("parent", "Parent"),
 		workflowIssueSeed("child", "Child"),
@@ -342,7 +342,7 @@ test("tracker intent module reports relationship verification mismatches as reco
 	).rejects.toThrow(NeedReconciliationError);
 });
 
-test("tracker intent module wraps relationship primitive failures as reconciliation", async () => {
+it("should ensure that tracker intent module wraps relationship primitive failures as reconciliation", async () => {
 	const tracker = createTrackerIntentModule(
 		primitiveStubs({
 			addDependency: async () => {
@@ -360,7 +360,7 @@ test("tracker intent module wraps relationship primitive failures as reconciliat
 	).rejects.toThrow(NeedReconciliationError);
 });
 
-test("tracker intent module creates workflow issues with initial logs and rereads", async () => {
+it("should ensure that tracker intent module creates workflow issues with initial logs and rereads", async () => {
 	const calls: Array<string> = [];
 	let storedIssue: WorkflowIssue = workflowIssue({
 		id: "1",
@@ -399,7 +399,7 @@ test("tracker intent module creates workflow issues with initial logs and reread
 	]);
 });
 
-test("tracker intent module composes basic workflow mutation intents", async () => {
+it("should ensure that tracker intent module composes basic workflow mutation intents", async () => {
 	const calls: Array<string> = [];
 	const issue = workflowIssue({ id: "1", title: "Ticket" });
 	const tracker = createTrackerIntentModule(
@@ -456,7 +456,7 @@ test("tracker intent module composes basic workflow mutation intents", async () 
 	]);
 });
 
-test("tracker intent module starts runs by projecting the active run before logging", async () => {
+it("should ensure that tracker intent module starts runs by projecting the active run before logging", async () => {
 	const calls: Array<string> = [];
 	const issue = workflowIssue({ id: "1", title: "Ticket" });
 	const tracker = createTrackerIntentModule(
@@ -500,7 +500,7 @@ test("tracker intent module starts runs by projecting the active run before logg
 	]);
 });
 
-test("tracker intent module completes runs before recording outputs and terminal logs", async () => {
+it("should ensure that tracker intent module completes runs before recording outputs and terminal logs", async () => {
 	const calls: Array<string> = [];
 	let storedIssue: WorkflowIssue = {
 		...workflowIssue({ id: "1", title: "Ticket" }),
@@ -594,7 +594,7 @@ test("tracker intent module completes runs before recording outputs and terminal
 	]);
 });
 
-test("tracker intent module records artifacts, changes, and workflow logs together", async () => {
+it("should ensure that tracker intent module records artifacts, changes, and workflow logs together", async () => {
 	const calls: Array<string> = [];
 	let storedIssue = workflowIssue({ id: "1", title: "Ticket" });
 	const tracker = createTrackerIntentModule(

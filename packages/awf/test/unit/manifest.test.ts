@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { z } from "zod";
 import {
 	defineManifest,
@@ -24,7 +24,7 @@ const invalidTrackerFixture = new URL(
 	import.meta.url,
 ).pathname;
 
-test("loads a TypeScript-authored workflow manifest as declarative data", async () => {
+it("should load a TypeScript-authored workflow manifest as declarative data", async () => {
 	const manifest = await loadManifest(validFixture);
 
 	expect(manifest.workflow.id).toBe("agent-development");
@@ -37,7 +37,7 @@ test("loads a TypeScript-authored workflow manifest as declarative data", async 
 	).toBe(true);
 });
 
-test("loads a Workflow module manifest and optional concrete tracker binding", async () => {
+it("should load a Workflow module manifest and optional concrete tracker binding", async () => {
 	const workflowModule = await loadWorkflowModule(moduleFixture);
 
 	expect(workflowModule.manifest.workflow.id).toBe("agent-development");
@@ -49,25 +49,25 @@ test("loads a Workflow module manifest and optional concrete tracker binding", a
 	).toBe("function");
 });
 
-test("Workflow module loading requires a manifest export", async () => {
+it("should ensure that Workflow module loading requires a manifest export", async () => {
 	await expect(loadWorkflowModule(missingManifestFixture)).rejects.toThrow(
 		/Workflow module must export 'manifest'/,
 	);
 });
 
-test("Workflow module loading rejects non-concrete tracker exports", async () => {
+it("should ensure that Workflow module loading rejects non-concrete tracker exports", async () => {
 	await expect(loadWorkflowModule(invalidTrackerFixture)).rejects.toThrow(
 		/'tracker' must be a concrete Tracker instance/,
 	);
 });
 
-test("manifest loading validates the manifest export without requiring or checking tracker", async () => {
+it("should ensure that manifest loading validates the manifest export without requiring or checking tracker", async () => {
 	const manifest = await loadManifest(invalidTrackerFixture);
 
 	expect(manifest.workflow.id).toBe("agent-development");
 });
 
-test("rejects loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
+it("should reject loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
 	await expect(loadManifest(linkFixture)).rejects.toSatisfy(
 		(error: unknown) => {
 			expect(error instanceof ManifestValidationError).toBe(true);
@@ -85,7 +85,7 @@ test("rejects loaded TypeScript workflow manifests with Zod-owned shape errors",
 	);
 });
 
-test("defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
+it("should ensure that defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",
 		workflow: { id: "tiny" },
@@ -138,7 +138,7 @@ test("defineManifest defaults the canonical GitHub reserved prefix and keeps Zod
 	});
 });
 
-test("public Zod authoring helpers declare and validate artifact payload schemas", () => {
+it("should ensure that public Zod authoring helpers declare and validate artifact payload schemas", () => {
 	const zodOutput = artifacts.object({
 		url: artifacts.url(),
 		file: artifacts.file(),
@@ -241,7 +241,7 @@ test("public Zod authoring helpers declare and validate artifact payload schemas
 	expect(invalid.error.issues.length).toBe(invalidArtifactReferenceCount);
 });
 
-test("validates manifest-declared CLI targets and named readiness filters", () => {
+it("should validate manifest-declared CLI targets and named readiness filters", () => {
 	const manifest = defineManifest({
 		version: "v1",
 		workflow: { id: "command-declarations" },
@@ -320,7 +320,7 @@ test("validates manifest-declared CLI targets and named readiness filters", () =
 	expect(messages).toMatch(/Named readiness filter kind must be known/);
 });
 
-test("rejects tracker as a manifest field inside defineManifest data", () => {
+it("should reject tracker as a manifest field inside defineManifest data", () => {
 	const manifestWithTracker = {
 		version: "v1",
 		workflow: { id: "tracker-field" },
@@ -350,7 +350,7 @@ test("rejects tracker as a manifest field inside defineManifest data", () => {
 	expect(messages).toMatch(/tracker/);
 });
 
-test("rejects non-declarative hooks, wildcards, unknown references, and malformed schemas", () => {
+it("should reject non-declarative hooks, wildcards, unknown references, and malformed schemas", () => {
 	const issues = validateManifest({
 		version: "v1",
 		workflow: { id: "bad" },

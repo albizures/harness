@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute } from "../../../src/commands.ts";
 import {
 	defineManifest,
@@ -60,7 +60,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	commands: [],
 });
 
-test("runtime commands reject unsupported workflow manifest relationship projection types", async () => {
+it("should ensure that runtime commands reject unsupported workflow manifest relationship projection types", async () => {
 	const envelope = await execute(["ready"], {
 		manifest: {
 			...defaultTicketOnlyReadyManifest,
@@ -93,7 +93,7 @@ test("runtime commands reject unsupported workflow manifest relationship project
 	});
 });
 
-test("ready returns legal executable work after dependency, concurrency, active-run, and manifest filters", async () => {
+it("should ensure that ready returns legal executable work after dependency, concurrency, active-run, and manifest filters", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -185,7 +185,7 @@ test("ready returns legal executable work after dependency, concurrency, active-
 	});
 });
 
-test("ready reports dependency-gated Tickets as blocked context while keeping durable fields ready", async () => {
+it("should ensure that ready reports dependency-gated Tickets as blocked context while keeping durable fields ready", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -270,7 +270,7 @@ test("ready reports dependency-gated Tickets as blocked context while keeping du
 	});
 });
 
-test("ready applies generic manifest relationship policies without bundled Spec special cases", async () => {
+it("should ensure that ready applies generic manifest relationship policies without bundled Spec special cases", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -359,7 +359,7 @@ test("ready applies generic manifest relationship policies without bundled Spec 
 	});
 });
 
-test("ready excludes ready/none Specs as unschedulable waiting work", async () => {
+it("should ensure that ready excludes ready/none Specs as unschedulable waiting work", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -391,7 +391,7 @@ test("ready excludes ready/none Specs as unschedulable waiting work", async () =
 	).toEqual(["ticket"]);
 });
 
-test("ready excludes candidates blocked by manifest concurrency limits", async () => {
+it("should ensure that ready excludes candidates blocked by manifest concurrency limits", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -442,7 +442,7 @@ test("ready excludes candidates blocked by manifest concurrency limits", async (
 	});
 });
 
-test("ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
+it("should ensure that ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -481,7 +481,7 @@ test("ready returns deterministic ordering, supports --limit 1, and manifest-nam
 	).toEqual(["1"]);
 });
 
-test("ready accepts repeated manifest-named filters", async () => {
+it("should ensure that ready accepts repeated manifest-named filters", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -526,7 +526,7 @@ test("ready accepts repeated manifest-named filters", async () => {
 	).toEqual(["ticket-1"]);
 });
 
-test("unknown readiness filter names are rejected before tracker reads", async () => {
+it("should ensure that unknown readiness filter names are rejected before tracker reads", async () => {
 	const envelope = await execute(["ready", "--filter", "milestone=spec-1"], {
 		tracker: createNoTouchTracker(),
 		manifest: defaultTicketOnlyReadyManifest,
@@ -542,7 +542,7 @@ test("unknown readiness filter names are rejected before tracker reads", async (
 	});
 });
 
-test("malformed readiness filter expressions return a clear parse error", async () => {
+it("should ensure that malformed readiness filter expressions return a clear parse error", async () => {
 	const envelope = await execute(["ready", "--filter", "spec"], {
 		tracker: createNoTouchTracker(),
 		manifest: defaultTicketOnlyReadyManifest,
@@ -558,7 +558,7 @@ test("malformed readiness filter expressions return a clear parse error", async 
 	});
 });
 
-test("invalid readiness filter values report the value problem", async () => {
+it("should ensure that invalid readiness filter values report the value problem", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute } from "../../src/commands.ts";
 import type { Tracker } from "../../src/tracker.ts";
 import { createInMemoryTracker } from "../../src/trackers/memory.ts";
@@ -40,7 +40,7 @@ function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	return (envelope as { ok: true; data: T }).data;
 }
 
-test("bundled Ticket workflow progresses through implementation review and merge", async () => {
+it("should ensure that bundled Ticket workflow progresses through implementation review and merge", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -69,7 +69,7 @@ test("bundled Ticket workflow progresses through implementation review and merge
 	expect(issue.artifacts.map((artifact) => artifact.uri)).toEqual([pr(1)]);
 });
 
-test("bundled Ticket changes-requested review returns to fix and review", async () => {
+it("should ensure that bundled Ticket changes-requested review returns to fix and review", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -94,7 +94,7 @@ test("bundled Ticket changes-requested review returns to fix and review", async 
 	expect((await tracker.getIssue("t")).workflow.action).toBe("review");
 });
 
-test("bundled Spec workflow waits for child Tickets before integration and merge", async () => {
+it("should ensure that bundled Spec workflow waits for child Tickets before integration and merge", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -155,7 +155,7 @@ test("bundled Spec workflow waits for child Tickets before integration and merge
 	}).toEqual({ state: "done", action: "none" });
 });
 
-test("bundled Spec integration changes-needed returns to planning", async () => {
+it("should ensure that bundled Spec integration changes-needed returns to planning", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{

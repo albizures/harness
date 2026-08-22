@@ -1,4 +1,4 @@
-import { assert, expect, test } from "vitest";
+import { assert, expect, it } from "vitest";
 import { execute } from "../../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../../src/workflows/agent-development/index.ts";
 import {
@@ -11,7 +11,7 @@ import { CorruptWorkflowProjectionError } from "../../../../src/workflow/project
 
 const PROJECT_COMMENT_AND_TWO_LOGS = 3;
 
-test("projects workflow fields to reserved GitHub labels and singleton metadata", async () => {
+it("should project workflow fields to reserved GitHub labels and singleton metadata", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 
@@ -59,7 +59,7 @@ test("projects workflow fields to reserved GitHub labels and singleton metadata"
 	expect(updated.workflow.version).toBe(2);
 });
 
-test("projects optional reasons and removes stale canonical labels on update", async () => {
+it("should project optional reasons and removes stale canonical labels on update", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 
@@ -97,7 +97,7 @@ test("projects optional reasons and removes stale canonical labels on update", a
 	]);
 });
 
-test("listIssues requires reconciliation for malformed reserved GitHub labels", async () => {
+it("should ensure that listIssues requires reconciliation for malformed reserved GitHub labels", async () => {
 	const api = createMockGitHubApi();
 	await api.createIssue({
 		title: "Reserved but malformed workflow label",
@@ -112,7 +112,7 @@ test("listIssues requires reconciliation for malformed reserved GitHub labels", 
 	await expect(tracker.listIssues()).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
-test("appends logs as strict machine comments", async () => {
+it("should append logs as strict machine comments", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	const issue = await tracker.createIssue({
@@ -138,7 +138,7 @@ test("appends logs as strict machine comments", async () => {
 	]);
 });
 
-test("uses native hierarchy and dependency capabilities", async () => {
+it("should use native hierarchy and dependency capabilities", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -165,7 +165,7 @@ test("uses native hierarchy and dependency capabilities", async () => {
 	expect((await tracker.getIssue("3")).relationships.dependents).toEqual(["2"]);
 });
 
-test("listIssues ignores unrelated GitHub issues without workflow projection labels", async () => {
+it("should ensure that listIssues ignores unrelated GitHub issues without workflow projection labels", async () => {
 	const api = createMockGitHubApi();
 	await api.createIssue({ title: "Regular issue", labels: ["project:awf"] });
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
@@ -179,7 +179,7 @@ test("listIssues ignores unrelated GitHub issues without workflow projection lab
 	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual(["2"]);
 });
 
-test("capability validation fails when native issue relationships are unavailable", async () => {
+it("should ensure that capability validation fails when native issue relationships are unavailable", async () => {
 	const api = createMockGitHubApi({
 		capabilities: { subIssues: false, dependencies: true },
 	});
@@ -188,7 +188,7 @@ test("capability validation fails when native issue relationships are unavailabl
 	);
 });
 
-test("manual reserved-label corruption requires reconciliation", async () => {
+it("should ensure that manual reserved-label corruption requires reconciliation", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -203,7 +203,7 @@ test("manual reserved-label corruption requires reconciliation", async () => {
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
-test("machine-comment corruption requires reconciliation", async () => {
+it("should ensure that machine-comment corruption requires reconciliation", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -216,7 +216,7 @@ test("machine-comment corruption requires reconciliation", async () => {
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
-test("malformed canonical and legacy workflow-owned machine comments require reconciliation", async () => {
+it("should ensure that malformed canonical and legacy workflow-owned machine comments require reconciliation", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -237,7 +237,7 @@ test("malformed canonical and legacy workflow-owned machine comments require rec
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
-test("machine-comment markers validate type version and workflow id", async () => {
+it("should ensure that machine-comment markers validate type version and workflow id", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -275,7 +275,7 @@ test("machine-comment markers validate type version and workflow id", async () =
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
-test("registers and validates pull-request artifacts", async () => {
+it("should register and validates pull-request artifacts", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -294,7 +294,7 @@ test("registers and validates pull-request artifacts", async () => {
 	expect((await tracker.getIssue("1")).artifacts[0]?.kind).toBe("pull-request");
 });
 
-test("preserves structured artifact fields through GitHub projection reads and logs", async () => {
+it("should preserve structured artifact fields through GitHub projection reads and logs", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -326,7 +326,7 @@ test("preserves structured artifact fields through GitHub projection reads and l
 	expect(api.issue(1).comments[1]?.body ?? "").toMatch(/"artifacts":\[/u);
 });
 
-test("malformed machine-owned artifact data requires reconciliation", async () => {
+it("should ensure that malformed machine-owned artifact data requires reconciliation", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
 	await tracker.createIssue({
@@ -350,7 +350,7 @@ test("malformed machine-owned artifact data requires reconciliation", async () =
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
-test("opt-in smoke: execute create/get/start/succeed/log against a real GitHub repository", {
+it("should ensure that opt-in smoke: execute create/get/start/succeed/log against a real GitHub repository", {
 	skip: process.env.AWF_GITHUB_SMOKE !== "1",
 }, async () => {
 	const repo = process.env.AWF_GITHUB_SMOKE_REPO;

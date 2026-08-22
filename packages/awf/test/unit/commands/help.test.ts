@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
 import { defineManifest } from "../../../src/manifest.ts";
@@ -12,7 +12,7 @@ function execute(
 ): ReturnType<typeof rawExecute> {
 	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
 }
-test("help returns a stable success envelope", async () => {
+it("should ensure that help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
 
 	expect(envelope.ok).toBe(true);
@@ -45,7 +45,7 @@ test("help returns a stable success envelope", async () => {
 	).toBeTruthy();
 });
 
-test("help combines runtime commands with manifest CLI targets and readiness filters", () => {
+it("should ensure that help combines runtime commands with manifest CLI targets and readiness filters", () => {
 	const manifest = defineManifest({
 		...agentDevelopmentManifest,
 		readiness: {

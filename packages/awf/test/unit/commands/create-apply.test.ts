@@ -1,7 +1,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { z } from "zod";
 import { execute as rawExecute, type CommandHandlers } from "../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
@@ -34,7 +34,7 @@ type HandoffData = {
 	artifact: WorkflowArtifact;
 };
 
-test("create spec creates a bundled workflow Spec from Markdown input", async () => {
+it("should ensure that create spec creates a bundled workflow Spec from Markdown input", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-spec-"));
 	const input = join(dir, "spec.md");
 	await writeFile(input, "# Build a thing\n\nDetailed goal.\n", "utf8");
@@ -61,7 +61,7 @@ test("create spec creates a bundled workflow Spec from Markdown input", async ()
 	).toEqual(["spec_created"]);
 });
 
-test("create spec records one generic workflow effects intent with initial current fields and log", async () => {
+it("should ensure that create spec records one generic workflow effects intent with initial current fields and log", async () => {
 	const intents: Array<string> = [];
 	const tracker: Tracker = {
 		...createNoTouchTracker(),
@@ -121,7 +121,7 @@ test("create spec records one generic workflow effects intent with initial curre
 	expect(intents).toEqual(["applyWorkflowEffects"]);
 });
 
-test("create targets dispatch through manifest CLI declarations", async () => {
+it("should ensure that create targets dispatch through manifest CLI declarations", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest: WorkflowManifest = {
 		...agentDevelopmentManifest,
@@ -154,7 +154,7 @@ test("create targets dispatch through manifest CLI declarations", async () => {
 	);
 });
 
-test("create spec validates the bundled manifest-declared input before mutating", async () => {
+it("should ensure that create spec validates the bundled manifest-declared input before mutating", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = manifestWithCommandSchema("spec-create", {
 		input: z.strictObject({ spec: z.number().int() }),
@@ -173,7 +173,7 @@ test("create spec validates the bundled manifest-declared input before mutating"
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-test("create command input rejects Zod-parsed values that are not JSON-compatible", async () => {
+it("should ensure that create command input rejects Zod-parsed values that are not JSON-compatible", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = manifestWithCommandSchema("spec-create", {
 		input: z.strictObject({
@@ -200,7 +200,7 @@ test("create command input rejects Zod-parsed values that are not JSON-compatibl
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-test("create handoff validates input and attaches a Handoff artifact to the source issue", async () => {
+it("should ensure that create handoff validates input and attaches a Handoff artifact to the source issue", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -245,7 +245,7 @@ test("create handoff validates input and attaches a Handoff artifact to the sour
 	]);
 });
 
-test("create handoff rejects malformed Handoff artifact data before recording", async () => {
+it("should ensure that create handoff rejects malformed Handoff artifact data before recording", async () => {
 	const manifest = {
 		...agentDevelopmentManifest,
 		commands: agentDevelopmentManifest.commands.map((command) =>
@@ -289,7 +289,7 @@ test("create handoff rejects malformed Handoff artifact data before recording", 
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
-test("create handoff records artifact and log through one tracker intent", async () => {
+it("should ensure that create handoff records artifact and log through one tracker intent", async () => {
 	const seed = createInMemoryTracker({
 		issues: [
 			{
@@ -362,7 +362,7 @@ test("create handoff records artifact and log through one tracker intent", async
 	expect(intents).toEqual(["applyWorkflowEffects"]);
 });
 
-test("create handoff rejects invalid manifest-declared input before mutating", async () => {
+it("should ensure that create handoff rejects invalid manifest-declared input before mutating", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -389,7 +389,7 @@ test("create handoff rejects invalid manifest-declared input before mutating", a
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
-test("apply targets dispatch through manifest CLI declarations", async () => {
+it("should ensure that apply targets dispatch through manifest CLI declarations", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -451,7 +451,7 @@ test("apply targets dispatch through manifest CLI declarations", async () => {
 	expect(await unknownTracker.readLogs("spec-2")).toEqual([]);
 });
 
-test("apply plan requires the active manifest plan apply declaration before mutating", async () => {
+it("should ensure that apply plan requires the active manifest plan apply declaration before mutating", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -486,7 +486,7 @@ test("apply plan requires the active manifest plan apply declaration before muta
 	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
-test("apply plan creates tickets, relationships, dependencies, logs application, and leaves the Spec unschedulable", async () => {
+it("should ensure that apply plan creates tickets, relationships, dependencies, logs application, and leaves the Spec unschedulable", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-plan-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -560,7 +560,7 @@ test("apply plan creates tickets, relationships, dependencies, logs application,
 	]);
 });
 
-test("apply plan rejects manifest-invalid command input before mutating the tracker", async () => {
+it("should ensure that apply plan rejects manifest-invalid command input before mutating the tracker", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -590,7 +590,7 @@ test("apply plan rejects manifest-invalid command input before mutating the trac
 	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
-test("apply plan reports manifest-invalid command output instead of returning success", async () => {
+it("should ensure that apply plan reports manifest-invalid command output instead of returning success", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-bad-output-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -628,7 +628,7 @@ test("apply plan reports manifest-invalid command output instead of returning su
 	]);
 });
 
-test("apply plan rejects invalid bundles before mutating the tracker", async () => {
+it("should ensure that apply plan rejects invalid bundles before mutating the tracker", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-bad-plan-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -663,7 +663,7 @@ test("apply plan rejects invalid bundles before mutating the tracker", async () 
 	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
-test("apply plan rejects malformed dependency payloads before applying tracker relationships", async () => {
+it("should ensure that apply plan rejects malformed dependency payloads before applying tracker relationships", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-bad-dependency-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -715,7 +715,7 @@ test("apply plan rejects malformed dependency payloads before applying tracker r
 	expect(await base.readLogs("spec-1")).toEqual([]);
 });
 
-test("apply plan reports malformed ticket payload paths", async () => {
+it("should ensure that apply plan reports malformed ticket payload paths", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-malformed-ticket-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -755,7 +755,7 @@ test("apply plan reports malformed ticket payload paths", async () => {
 	]);
 });
 
-test("apply plan dispatches the bundle as one tracker-owned workflow intent", async () => {
+it("should ensure that apply plan dispatches the bundle as one tracker-owned workflow intent", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-one-intent-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(
@@ -808,7 +808,7 @@ test("apply plan dispatches the bundle as one tracker-owned workflow intent", as
 	expect(applyWorkflowEffectsCalls).toBe(1);
 });
 
-test("generic create rejects invalid JSON before mutating the tracker", async () => {
+it("should ensure that generic create rejects invalid JSON before mutating the tracker", async () => {
 	const tracker = createNoTouchTracker();
 	const manifest = manifestWithGenericCommands();
 
@@ -824,7 +824,7 @@ test("generic create rejects invalid JSON before mutating the tracker", async ()
 	);
 });
 
-test("generic create rejects schema-invalid input before creating a Workflow issue", async () => {
+it("should ensure that generic create rejects schema-invalid input before creating a Workflow issue", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = manifestWithGenericCommands({
 		createInput: z.strictObject({ title: z.string(), body: z.string() }),
@@ -843,7 +843,7 @@ test("generic create rejects schema-invalid input before creating a Workflow iss
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-test("generic create rejects non-JSON-compatible parsed input before creating a Workflow issue", async () => {
+it("should ensure that generic create rejects non-JSON-compatible parsed input before creating a Workflow issue", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = manifestWithGenericCommands({
 		createInput: z
@@ -870,7 +870,7 @@ test("generic create rejects non-JSON-compatible parsed input before creating a 
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-test("generic create stores the manifest-parsed JSON-compatible payload", async () => {
+it("should ensure that generic create stores the manifest-parsed JSON-compatible payload", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = manifestWithGenericCommands({
 		createInput: z
@@ -899,7 +899,7 @@ test("generic create stores the manifest-parsed JSON-compatible payload", async 
 	});
 });
 
-test("generic apply rejects invalid JSON before reading or mutating the tracker", async () => {
+it("should ensure that generic apply rejects invalid JSON before reading or mutating the tracker", async () => {
 	const tracker = createNoTouchTracker();
 	const manifest = manifestWithGenericCommands();
 
@@ -918,7 +918,7 @@ test("generic apply rejects invalid JSON before reading or mutating the tracker"
 	);
 });
 
-test("generic apply rejects schema-invalid input before writing logs", async () => {
+it("should ensure that generic apply rejects schema-invalid input before writing logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -948,7 +948,7 @@ test("generic apply rejects schema-invalid input before writing logs", async () 
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
-test("generic apply rejects non-JSON-compatible parsed input before writing logs", async () => {
+it("should ensure that generic apply rejects non-JSON-compatible parsed input before writing logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -980,7 +980,7 @@ test("generic apply rejects non-JSON-compatible parsed input before writing logs
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
-test("generic apply logs the manifest-parsed JSON-compatible payload", async () => {
+it("should ensure that generic apply logs the manifest-parsed JSON-compatible payload", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1011,7 +1011,7 @@ test("generic apply logs the manifest-parsed JSON-compatible payload", async () 
 	});
 });
 
-test("command handlers receive manifest-validated input and core validates successful output", async () => {
+it("should ensure that command handlers receive manifest-validated input and core validates successful output", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = genericWorkflowManifest({
 		createInput: z
@@ -1053,7 +1053,7 @@ test("command handlers receive manifest-validated input and core validates succe
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-test("command handlers are not invoked when input validation fails", async () => {
+it("should ensure that command handlers are not invoked when input validation fails", async () => {
 	let calls = 0;
 	const envelope = await execute(["create", "memo", "--input", "-"], {
 		tracker: createInMemoryTracker(),
@@ -1076,7 +1076,7 @@ test("command handlers are not invoked when input validation fails", async () =>
 	expect(calls).toBe(0);
 });
 
-test("handler success output validation failures are returned as errors", async () => {
+it("should ensure that handler success output validation failures are returned as errors", async () => {
 	const envelope = await execute(["create", "memo", "--input", "-"], {
 		tracker: createInMemoryTracker(),
 		manifest: genericWorkflowManifest({
@@ -1095,7 +1095,7 @@ test("handler success output validation failures are returned as errors", async 
 	);
 });
 
-test("handler failure envelopes pass through without output validation", async () => {
+it("should ensure that handler failure envelopes pass through without output validation", async () => {
 	const envelope = await execute(["apply", "memo", "item-1", "--input", "-"], {
 		tracker: createInMemoryTracker({
 			issues: [
@@ -1139,7 +1139,7 @@ test("handler failure envelopes pass through without output validation", async (
 	});
 });
 
-test("commands without handlers continue to use generic behavior", async () => {
+it("should ensure that commands without handlers continue to use generic behavior", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = genericWorkflowManifest({
 		createInput: z.strictObject({ title: z.string(), body: z.string() }),
@@ -1159,7 +1159,7 @@ test("commands without handlers continue to use generic behavior", async () => {
 	expect((envelope.data as CreateSpecData).issue.title).toBe("Fallback");
 });
 
-test("apply command handlers receive the parsed issue id", async () => {
+it("should ensure that apply command handlers receive the parsed issue id", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1198,7 +1198,7 @@ test("apply command handlers receive the parsed issue id", async () => {
 	expect(await tracker.readLogs("item-1")).toEqual([]);
 });
 
-test("apply plan reports need-reconciliation instead of rolling back partial adapter drift", async () => {
+it("should ensure that apply plan reports need-reconciliation instead of rolling back partial adapter drift", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-reconcile-"));
 	const plan = join(dir, "plan.json");
 	await writeFile(

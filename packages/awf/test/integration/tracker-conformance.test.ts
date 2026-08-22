@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import {
 	NeedReconciliationError,
 	type TrackerAdapter,
@@ -51,7 +51,7 @@ const trackerFamilies: Array<TrackerFamily> = [
 ];
 
 for (const family of trackerFamilies) {
-	test(`${family.name}: public Tracker API records workflow state and logs`, async () => {
+	it(`should record workflow state and logs for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "Conformance ticket",
@@ -90,7 +90,7 @@ for (const family of trackerFamilies) {
 		});
 	});
 
-	test(`${family.name}: public Tracker API records relationships and plan outcomes`, async () => {
+	it(`should record relationships and plan outcomes for ${family.name}`, async () => {
 		await withTracker(
 			family,
 			async (tracker) => {
@@ -192,7 +192,7 @@ for (const family of trackerFamilies) {
 		);
 	});
 
-	test(`${family.name}: public Tracker API preserves JSON-compatible artifact metadata and log payloads`, async () => {
+	it(`should preserve JSON-compatible artifact metadata and log payloads for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "JSON conformance ticket",
@@ -230,7 +230,7 @@ for (const family of trackerFamilies) {
 		});
 	});
 
-	test(`${family.name}: public Tracker API records artifacts, changes, and terminal logs`, async () => {
+	it(`should record artifacts, changes, and terminal logs for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "Conformance ticket",
@@ -271,7 +271,7 @@ for (const family of trackerFamilies) {
 		});
 	});
 
-	test(`${family.name}: public Tracker API exposes conflicts and reconciliation-visible failures`, async () => {
+	it(`should expose conflicts and reconciliation-visible failures for ${family.name}`, async () => {
 		await withTracker(
 			family,
 			async (tracker) => {

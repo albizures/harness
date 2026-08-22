@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { CorruptWorkflowProjectionError } from "../../../src/workflow/projection.ts";
 import { createFileSystemTracker } from "../../../src/trackers/filesystem.ts";
 
@@ -21,7 +21,7 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	}
 }
 
-test("file-backed tracker initializes missing state and persists mutations for later adapters", async () => {
+it("should ensure that file-backed tracker initializes missing state and persists mutations for later adapters", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "nested", "tracker.json");
 		const tracker = createFileSystemTracker({ path: file });
@@ -53,7 +53,7 @@ test("file-backed tracker initializes missing state and persists mutations for l
 	});
 });
 
-test("file-backed tracker preserves workflow data and issue allocation across fresh adapters", async () => {
+it("should ensure that file-backed tracker preserves workflow data and issue allocation across fresh adapters", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		const tracker = createFileSystemTracker({ path: file });
@@ -169,7 +169,7 @@ test("file-backed tracker preserves workflow data and issue allocation across fr
 	});
 });
 
-test("file-backed tracker read-only operations do not rewrite state", async () => {
+it("should ensure that file-backed tracker read-only operations do not rewrite state", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		const tracker = createFileSystemTracker({ path: file });
@@ -188,7 +188,7 @@ test("file-backed tracker read-only operations do not rewrite state", async () =
 	});
 });
 
-test("file-backed tracker writes a complete JSON state file without leftover temp files", async () => {
+it("should ensure that file-backed tracker writes a complete JSON state file without leftover temp files", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		const tracker = createFileSystemTracker({ path: file });
@@ -206,7 +206,7 @@ test("file-backed tracker writes a complete JSON state file without leftover tem
 	});
 });
 
-test("file-backed tracker rejects non-JSON artifact metadata in stored state", async () => {
+it("should ensure that file-backed tracker rejects non-JSON artifact metadata in stored state", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		await writeFile(
@@ -246,7 +246,7 @@ test("file-backed tracker rejects non-JSON artifact metadata in stored state", a
 	});
 });
 
-test("file-backed tracker rejects corrupted JSON clearly", async () => {
+it("should ensure that file-backed tracker rejects corrupted JSON clearly", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		await writeFile(file, "{not json", "utf8");

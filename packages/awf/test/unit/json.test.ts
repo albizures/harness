@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	isJsonRecord,
 	isJsonValue,
@@ -29,9 +29,9 @@ const nonJsonCompatibleValues = [
 	[undefined],
 ] as const;
 
-describe("AWF JSON boundary primitives", () => {
-	test.each(jsonCompatibleValues)(
-		"accepts JSON-compatible value %#",
+describe("when validating AWF JSON boundary primitives", () => {
+	it.each(jsonCompatibleValues)(
+		"should accept JSON-compatible value %#",
 		(value) => {
 			expect(jsonValueSchema.safeParse(value).success).toBe(true);
 			expect(isJsonValue(value)).toBe(true);
@@ -39,8 +39,8 @@ describe("AWF JSON boundary primitives", () => {
 		},
 	);
 
-	test.each(nonJsonCompatibleValues)(
-		"rejects non-JSON-compatible value %#",
+	it.each(nonJsonCompatibleValues)(
+		"should reject non-JSON-compatible value %#",
 		(value) => {
 			expect(jsonValueSchema.safeParse(value).success).toBe(false);
 			expect(isJsonValue(value)).toBe(false);
@@ -48,7 +48,7 @@ describe("AWF JSON boundary primitives", () => {
 		},
 	);
 
-	test("validates JSON-compatible records separately from scalar values", () => {
+	it("should validate JSON-compatible records separately from scalar values", () => {
 		const record = { title: "Plan", metadata: { count: 1 } };
 
 		expect(jsonRecordSchema.parse(record)).toEqual(record);

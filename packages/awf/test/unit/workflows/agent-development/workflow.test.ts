@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../../src/commands.ts";
 import { validateManifest } from "../../../../src/manifest.ts";
 import { createInMemoryTracker } from "../../../../src/trackers/memory.ts";
@@ -43,7 +43,7 @@ function assertFailureCode(
 	expect(envelope.ok ? undefined : envelope.error.code).toBe(code);
 }
 
-test("exports a valid explicit bundled workflow module", () => {
+it("should export a valid explicit bundled workflow module", () => {
 	expect(manifest).toBe(agentDevelopmentManifest);
 	expect(commandHandlers).toBe(agentDevelopmentCommandHandlers);
 	expect(lifecycleHandlers).toBe(agentDevelopmentLifecycleHandlers);
@@ -60,7 +60,7 @@ test("exports a valid explicit bundled workflow module", () => {
 	]);
 });
 
-test("captures agent-development-specific lifecycle and readiness assumptions", () => {
+it("should capture agent-development-specific lifecycle and readiness assumptions", () => {
 	expect(agentDevelopmentManifest.vocabulary.states).not.toContain("blocked");
 	const { readiness } = agentDevelopmentManifest;
 	if (readiness === undefined) {
@@ -89,7 +89,7 @@ test("captures agent-development-specific lifecycle and readiness assumptions", 
 	});
 });
 
-test("creates a Spec through the bundled command handler", async () => {
+it("should create a Spec through the bundled command handler", async () => {
 	const tracker = createInMemoryTracker();
 
 	const data = assertSuccess<CreateSpecData>(
@@ -111,7 +111,7 @@ test("creates a Spec through the bundled command handler", async () => {
 	]);
 });
 
-test("applies a bundled plan into tickets, parent-child links, dependencies, and a plan artifact", async () => {
+it("should apply a bundled plan into tickets, parent-child links, dependencies, and a plan artifact", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -165,7 +165,7 @@ test("applies a bundled plan into tickets, parent-child links, dependencies, and
 	);
 });
 
-test("rejects bundled plan payloads with duplicate or unknown dependency keys", async () => {
+it("should reject bundled plan payloads with duplicate or unknown dependency keys", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -196,7 +196,7 @@ test("rejects bundled plan payloads with duplicate or unknown dependency keys", 
 	expect((await tracker.getIssue("spec-1")).relationships.children).toEqual([]);
 });
 
-test("records bundled handoffs as workflow artifacts", async () => {
+it("should record bundled handoffs as workflow artifacts", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -226,7 +226,7 @@ test("records bundled handoffs as workflow artifacts", async () => {
 	]);
 });
 
-test("bundled lifecycle handlers enforce terminal verdicts and record pull request artifacts", async () => {
+it("should ensure that bundled lifecycle handlers enforce terminal verdicts and record pull request artifacts", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{

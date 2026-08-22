@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { z } from "zod";
 import { execute } from "../../src/commands.ts";
 import { defineManifest } from "../../src/manifest.ts";
@@ -70,7 +70,7 @@ const syntheticManifest = defineManifest({
 	],
 });
 
-test("synthetic workflow dispatches manifest-declared create, apply, and ready commands", async () => {
+it("should ensure that synthetic workflow dispatches manifest-declared create, apply, and ready commands", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -115,7 +115,7 @@ test("synthetic workflow dispatches manifest-declared create, apply, and ready c
 	);
 });
 
-test("synthetic workflow dispatch rejects undeclared command and filter names", async () => {
+it("should ensure that synthetic workflow dispatch rejects undeclared command and filter names", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{

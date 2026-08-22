@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
@@ -22,7 +22,7 @@ function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	return (envelope as { ok: true; data: T }).data;
 }
 
-test("start moves a ready issue to running, stores one active run, and appends an action_started log", async () => {
+it("should ensure that start moves a ready issue to running, stores one active run, and appends an action_started log", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -52,7 +52,7 @@ test("start moves a ready issue to running, stores one active run, and appends a
 	expect(logs[0]?.runId).toBe(data.run.id);
 });
 
-test("succeed applies generic relationship-driven lifecycle progression", async () => {
+it("should ensure that succeed applies generic relationship-driven lifecycle progression", async () => {
 	const manifest = defineManifest({
 		version: "v1",
 		workflow: { id: "generic-parent-progression" },
@@ -139,7 +139,7 @@ test("succeed applies generic relationship-driven lifecycle progression", async 
 	}).toEqual({ kind: "goal", state: "ready", action: "verify" });
 });
 
-test("succeed applies the manifest terminal transition for the active run", async () => {
+it("should ensure that succeed applies the manifest terminal transition for the active run", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -182,7 +182,7 @@ test("succeed applies the manifest terminal transition for the active run", asyn
 	]);
 });
 
-test("failed running actions retry the same ready action by default", async () => {
+it("should ensure that failed running actions retry the same ready action by default", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -230,7 +230,7 @@ test("failed running actions retry the same ready action by default", async () =
 	});
 });
 
-test("explicit escalation moves work to need-human none and logs the reason", async () => {
+it("should ensure that explicit escalation moves work to need-human none and logs the reason", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -257,7 +257,7 @@ test("explicit escalation moves work to need-human none and logs the reason", as
 	});
 });
 
-test("terminal command rejects malformed bundled pull request artifacts before mutation", async () => {
+it("should ensure that terminal command rejects malformed bundled pull request artifacts before mutation", async () => {
 	const manifest = {
 		...agentDevelopmentManifest,
 		kinds: agentDevelopmentManifest.kinds.map((kind) =>
@@ -326,7 +326,7 @@ test("terminal command rejects malformed bundled pull request artifacts before m
 	expect((await tracker.getIssue("123")).artifacts).toEqual([]);
 });
 
-test("terminal command rejects schema-valid non-JSON-compatible parsed input before mutation", async () => {
+it("should ensure that terminal command rejects schema-valid non-JSON-compatible parsed input before mutation", async () => {
 	const manifest = {
 		...agentDevelopmentManifest,
 		kinds: agentDevelopmentManifest.kinds.map((kind) =>
@@ -385,7 +385,7 @@ test("terminal command rejects schema-valid non-JSON-compatible parsed input bef
 	expect((await tracker.getIssue("123")).artifacts).toEqual([]);
 });
 
-test("escalation validates input shape and JSON-compatible parsed input before mutation", async () => {
+it("should ensure that escalation validates input shape and JSON-compatible parsed input before mutation", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -437,7 +437,7 @@ test("escalation validates input shape and JSON-compatible parsed input before m
 	expect((await tracker.getIssue("json")).workflow.state).toBe("ready");
 });
 
-test("explicit resume chooses a valid next ready action", async () => {
+it("should ensure that explicit resume chooses a valid next ready action", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -458,7 +458,7 @@ test("explicit resume chooses a valid next ready action", async () => {
 	expect(issue.workflow.action).toBe("fix");
 });
 
-test("manifest lifecycle policy constrains retry escalation and resume", async () => {
+it("should ensure that manifest lifecycle policy constrains retry escalation and resume", async () => {
 	const manifest = {
 		...agentDevelopmentManifest,
 		lifecycle: {
@@ -515,7 +515,7 @@ test("manifest lifecycle policy constrains retry escalation and resume", async (
 	).toBe(false);
 });
 
-test("bundled workflow vocabulary and transitions do not include durable blocked", () => {
+it("should ensure that bundled workflow vocabulary and transitions do not include durable blocked", () => {
 	expect(!agentDevelopmentManifest.vocabulary.states.includes("blocked")).toBeTruthy();
 	expect(
 		agentDevelopmentManifest.kinds.every((kind) =>
@@ -528,7 +528,7 @@ test("bundled workflow vocabulary and transitions do not include durable blocked
 	).toBeTruthy();
 });
 
-test("lifecycle commands reject invalid manifest transitions and run mismatches", async () => {
+it("should ensure that lifecycle commands reject invalid manifest transitions and run mismatches", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -573,7 +573,7 @@ test("lifecycle commands reject invalid manifest transitions and run mismatches"
 	});
 });
 
-test("terminal retries are idempotent for identical outcomes and reject conflicts", async () => {
+it("should ensure that terminal retries are idempotent for identical outcomes and reject conflicts", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -613,7 +613,7 @@ test("terminal retries are idempotent for identical outcomes and reject conflict
 	});
 });
 
-test("generic lifecycle transition handlers receive validated input and contribute log payload, artifacts, and effects", async () => {
+it("should ensure that generic lifecycle transition handlers receive validated input and contribute log payload, artifacts, and effects", async () => {
 	const manifest = {
 		version: "v1" as const,
 		workflow: { id: "generic" },
@@ -717,7 +717,7 @@ test("generic lifecycle transition handlers receive validated input and contribu
 	});
 });
 
-test("generic lifecycle transition handlers reject invalid contributions before mutation", async () => {
+it("should ensure that generic lifecycle transition handlers reject invalid contributions before mutation", async () => {
 	const manifest = {
 		version: "v1" as const,
 		workflow: { id: "generic" },
@@ -785,7 +785,7 @@ test("generic lifecycle transition handlers reject invalid contributions before 
 	});
 });
 
-test("default retry, explicit escalation, and explicit resume expose workflow logs and messages", async () => {
+it("should ensure that default retry, explicit escalation, and explicit resume expose workflow logs and messages", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
