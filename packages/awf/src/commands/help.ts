@@ -1,4 +1,7 @@
-import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
+import type {
+	ManifestCommand,
+	WorkflowManifest,
+} from "../manifest/manifest.ts";
 import { readinessFilters } from "./shared.ts";
 
 export type CommandSpec = {

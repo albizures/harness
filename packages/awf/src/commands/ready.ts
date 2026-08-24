@@ -1,5 +1,5 @@
 import { success, type Envelope } from "../envelope.ts";
-import type { WorkflowManifest } from "../manifest.ts";
+import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker } from "../tracker.ts";
 import type { ReadyOptions } from "./args.ts";
 import {

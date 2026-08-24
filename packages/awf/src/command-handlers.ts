@@ -1,6 +1,6 @@
 import type { JsonValue } from "type-fest";
 import type { Envelope } from "./envelope.ts";
-import type { ManifestCommand, WorkflowManifest } from "./manifest.ts";
+import type { ManifestCommand, WorkflowManifest } from "./manifest/manifest.ts";
 import type { Tracker } from "./tracker.ts";
 import {
 	readOption,

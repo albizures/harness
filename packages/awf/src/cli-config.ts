@@ -11,10 +11,12 @@ import {
 import { failure, type Envelope } from "./envelope.ts";
 import {
 	ManifestValidationError,
+	type WorkflowManifest,
+} from "./manifest/manifest.ts";
+import {
 	WorkflowModuleLoadError,
 	loadWorkflowModule,
-	type WorkflowManifest,
-} from "./manifest.ts";
+} from "./workflow-module.ts";
 import type { Tracker } from "./tracker.ts";
 import { createFileSystemTracker } from "./trackers/filesystem.ts";
 

@@ -5,7 +5,7 @@ import { failure, success, type Envelope } from "../envelope.ts";
 import { parseJsonValue } from "../json.ts";
 import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
 import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
-import type { WorkflowManifest } from "../manifest.ts";
+import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker, TrackerLog } from "../tracker.ts";
 import type { WorkflowArtifactInput } from "../workflow/artifact.ts";
 import type { WorkflowChange } from "../workflow/change.ts";

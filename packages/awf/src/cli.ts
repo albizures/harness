@@ -12,6 +12,23 @@ declare const process: {
 	exitCode?: number;
 };
 
+const knownConfigCommands = new Set([
+	undefined,
+	"--help",
+	"-h",
+	"get",
+	"logs",
+	"reconcile",
+	"ready",
+	"create",
+	"apply",
+	"start",
+	"succeed",
+	"fail",
+	"escalate",
+	"resume",
+]);
+
 try {
 	const rawArgs = process.argv.slice(2);
 	const output = parseOutputFormat(rawArgs);
@@ -61,22 +78,7 @@ async function executeBoundCommand(args: Array<string>) {
 function commandDoesNotNeedConfig(args: Array<string>): boolean {
 	const commandArgs = argsWithoutConfigOption(args);
 	const command = commandArgs[0];
-	const knownConfigCommands = new Set([
-		undefined,
-		"--help",
-		"-h",
-		"get",
-		"logs",
-		"reconcile",
-		"ready",
-		"create",
-		"apply",
-		"start",
-		"succeed",
-		"fail",
-		"escalate",
-		"resume",
-	]);
+
 	return (
 		command === "--version" ||
 		command === "-v" ||
@@ -90,7 +92,9 @@ function argsWithoutConfigOption(args: Array<string>): Array<string> {
 	if (index === -1) {
 		return args;
 	}
-	return args.filter((_, argIndex) => argIndex !== index && argIndex !== index + 1);
+	return args.filter(
+		(_, argIndex) => argIndex !== index && argIndex !== index + 1,
+	);
 }
 
 function readStdinForDashInput(args: Array<string>): string | undefined {

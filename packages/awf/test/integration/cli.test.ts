@@ -34,7 +34,7 @@ const agentDevelopmentWorkflowSourcePath = new URL(
 	"../../src/workflows/agent-development/index.ts",
 	import.meta.url,
 ).pathname;
-const manifestSourcePath = new URL("../../src/manifest.ts", import.meta.url)
+const manifestSourcePath = new URL("../../src/manifest/index.ts", import.meta.url)
 	.pathname;
 const memoryTrackerSourcePath = new URL(
 	"../../src/trackers/memory.ts",

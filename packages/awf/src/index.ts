@@ -37,16 +37,19 @@ export {
 } from "./lifecycle-handlers.ts";
 export {
 	ManifestValidationError,
-	WorkflowModuleLoadError,
-	defineManifest,
-	loadManifest,
-	loadWorkflowModule,
-	validateManifest,
+	getKind,
+	workflowManifestStructuralSchema,
 	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,
+} from "./manifest/manifest.ts";
+export { defineManifest, validateManifest } from "./manifest/definition.ts";
+export {
+	WorkflowModuleLoadError,
+	loadManifest,
+	loadWorkflowModule,
 	type WorkflowModule,
-} from "./manifest.ts";
+} from "./workflow-module.ts";
 export {
 	createGhCliGitHubTracker,
 	createGitHubTracker,

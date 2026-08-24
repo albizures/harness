@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../../src/commands.ts";
-import { validateManifest } from "../../../../src/manifest.ts";
+import { validateManifest } from "../../../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../../../src/trackers/memory.ts";
 import type { WorkflowArtifact } from "../../../../src/workflow/artifact.ts";
 import type { WorkflowIssue } from "../../../../src/workflow/issue.ts";

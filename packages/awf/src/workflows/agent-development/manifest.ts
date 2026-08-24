@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineManifest } from "../../manifest.ts";
+import { defineManifest } from "../../manifest/definition.ts";
 import { artifacts } from "../../workflow/artifact.ts";
 
 const states = ["ready", "running", "done", "need-human"] as const;

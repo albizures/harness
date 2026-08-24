@@ -6,7 +6,7 @@ import { z } from "zod";
 import { execute as rawExecute, type CommandHandlers } from "../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
-import type { WorkflowManifest } from "../../../src/manifest.ts";
+import type { WorkflowManifest } from "../../../src/manifest/index.ts";
 import {
 	NeedReconciliationError,
 	type Tracker,

@@ -1,7 +1,10 @@
 import type { JsonValue } from "type-fest";
 import { failure, type ErrorEnvelope } from "./envelope.ts";
 import { isJsonRecord } from "./json.ts";
-import type { ManifestTransition, WorkflowManifest } from "./manifest.ts";
+import type {
+	ManifestTransition,
+	WorkflowManifest,
+} from "./manifest/manifest.ts";
 import type { TrackerWorkflowEffect } from "./tracker.ts";
 import type { WorkflowArtifactInput } from "./workflow/artifact.ts";
 import type { WorkflowChange } from "./workflow/change.ts";

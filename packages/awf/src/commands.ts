@@ -6,7 +6,8 @@ import {
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
-import { validateManifest, type WorkflowManifest } from "./manifest.ts";
+import { validateManifest } from "./manifest/definition.ts";
+import type { WorkflowManifest } from "./manifest/manifest.ts";
 import type { Tracker } from "./tracker.ts";
 import { createInMemoryTracker } from "./trackers/memory.ts";
 import { parseReadyOptions, validateKnownCommand } from "./commands/args.ts";

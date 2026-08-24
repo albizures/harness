@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
-import { defineManifest } from "../../../src/manifest.ts";
+import { defineManifest } from "../../../src/manifest/index.ts";
 import { execute as rawExecute } from "../../../src/commands.ts";
 import { helpCommands, helpReadiness } from "../../../src/commands/help.ts";
 

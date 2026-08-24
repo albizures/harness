@@ -6,7 +6,11 @@ import {
 	type CommandHandlers,
 } from "../../command-handlers.ts";
 import { type Envelope, failure, success } from "../../envelope.ts";
-import { getKind, type ManifestCommand, type ManifestTransition } from "../../manifest.ts";
+import {
+	getKind,
+	type ManifestCommand,
+	type ManifestTransition,
+} from "../../manifest/manifest.ts";
 import { NeedReconciliationError, type Tracker } from "../../tracker.ts";
 import {
 	IssueNotFoundError,
@@ -69,7 +73,7 @@ async function createSpecCommand(
 ): Promise<Envelope> {
 	const { tracker, manifest, command } = context;
 
-	const kind = getKind(manifest, 'spec')
+	const kind = getKind(manifest, "spec");
 	if (kind === undefined) {
 		return failure(
 			"MANIFEST_UNSUPPORTED",
@@ -342,7 +346,6 @@ async function applyPlanCommand(
 		return lifecycleError(specId, error);
 	}
 }
-
 
 function parseSpecInput(raw: string): SpecInput {
 	const parsed = parseJsonObject(raw);

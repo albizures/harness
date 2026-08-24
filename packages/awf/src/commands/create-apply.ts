@@ -1,7 +1,10 @@
 import type { JsonValue } from "type-fest";
 import type { CommandHandlers } from "../command-handlers.ts";
 import { failure, success, type Envelope } from "../envelope.ts";
-import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
+import type {
+	ManifestCommand,
+	WorkflowManifest,
+} from "../manifest/manifest.ts";
 import { NeedReconciliationError, type Tracker } from "../tracker.ts";
 import {
 	genericIssueBody,

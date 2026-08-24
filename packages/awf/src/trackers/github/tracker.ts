@@ -1,5 +1,5 @@
 import { parseJsonValue } from "../../json.ts";
-import type { WorkflowManifest } from "../../manifest.ts";
+import type { WorkflowManifest } from "../../manifest/manifest.ts";
 import type { TrackerIssueInspection } from "../../tracker.ts";
 import {
 	normalizeWorkflowArtifactInput,

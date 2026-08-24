@@ -1,4 +1,4 @@
-import type { WorkflowManifest } from "../../manifest.ts";
+import type { WorkflowManifest } from "../../manifest/manifest.ts";
 import { createTrackerAdapter } from "../../tracker-intents.ts";
 import type { Tracker, TrackerAdapter } from "../../tracker.ts";
 import type { IssueRelationships } from "../../workflow/issue.ts";

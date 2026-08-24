@@ -12,6 +12,10 @@ _Avoid_: agent workflow CLI core, issue workflow script
 A project- or package-provided declarative definition of entity kinds, labels, states, actions, transitions, required command inputs and outputs, relationships, concurrency rules, and tracker mappings that the Workflow runtime executes deterministically. In v1 it is authored as a TypeScript module exporting a strict declarative object through a typed `defineManifest` helper, loaded with `jiti`, and validated at runtime; TypeScript is for authoring ergonomics, not executable workflow hooks.
 _Avoid_: hard-coded workflow, loose configuration, workflow code
 
+**Workflow manifest**:
+The normalized in-memory declarative object that represents a Workflow definition after defaults and validation shape are applied. It contains workflow vocabulary, kinds, transitions, commands, policies, and relationships, but not runtime integration bindings such as trackers or handlers.
+_Avoid_: workflow module, manifest file, executable manifest
+
 **Workflow module**:
 A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker` or `commandHandlers`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
 _Avoid_: executable manifest, manifest hooks

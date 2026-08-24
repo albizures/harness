@@ -14,7 +14,7 @@ import type {
 	ManifestTransition,
 	ManifestWorkflowFilter,
 	WorkflowManifest,
-} from "../manifest.ts";
+} from "../manifest/manifest.ts";
 import {
 	type ArtifactKind,
 	artifacts as artifactSchemas,

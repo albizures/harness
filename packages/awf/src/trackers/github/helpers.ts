@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
 import { isJsonRecord, isJsonValue, jsonRecordSchema } from "../../json.ts";
-import type { WorkflowManifest } from "../../manifest.ts";
+import type { WorkflowManifest } from "../../manifest/manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
 	type WorkflowProjection,
