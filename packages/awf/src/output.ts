@@ -45,6 +45,9 @@ function serializeTextEnvelope(envelope: Envelope): string {
 
 function formatData(data: JsonValue): string {
 	if (isRecord(data)) {
+		if (isWorkflowDescription(data)) {
+			return formatWorkflowDescription(data);
+		}
 		if (Array.isArray(data.commands)) {
 			return formatHelp(data);
 		}
@@ -62,6 +65,274 @@ function formatData(data: JsonValue): string {
 		}
 	}
 	return formatValue(data);
+}
+
+function formatWorkflowDescription(data: Record<string, JsonValue>): string {
+	const lines = [
+		`# Workflow ${String((data.workflow as Record<string, JsonValue>).id)}`,
+		"",
+		`- Version: ${String(data.version)}`,
+		"",
+		"## Vocabulary",
+		"",
+	];
+	const vocabulary = data.vocabulary as Record<string, JsonValue>;
+	lines.push(`- States: ${formatList(vocabulary.states)}`);
+	lines.push(`- Actions: ${formatList(vocabulary.actions)}`);
+	if (Array.isArray(vocabulary.reasons)) {
+		lines.push(`- Reasons: ${formatList(vocabulary.reasons)}`);
+	}
+	lines.push(`- Events: ${formatList(vocabulary.events)}`);
+
+	lines.push("", "## Concurrency", "");
+	const concurrency = data.concurrency as Record<string, JsonValue>;
+	lines.push(`- Per issue: ${String(concurrency.perIssue)}`);
+	if (typeof concurrency.perWorkflow === "number") {
+		lines.push(`- Per workflow: ${concurrency.perWorkflow}`);
+	}
+	if (isRecord(concurrency.perKind)) {
+		for (const [kind, limit] of Object.entries(concurrency.perKind)) {
+			lines.push(`- Per kind ${kind}: ${String(limit)}`);
+		}
+	}
+
+	lines.push("", "## Kinds", "");
+	for (const kind of data.kinds as Array<JsonValue>) {
+		if (!isRecord(kind)) {
+			continue;
+		}
+		lines.push(`- ${String(kind.id)} (${String(kind.label)})`);
+		if (isRecord(kind.initial)) {
+			lines.push(`  - Initial: ${formatStateRef(kind.initial)}`);
+		}
+		lines.push("  - Transitions:");
+		const transitions = Array.isArray(kind.transitions) ? kind.transitions : [];
+		if (transitions.length === 0) {
+			lines.push("    - None declared.");
+		}
+		for (const transition of transitions) {
+			if (
+				!isRecord(transition) ||
+				!isRecord(transition.from) ||
+				!isRecord(transition.to)
+			) {
+				continue;
+			}
+			const input =
+				isRecord(transition.input) && transition.input.required === true
+					? " [input required]"
+					: "";
+			lines.push(
+				`    - ${formatStateRef(transition.from)} --${String(transition.event)}${input}--> ${formatStateRef(transition.to)}`,
+			);
+		}
+	}
+
+	lines.push("", "## Commands", "");
+	for (const command of data.commands as Array<JsonValue>) {
+		if (!isRecord(command)) {
+			continue;
+		}
+		lines.push(`- ${String(command.id)}`);
+		if (isRecord(command.cli) && typeof command.cli.usage === "string") {
+			lines.push(`  - Usage: ${command.cli.usage}`);
+		}
+		if (isRecord(command.target)) {
+			lines.push(`  - Target: ${formatCommandTarget(command.target)}`);
+		}
+		lines.push(
+			`  - Input: ${isRecord(command.input) && command.input.required === true ? "required" : "not required"}`,
+		);
+		lines.push(
+			`  - Output: ${isRecord(command.output) && command.output.declared === true ? "declared" : "not declared"}`,
+		);
+	}
+
+	lines.push("", "## Readiness", "");
+	formatReadinessDescription(lines, data.readiness);
+
+	lines.push("", "## Lifecycle policies", "");
+	formatLifecycleDescription(lines, data.lifecycle);
+
+	lines.push("", "## Relationships", "");
+	formatRelationshipsDescription(lines, data.relationships);
+
+	lines.push("", "## Scope notes", "");
+	for (const note of Array.isArray(data.scopeNotes) ? data.scopeNotes : []) {
+		lines.push(`- ${String(note)}`);
+	}
+	return lines.join("\n");
+}
+
+function formatReadinessDescription(
+	lines: Array<string>,
+	readiness: JsonValue | undefined,
+): void {
+	if (!isRecord(readiness)) {
+		lines.push("- No readiness policies declared.");
+		return;
+	}
+	lines.push(
+		"- Ready filters describe eligible workflow fields; they do not inspect current Tracker API state.",
+	);
+	for (const filter of Array.isArray(readiness.filters)
+		? readiness.filters
+		: []) {
+		if (isRecord(filter)) {
+			lines.push(`  - ${formatWorkflowFilter(filter)}`);
+		}
+	}
+	if (Array.isArray(readiness.namedFilters)) {
+		lines.push("- Named filters:");
+		for (const filter of readiness.namedFilters) {
+			if (isRecord(filter)) {
+				lines.push(
+					`  - ${String(filter.name)}: ${String(filter.relationship)} ${String(filter.kind)} (${String(filter.usage)})`,
+				);
+			}
+		}
+	}
+	if (Array.isArray(readiness.relationshipPolicies)) {
+		lines.push("- Relationship policies:");
+		for (const policy of readiness.relationshipPolicies) {
+			if (isRecord(policy)) {
+				const where = isRecord(policy.where)
+					? formatWorkflowFilter(policy.where)
+					: "any";
+				const children =
+					isRecord(policy.children) && isRecord(policy.children.all)
+						? formatWorkflowFilter(policy.children.all)
+						: "any";
+				const minimum =
+					isRecord(policy.children) && typeof policy.children.min === "number"
+						? `, min ${policy.children.min}`
+						: "";
+				const gate =
+					typeof policy.gate === "string" ? `, gate ${policy.gate}` : "";
+				lines.push(
+					`  - ${String(policy.relationship)} where ${where}; children all ${children}${minimum}${gate}`,
+				);
+			}
+		}
+	}
+}
+
+function formatLifecycleDescription(
+	lines: Array<string>,
+	lifecycle: JsonValue | undefined,
+): void {
+	if (!isRecord(lifecycle)) {
+		lines.push("- No lifecycle policies declared.");
+		return;
+	}
+	if (isRecord(lifecycle.retry)) {
+		lines.push("- Retry:");
+		formatPolicyTargets(lines, lifecycle.retry.allow);
+	}
+	if (isRecord(lifecycle.escalation)) {
+		lines.push("- Escalation:");
+		formatPolicyTargets(lines, lifecycle.escalation.allow);
+		lines.push(
+			`  - Input: ${isRecord(lifecycle.escalation.input) && lifecycle.escalation.input.required === true ? "required" : "not required"}`,
+		);
+	}
+	if (isRecord(lifecycle.resume)) {
+		lines.push("- Resume:");
+		for (const target of Array.isArray(lifecycle.resume.allow)
+			? lifecycle.resume.allow
+			: []) {
+			if (isRecord(target)) {
+				lines.push(
+					`  - ${String(target.kind)} actions: ${formatList(target.actions)}`,
+				);
+			}
+		}
+	}
+	if (Array.isArray(lifecycle.relationshipPolicies)) {
+		lines.push("- Relationship policies:");
+		for (const policy of lifecycle.relationshipPolicies) {
+			if (isRecord(policy)) {
+				lines.push(
+					`  - ${String(policy.relationship)} child ${isRecord(policy.child) ? formatWorkflowFilter(policy.child) : "any"}; parent ${isRecord(policy.parent) ? formatWorkflowFilter(policy.parent) : "any"}; siblings all ${isRecord(policy.siblings) && isRecord(policy.siblings.all) ? formatWorkflowFilter(policy.siblings.all) : "any"}; to ${isRecord(policy.to) ? formatStateRef(policy.to) : "unknown"}`,
+				);
+			}
+		}
+	}
+}
+
+function formatRelationshipsDescription(
+	lines: Array<string>,
+	relationships: JsonValue | undefined,
+): void {
+	if (!Array.isArray(relationships) || relationships.length === 0) {
+		lines.push("- No relationships declared.");
+		return;
+	}
+	for (const relationship of relationships) {
+		if (!isRecord(relationship) || !isRecord(relationship.projection)) {
+			continue;
+		}
+		const direction =
+			typeof relationship.projection.direction === "string"
+				? `, ${relationship.projection.direction}`
+				: "";
+		lines.push(
+			`- ${String(relationship.id)}: ${String(relationship.from)} -> ${String(relationship.to)} (${String(relationship.projection.type)}${direction})`,
+		);
+	}
+}
+
+function formatPolicyTargets(
+	lines: Array<string>,
+	targets: JsonValue | undefined,
+): void {
+	const items = Array.isArray(targets) ? targets : [];
+	if (items.length === 0) {
+		lines.push("  - Any declared target.");
+		return;
+	}
+	for (const target of items) {
+		if (isRecord(target)) {
+			lines.push(`  - ${formatCommandTarget(target)}`);
+		}
+	}
+}
+
+function formatList(values: JsonValue | undefined): string {
+	return Array.isArray(values) ? values.map(String).join(", ") : "none";
+}
+
+function formatStateRef(value: Record<string, JsonValue>): string {
+	const base =
+		typeof value.action === "string"
+			? `${String(value.state)}/${value.action}`
+			: String(value.state);
+	return typeof value.reason === "string" ? `${base}/${value.reason}` : base;
+}
+
+function formatCommandTarget(value: Record<string, JsonValue>): string {
+	return `${String(value.kind)}/${String(value.action)}`;
+}
+
+function formatWorkflowFilter(value: Record<string, JsonValue>): string {
+	return (
+		[value.kind, value.state, value.action, value.reason]
+			.filter((part): part is string => typeof part === "string")
+			.join("/") || "any"
+	);
+}
+
+function isWorkflowDescription(data: Record<string, JsonValue>): boolean {
+	return (
+		data.version === "v1" &&
+		isRecord(data.workflow) &&
+		typeof data.workflow.id === "string" &&
+		isRecord(data.vocabulary) &&
+		isRecord(data.concurrency) &&
+		Array.isArray(data.kinds) &&
+		Array.isArray(data.commands) &&
+		Array.isArray(data.scopeNotes)
+	);
 }
 
 function formatHelp(data: Record<string, JsonValue>): string {

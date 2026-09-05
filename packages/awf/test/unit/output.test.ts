@@ -85,6 +85,124 @@ it("should ensure that text output renders ready items and suggested commands", 
 	);
 });
 
+it("should ensure that text output renders workflow descriptions as deterministic Markdown", () => {
+	const output = serializeCliOutput(
+		{
+			ok: true,
+			data: {
+				version: "v1",
+				workflow: { id: "synthetic" },
+				vocabulary: {
+					states: ["ready", "running", "done"],
+					actions: ["implement", "none"],
+					reasons: ["blocked"],
+					events: ["start", "succeed"],
+				},
+				concurrency: { perIssue: 1, perWorkflow: 2, perKind: { ticket: 1 } },
+				kinds: [
+					{
+						id: "ticket",
+						label: "Ticket",
+						initial: { state: "ready", action: "implement" },
+						transitions: [
+							{
+								from: { state: "ready", action: "implement" },
+								event: "start",
+								input: { required: true },
+								to: {
+									state: "running",
+									action: "implement",
+									reason: "blocked",
+								},
+							},
+						],
+					},
+				],
+				commands: [
+					{
+						id: "createTicket",
+						target: { kind: "ticket", action: "implement" },
+						cli: {
+							verb: "create",
+							target: "ticket",
+							usage: "awf create ticket --input <file|->",
+						},
+						input: { required: true },
+						output: { declared: false },
+					},
+				],
+				readiness: {
+					filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+				},
+				lifecycle: {
+					retry: { allow: [{ kind: "ticket", action: "implement" }] },
+				},
+				relationships: [
+					{
+						id: "ticket-dependencies",
+						from: "ticket",
+						to: "ticket",
+						projection: { type: "dependency", direction: "outbound" },
+					},
+				],
+				scopeNotes: ["Describes the loaded Workflow manifest only."],
+			},
+		},
+		"text",
+	);
+
+	expect(output).toBe(`# Workflow synthetic
+
+- Version: v1
+
+## Vocabulary
+
+- States: ready, running, done
+- Actions: implement, none
+- Reasons: blocked
+- Events: start, succeed
+
+## Concurrency
+
+- Per issue: 1
+- Per workflow: 2
+- Per kind ticket: 1
+
+## Kinds
+
+- ticket (Ticket)
+  - Initial: ready/implement
+  - Transitions:
+    - ready/implement --start [input required]--> running/implement/blocked
+
+## Commands
+
+- createTicket
+  - Usage: awf create ticket --input <file|->
+  - Target: ticket/implement
+  - Input: required
+  - Output: not declared
+
+## Readiness
+
+- Ready filters describe eligible workflow fields; they do not inspect current Tracker API state.
+  - ticket/ready/implement
+
+## Lifecycle policies
+
+- Retry:
+  - ticket/implement
+
+## Relationships
+
+- ticket-dependencies: ticket -> ticket (dependency, outbound)
+
+## Scope notes
+
+- Describes the loaded Workflow manifest only.
+`);
+});
+
 it("should ensure that text output renders issue, run, created issue, log, and manifest envelopes", () => {
 	expect(
 		serializeCliOutput(

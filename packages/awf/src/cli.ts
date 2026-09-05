@@ -20,6 +20,7 @@ const knownConfigCommands = new Set([
 	"logs",
 	"reconcile",
 	"ready",
+	"workflow",
 	"create",
 	"apply",
 	"start",

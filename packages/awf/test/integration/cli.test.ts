@@ -100,6 +100,20 @@ it("should ensure that CLI writes plain text to stdout by default", () => {
 	expect(result.stdout).toContain("Use --json for machine-readable output.");
 });
 
+it("should ensure that CLI writes workflow descriptions as Markdown text by default", () => {
+	const result = spawnSync(
+		process.execPath,
+		[cliPath.pathname, "--config", validManifestPath, "workflow", "describe"],
+		{ encoding: "utf8" },
+	);
+
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
+	expect(result.stdout).toContain("# Workflow agent-development");
+	expect(result.stdout).toContain("## Vocabulary");
+	expect(result.stdout).toContain("## Scope notes");
+});
+
 it("should ensure that CLI writes JSON envelopes to stdout with --json", () => {
 	const result = spawnSync(
 		process.execPath,
