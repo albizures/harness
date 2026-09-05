@@ -103,7 +103,7 @@ it("should ensure that CLI writes plain text to stdout by default", () => {
 	expect(result.stdout).toContain("Use --json for machine-readable output.");
 });
 
-it("should ensure that CLI writes workflow descriptions as Markdown text by default", () => {
+it("should ensure that CLI writes bundled workflow descriptions as Markdown text by default", () => {
 	const result = spawnSync(
 		process.execPath,
 		[cliPath.pathname, "--config", validManifestPath, "workflow", "describe"],
@@ -113,11 +113,41 @@ it("should ensure that CLI writes workflow descriptions as Markdown text by defa
 	expect(result.status).toBe(0);
 	expect(result.stderr).toBe("");
 	expect(result.stdout).toContain("# Workflow agent-development");
-	expect(result.stdout).toContain("## Vocabulary");
+	expect(result.stdout).toContain(
+		"- States: ready, running, done, need-human",
+	);
+	expect(result.stdout).toContain(
+		"- Actions: plan, implement, review, fix, merge, integration-test, none",
+	);
+	expect(result.stdout).toContain("- Per workflow: 4");
+	expect(result.stdout).toContain("- Per kind ticket: 3");
+	expect(result.stdout).toContain("- spec (Spec)");
+	expect(result.stdout).toContain("- ticket (Ticket)");
+	expect(result.stdout).toContain(
+		"- plan-apply\n  - Usage: awf apply plan <issue> --input <file|->\n  - Target: spec/plan\n  - Input: required\n  - Output: declared",
+	);
+	expect(result.stdout).toContain(
+		"- handoff-create\n  - Usage: awf create handoff --source <issue> --input <file|->",
+	);
+	expect(result.stdout).toContain(
+		"  - children where spec/ready/integration-test; children all ticket/done, min 1, gate children",
+	);
+	expect(result.stdout).toContain(
+		"  - parent child ticket/done/none; parent spec/ready/none; siblings all ticket/done; to ready/integration-test",
+	);
+	expect(result.stdout).toContain(
+		"- spec-tickets: spec -> ticket (parent-child, outbound)",
+	);
+	expect(result.stdout).toContain(
+		"- ticket-dependencies: ticket -> ticket (dependency, outbound)",
+	);
 	expect(result.stdout).toContain("## Scope notes");
+	expect(result.stdout).not.toContain("_def");
+	expect(result.stdout).not.toContain("reservedPrefix");
+	expect(result.stdout).not.toContain("typeName");
 });
 
-it("should ensure that CLI writes workflow description DTOs in JSON envelopes", () => {
+it("should ensure that CLI writes bundled workflow description DTOs in JSON envelopes", () => {
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -135,9 +165,106 @@ it("should ensure that CLI writes workflow description DTOs in JSON envelopes", 
 	expect(result.stderr).toBe("");
 	const envelope = JSON.parse(result.stdout);
 	expect(envelope.ok).toBe(true);
-	expect(envelope.data.version).toBe("v1");
-	expect(envelope.data.workflow.id).toBe("agent-development");
 	expect(envelope.data).not.toEqual(expect.any(String));
+	expect(envelope.data).toMatchObject({
+		version: "v1",
+		workflow: { id: "agent-development" },
+		concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
+		vocabulary: {
+			states: ["ready", "running", "done", "need-human"],
+			actions: [
+				"plan",
+				"implement",
+				"review",
+				"fix",
+				"merge",
+				"integration-test",
+				"none",
+			],
+			reasons: ["dependencies"],
+			events: ["start", "succeed", "fail"],
+		},
+		readiness: {
+			filters: [
+				{ kind: "spec", state: "ready", action: "plan" },
+				{ kind: "spec", state: "ready", action: "integration-test" },
+				{ kind: "spec", state: "ready", action: "merge" },
+				{ kind: "ticket", state: "ready", action: "implement" },
+				{ kind: "ticket", state: "ready", action: "review" },
+				{ kind: "ticket", state: "ready", action: "fix" },
+				{ kind: "ticket", state: "ready", action: "merge" },
+			],
+			namedFilters: [
+				{
+					name: "spec",
+					kind: "spec",
+					relationship: "parent",
+					usage: "awf ready --filter spec=<spec>",
+				},
+			],
+			relationshipPolicies: [
+				{
+					relationship: "children",
+					where: { kind: "spec", state: "ready", action: "integration-test" },
+					children: { all: { kind: "ticket", state: "done" }, min: 1 },
+					gate: "children",
+				},
+			],
+		},
+		lifecycle: {
+			relationshipPolicies: [
+				{
+					relationship: "parent",
+					child: { kind: "ticket", state: "done", action: "none" },
+					parent: { kind: "spec", state: "ready", action: "none" },
+					siblings: { all: { kind: "ticket", state: "done" }, min: 1 },
+					to: { state: "ready", action: "integration-test" },
+				},
+			],
+		},
+		relationships: [
+			{
+				id: "spec-tickets",
+				from: "spec",
+				to: "ticket",
+				projection: { type: "parent-child", direction: "outbound" },
+			},
+			{
+				id: "ticket-dependencies",
+				from: "ticket",
+				to: "ticket",
+				projection: { type: "dependency", direction: "outbound" },
+			},
+		],
+	});
+	expect(envelope.data.kinds.map((kind: { id: string }) => kind.id)).toEqual([
+		"spec",
+		"ticket",
+	]);
+	expect(envelope.data.commands).toMatchObject([
+		{
+			id: "spec-create",
+			cli: { usage: "awf create spec --input <file|->" },
+			input: { required: true },
+			output: { declared: true },
+		},
+		{
+			id: "plan-apply",
+			cli: { usage: "awf apply plan <issue> --input <file|->" },
+			input: { required: true },
+			output: { declared: true },
+		},
+		{
+			id: "handoff-create",
+			cli: { usage: "awf create handoff --source <issue> --input <file|->" },
+			input: { required: true },
+			output: { declared: true },
+		},
+	]);
+	const serialized = JSON.stringify(envelope.data);
+	expect(serialized).not.toContain("_def");
+	expect(serialized).not.toContain("reservedPrefix");
+	expect(serialized).not.toContain("typeName");
 });
 
 it("should ensure that CLI workflow describe requires config discovery", async () => {
