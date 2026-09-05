@@ -52,6 +52,11 @@ const runtimeCommands: Array<CommandSpec> = [
 		description: "Load and validate a workflow manifest.",
 	},
 	{
+		name: "workflow describe",
+		usage: "awf workflow describe",
+		description: "Describe the loaded workflow manifest.",
+	},
+	{
 		name: "start",
 		usage: "awf start <id>",
 		description: "Start the current action.",

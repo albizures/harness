@@ -97,6 +97,9 @@ it("should ensure that CLI writes plain text to stdout by default", () => {
 	expect(result.status).toBe(0);
 	expect(result.stderr).toBe("");
 	expect(result.stdout).toContain("awf - Agent workflow CLI.");
+	expect(result.stdout).toContain(
+		"awf workflow describe  Describe the loaded workflow manifest.",
+	);
 	expect(result.stdout).toContain("Use --json for machine-readable output.");
 });
 
@@ -112,6 +115,68 @@ it("should ensure that CLI writes workflow descriptions as Markdown text by defa
 	expect(result.stdout).toContain("# Workflow agent-development");
 	expect(result.stdout).toContain("## Vocabulary");
 	expect(result.stdout).toContain("## Scope notes");
+});
+
+it("should ensure that CLI writes workflow description DTOs in JSON envelopes", () => {
+	const result = spawnSync(
+		process.execPath,
+		[
+			cliPath.pathname,
+			"--json",
+			"--config",
+			validManifestPath,
+			"workflow",
+			"describe",
+		],
+		{ encoding: "utf8" },
+	);
+
+	expect(result.status).toBe(0);
+	expect(result.stderr).toBe("");
+	const envelope = JSON.parse(result.stdout);
+	expect(envelope.ok).toBe(true);
+	expect(envelope.data.version).toBe("v1");
+	expect(envelope.data.workflow.id).toBe("agent-development");
+	expect(envelope.data).not.toEqual(expect.any(String));
+});
+
+it("should ensure that CLI workflow describe requires config discovery", async () => {
+	await withTempDir(async (dir) => {
+		const result = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "--json", "workflow", "describe"],
+			{ cwd: dir, encoding: "utf8" },
+		);
+
+		expect(result.status).toBe(1);
+		const envelope = JSON.parse(result.stdout);
+		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
+		expect(envelope.error.message).toMatch(/explicit workflow config/);
+	});
+});
+
+it("should ensure that CLI workflow describe accepts no extra arguments", () => {
+	const result = spawnSync(
+		process.execPath,
+		[
+			cliPath.pathname,
+			"--json",
+			"--config",
+			validManifestPath,
+			"workflow",
+			"describe",
+			"extra",
+		],
+		{ encoding: "utf8" },
+	);
+
+	expect(result.status).toBe(1);
+	const envelope = JSON.parse(result.stdout);
+	expect(envelope.error).toEqual({
+		code: "INVALID_ARGUMENTS",
+		message: "Invalid command arguments.",
+		details: { usage: "awf workflow describe" },
+	});
 });
 
 it("should ensure that CLI writes JSON envelopes to stdout with --json", () => {
