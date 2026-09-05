@@ -13,7 +13,10 @@ const PROJECT_COMMENT_AND_TWO_LOGS = 3;
 
 it("should project workflow fields to reserved GitHub labels and singleton metadata", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 
 	const issue = await tracker.createIssue({
 		title: "Implement adapter",
@@ -61,7 +64,10 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 
 it("should project optional reasons and removes stale canonical labels on update", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 
 	const issue = await tracker.createIssue({
 		title: "Blocked ticket",
@@ -103,7 +109,10 @@ it("should ensure that listIssues requires reconciliation for malformed reserved
 		title: "Reserved but malformed workflow label",
 		labels: ["awf:agent-development"],
 	});
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Workflow issue",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -114,7 +123,10 @@ it("should ensure that listIssues requires reconciliation for malformed reserved
 
 it("should append logs as strict machine comments", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	const issue = await tracker.createIssue({
 		title: "Implement adapter",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -140,7 +152,10 @@ it("should append logs as strict machine comments", async () => {
 
 it("should use native hierarchy and dependency capabilities", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Spec",
 		workflow: { kind: "spec", state: "ready", action: "plan" },
@@ -168,7 +183,10 @@ it("should use native hierarchy and dependency capabilities", async () => {
 it("should ensure that listIssues ignores unrelated GitHub issues without workflow projection labels", async () => {
 	const api = createMockGitHubApi();
 	await api.createIssue({ title: "Regular issue", labels: ["project:awf"] });
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Workflow issue",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -190,7 +208,10 @@ it("should ensure that capability validation fails when native issue relationshi
 
 it("should ensure that manual reserved-label corruption requires reconciliation", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Implement adapter",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -205,7 +226,10 @@ it("should ensure that manual reserved-label corruption requires reconciliation"
 
 it("should ensure that machine-comment corruption requires reconciliation", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Implement adapter",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -218,7 +242,10 @@ it("should ensure that machine-comment corruption requires reconciliation", asyn
 
 it("should ensure that malformed canonical and legacy workflow-owned machine comments require reconciliation", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Implement adapter",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -239,7 +266,10 @@ it("should ensure that malformed canonical and legacy workflow-owned machine com
 
 it("should ensure that machine-comment markers validate type version and workflow id", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Implement adapter",
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
@@ -277,7 +307,10 @@ it("should ensure that machine-comment markers validate type version and workflo
 
 it("should register and validates pull-request artifacts", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Implement adapter",
 		workflow: { kind: "ticket", state: "running", action: "implement" },
@@ -296,7 +329,10 @@ it("should register and validates pull-request artifacts", async () => {
 
 it("should preserve structured artifact fields through GitHub projection reads and logs", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Structured artifact issue",
 		workflow: { kind: "ticket", state: "running", action: "implement" },
@@ -328,7 +364,10 @@ it("should preserve structured artifact fields through GitHub projection reads a
 
 it("should ensure that malformed machine-owned artifact data requires reconciliation", async () => {
 	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({ api, manifest: agentDevelopmentManifest });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentDevelopmentManifest,
+	});
 	await tracker.createIssue({
 		title: "Corrupt artifact issue",
 		workflow: { kind: "ticket", state: "running", action: "implement" },

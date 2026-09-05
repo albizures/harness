@@ -6,7 +6,6 @@ import { agentDevelopmentManifest } from "../../../src/workflows/agent-developme
 import { defineManifest } from "../../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 
-
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
@@ -516,7 +515,9 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 });
 
 it("should ensure that bundled workflow vocabulary and transitions do not include durable blocked", () => {
-	expect(!agentDevelopmentManifest.vocabulary.states.includes("blocked")).toBeTruthy();
+	expect(
+		!agentDevelopmentManifest.vocabulary.states.includes("blocked"),
+	).toBeTruthy();
 	expect(
 		agentDevelopmentManifest.kinds.every((kind) =>
 			kind.transitions.every(

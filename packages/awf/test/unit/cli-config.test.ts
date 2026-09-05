@@ -8,8 +8,10 @@ const agentDevelopmentWorkflowSourcePath = new URL(
 	"../../src/workflows/agent-development/index.ts",
 	import.meta.url,
 ).pathname;
-const validManifestPath = new URL("../fixtures/valid.workflow.ts", import.meta.url)
-	.pathname;
+const validManifestPath = new URL(
+	"../fixtures/valid.workflow.ts",
+	import.meta.url,
+).pathname;
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	const dir = await mkdtemp(join(tmpdir(), "awf-cli-config-"));

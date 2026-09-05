@@ -54,7 +54,9 @@ async function createAgentDevelopmentConfig(cwd: string): Promise<void> {
 it("should ensure that no config fails clearly instead of loading the bundled workflow implicitly", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-fails-"));
 
-	expect(await runAwf(cwd, ["create", "spec", "--input", "-"], "# Spec")).toEqual({
+	expect(
+		await runAwf(cwd, ["create", "spec", "--input", "-"], "# Spec"),
+	).toEqual({
 		ok: false,
 		error: {
 			code: "CONFIG_LOAD_FAILED",
@@ -100,9 +102,16 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 		),
 	).toMatchObject({
 		outcome: "SUCCESS",
-		spec: { id: "1", workflow: { kind: "spec", state: "ready", action: "none" } },
+		spec: {
+			id: "1",
+			workflow: { kind: "spec", state: "ready", action: "none" },
+		},
 		tickets: [{ id: "2", key: "api" }],
-		artifact: { id: "artifact-1", kind: "inline", metadata: { ticketCount: 1 } },
+		artifact: {
+			id: "artifact-1",
+			kind: "inline",
+			metadata: { ticketCount: 1 },
+		},
 		log: { sequence: 2, issueId: "1", type: "plan_applied" },
 	});
 
@@ -132,7 +141,12 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			},
 		},
 		run: { id: "<run-id>" },
-		log: { sequence: 1, issueId: "2", type: "action_started", runId: "<run-id>" },
+		log: {
+			sequence: 1,
+			issueId: "2",
+			type: "action_started",
+			runId: "<run-id>",
+		},
 	});
 
 	expect(
@@ -151,9 +165,17 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			),
 		),
 	).toMatchObject({
-		issue: { id: "2", workflow: { kind: "ticket", state: "ready", action: "review" } },
+		issue: {
+			id: "2",
+			workflow: { kind: "ticket", state: "ready", action: "review" },
+		},
 		run: { id: "<run-id>", status: "succeed" },
-		log: { sequence: 2, issueId: "2", type: "action_succeeded", runId: "<run-id>" },
+		log: {
+			sequence: 2,
+			issueId: "2",
+			type: "action_succeeded",
+			runId: "<run-id>",
+		},
 	});
 
 	expect(
@@ -176,11 +198,27 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 		log: { sequence: 3, issueId: "2", type: "handoff_created" },
 	});
 
-	expect(normalizeRunIds(expectSuccess(await runAwf(cwd, ["logs", "2"])))).toEqual({
+	expect(
+		normalizeRunIds(expectSuccess(await runAwf(cwd, ["logs", "2"]))),
+	).toEqual({
 		logs: [
-			expect.objectContaining({ sequence: 1, issueId: "2", type: "action_started", runId: "<run-id>" }),
-			expect.objectContaining({ sequence: 2, issueId: "2", type: "action_succeeded", runId: "<run-id>" }),
-			expect.objectContaining({ sequence: 3, issueId: "2", type: "handoff_created" }),
+			expect.objectContaining({
+				sequence: 1,
+				issueId: "2",
+				type: "action_started",
+				runId: "<run-id>",
+			}),
+			expect.objectContaining({
+				sequence: 2,
+				issueId: "2",
+				type: "action_succeeded",
+				runId: "<run-id>",
+			}),
+			expect.objectContaining({
+				sequence: 3,
+				issueId: "2",
+				type: "handoff_created",
+			}),
 		],
 	});
 
@@ -189,7 +227,10 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			id: "2",
 			workflow: { kind: "ticket", state: "ready", action: "review" },
 			artifacts: [
-				{ kind: "pull-request", uri: "https://github.com/albizures/harness/pull/129" },
+				{
+					kind: "pull-request",
+					uri: "https://github.com/albizures/harness/pull/129",
+				},
 				{ kind: "handoff", uri: "Next: review the API surface." },
 			],
 		},

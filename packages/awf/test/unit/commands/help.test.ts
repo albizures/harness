@@ -5,7 +5,6 @@ import { defineManifest } from "../../../src/manifest/index.ts";
 import { execute as rawExecute } from "../../../src/commands.ts";
 import { helpCommands, helpReadiness } from "../../../src/commands/help.ts";
 
-
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},

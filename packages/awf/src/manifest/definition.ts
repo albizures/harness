@@ -1,5 +1,4 @@
 import {
-	ManifestValidationError,
 	isPayloadZodSchema,
 	workflowManifestStructuralSchema as manifestSchema,
 	type ValidationIssue,

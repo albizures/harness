@@ -126,7 +126,7 @@ async function createSpecCommand(
 async function createHandoffCommand(
 	context: CommandHandlerContext,
 ): Promise<Envelope> {
-	const { args = [], tracker, stdin, command } = context;
+	const { args = [], tracker, command } = context;
 	const sourceId = readOption(args, "--source");
 	if (sourceId === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -211,7 +211,7 @@ async function createHandoffCommand(
 async function applyPlanCommand(
 	context: CommandHandlerContext,
 ): Promise<Envelope> {
-	const { args = [], tracker, manifest, stdin, command } = context;
+	const { args = [], tracker, manifest, command } = context;
 	const specId = args[2];
 
 	if (specId === undefined) {

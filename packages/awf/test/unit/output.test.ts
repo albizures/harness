@@ -2,7 +2,9 @@ import { expect, it } from "vitest";
 import { parseOutputFormat, serializeCliOutput } from "../../src/output.ts";
 
 it("should ensure that --json is stripped from arguments and selects JSON output", () => {
-	expect(parseOutputFormat(["--json", "--config", "awf.config.ts", "ready"])).toEqual({
+	expect(
+		parseOutputFormat(["--json", "--config", "awf.config.ts", "ready"]),
+	).toEqual({
 		args: ["--config", "awf.config.ts", "ready"],
 		format: "json",
 	});
@@ -15,9 +17,7 @@ it("should ensure that text output renders help without requiring a subprocess",
 			data: {
 				name: "awf",
 				description: "Agent workflow CLI.",
-				commands: [
-					{ usage: "awf ready", description: "List ready work." },
-				],
+				commands: [{ usage: "awf ready", description: "List ready work." }],
 			},
 		},
 		"text",
@@ -53,7 +53,9 @@ it("should ensure that text output renders stable error details", () => {
 		"text",
 	);
 
-	expect(output).toBe("Error UNKNOWN_COMMAND: Unknown command.\ncommand: unknown\n");
+	expect(output).toBe(
+		"Error UNKNOWN_COMMAND: Unknown command.\ncommand: unknown\n",
+	);
 });
 
 it("should ensure that text output renders ready items and suggested commands", () => {
@@ -108,7 +110,9 @@ it("should ensure that text output renders issue, run, created issue, log, and m
 		serializeCliOutput(
 			{
 				ok: true,
-				data: { logs: [{ sequence: 1, type: "action_started", runId: "run-1" }] },
+				data: {
+					logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+				},
 			},
 			"text",
 		),

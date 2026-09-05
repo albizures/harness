@@ -34,8 +34,10 @@ const agentDevelopmentWorkflowSourcePath = new URL(
 	"../../src/workflows/agent-development/index.ts",
 	import.meta.url,
 ).pathname;
-const manifestSourcePath = new URL("../../src/manifest/index.ts", import.meta.url)
-	.pathname;
+const manifestSourcePath = new URL(
+	"../../src/manifest/index.ts",
+	import.meta.url,
+).pathname;
 const memoryTrackerSourcePath = new URL(
 	"../../src/trackers/memory.ts",
 	import.meta.url,
@@ -340,98 +342,106 @@ export const manifest = agentDevelopmentManifest;
 	});
 });
 
-it("should ensure that CLI config default filesystem tracker keeps workflow state across separate processes", async () => {
-	await withTempDir(async (dir) => {
-		await writeFile(
-			join(dir, "awf.config.ts"),
-			`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
+it(
+	"should ensure that CLI config default filesystem tracker keeps workflow state across separate processes",
+	async () => {
+		await withTempDir(async (dir) => {
+			await writeFile(
+				join(dir, "awf.config.ts"),
+				`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
 export const manifest = agentDevelopmentManifest;
 `,
-		);
-		const runCli = (args: Array<string>, input?: unknown) => {
-			const result = spawnSync(
-				process.execPath,
-				[cliPath.pathname, "--json", ...args],
-				{
-					cwd: dir,
-					encoding: "utf8",
-					input:
-						input === undefined ? undefined : serializeCliSmokeInput(input),
-				},
 			);
-			expect(result.status).toBe(0);
-			expect(result.stderr).toBe("");
-			const envelope = JSON.parse(result.stdout);
-			expect(envelope.ok).toBe(true);
-			return envelope.data;
-		};
+			const runCli = (args: Array<string>, input?: unknown) => {
+				const result = spawnSync(
+					process.execPath,
+					[cliPath.pathname, "--json", ...args],
+					{
+						cwd: dir,
+						encoding: "utf8",
+						input:
+							input === undefined ? undefined : serializeCliSmokeInput(input),
+					},
+				);
+				expect(result.status).toBe(0);
+				expect(result.stderr).toBe("");
+				const envelope = JSON.parse(result.stdout);
+				expect(envelope.ok).toBe(true);
+				return envelope.data;
+			};
 
-		const spec = runCli(
-			["create", "spec", "--input", "-"],
-			"# Durable spec\n",
-		).issue;
-		expect(spec.id).toBe("1");
-		expect(
-			runCli(["ready"]).items.map((item: { id: string }) => item.id),
-		).toEqual(["1"]);
-		expect(runCli(["get", spec.id]).issue.title).toBe("Durable spec");
+			const spec = runCli(
+				["create", "spec", "--input", "-"],
+				"# Durable spec\n",
+			).issue;
+			expect(spec.id).toBe("1");
+			expect(
+				runCli(["ready"]).items.map((item: { id: string }) => item.id),
+			).toEqual(["1"]);
+			expect(runCli(["get", spec.id]).issue.title).toBe("Durable spec");
 
-		const planned = runCli(["apply", "plan", spec.id, "--input", "-"], {
-			tickets: [{ key: "one", title: "Durable ticket", content: "Do it." }],
+			const planned = runCli(["apply", "plan", spec.id, "--input", "-"], {
+				tickets: [{ key: "one", title: "Durable ticket", content: "Do it." }],
+			});
+			const ticketId = planned.tickets[0].id;
+			expect(
+				runCli(["ready"]).items.map((item: { id: string }) => item.id),
+			).toEqual([ticketId]);
+			expect(runCli(["get", ticketId]).issue.relationships.parent).toBe(
+				spec.id,
+			);
+			expect(
+				runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
+			).toEqual(["spec_created", "plan_applied"]);
+
+			const started = runCli(["start", ticketId]);
+			expect(runCli(["ready"]).items).toEqual([]);
+			const failed = runCli(
+				["fail", ticketId, "--run", started.run.id, "--input", "-"],
+				{ reason: "transient" },
+			);
+			expect({
+				state: failed.issue.workflow.state,
+				action: failed.issue.workflow.action,
+			}).toEqual({ state: "ready", action: "implement" });
+
+			const restarted = runCli(["start", ticketId]);
+			const implemented = runCli(
+				["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
+				{ implementationPr: prArtifact(durableImplementationPrNumber) },
+			);
+			expect({
+				state: implemented.issue.workflow.state,
+				action: implemented.issue.workflow.action,
+			}).toEqual({ state: "ready", action: "review" });
+			const escalated = runCli(["escalate", ticketId, "--input", "-"], {
+				reason: "needs decision",
+			});
+			expect({
+				state: escalated.issue.workflow.state,
+				action: escalated.issue.workflow.action,
+			}).toEqual({ state: "need-human", action: "none" });
+			const resumed = runCli(["resume", ticketId, "--action", "fix"]);
+			expect({
+				state: resumed.issue.workflow.state,
+				action: resumed.issue.workflow.action,
+			}).toEqual({ state: "ready", action: "fix" });
+			expect(
+				runCli(["logs", ticketId]).logs.map(
+					(log: { type: string }) => log.type,
+				),
+			).toEqual([
+				"action_started",
+				"action_failed",
+				"action_started",
+				"action_succeeded",
+				"human_intervention_needed",
+				"action_resumed",
+			]);
 		});
-		const ticketId = planned.tickets[0].id;
-		expect(
-			runCli(["ready"]).items.map((item: { id: string }) => item.id),
-		).toEqual([ticketId]);
-		expect(runCli(["get", ticketId]).issue.relationships.parent).toBe(spec.id);
-		expect(
-			runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
-		).toEqual(["spec_created", "plan_applied"]);
-
-		const started = runCli(["start", ticketId]);
-		expect(runCli(["ready"]).items).toEqual([]);
-		const failed = runCli(
-			["fail", ticketId, "--run", started.run.id, "--input", "-"],
-			{ reason: "transient" },
-		);
-		expect({
-			state: failed.issue.workflow.state,
-			action: failed.issue.workflow.action,
-		}).toEqual({ state: "ready", action: "implement" });
-
-		const restarted = runCli(["start", ticketId]);
-		const implemented = runCli(
-			["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
-			{ implementationPr: prArtifact(durableImplementationPrNumber) },
-		);
-		expect({
-			state: implemented.issue.workflow.state,
-			action: implemented.issue.workflow.action,
-		}).toEqual({ state: "ready", action: "review" });
-		const escalated = runCli(["escalate", ticketId, "--input", "-"], {
-			reason: "needs decision",
-		});
-		expect({
-			state: escalated.issue.workflow.state,
-			action: escalated.issue.workflow.action,
-		}).toEqual({ state: "need-human", action: "none" });
-		const resumed = runCli(["resume", ticketId, "--action", "fix"]);
-		expect({
-			state: resumed.issue.workflow.state,
-			action: resumed.issue.workflow.action,
-		}).toEqual({ state: "ready", action: "fix" });
-		expect(
-			runCli(["logs", ticketId]).logs.map((log: { type: string }) => log.type),
-		).toEqual([
-			"action_started",
-			"action_failed",
-			"action_started",
-			"action_succeeded",
-			"human_intervention_needed",
-			"action_resumed",
-		]);
-	});
-}, bundledGoldenSmokeTimeoutMs);
+	},
+	bundledGoldenSmokeTimeoutMs,
+);
 
 it("should ensure that CLI uses an explicit config-exported filesystem tracker across processes", async () => {
 	await withTempDir(async (dir) => {

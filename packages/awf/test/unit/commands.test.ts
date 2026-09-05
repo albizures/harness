@@ -5,7 +5,6 @@ import { agentDevelopmentManifest } from "../../src/workflows/agent-development/
 import type { Tracker } from "../../src/tracker.ts";
 import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
-
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},

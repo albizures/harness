@@ -6,6 +6,7 @@ import {
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
+import { describeWorkflow } from "./manifest/description.ts";
 import { validateManifest } from "./manifest/definition.ts";
 import type { WorkflowManifest } from "./manifest/manifest.ts";
 import type { Tracker } from "./tracker.ts";
@@ -114,6 +115,9 @@ export async function execute(
 			"Workflow manifest validation failed.",
 			{ issues: manifestIssues },
 		);
+	}
+	if (args[0] === "workflow" && args[1] === "describe") {
+		return success(describeWorkflow(manifest));
 	}
 	if (args[0] === "ready") {
 		return readyCommand(parseReadyOptions(args), tracker, manifest);

@@ -28,9 +28,7 @@ type ApplyPlanData = {
 type HandoffData = { artifact: WorkflowArtifact };
 type TerminalData = { issue: WorkflowIssue };
 
-function assertSuccess<T>(
-	envelope: Awaited<ReturnType<typeof execute>>,
-): T {
+function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	expect(envelope.ok).toBe(true);
 	return (envelope as { ok: true; data: T }).data;
 }
@@ -53,11 +51,9 @@ it("should export a valid explicit bundled workflow module", () => {
 		"spec",
 		"ticket",
 	]);
-	expect(agentDevelopmentManifest.commands.map((command) => command.id)).toEqual([
-		"spec-create",
-		"plan-apply",
-		"handoff-create",
-	]);
+	expect(
+		agentDevelopmentManifest.commands.map((command) => command.id),
+	).toEqual(["spec-create", "plan-apply", "handoff-create"]);
 });
 
 it("should capture agent-development-specific lifecycle and readiness assumptions", () => {
@@ -80,7 +76,9 @@ it("should capture agent-development-specific lifecycle and readiness assumption
 		children: { all: { kind: "ticket", state: "done" }, min: 1 },
 		gate: "children",
 	});
-	expect(agentDevelopmentManifest.lifecycle?.relationshipPolicies).toContainEqual({
+	expect(
+		agentDevelopmentManifest.lifecycle?.relationshipPolicies,
+	).toContainEqual({
 		relationship: "parent",
 		child: { kind: "ticket", state: "done", action: "none" },
 		parent: { kind: "spec", state: "ready", action: "none" },
@@ -106,9 +104,9 @@ it("should create a Spec through the bundled command handler", async () => {
 		state: "ready",
 		action: "plan",
 	});
-	expect((await tracker.readLogs(data.issue.id)).map((log) => log.type)).toEqual([
-		"spec_created",
-	]);
+	expect(
+		(await tracker.readLogs(data.issue.id)).map((log) => log.type),
+	).toEqual(["spec_created"]);
 });
 
 it("should apply a bundled plan into tickets, parent-child links, dependencies, and a plan artifact", async () => {
@@ -208,12 +206,15 @@ it("should record bundled handoffs as workflow artifacts", async () => {
 	});
 
 	const data = assertSuccess<HandoffData>(
-		await execute(["create", "handoff", "--source", "ticket-1", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				handoff: { type: "handoff", ref: "Continue with review." },
-			}),
-		}),
+		await execute(
+			["create", "handoff", "--source", "ticket-1", "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					handoff: { type: "handoff", ref: "Continue with review." },
+				}),
+			},
+		),
 	);
 
 	expect(data.artifact).toMatchObject({
@@ -253,23 +254,29 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 	});
 
 	assertFailureCode(
-		await execute(["succeed", "ticket-1", "--run", "run-review", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({ verdict: "changes-requested" }),
-		}),
+		await execute(
+			["succeed", "ticket-1", "--run", "run-review", "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({ verdict: "changes-requested" }),
+			},
+		),
 		"INVALID_ACTION_INPUT",
 	);
 
 	const data = assertSuccess<TerminalData>(
-		await execute(["succeed", "ticket-2", "--run", "run-implement", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				implementationPr: {
-					type: "pull-request",
-					url: "https://github.com/albizures/harness/pull/1",
-				},
-			}),
-		}),
+		await execute(
+			["succeed", "ticket-2", "--run", "run-implement", "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					implementationPr: {
+						type: "pull-request",
+						url: "https://github.com/albizures/harness/pull/1",
+					},
+				}),
+			},
+		),
 	);
 
 	expect(data.issue.workflow).toMatchObject({

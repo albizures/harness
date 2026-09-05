@@ -43,9 +43,20 @@ export function validateKnownCommand(
 				return unknownCommand(args);
 			}
 			return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
+		case "workflow":
+			return validateWorkflowArguments(args);
 		default:
 			return unknownCommand(args);
 	}
+}
+
+function validateWorkflowArguments(args: Array<string>): Envelope | undefined {
+	if (args.length === 2 && args[1] === "describe") {
+		return undefined;
+	}
+	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+		usage: "awf workflow describe",
+	});
 }
 
 function validateReady(args: Array<string>): Envelope | undefined {
