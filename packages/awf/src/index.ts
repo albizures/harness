@@ -45,6 +45,16 @@ export {
 } from "./manifest/manifest.ts";
 export { defineManifest, validateManifest } from "./manifest/definition.ts";
 export {
+	describeWorkflow,
+	manifestCommandUsage,
+	workflowDescriptionScopeNotes,
+	type WorkflowDescriptionSchemaInputV1,
+	type WorkflowDescriptionSchemaOutputV1,
+	type WorkflowDescriptionStateRefV1,
+	type WorkflowDescriptionV1,
+	type WorkflowDescriptionWorkflowFilterV1,
+} from "./manifest/description.ts";
+export {
 	WorkflowModuleLoadError,
 	loadManifest,
 	loadWorkflowModule,
