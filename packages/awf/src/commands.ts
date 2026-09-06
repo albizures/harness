@@ -5,6 +5,10 @@ import {
 	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
+import {
+	genericTaskCommandHandlers,
+	genericTaskManifest,
+} from "./workflows/generic-task/index.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
 import { describeWorkflow } from "./manifest/description.ts";
 import { validateManifest } from "./manifest/definition.ts";
@@ -38,9 +42,13 @@ export type ExecuteOptions = {
 };
 
 function defaultCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
-	return manifest.workflow.id === agentDevelopmentManifest.workflow.id
-		? agentDevelopmentCommandHandlers
-		: {};
+	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
+		return agentDevelopmentCommandHandlers;
+	}
+	if (manifest.workflow.id === genericTaskManifest.workflow.id) {
+		return genericTaskCommandHandlers;
+	}
+	return {};
 }
 
 function lifecycleHandlersFor(

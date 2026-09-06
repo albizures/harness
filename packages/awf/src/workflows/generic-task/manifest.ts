@@ -15,6 +15,14 @@ const createInput = z
 		(input) => input.body !== undefined || input.content !== undefined,
 		"Either body or content is required.",
 	);
+const taskCreateInput = z.strictObject({
+	spec: z.string().trim().min(1),
+	title: z.string().trim().min(1),
+	description: z.string().trim().min(1),
+	profile: z.string().trim().min(1),
+	dependsOn: z.array(z.string().trim().min(1)).optional(),
+});
+
 const createOutput = z.object({
 	issue: z.object({ id: z.string() }),
 	log: z.object({ type: z.string() }),
@@ -54,6 +62,7 @@ export const genericTaskManifest = defineManifest({
 			{ kind: "spec", state: "ready", action: "work" },
 			{ kind: "task", state: "ready", action: "work" },
 		],
+		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
 	},
 	kinds: [
 		{
@@ -69,6 +78,20 @@ export const genericTaskManifest = defineManifest({
 			transitions: [...workTransitions],
 		},
 	],
+	relationships: [
+		{
+			id: "spec-task",
+			from: "spec",
+			to: "task",
+			projection: { type: "parent-child" },
+		},
+		{
+			id: "task-blocks-task",
+			from: "task",
+			to: "task",
+			projection: { type: "dependency" },
+		},
+	],
 	commands: [
 		{
 			id: "spec-create",
@@ -81,7 +104,7 @@ export const genericTaskManifest = defineManifest({
 			id: "task-create",
 			cli: { verb: "create", target: "task" },
 			target: { kind: "task", action: "work" },
-			input: createInput,
+			input: taskCreateInput,
 			output: createOutput,
 		},
 	],

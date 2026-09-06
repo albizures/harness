@@ -113,9 +113,7 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.status).toBe(0);
 	expect(result.stderr).toBe("");
 	expect(result.stdout).toContain("# Workflow agent-development");
-	expect(result.stdout).toContain(
-		"- States: ready, running, done, need-human",
-	);
+	expect(result.stdout).toContain("- States: ready, running, done, need-human");
 	expect(result.stdout).toContain(
 		"- Actions: plan, implement, review, fix, merge, integration-test, none",
 	);

@@ -37,7 +37,7 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(manifest).toBe(genericTaskManifest);
 	expect(commandHandlers).toBe(genericTaskCommandHandlers);
 	expect(lifecycleHandlers).toBe(genericTaskLifecycleHandlers);
-	expect(genericTaskCommandHandlers).toEqual({});
+	expect(Object.keys(genericTaskCommandHandlers)).toEqual(["task-create"]);
 	expect(genericTaskLifecycleHandlers).toEqual({});
 	expect(validateManifest(genericTaskManifest)).toEqual([]);
 	expect(genericTaskManifest.workflow.id).toBe("generic-task");
@@ -169,14 +169,162 @@ it("should reject malformed generic Spec create input before tracker mutation", 
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-it("should create generic Tasks and run basic start, succeed, and fail transitions", async () => {
+it("should create generic Tasks under Specs with routing profiles and dependencies", async () => {
 	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				title: "Spec",
+				content: "# Spec\n\nBuild the thing.",
+			}),
+		}),
+	) as { issue: { id: string } };
+	const blocker = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Set up",
+				description: "Prepare the work.",
+				profile: "implement",
+			}),
+		}),
+	) as { issue: { id: string } };
+
 	const created = assertSuccess(
 		await execute(["create", "task", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
+				spec: spec.issue.id,
 				title: "Do the work",
-				body: "Complete the generic task.",
+				description: "Complete the generic task.",
+				profile: "implement",
+				dependsOn: [blocker.issue.id],
+			}),
+		}),
+	) as {
+		issue: {
+			id: string;
+			body: string;
+			workflow: Record<string, string>;
+			relationships: { parent?: string; dependencies: Array<string> };
+		};
+		log: { payload: unknown };
+	};
+
+	expect(created.issue.body).toContain("Profile: implement");
+	expect(created.issue.workflow).toMatchObject({
+		kind: "task",
+		state: "ready",
+		action: "work",
+	});
+	expect(created.issue.relationships.parent).toBe(spec.issue.id);
+	expect(created.issue.relationships.dependencies).toEqual([blocker.issue.id]);
+	expect(
+		(await tracker.getIssue(spec.issue.id)).relationships.children,
+	).toEqual([blocker.issue.id, created.issue.id]);
+	expect(
+		(await tracker.getIssue(blocker.issue.id)).relationships.dependents,
+	).toEqual([created.issue.id]);
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+		blocked: Array<{ id: string; blocking: Array<Record<string, unknown>> }>;
+	};
+	expect(ready.items.map((item) => item.id)).toContain(blocker.issue.id);
+	expect(ready.blocked).toEqual([
+		expect.objectContaining({
+			id: created.issue.id,
+			blocking: [
+				expect.objectContaining({
+					gate: "dependency",
+					blockedBy: [expect.objectContaining({ id: blocker.issue.id })],
+				}),
+			],
+		}),
+	]);
+});
+
+it("should reject invalid generic Task create relationships before tracker mutation", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const notTask = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Other Spec", content: "# Other" }),
+		}),
+	) as { issue: { id: string } };
+
+	for (const input of [
+		{
+			spec: "missing",
+			title: "Bad spec",
+			description: "No mutation.",
+			profile: "implement",
+		},
+		{
+			spec: spec.issue.id,
+			title: "Bad dependency",
+			description: "No mutation.",
+			profile: "implement",
+			dependsOn: ["missing"],
+		},
+		{
+			spec: spec.issue.id,
+			title: "Non-task dependency",
+			description: "No mutation.",
+			profile: "implement",
+			dependsOn: [notTask.issue.id],
+		},
+	]) {
+		const before = await tracker.listIssues();
+		const envelope = await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify(input),
+		});
+
+		expect(envelope.ok).toBe(false);
+		expect(await tracker.listIssues()).toEqual(before);
+	}
+});
+
+it("should reject missing generic Task create fields before tracker mutation", async () => {
+	const tracker = createInMemoryTracker();
+
+	const envelope = await execute(["create", "task", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({ title: "Missing fields" }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
+it("should run generic Task basic start, succeed, and fail transitions", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const created = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Do the work",
+				description: "Complete the generic task.",
+				profile: "implement",
 			}),
 		}),
 	) as { issue: { id: string; workflow: Record<string, string> } };
@@ -211,8 +359,10 @@ it("should create generic Tasks and run basic start, succeed, and fail transitio
 		await execute(["create", "task", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
+				spec: spec.issue.id,
 				title: "Needs help",
-				body: "Exercise the failure transition.",
+				description: "Exercise the failure transition.",
+				profile: "implement",
 			}),
 		}),
 	) as { issue: { id: string } };
