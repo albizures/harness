@@ -64,6 +64,14 @@ export const genericTaskManifest = defineManifest({
 			{ kind: "task", state: "ready", action: "work" },
 		],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
+		relationshipPolicies: [
+			{
+				relationship: "children",
+				where: { kind: "spec", state: "ready", action: "work" },
+				children: { all: { kind: "task", state: "done", action: "none" } },
+				gate: "tasks-done",
+			},
+		],
 	},
 	kinds: [
 		{

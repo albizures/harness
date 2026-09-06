@@ -96,6 +96,123 @@ it("should expose Spec and Task work lifecycle through help and describe surface
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });
 
+it("should report generic Specs ready only at child Task phase boundaries", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "empty-spec",
+				title: "Empty Spec",
+				workflow: { kind: "spec", state: "ready", action: "work" },
+			},
+			{
+				id: "blocked-spec",
+				title: "Blocked Spec",
+				workflow: { kind: "spec", state: "ready", action: "work" },
+				relationships: { children: ["open-task"] },
+			},
+			{
+				id: "done-spec",
+				title: "Done Spec",
+				workflow: { kind: "spec", state: "ready", action: "work" },
+				relationships: { children: ["done-task"] },
+			},
+			{
+				id: "open-task",
+				title: "Open Task",
+				workflow: { kind: "task", state: "ready", action: "work" },
+				relationships: { parent: "blocked-spec" },
+			},
+			{
+				id: "done-task",
+				title: "Done Task",
+				workflow: { kind: "task", state: "done", action: "none" },
+				relationships: { parent: "done-spec" },
+			},
+		],
+	});
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+		blocked: Array<{ id: string; blocking: Array<Record<string, unknown>> }>;
+	};
+
+	expect(ready.items.map((item) => item.id)).toEqual([
+		"done-spec",
+		"empty-spec",
+		"open-task",
+	]);
+	expect(ready.blocked).toEqual([
+		{
+			id: "blocked-spec",
+			title: "Blocked Spec",
+			workflow: { kind: "spec", state: "ready", action: "work" },
+			blocking: [
+				{
+					gate: "tasks-done",
+					relationship: "children",
+					blockedBy: [
+						{
+							id: "open-task",
+							title: "Open Task",
+							workflow: { kind: "task", state: "ready", action: "work" },
+						},
+					],
+				},
+			],
+		},
+	]);
+});
+
+it("should leave a generic Spec explicitly ready for work after child Tasks complete", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "work" },
+				relationships: { children: ["task"] },
+			},
+			{
+				id: "task",
+				title: "Task",
+				workflow: { kind: "task", state: "ready", action: "work" },
+				relationships: { parent: "spec" },
+			},
+		],
+	});
+
+	const started = assertSuccess(
+		await execute(["start", "task"], { tracker }),
+	) as {
+		run: { id: string };
+	};
+	assertSuccess(
+		await execute(
+			["succeed", "task", "--run", started.run.id, "--input", "-"],
+			{
+				tracker,
+				stdin: "{}",
+			},
+		),
+	);
+
+	expect((await tracker.getIssue("task")).workflow).toMatchObject({
+		kind: "task",
+		state: "done",
+		action: "none",
+	});
+	expect((await tracker.getIssue("spec")).workflow).toMatchObject({
+		kind: "spec",
+		state: "ready",
+		action: "work",
+	});
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+	};
+	expect(ready.items.map((item) => item.id)).toEqual(["spec"]);
+});
+
 it("should validate the bundled generic-task module through the manifest validate command", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "awf-generic-task-validate-"));
 	const configPath = join(cwd, "awf.config.ts");
@@ -233,17 +350,19 @@ it("should create generic Tasks under Specs with routing profiles and dependenci
 		blocked: Array<{ id: string; blocking: Array<Record<string, unknown>> }>;
 	};
 	expect(ready.items.map((item) => item.id)).toContain(blocker.issue.id);
-	expect(ready.blocked).toEqual([
-		expect.objectContaining({
-			id: created.issue.id,
-			blocking: [
-				expect.objectContaining({
-					gate: "dependency",
-					blockedBy: [expect.objectContaining({ id: blocker.issue.id })],
-				}),
-			],
-		}),
-	]);
+	expect(ready.blocked).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: created.issue.id,
+				blocking: [
+					expect.objectContaining({
+						gate: "dependency",
+						blockedBy: [expect.objectContaining({ id: blocker.issue.id })],
+					}),
+				],
+			}),
+		]),
+	);
 });
 
 it("should record generated generic Task provenance without blocking readiness", async () => {
