@@ -1,5 +1,29 @@
 # @albizures/awf
 
+## 0.2.0
+
+### Minor Changes
+
+- 6a3faee: Add workflow module command handlers keyed by manifest command ids, with core-owned input and output validation plus generic create/apply fallback behavior.
+- 6a3faee: Require an explicit workflow config or `--config` for CLI execution, document explicit workflow module setup, and keep bundled `agent-development` usage behind explicit imports.
+- 6a3faee: Record generated Task provenance via optional `generatedBy` without using it as a readiness gate.
+- 6a3faee: Add the bundled generic-task workflow for explicit AWF project opt-in.
+- 6a3faee: Add workflow-module Lifecycle transition handlers that can contribute validated log payload additions, artifact requests, changes, and declarative workflow effects to lifecycle transitions.
+- 6a3faee: Add a Workflow description DTO builder that exposes manifest-only declarative data with schema presence markers.
+- 6a3faee: Add public Workflow manifest and Workflow definition boundaries while preserving legacy manifest behavior.
+- 6a3faee: Add a public Workflow module loader boundary for loading Workflow manifest exports and runtime integration bindings.
+
+### Patch Changes
+
+- 6a3faee: Validate bundled workflow artifact references and Handoff artifacts before recording them.
+- 6a3faee: Validate generic-task Spec and Task create input as structured JSON with required title and Markdown body/content, and declare create output validation.
+- 6a3faee: Document explicit `generic-task` opt-in, project-owned Task profile policy, generated-by provenance versus dependency ordering, phase-boundary Task generation, and `agent-development` maintenance-mode compatibility.
+- 6a3faee: Replace the plan-specific tracker application intent with generic ordered Workflow effects that verify projections and best-effort rollback before surfacing reconciliation.
+- 6a3faee: Add shared AWF JSON boundary schemas and helpers for validating JSON-compatible values after runtime parsing.
+- 6a3faee: Validate AWF lifecycle escalation payloads through schema and JSON compatibility before workflow mutation.
+- 6a3faee: Validate plan application ticket and dependency payload shapes before applying tracker relationships.
+- 6a3faee: Render workflow descriptions as deterministic Markdown in default text output.
+
 ## 0.1.0
 
 ### Minor Changes
