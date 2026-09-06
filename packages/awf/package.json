@@ -13,7 +13,8 @@
 		"./manifest": "./dist/manifest/index.js",
 		"./manifest/definition": "./dist/manifest/definition.js",
 		"./workflow-module": "./dist/workflow-module.js",
-		"./workflows/agent-development": "./dist/workflows/agent-development/index.js"
+		"./workflows/agent-development": "./dist/workflows/agent-development/index.js",
+		"./workflows/generic-task": "./dist/workflows/generic-task/index.js"
 	},
 	"files": [
 		"dist"

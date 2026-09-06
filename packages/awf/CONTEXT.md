@@ -60,6 +60,18 @@ _Avoid_: filesystem memory tracker, local GitHub replacement
 The core domain object managed by the Workflow runtime. A Workflow issue is a tracker issue with one manifest-defined kind attached to it, plus explicit current workflow fields and append-only logs.
 _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 
+**Task**:
+A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself.
+_Avoid_: ticket, implementation action
+
+**Generated-by relationship**:
+A directional Task-to-Task provenance relationship from a generated Task back to the source Task that caused it to exist. It explains task origin separately from Spec containment and dependency blocking.
+_Avoid_: implicit follow-up, child task provenance
+
+**Task profile**:
+A project-specific freeform routing label on a Task that indicates what kind of agent or worker should pick it up. The Workflow runtime treats the profile as data for selection and routing rather than as workflow semantics.
+_Avoid_: hard-coded action, agent implementation config
+
 **Workflow artifact reference**:
 A typed reference declared in a Workflow definition's command input or output schema that tells the Workflow runtime what kind of artifact a value points to, such as inline Markdown, a file, an issue, a pull request, a URL, or a Git ref. It validates shape and storage/reference type, not artifact quality.
 _Avoid_: plain string output, attachment blob
