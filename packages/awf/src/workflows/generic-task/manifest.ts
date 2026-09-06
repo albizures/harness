@@ -5,10 +5,19 @@ const states = ["ready", "running", "done", "need-human"] as const;
 const actions = ["work", "none"] as const;
 const events = ["start", "succeed", "fail"] as const;
 
-const createInput = z.looseObject({
-	title: z.string().optional(),
-	body: z.string().optional(),
-	content: z.string().optional(),
+const createInput = z
+	.strictObject({
+		title: z.string().trim().min(1),
+		body: z.string().trim().min(1).optional(),
+		content: z.string().trim().min(1).optional(),
+	})
+	.refine(
+		(input) => input.body !== undefined || input.content !== undefined,
+		"Either body or content is required.",
+	);
+const createOutput = z.object({
+	issue: z.object({ id: z.string() }),
+	log: z.object({ type: z.string() }),
 });
 
 const workTransitions = [
@@ -66,12 +75,14 @@ export const genericTaskManifest = defineManifest({
 			cli: { verb: "create", target: "spec" },
 			target: { kind: "spec", action: "work" },
 			input: createInput,
+			output: createOutput,
 		},
 		{
 			id: "task-create",
 			cli: { verb: "create", target: "task" },
 			target: { kind: "task", action: "work" },
 			input: createInput,
+			output: createOutput,
 		},
 	],
 });

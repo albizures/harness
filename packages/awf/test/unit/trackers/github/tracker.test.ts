@@ -1,6 +1,7 @@
 import { assert, expect, it } from "vitest";
 import { execute } from "../../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../../src/workflows/agent-development/index.ts";
+import { genericTaskManifest } from "../../../../src/workflows/generic-task/index.ts";
 import {
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
@@ -60,6 +61,40 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 	const updated = await tracker.getIssue("1");
 	expect(updated.workflow.activeRunId).toBe("run-1");
 	expect(updated.workflow.version).toBe(2);
+});
+
+it("should project generic-task Spec create fields to reserved GitHub labels and log comments", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({
+		api,
+		manifest: genericTaskManifest,
+	});
+
+	const created = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		manifest: genericTaskManifest,
+		stdin: JSON.stringify({
+			title: "Generic Spec",
+			body: "# Generic Spec\n\nWork this through the generic-task workflow.",
+		}),
+	});
+
+	if (!created.ok) {
+		throw new Error(JSON.stringify(created.error));
+	}
+	expect(api.issue(1).title).toBe("Generic Spec");
+	expect(api.issue(1).body).toBe(
+		"# Generic Spec\n\nWork this through the generic-task workflow.",
+	);
+	expect(api.issue(1).labels.sort()).toEqual([
+		"awf:generic-task:action:work",
+		"awf:generic-task:kind:spec",
+		"awf:generic-task:state:ready",
+	]);
+	expect(api.issue(1).comments.map((comment) => comment.body)).toEqual([
+		expect.stringContaining("<!-- awf:current v1 generic-task -->"),
+		expect.stringContaining("<!-- awf:log v1 generic-task -->"),
+	]);
 });
 
 it("should project optional reasons and removes stale canonical labels on update", async () => {

@@ -110,6 +110,65 @@ it("should validate the bundled generic-task module through the manifest validat
 	});
 });
 
+it("should create generic Specs from structured JSON with initial workflow fields and creation log", async () => {
+	const tracker = createInMemoryTracker();
+
+	const created = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				title: "Write the spec",
+				content: "# Write the spec\n\nDefine the work in Markdown.",
+			}),
+		}),
+	) as {
+		issue: {
+			id: string;
+			title: string;
+			body: string;
+			workflow: Record<string, string>;
+		};
+		log: { type: string; payload: unknown };
+	};
+
+	expect(created.issue.title).toBe("Write the spec");
+	expect(created.issue.body).toBe(
+		"# Write the spec\n\nDefine the work in Markdown.",
+	);
+	expect(created.issue.workflow).toMatchObject({
+		kind: "spec",
+		state: "ready",
+		action: "work",
+	});
+	expect(created.log).toMatchObject({
+		type: "spec-create_created",
+		payload: {
+			input: {
+				title: "Write the spec",
+				content: "# Write the spec\n\nDefine the work in Markdown.",
+			},
+		},
+	});
+	expect(
+		(await tracker.readLogs(created.issue.id)).map((log) => log.type),
+	).toEqual(["spec-create_created"]);
+});
+
+it("should reject malformed generic Spec create input before tracker mutation", async () => {
+	const tracker = createInMemoryTracker();
+
+	const envelope = await execute(["create", "spec", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({ content: "# Missing title" }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+	);
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
 it("should create generic Tasks and run basic start, succeed, and fail transitions", async () => {
 	const tracker = createInMemoryTracker();
 	const created = assertSuccess(
@@ -151,7 +210,10 @@ it("should create generic Tasks and run basic start, succeed, and fail transitio
 	const failedTask = assertSuccess(
 		await execute(["create", "task", "--input", "-"], {
 			tracker,
-			stdin: JSON.stringify({ title: "Needs help" }),
+			stdin: JSON.stringify({
+				title: "Needs help",
+				body: "Exercise the failure transition.",
+			}),
 		}),
 	) as { issue: { id: string } };
 	const failedRun = assertSuccess(
