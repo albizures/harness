@@ -40,6 +40,7 @@ export type ProjectionMetadata = {
 	workflow: WorkflowProjection;
 	artifacts: Array<WorkflowArtifact>;
 	changes: Array<WorkflowChange>;
+	relationships?: Pick<IssueRelationships, "generatedBy">;
 };
 
 export function hasWorkflowProjectionLabels(
@@ -314,12 +315,16 @@ export function metadataFromProjection(
 	workflow: WorkflowProjection,
 	artifacts: Array<WorkflowArtifact>,
 	changes: Array<WorkflowChange>,
+	relationships?: Pick<IssueRelationships, "generatedBy">,
 ): ProjectionMetadata {
 	return {
 		schemaVersion: PROJECTION_SCHEMA_VERSION,
 		workflow,
 		artifacts: cloneJson(artifacts) as Array<WorkflowArtifact>,
 		changes: cloneJson(changes) as Array<WorkflowChange>,
+		...(relationships?.generatedBy === undefined
+			? {}
+			: { relationships: { generatedBy: relationships.generatedBy } }),
 	};
 }
 
@@ -335,7 +340,9 @@ export function isProjectionMetadata(
 		Array.isArray(value.artifacts) &&
 		value.artifacts.every(isWorkflowArtifact) &&
 		Array.isArray(value.changes) &&
-		value.changes.every(isWorkflowChange)
+		value.changes.every(isWorkflowChange) &&
+		(value.relationships === undefined ||
+			isMetadataRelationships(value.relationships))
 	);
 }
 
@@ -392,6 +399,16 @@ function isWorkflowChange(value: unknown): value is WorkflowChange {
 		typeof value.uri === "string" &&
 		value.uri !== "" &&
 		(value.summary === undefined || typeof value.summary === "string")
+	);
+}
+
+function isMetadataRelationships(
+	value: unknown,
+): value is Pick<IssueRelationships, "generatedBy"> {
+	return (
+		isRecord(value) &&
+		Object.keys(value).every((key) => key === "generatedBy") &&
+		(value.generatedBy === undefined || typeof value.generatedBy === "string")
 	);
 }
 
@@ -486,6 +503,9 @@ export function normalizeRelationships(
 		children: [...(relationships.children ?? [])],
 		dependencies: [...(relationships.dependencies ?? [])],
 		dependents: [...(relationships.dependents ?? [])],
+		...(relationships.generatedBy === undefined
+			? {}
+			: { generatedBy: relationships.generatedBy }),
 	};
 }
 

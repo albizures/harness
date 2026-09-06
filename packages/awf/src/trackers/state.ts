@@ -506,6 +506,9 @@ function normalizeRelationships(
 		children: [...(relationships?.children ?? [])],
 		dependencies: [...(relationships?.dependencies ?? [])],
 		dependents: [...(relationships?.dependents ?? [])],
+		...(relationships?.generatedBy === undefined
+			? {}
+			: { generatedBy: relationships.generatedBy }),
 	};
 }
 

@@ -21,6 +21,7 @@ type TaskCreateInput = {
 	description: string;
 	profile: string;
 	dependsOn?: Array<string>;
+	generatedBy?: string;
 };
 
 const createTaskCommand: CommandHandler = taskCreateCommand;
@@ -76,6 +77,14 @@ async function taskCreateCommand({
 				},
 			);
 		}
+		const generatedBy = await resolveGeneratedBy(
+			tracker,
+			taskInput.generatedBy,
+			spec.id,
+		);
+		if (generatedBy.ok === false) {
+			return generatedBy.envelope;
+		}
 
 		const applied = await tracker.applyWorkflowEffects({
 			effects: [
@@ -89,6 +98,10 @@ async function taskCreateCommand({
 							kind: "task",
 							...initialWorkflowTarget(taskKind.initial),
 						},
+						relationships:
+							taskInput.generatedBy === undefined
+								? undefined
+								: { generatedBy: taskInput.generatedBy },
 					},
 					initialLog: {
 						type: `${command.id}_created`,
@@ -135,6 +148,9 @@ function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
 		input.dependsOn.every((dependency) => typeof dependency === "string")
 			? { dependsOn: input.dependsOn }
 			: {}),
+		...(typeof input.generatedBy === "string"
+			? { generatedBy: input.generatedBy }
+			: {}),
 	};
 }
 
@@ -147,6 +163,44 @@ async function resolveTaskBlockers(
 		blockers.push(await tracker.getIssue(dependency));
 	}
 	return blockers;
+}
+
+async function resolveGeneratedBy(
+	tracker: Tracker,
+	generatedBy: string | undefined,
+	specId: string,
+): Promise<{ ok: true } | { ok: false; envelope: Envelope }> {
+	if (generatedBy === undefined) {
+		return { ok: true };
+	}
+	const source = await tracker.getIssue(generatedBy);
+	if (source.workflow.kind !== "task") {
+		return {
+			ok: false,
+			envelope: failure(
+				"INVALID_TASK_GENERATED_BY",
+				"Generated-by sources must be Task issues.",
+				{ generatedBy: source.id, actualKind: source.workflow.kind },
+			),
+		};
+	}
+	if (source.relationships.parent !== specId) {
+		return {
+			ok: false,
+			envelope: failure(
+				"INVALID_TASK_GENERATED_BY",
+				"Generated-by sources must belong to the same Spec as the generated Task.",
+				{
+					generatedBy: source.id,
+					spec: specId,
+					...(source.relationships.parent === undefined
+						? {}
+						: { actualSpec: source.relationships.parent }),
+				},
+			),
+		};
+	}
+	return { ok: true };
 }
 
 function taskBody(input: TaskCreateInput): string {

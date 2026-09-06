@@ -45,6 +45,7 @@ export type IssueRelationships = {
 	children: Array<string>;
 	dependencies: Array<string>;
 	dependents: Array<string>;
+	generatedBy?: string;
 };
 
 export class IssueNotFoundError extends Error {

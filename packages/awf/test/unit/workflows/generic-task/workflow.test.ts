@@ -246,6 +246,67 @@ it("should create generic Tasks under Specs with routing profiles and dependenci
 	]);
 });
 
+it("should record generated generic Task provenance without blocking readiness", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const source = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Find follow-up",
+				description: "Identify follow-up work.",
+				profile: "research",
+			}),
+		}),
+	) as { issue: { id: string } };
+
+	const created = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Follow up",
+				description: "Do generated work.",
+				profile: "implement",
+				generatedBy: source.issue.id,
+			}),
+		}),
+	) as {
+		issue: {
+			id: string;
+			relationships: {
+				parent?: string;
+				generatedBy?: string;
+				dependencies: Array<string>;
+			};
+		};
+	};
+
+	expect(created.issue.relationships.parent).toBe(spec.issue.id);
+	expect(created.issue.relationships.generatedBy).toBe(source.issue.id);
+	expect(created.issue.relationships.dependencies).toEqual([]);
+	expect(
+		(await tracker.getIssue(source.issue.id)).relationships.dependents,
+	).toEqual([]);
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+		blocked?: Array<{ id: string }>;
+	};
+	expect(ready.items.map((item) => item.id)).toEqual(
+		expect.arrayContaining([source.issue.id, created.issue.id]),
+	);
+	expect(ready.blocked?.map((item) => item.id) ?? []).not.toContain(
+		created.issue.id,
+	);
+});
+
 it("should reject invalid generic Task create relationships before tracker mutation", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
@@ -258,6 +319,17 @@ it("should reject invalid generic Task create relationships before tracker mutat
 		await execute(["create", "spec", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({ title: "Other Spec", content: "# Other" }),
+		}),
+	) as { issue: { id: string } };
+	const otherSpecTask = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: notTask.issue.id,
+				title: "Other spec task",
+				description: "Wrong Spec.",
+				profile: "implement",
+			}),
 		}),
 	) as { issue: { id: string } };
 
@@ -281,6 +353,20 @@ it("should reject invalid generic Task create relationships before tracker mutat
 			description: "No mutation.",
 			profile: "implement",
 			dependsOn: [notTask.issue.id],
+		},
+		{
+			spec: spec.issue.id,
+			title: "Non-task generated source",
+			description: "No mutation.",
+			profile: "implement",
+			generatedBy: notTask.issue.id,
+		},
+		{
+			spec: spec.issue.id,
+			title: "Cross-Spec generated source",
+			description: "No mutation.",
+			profile: "implement",
+			generatedBy: otherSpecTask.issue.id,
 		},
 	]) {
 		const before = await tracker.listIssues();

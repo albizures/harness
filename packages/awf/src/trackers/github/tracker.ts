@@ -72,7 +72,9 @@ export class GitHubTracker {
 			version: input.workflow.version ?? 1,
 		});
 		const labels = labelsForProjection(this.manifest, projection);
-		const metadata = metadataFromProjection(projection, [], []);
+		const metadata = metadataFromProjection(projection, [], [], {
+			generatedBy: input.relationships?.generatedBy,
+		});
 		const created = await this.api.createIssue({
 			title: input.title,
 			body: input.body,
@@ -148,7 +150,9 @@ export class GitHubTracker {
 			await this.projectLabels(number, next);
 			await this.upsertProjectionComment(
 				number,
-				metadataFromProjection(next, current.artifacts, current.changes),
+				metadataFromProjection(next, current.artifacts, current.changes, {
+					generatedBy: current.relationships.generatedBy,
+				}),
 			);
 			const reread = await this.readProjectedIssue(id);
 			if (!sameProjection(reread.workflow, next)) {
@@ -276,6 +280,7 @@ export class GitHubTracker {
 				issue.workflow,
 				[...issue.artifacts, artifact],
 				issue.changes,
+				{ generatedBy: issue.relationships.generatedBy },
 			),
 		);
 		const reread = await this.readProjectedIssue(issueId);
@@ -297,10 +302,12 @@ export class GitHubTracker {
 		const change = { id: `change-${issue.changes.length + 1}`, ...input };
 		await this.upsertProjectionComment(
 			parseIssueNumber(issueId),
-			metadataFromProjection(issue.workflow, issue.artifacts, [
-				...issue.changes,
-				change,
-			]),
+			metadataFromProjection(
+				issue.workflow,
+				issue.artifacts,
+				[...issue.changes, change],
+				{ generatedBy: issue.relationships.generatedBy },
+			),
 		);
 		const reread = await this.readProjectedIssue(issueId);
 		if (!reread.changes.some((candidate) => sameJson(candidate, change))) {
@@ -337,9 +344,10 @@ export class GitHubTracker {
 				? {}
 				: { body: issue.body }),
 			workflow,
-			relationships: normalizeRelationships(
-				await this.api.readRelationships(issue.number),
-			),
+			relationships: normalizeRelationships({
+				...(await this.api.readRelationships(issue.number)),
+				...metadata.relationships,
+			}),
 			artifacts: metadata.artifacts,
 			changes: metadata.changes,
 		};

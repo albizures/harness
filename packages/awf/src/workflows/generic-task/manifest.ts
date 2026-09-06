@@ -21,6 +21,7 @@ const taskCreateInput = z.strictObject({
 	description: z.string().trim().min(1),
 	profile: z.string().trim().min(1),
 	dependsOn: z.array(z.string().trim().min(1)).optional(),
+	generatedBy: z.string().trim().min(1).optional(),
 });
 
 const createOutput = z.object({

@@ -83,6 +83,28 @@ it("should ensure that hierarchy and dependency relationships are projected on r
 	);
 });
 
+it("should ensure that generated-by provenance is normalized separately from blocking relationships", async () => {
+	const tracker = createInMemoryTracker();
+	const source = await tracker.createIssue({
+		title: "Source",
+		workflow: { kind: "task", state: "ready", action: "work" },
+	});
+	const generated = await tracker.createIssue({
+		title: "Generated",
+		workflow: { kind: "task", state: "ready", action: "work" },
+		relationships: { generatedBy: source.id },
+	});
+
+	expect((await tracker.getIssue(generated.id)).relationships).toMatchObject({
+		dependencies: [],
+		dependents: [],
+		generatedBy: source.id,
+	});
+	expect((await tracker.getIssue(source.id)).relationships.dependents).toEqual(
+		[],
+	);
+});
+
 it("should ensure that artifact and change registrations are returned with the normalized issue", async () => {
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
