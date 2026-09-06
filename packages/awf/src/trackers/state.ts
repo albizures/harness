@@ -1,24 +1,32 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
+import { jsonRecordSchema, parseJsonValue } from "../json.ts";
 import {
-	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
 	NeedReconciliationError,
-	ProjectionConflictError,
-	normalizeWorkflowArtifactInput,
+	type TrackerApplyWorkflowEffectsResult,
+	type TrackerIssueInspection,
+	type TrackerWorkflowEffect,
+} from "../tracker.ts";
+import {
+	IssueNotFoundError,
 	type CreateIssueInput,
 	type IssueRelationships,
 	type SeedIssueInput,
-	type TrackerApplyPlanIntent,
-	type TrackerIssueInspection,
 	type UpdateIssueInput,
+	type WorkflowIssue,
+} from "../workflow/issue.ts";
+import {
+	CorruptWorkflowProjectionError,
+	ProjectionConflictError,
+	type WorkflowProjection,
+} from "../workflow/projection.ts";
+import type { WorkflowLog } from "../workflow/log.ts";
+import {
+	normalizeWorkflowArtifactInput,
 	type WorkflowArtifact,
 	type WorkflowArtifactInput,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
-	type WorkflowProjection,
-} from "../tracker.ts";
+} from "../workflow/artifact.ts";
+import type { WorkflowChange } from "../workflow/change.ts";
 
 export class WorkflowTrackerState {
 	private readonly issues = new Map<string, StoredIssue>();
@@ -126,6 +134,9 @@ export class WorkflowTrackerState {
 		const issue = this.requireHealthyIssue(id);
 		const log = cloneJson({
 			...input,
+			...(input.payload === undefined
+				? {}
+				: { payload: parseJsonValue(input.payload) }),
 			issueId: id,
 			sequence: issue.logs.length + 1,
 		}) as WorkflowLog;
@@ -243,38 +254,45 @@ export class WorkflowTrackerState {
 		}
 	}
 
-	verifyPlanApplication(
-		specId: string,
-		created: Array<{ key: string; id: string }>,
-		tickets: TrackerApplyPlanIntent["tickets"],
+	verifyWorkflowEffects(
+		result: TrackerApplyWorkflowEffectsResult,
+		_effects: Array<TrackerWorkflowEffect>,
 	): void {
-		const spec = this.getIssue(specId);
-		for (const ticket of created) {
-			if (!spec.relationships.children.includes(ticket.id)) {
+		for (const created of result.createdIssues) {
+			this.getIssue(created.id);
+		}
+		for (const { issueId, artifact } of result.artifacts) {
+			if (
+				!this.getIssue(issueId).artifacts.some(
+					(stored) => stored.id === artifact.id,
+				)
+			) {
 				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan child relationships could not be verified.",
+					"NEED_RECONCILIATION: workflow artifact recording could not be verified.",
 				);
 			}
 		}
-		const idsByKey = new Map(created.map((ticket) => [ticket.key, ticket.id]));
-		for (const ticket of tickets) {
-			const issueId = idsByKey.get(ticket.key);
-			if (issueId === undefined) {
+		for (const { issueId, change } of result.changes) {
+			if (
+				!this.getIssue(issueId).changes.some(
+					(stored) => stored.id === change.id,
+				)
+			) {
 				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+					"NEED_RECONCILIATION: workflow change recording could not be verified.",
 				);
 			}
-			const issue = this.getIssue(issueId);
-			for (const dependencyKey of ticket.dependsOn ?? []) {
-				const blockedById = idsByKey.get(dependencyKey);
-				if (
-					blockedById === undefined ||
-					!issue.relationships.dependencies.includes(blockedById)
-				) {
-					throw new NeedReconciliationError(
-						"NEED_RECONCILIATION: plan dependency relationships could not be verified.",
-					);
-				}
+		}
+		for (const log of result.logs) {
+			if (
+				!this.readLogs(log.issueId).some(
+					(stored) =>
+						stored.sequence === log.sequence && stored.type === log.type,
+				)
+			) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: workflow log addition could not be verified.",
+				);
 			}
 		}
 	}
@@ -488,6 +506,9 @@ function normalizeRelationships(
 		children: [...(relationships?.children ?? [])],
 		dependencies: [...(relationships?.dependencies ?? [])],
 		dependents: [...(relationships?.dependents ?? [])],
+		...(relationships?.generatedBy === undefined
+			? {}
+			: { generatedBy: relationships.generatedBy }),
 	};
 }
 
@@ -563,10 +584,8 @@ function cloneJson(value: unknown): unknown {
 export function asObject(
 	value: JsonValue | undefined,
 ): Record<string, JsonValue> {
-	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-		return value as Record<string, JsonValue>;
-	}
-	return {};
+	const parsed = jsonRecordSchema.safeParse(value);
+	return parsed.success ? parsed.data : {};
 }
 
 function pushUnique(values: Array<string>, value: string): void {

@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { IssueNotFoundError, type IssueRelationships } from "../../tracker.ts";
 import type {
 	GitHubComment,
 	GitHubTrackerApi,
@@ -8,6 +7,10 @@ import type {
 	GitHubTrackerIssue,
 } from "./index.ts";
 import { isRecord } from "./helpers.ts";
+import {
+	IssueNotFoundError,
+	type IssueRelationships,
+} from "../../workflow/issue.ts";
 
 const execFileAsync = promisify(execFile);
 const BYTES_PER_KIB = 1024;

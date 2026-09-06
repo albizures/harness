@@ -9,15 +9,23 @@
 	},
 	"exports": {
 		".": "./dist/index.js",
-		"./trackers/filesystem": "./dist/trackers/filesystem.js"
+		"./trackers/filesystem": "./dist/trackers/filesystem.js",
+		"./manifest": "./dist/manifest/index.js",
+		"./manifest/definition": "./dist/manifest/definition.js",
+		"./workflow-module": "./dist/workflow-module.js",
+		"./workflows/agent-development": "./dist/workflows/agent-development/index.js",
+		"./workflows/generic-task": "./dist/workflows/generic-task/index.js"
 	},
 	"files": [
 		"dist"
 	],
 	"scripts": {
-		"build": "tsc -p tsconfig.json",
+		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"test": "pnpm run test:vitest",
+		"test": "pnpm run test:unit && pnpm run test:integration",
+		"test:unit": "vitest run --config vitest.config.ts test/unit",
+		"test:integration": "vitest run --config vitest.config.ts test/integration",
+		"test:coverage": "vitest run --config vitest.config.ts --coverage",
 		"test:vitest": "vitest run --config vitest.config.ts",
 		"awf": "node ./dist/cli.js"
 	},
@@ -27,6 +35,7 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"@vitest/coverage-v8": "4.1.10",
 		"vitest": "^4.1.10"
 	}
 }

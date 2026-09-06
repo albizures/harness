@@ -1,4 +1,7 @@
-import type { ManifestCommand, WorkflowManifest } from "../manifest.ts";
+import type {
+	ManifestCommand,
+	WorkflowManifest,
+} from "../manifest/manifest.ts";
 import { readinessFilters } from "./shared.ts";
 
 export type CommandSpec = {
@@ -49,6 +52,11 @@ const runtimeCommands: Array<CommandSpec> = [
 		description: "Load and validate a workflow manifest.",
 	},
 	{
+		name: "workflow describe",
+		usage: "awf workflow describe",
+		description: "Describe the loaded workflow manifest.",
+	},
+	{
 		name: "start",
 		usage: "awf start <id>",
 		description: "Start the current action.",
@@ -89,15 +97,15 @@ export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 				},
 			];
 		}),
-	];
+	].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function manifestCommandUsage(command: ManifestCommand): string {
 	if (command.cli?.verb === "apply") {
 		return `awf apply ${command.cli.target} <issue> --input <file|->`;
 	}
-	if (command.id === "handoff-create") {
-		return `awf create ${command.cli?.target ?? "handoff"} --source <issue> --input <file|->`;
+	if (command.cli?.source === true) {
+		return `awf create ${command.cli.target} --source <issue> --input <file|->`;
 	}
 	return `awf create ${command.cli?.target ?? "target"} --input <file|->`;
 }

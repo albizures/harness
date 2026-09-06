@@ -1,6 +1,7 @@
 import { failure, success, type Envelope } from "../envelope.ts";
-import { IssueNotFoundError, type Tracker } from "../tracker.ts";
+import type { Tracker } from "../tracker.ts";
 import { deriveRuns, isRecord, isTerminalLog } from "./shared.ts";
+import { IssueNotFoundError } from "../workflow/issue.ts";
 
 export type ReconciliationDiagnostic = {
 	code: string;

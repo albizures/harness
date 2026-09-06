@@ -1,17 +1,18 @@
 import { createTrackerAdapter } from "../tracker-intents.ts";
-import {
-	CorruptWorkflowProjectionError,
-	type CreateIssueInput,
-	type SeedIssueInput,
-	type TrackerAdapter,
-	type TrackerIssueInspection,
-	type UpdateIssueInput,
-	type WorkflowArtifact,
-	type WorkflowArtifactInput,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
-} from "../tracker.ts";
+import type { TrackerAdapter, TrackerIssueInspection } from "../tracker.ts";
+import type {
+	WorkflowArtifact,
+	WorkflowArtifactInput,
+} from "../workflow/artifact.ts";
+import type { WorkflowChange } from "../workflow/change.ts";
+import type {
+	CreateIssueInput,
+	SeedIssueInput,
+	UpdateIssueInput,
+	WorkflowIssue,
+} from "../workflow/issue.ts";
+import type { WorkflowLog } from "../workflow/log.ts";
+import { CorruptWorkflowProjectionError } from "../workflow/projection.ts";
 import { WorkflowTrackerState } from "./state.ts";
 
 export function createInMemoryTracker(
@@ -54,13 +55,7 @@ export class WorkflowStateTracker {
 				blockedById: string,
 				expected: boolean,
 			) => this.state.verifyDependency(issueId, blockedById, expected),
-			verifyPlanApplication: (
-				specId: string,
-				tickets: Array<{ key: string; id: string }>,
-				inputs: Parameters<
-					WorkflowTrackerState["verifyPlanApplication"]
-				>[2],
-			) => this.state.verifyPlanApplication(specId, tickets, inputs),
+			verifyWorkflowEffects: this.state.verifyWorkflowEffects.bind(this.state),
 		};
 	}
 

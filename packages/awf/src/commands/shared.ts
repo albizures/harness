@@ -1,22 +1,30 @@
 import { readFile } from "node:fs/promises";
 import type { JsonValue } from "type-fest";
-import { failure, success, type Envelope } from "../envelope.ts";
+import {
+	failure,
+	success,
+	type Envelope,
+	type ErrorEnvelope,
+} from "../envelope.ts";
+import { jsonRecordSchema, jsonValueSchema } from "../json.ts";
 import type {
-	ArtifactKind,
 	ManifestCommand,
 	PayloadZodSchema,
 	ManifestNamedReadinessFilter,
 	ManifestTransition,
+	ManifestWorkflowFilter,
 	WorkflowManifest,
-} from "../manifest.ts";
+} from "../manifest/manifest.ts";
+import {
+	type ArtifactKind,
+	artifacts as artifactSchemas,
+} from "../workflow/artifact.ts";
+import { NeedReconciliationError, type Tracker } from "../tracker.ts";
+import { IssueNotFoundError } from "../workflow/issue.ts";
 import {
 	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
-	NeedReconciliationError,
 	ProjectionConflictError,
-	type Tracker,
-	type TrackerAdapter,
-} from "../tracker.ts";
+} from "../workflow/projection.ts";
 export type WorkflowFields = {
 	kind: string;
 	state: string;
@@ -50,13 +58,14 @@ export function workflowCommandByCli(
 	);
 }
 
-export function validateWorkflowCommandInput(
+export function parseWorkflowCommandInput(
 	command: ManifestCommand | undefined,
-	value: JsonValue,
-): Envelope | undefined {
+	value: unknown,
+): Envelope<JsonValue> {
 	const result = parsePayloadValue(value, command?.input, "$input");
-	if (result.issues.length === 0) {
-		return undefined;
+	const jsonValue = jsonValueSchema.safeParse(result.value);
+	if (result.issues.length === 0 && jsonValue.success) {
+		return success(jsonValue.data);
 	}
 	return failure(
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
@@ -68,9 +77,17 @@ export function validateWorkflowCommandInput(
 	);
 }
 
+export function validateWorkflowCommandInput(
+	command: ManifestCommand | undefined,
+	value: unknown,
+): Envelope | undefined {
+	const result = parseWorkflowCommandInput(command, value);
+	return result.ok ? undefined : result;
+}
+
 export function validateWorkflowCommandOutput(
 	command: ManifestCommand | undefined,
-	value: JsonValue,
+	value: unknown,
 ): Envelope | undefined {
 	const result = parsePayloadValue(value, command?.output, "$output");
 	if (result.issues.length === 0) {
@@ -94,59 +111,6 @@ export async function readInput(
 		return stdin ?? "";
 	}
 	return readFile(path, "utf8");
-}
-
-export type SpecInput = { title: string; content: string };
-export type PlanBundle = { tickets: Array<PlanTicket> };
-export type PlanTicket = {
-	key: string;
-	title: string;
-	content: string;
-	dependsOn?: Array<unknown>;
-};
-
-export function parseSpecInput(raw: string): SpecInput {
-	const parsed = parseJsonObject(raw);
-	if (parsed !== undefined) {
-		const contentValue = parsed.content ?? parsed.body ?? parsed.markdown;
-		const content = typeof contentValue === "string" ? contentValue : raw;
-		return {
-			title:
-				typeof parsed.title === "string" && parsed.title.trim() !== ""
-					? parsed.title
-					: titleFromMarkdown(content),
-			content,
-		};
-	}
-	return { title: titleFromMarkdown(raw), content: raw };
-}
-
-export function parsePlanInput(raw: string): PlanBundle {
-	const parsed = parseJsonObject(raw);
-	const tickets = Array.isArray(parsed?.tickets) ? parsed.tickets : [];
-	return {
-		tickets: tickets.map((ticket): PlanTicket => {
-			const record = isRecord(ticket) ? ticket : {};
-			return {
-				key: typeof record.key === "string" ? record.key : "",
-				title: typeof record.title === "string" ? record.title : "",
-				content: readTicketContent(record),
-				...(Array.isArray(record.dependsOn)
-					? { dependsOn: record.dependsOn }
-					: {}),
-			};
-		}),
-	};
-}
-
-export function readTicketContent(record: Record<string, unknown>): string {
-	if (typeof record.content === "string") {
-		return record.content;
-	}
-	if (typeof record.body === "string") {
-		return record.body;
-	}
-	return "";
 }
 
 export function parseJsonObject(
@@ -183,9 +147,11 @@ export function genericIssueBody(input: JsonValue, raw: string): string {
 	return raw;
 }
 
-export function parseJsonInput(raw: string, code: string): Envelope<JsonValue> {
+export type JsonInputEnvelope = { ok: true; data: unknown } | ErrorEnvelope;
+
+export function parseJsonInput(raw: string, code: string): JsonInputEnvelope {
 	try {
-		return success(JSON.parse(raw) as JsonValue);
+		return { ok: true, data: JSON.parse(raw) as unknown };
 	} catch (error) {
 		return failure(code, "Input must be valid JSON.", {
 			message: error instanceof Error ? error.message : String(error),
@@ -205,16 +171,24 @@ export function parsePayloadValue(
 	schema: PayloadZodSchema | undefined,
 	path: string,
 ): ParsedPayload {
-	if (schema === undefined) {
-		return { value, issues: [] };
+	const schemaResult = schema?.safeParse(value);
+	if (schemaResult?.success === false) {
+		return {
+			value,
+			issues: schemaResult.error.issues.map((issue) => ({
+				path: formatPayloadPath(path, issue.path),
+				message: issue.message,
+			})),
+		};
 	}
-	const result = schema.safeParse(value);
-	if (result.success) {
-		return { value: result.data, issues: [] };
+	const parsedValue = schemaResult?.data ?? value;
+	const jsonResult = jsonValueSchema.safeParse(parsedValue);
+	if (jsonResult.success) {
+		return { value: jsonResult.data, issues: [] };
 	}
 	return {
-		value,
-		issues: result.error.issues.map((issue) => ({
+		value: parsedValue,
+		issues: jsonResult.error.issues.map((issue) => ({
 			path: formatPayloadPath(path, issue.path),
 			message: issue.message,
 		})),
@@ -239,113 +213,88 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function titleFromMarkdown(markdown: string): string {
-	const heading = markdown
-		.split(/\r?\n/u)
-		.map((line) => line.match(/^#\s+(.+)$/u)?.[1]?.trim())
-		.find((title) => title !== undefined && title !== "");
-	return heading ?? "Spec";
-}
-
-export function validateBundledTerminalInput(
-	issue: Awaited<ReturnType<Tracker["getIssue"]>>,
-	event: "succeed" | "fail",
-	input: JsonValue,
-): RuntimeValidationIssue | undefined {
-	if (!isRecord(input)) {
-		return undefined;
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "implement" &&
-		event === "succeed" &&
-		issue.artifacts.some((artifact) => artifact.kind === "pull-request")
-	) {
-		return {
-			path: "$.implementationPr",
-			message: "Ticket already has an implementation pull request artifact.",
-		};
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "review" &&
-		input.verdict !== (event === "succeed" ? "approved" : "changes-requested")
-	) {
-		return {
-			path: "$.verdict",
-			message: "Review verdict does not match the terminal event.",
-		};
-	}
-	if (
-		issue.workflow.kind === "spec" &&
-		issue.workflow.action === "integration-test" &&
-		input.verdict !== (event === "succeed" ? "passed" : "changes-needed")
-	) {
-		return {
-			path: "$.verdict",
-			message: "Integration verdict does not match the terminal event.",
-		};
-	}
-	return undefined;
-}
-
-export type BundledArtifactInput = {
+export type StructuredArtifactInput = {
 	kind: ArtifactKind;
 	uri: string;
 	name: string;
 } & Record<string, JsonValue>;
 
-export function bundledArtifactInputs(
-	workflow: WorkflowFields,
-	input: JsonValue,
-): Array<BundledArtifactInput> {
-	if (!isRecord(input)) {
-		return [];
-	}
-	const artifacts: Array<BundledArtifactInput> = [];
-	if (workflow.kind === "ticket" && workflow.action === "implement") {
-		const artifact = pullRequestArtifactInput(
-			input.implementationPr,
-			"Implementation PR",
-		);
-		if (artifact !== undefined) {
-			artifacts.push(artifact);
-		}
-	}
-	if (workflow.kind === "spec" && workflow.action === "integration-test") {
-		const artifact = pullRequestArtifactInput(input.specPr, "Spec PR");
-		if (artifact !== undefined) {
-			artifacts.push(artifact);
-		}
-	}
-	return artifacts;
-}
-
-function pullRequestArtifactInput(
-	value: JsonValue | undefined,
-	name: string,
-): BundledArtifactInput | undefined {
-	return structuredArtifactInput(value, "pull-request", name);
-}
-
 export function structuredArtifactInput(
-	value: JsonValue | undefined,
+	value: unknown,
 	kind: ArtifactKind,
 	name: string,
-): BundledArtifactInput | undefined {
-	if (!isRecord(value) || value.type !== kind) {
-		return undefined;
+): StructuredArtifactInput | undefined {
+	return parseStructuredArtifactInput(value, kind, name, "$input").value;
+}
+
+export function parseStructuredArtifactInput(
+	value: unknown,
+	kind: ArtifactKind,
+	name: string,
+	path: string,
+): { value?: StructuredArtifactInput; issue?: RuntimeValidationIssue } {
+	if (value === undefined) {
+		return {};
 	}
-	const uri = artifactReferenceUri(value);
+	const schemaResult = artifactSchema(kind).safeParse(value);
+	if (!schemaResult.success) {
+		const issue = schemaResult.error.issues[0];
+		return {
+			issue: {
+				path: issue === undefined ? path : formatPayloadPath(path, issue.path),
+				message: issue?.message ?? "Invalid artifact reference.",
+			},
+		};
+	}
+	const jsonResult = jsonRecordSchema.safeParse(schemaResult.data);
+	if (!jsonResult.success) {
+		const issue = jsonResult.error.issues[0];
+		return {
+			issue: {
+				path: issue === undefined ? path : formatPayloadPath(path, issue.path),
+				message:
+					issue?.message ?? "Artifact reference must be JSON-compatible.",
+			},
+		};
+	}
+	const data = jsonResult.data;
+	const uri = artifactReferenceUri(data);
 	if (uri === undefined) {
-		return undefined;
+		return {
+			issue: { path, message: "Artifact reference must include a URI field." },
+		};
 	}
 	return {
-		...value,
-		kind,
-		uri,
-		name,
-	} as BundledArtifactInput;
+		value: {
+			...data,
+			kind,
+			uri,
+			name,
+		},
+	};
+}
+
+function artifactSchema(kind: ArtifactKind): PayloadZodSchema {
+	switch (kind) {
+		case "url":
+			return artifactSchemas.url();
+		case "file":
+			return artifactSchemas.file();
+		case "issue":
+			return artifactSchemas.issue();
+		case "pull-request":
+			return artifactSchemas.pullRequest();
+		case "git-ref":
+			return artifactSchemas.gitRef();
+		case "markdown":
+			return artifactSchemas.markdown();
+		case "inline":
+			return artifactSchemas.inline();
+		case "handoff":
+			return artifactSchemas.handoff();
+		case "finding":
+			return artifactSchemas.finding();
+	}
 }
 
 export function artifactReferenceUri(
@@ -360,203 +309,40 @@ export function artifactReferenceUri(
 	return undefined;
 }
 
-export function validatePlan(
-	plan: PlanBundle,
-): Array<{ path: string; message: string }> {
-	const issues: Array<{ path: string; message: string }> = [];
-	if (plan.tickets.length === 0) {
-		issues.push({
-			path: "$.tickets",
-			message: "Plan must include at least one ticket.",
-		});
-	}
-	const keys = new Set<string>();
-	for (const [index, ticket] of plan.tickets.entries()) {
-		const path = `$.tickets[${index}]`;
-		if (ticket.key.trim() === "") {
-			issues.push({
-				path: `${path}.key`,
-				message: "Ticket key must be non-empty.",
-			});
-		} else if (keys.has(ticket.key)) {
-			issues.push({
-				path: `${path}.key`,
-				message: "Ticket key must be unique.",
-			});
-		} else {
-			keys.add(ticket.key);
-		}
-		if (ticket.title.trim() === "") {
-			issues.push({
-				path: `${path}.title`,
-				message: "Ticket title must be non-empty.",
-			});
-		}
-		if (ticket.content.trim() === "") {
-			issues.push({
-				path: `${path}.content`,
-				message: "Ticket content must be non-empty.",
-			});
-		}
-	}
-	for (const [index, ticket] of plan.tickets.entries()) {
-		for (const dependency of ticket.dependsOn ?? []) {
-			if (typeof dependency !== "string" || dependency.trim() === "") {
-				issues.push({
-					path: `$.tickets[${index}].dependsOn`,
-					message: "Dependency references must be non-empty strings.",
-				});
-			} else if (!keys.has(dependency)) {
-				issues.push({
-					path: `$.tickets[${index}].dependsOn`,
-					message: `Unknown dependency '${dependency}'.`,
-				});
-			}
-		}
-	}
-	const cycle = findDependencyCycle(plan);
-	if (cycle !== undefined) {
-		issues.push({
-			path: "$.tickets",
-			message: `Dependency graph must be acyclic (${cycle.join(" -> ")}).`,
-		});
-	}
-	return issues;
-}
-
-export function findDependencyCycle(
-	plan: PlanBundle,
-): Array<string> | undefined {
-	const byKey = new Map(plan.tickets.map((ticket) => [ticket.key, ticket]));
-	const visiting = new Set<string>();
-	const visited = new Set<string>();
-	const stack: Array<string> = [];
-	function visit(key: string): Array<string> | undefined {
-		if (visiting.has(key)) {
-			return [...stack.slice(stack.indexOf(key)), key];
-		}
-		if (visited.has(key)) {
-			return undefined;
-		}
-		visiting.add(key);
-		stack.push(key);
-		for (const dependency of byKey.get(key)?.dependsOn ?? []) {
-			if (typeof dependency !== "string" || !byKey.has(dependency)) {
-				continue;
-			}
-			const cycle = visit(dependency);
-			if (cycle !== undefined) {
-				return cycle;
-			}
-		}
-		stack.pop();
-		visiting.delete(key);
-		visited.add(key);
-		return undefined;
-	}
-	for (const key of byKey.keys()) {
-		const cycle = visit(key);
-		if (cycle !== undefined) {
-			return cycle;
-		}
-	}
-	return undefined;
-}
-
-export async function rollbackPlanApplication(
-	tracker: TrackerAdapter,
-	specId: string,
-	specWorkflow: WorkflowFields,
-	dependencies: Array<{ issueId: string; blockedById: string }>,
-	children: Array<string>,
-	createdIssueIds: Array<string>,
-): Promise<Array<string>> {
-	const errors: Array<string> = [];
-	for (const dependency of [...dependencies].reverse()) {
-		try {
-			await tracker.removeDependency(
-				dependency.issueId,
-				dependency.blockedById,
-			);
-		} catch (error) {
-			errors.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	for (const childId of [...children].reverse()) {
-		try {
-			await tracker.removeChild(specId, childId);
-		} catch (error) {
-			errors.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	for (const issueId of [...createdIssueIds].reverse()) {
-		try {
-			await tracker.deleteIssue(issueId);
-		} catch (error) {
-			errors.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	try {
-		await tracker.updateIssue(specId, {
-			workflow: {
-				state: specWorkflow.state,
-				action: specWorkflow.action,
-				reason: specWorkflow.reason,
-				activeRunId: specWorkflow.activeRunId,
-			},
-		});
-	} catch (error) {
-		errors.push(error instanceof Error ? error.message : String(error));
-	}
-	return errors;
-}
-
-export async function escalatePartialRollback(
-	tracker: TrackerAdapter,
-	specId: string,
-): Promise<void> {
-	try {
-		await tracker.updateIssue(specId, {
-			workflow: { state: "need-human", action: "none", activeRunId: undefined },
-		});
-	} catch {
-		// Best-effort escalation: the original partial rollback error remains the outcome.
-	}
-}
-
-export async function progressParentSpecAfterTicketDone(
+export async function progressRelationshipsAfterLifecycleTransition(
 	tracker: Tracker,
+	manifest: WorkflowManifest,
 	previous: Awaited<ReturnType<Tracker["getIssue"]>>,
 	updated: Awaited<ReturnType<Tracker["getIssue"]>>,
 ): Promise<void> {
-	const parentId = previous.relationships.parent;
-	if (
-		previous.workflow.kind !== "ticket" ||
-		updated.workflow.state !== "done" ||
-		updated.workflow.action !== "none" ||
-		parentId === undefined
-	) {
-		return;
+	for (const policy of manifest.lifecycle?.relationshipPolicies ?? []) {
+		if (
+			policy.relationship !== "parent" ||
+			previous.relationships.parent === undefined ||
+			!workflowMatchesFilter(updated.workflow, policy.child)
+		) {
+			continue;
+		}
+		const parent = await tracker.getIssue(previous.relationships.parent);
+		if (
+			!workflowMatchesFilter(parent.workflow, policy.parent) ||
+			!childrenSatisfyPolicy(
+				parent.relationships.children,
+				policy.siblings,
+				await Promise.all(
+					parent.relationships.children.map((childId) =>
+						tracker.getIssue(childId),
+					),
+				),
+			)
+		) {
+			continue;
+		}
+		await tracker.advanceWorkflow(parent.id, {
+			expect: { version: parent.workflow.version, hash: parent.workflow.hash },
+			workflow: workflowTarget(policy.to),
+		});
 	}
-	const parent = await tracker.getIssue(parentId);
-	if (
-		parent.workflow.kind !== "spec" ||
-		parent.workflow.state !== "ready" ||
-		parent.workflow.action !== "none" ||
-		parent.relationships.children.length === 0
-	) {
-		return;
-	}
-	const children = await Promise.all(
-		parent.relationships.children.map((childId) => tracker.getIssue(childId)),
-	);
-	if (!children.every((child) => isDone(child))) {
-		return;
-	}
-	await tracker.advanceWorkflow(parentId, {
-		expect: { version: parent.workflow.version, hash: parent.workflow.hash },
-		workflow: { state: "ready", action: "integration-test" },
-	});
 }
 
 export function readinessFilters(
@@ -703,7 +489,7 @@ export function readyItem(issue: {
 export function readinessBlocking(
 	issue: {
 		workflow: WorkflowFields;
-		relationships: { dependencies: Array<string> };
+		relationships: { dependencies: Array<string>; children: Array<string> };
 	},
 	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
 	manifest: WorkflowManifest,
@@ -711,6 +497,7 @@ export function readinessBlocking(
 ): Array<Record<string, JsonValue>> {
 	return [
 		...dependencyBlocking(issue, byId),
+		...relationshipReadinessBlocking(issue, byId, manifest),
 		...concurrencyBlocking(issue.workflow.kind, manifest, activeIssues),
 	];
 }
@@ -775,22 +562,80 @@ export function isDone(
 	return issue?.workflow.state === "done";
 }
 
-export function specPostTicketGateIsOpen(
+export function relationshipReadinessBlocking(
 	issue: {
 		workflow: WorkflowFields;
 		relationships: { children: Array<string> };
 	},
-	byId: Map<string, { workflow: WorkflowFields }>,
-): boolean {
-	if (
-		issue.workflow.kind !== "spec" ||
-		issue.workflow.action !== "integration-test"
-	) {
-		return true;
+	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+	manifest: WorkflowManifest,
+): Array<Record<string, JsonValue>> {
+	const blocking: Array<Record<string, JsonValue>> = [];
+	for (const policy of manifest.readiness?.relationshipPolicies ?? []) {
+		if (
+			policy.relationship !== "children" ||
+			!workflowMatchesFilter(issue.workflow, policy.where)
+		) {
+			continue;
+		}
+		const children = issue.relationships.children.map((id) => byId.get(id));
+		const minimum = policy.children.min ?? 0;
+		const missing = issue.relationships.children.filter(
+			(_id, index) => children[index] === undefined,
+		);
+		const unmatched = children.flatMap((child) =>
+			child !== undefined &&
+			!workflowMatchesFilter(child.workflow, policy.children.all)
+				? [child]
+				: [],
+		);
+		if (
+			children.length >= minimum &&
+			missing.length === 0 &&
+			unmatched.length === 0
+		) {
+			continue;
+		}
+		blocking.push({
+			gate: policy.gate ?? "relationship",
+			relationship: "children",
+			...(minimum === 0 ? {} : { minimum }),
+			...(missing.length === 0 ? {} : { missing }),
+			...(unmatched.length === 0
+				? {}
+				: {
+						blockedBy: unmatched.map((child) => ({
+							id: child.id,
+							title: child.title,
+							workflow: cleanWorkflowFields(child.workflow),
+						})),
+					}),
+		});
 	}
+	return blocking;
+}
+
+function childrenSatisfyPolicy(
+	childIds: Array<string>,
+	policy: { all: ManifestWorkflowFilter; min?: number },
+	children: Array<{ workflow: WorkflowFields }>,
+): boolean {
 	return (
-		issue.relationships.children.length > 0 &&
-		issue.relationships.children.every((id) => isDone(byId.get(id)))
+		childIds.length >= (policy.min ?? 0) &&
+		children.length === childIds.length &&
+		children.every((child) => workflowMatchesFilter(child.workflow, policy.all))
+	);
+}
+
+export function workflowMatchesFilter(
+	workflow: WorkflowFields,
+	filter: ManifestWorkflowFilter,
+): boolean {
+	return (
+		fieldMatches(filter.kind, workflow.kind) &&
+		fieldMatches(filter.state, workflow.state) &&
+		fieldMatches(filter.action, workflow.action) &&
+		fieldMatches(filter.reason, workflow.reason)
 	);
 }
 
@@ -816,25 +661,6 @@ export function cleanWorkflowFields(
 			reason: workflow.reason,
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
-}
-
-export function planApplicationTarget(
-	manifest: WorkflowManifest,
-	workflow: WorkflowFields,
-): ManifestTransition["to"] | undefined {
-	const direct = findTransition(manifest, workflow, "succeed");
-	if (direct !== undefined) {
-		return direct.to;
-	}
-	const started = findTransition(manifest, workflow, "start");
-	if (started === undefined) {
-		return undefined;
-	}
-	return findTransition(
-		manifest,
-		{ ...workflow, ...workflowTarget(started.to) },
-		"succeed",
-	)?.to;
 }
 
 export function findTransition(

@@ -1,5 +1,5 @@
 import { success, type Envelope } from "../envelope.ts";
-import type { WorkflowManifest } from "../manifest.ts";
+import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker } from "../tracker.ts";
 import type { ReadyOptions } from "./args.ts";
 import {
@@ -10,7 +10,6 @@ import {
 	readinessBlocking,
 	readinessFilters,
 	readyItem,
-	specPostTicketGateIsOpen,
 	validateNamedReadinessFilterDeclarations,
 	validateNamedReadinessFilterValues,
 } from "./shared.ts";
@@ -42,7 +41,6 @@ export async function readyCommand(
 	const readyLike = issues
 		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
 		.filter((issue) => issue.workflow.activeRunId === undefined)
-		.filter((issue) => specPostTicketGateIsOpen(issue, byId))
 		.filter((issue) =>
 			matchesNamedReadinessFilters(issue, options.filters, manifest),
 		);

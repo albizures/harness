@@ -1,4 +1,20 @@
+export type {
+	CommandHandler,
+	CommandHandlerContext,
+	CommandHandlerResult,
+	CommandHandlers,
+} from "./command-handlers.ts";
 export { execute, type ExecuteOptions } from "./commands.ts";
+export {
+	agentDevelopmentCommandHandlers,
+	agentDevelopmentLifecycleHandlers,
+	agentDevelopmentManifest,
+} from "./workflows/agent-development/index.ts";
+export {
+	genericTaskCommandHandlers,
+	genericTaskLifecycleHandlers,
+	genericTaskManifest,
+} from "./workflows/generic-task/index.ts";
 export {
 	failure,
 	serializeEnvelope,
@@ -8,19 +24,47 @@ export {
 	type SuccessEnvelope,
 } from "./envelope.ts";
 export {
+	isJsonRecord,
+	isJsonValue,
+	jsonRecordSchema,
+	jsonValueSchema,
+	parseJsonRecord,
+	parseJsonValue,
+} from "./json.ts";
+export {
+	findLifecycleTransitionHandler,
+	lifecycleTransitionHandlerKey,
+	runLifecycleTransitionHandler,
+	type LifecycleTransitionHandler,
+	type LifecycleTransitionHandlerContext,
+	type LifecycleTransitionHandlerContribution,
+	type LifecycleTransitionHandlers,
+} from "./lifecycle-handlers.ts";
+export {
 	ManifestValidationError,
-	WorkflowModuleLoadError,
-	artifacts,
-	defineManifest,
-	loadManifest,
-	loadWorkflowModule,
-	validateManifest,
-	type ArtifactKind,
+	getKind,
+	workflowManifestStructuralSchema,
 	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,
+} from "./manifest/manifest.ts";
+export { defineManifest, validateManifest } from "./manifest/definition.ts";
+export {
+	describeWorkflow,
+	manifestCommandUsage,
+	workflowDescriptionScopeNotes,
+	type WorkflowDescriptionSchemaInputV1,
+	type WorkflowDescriptionSchemaOutputV1,
+	type WorkflowDescriptionStateRefV1,
+	type WorkflowDescriptionV1,
+	type WorkflowDescriptionWorkflowFilterV1,
+} from "./manifest/description.ts";
+export {
+	WorkflowModuleLoadError,
+	loadManifest,
+	loadWorkflowModule,
 	type WorkflowModule,
-} from "./manifest.ts";
+} from "./workflow-module.ts";
 export {
 	createGhCliGitHubTracker,
 	createGitHubTracker,
@@ -35,17 +79,12 @@ export {
 	type TrackerIntentModulePrimitives,
 } from "./tracker-intents.ts";
 export {
-	CorruptWorkflowProjectionError,
-	IssueNotFoundError,
 	NeedReconciliationError,
-	ProjectionConflictError,
-	type CreateIssueInput,
-	type IssueRelationships,
 	type Tracker,
 	type TrackerAdapterPrimitiveOperations,
 	type TrackerAdapterPrimitiveReads,
-	type TrackerApplyPlanIntent,
-	type TrackerApplyPlanResult,
+	type TrackerApplyWorkflowEffectsIntent,
+	type TrackerApplyWorkflowEffectsResult,
 	type TrackerCompleteRunIntent,
 	type TrackerCreateWorkflowIssueIntent,
 	type TrackerEscalateIntent,
@@ -53,16 +92,25 @@ export {
 	type TrackerRecordArtifactsIntent,
 	type TrackerRecordArtifactsResult,
 	type TrackerRelationshipIntent,
+	type TrackerWorkflowEffect,
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
-	type UpdateIssueInput,
-	type WorkflowArtifact,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
-	type WorkflowProjection,
 } from "./tracker.ts";
+export { WorkflowLog } from "./workflow/log.ts";
+export { WorkflowChange } from "./workflow/change.ts";
+export { WorkflowArtifact } from "./workflow/artifact.ts";
+export {
+	CorruptWorkflowProjectionError,
+	type WorkflowProjection,
+} from "./workflow/projection.ts";
+export {
+	IssueNotFoundError,
+	IssueRelationships,
+	UpdateIssueInput,
+	WorkflowIssue,
+	CreateIssueInput,
+} from "./workflow/issue.ts";
 export {
 	createFileSystemTracker,
 	type FileSystemTrackerOptions,

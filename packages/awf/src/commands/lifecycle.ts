@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "type-fest";
+import { z } from "zod";
 import { failure, success, type Envelope } from "../envelope.ts";
-import type { WorkflowManifest } from "../manifest.ts";
-import type { Tracker } from "../tracker.ts";
+import { parseJsonValue } from "../json.ts";
+import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
+import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
+import type { WorkflowManifest } from "../manifest/manifest.ts";
+import type { Tracker, TrackerLog } from "../tracker.ts";
+import type { WorkflowArtifactInput } from "../workflow/artifact.ts";
+import type { WorkflowChange } from "../workflow/change.ts";
 import {
-	bundledArtifactInputs,
 	cleanCurrentTarget,
 	cleanTransitionTarget,
 	defaultRetryTarget,
@@ -12,26 +17,31 @@ import {
 	findTransition,
 	invalidTransition,
 	isReadyAction,
-	isRecord,
 	isTerminalLog,
 	lifecycleError,
 	parseJsonInput,
 	parsePayloadValue,
 	policyViolation,
-	progressParentSpecAfterTicketDone,
+	progressRelationshipsAfterLifecycleTransition,
 	readInput,
 	resumePolicyAllows,
 	retryPolicyAllows,
 	terminalLogInputMatches,
 	terminalLogType,
-	validateBundledTerminalInput,
 	workflowTarget,
 } from "./shared.ts";
+
+const escalationInputSchema = z.strictObject({
+	reason: z.string().refine((value) => value.trim() !== "", {
+		message: "Escalation reason must be a non-empty string.",
+	}),
+});
 
 export async function startCommand(
 	id: string | undefined,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
+	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
 	if (id === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -46,20 +56,71 @@ export async function startCommand(
 			return invalidTransition(id, "start");
 		}
 		const runId = `run-${randomUUID()}`;
-		const { issue: updated, log } = await tracker.startRun(id, {
-			expect: {
-				version: issue.workflow.version,
-				hash: issue.workflow.hash,
-			},
-			runId,
-			workflow: workflowTarget(transition.to),
-			log: {
-				type: "action_started",
+		if (lifecycleHandlers === undefined) {
+			const { issue: updated, log } = await tracker.startRun(id, {
+				expect: {
+					version: issue.workflow.version,
+					hash: issue.workflow.hash,
+				},
 				runId,
-				payload: { event: "start", to: cleanTransitionTarget(transition.to) },
-			},
+				workflow: workflowTarget(transition.to),
+				log: {
+					type: "action_started",
+					runId,
+					payload: {
+						event: "start",
+						to: cleanTransitionTarget(transition.to),
+					},
+				},
+			});
+			return success({ issue: updated, run: { id: runId }, log });
+		}
+		const handler = await runLifecycleTransitionHandler(lifecycleHandlers, {
+			manifest,
+			transition,
+			issue,
+			event: "start",
+			input: {},
+			runId,
 		});
-		return success({ issue: updated, run: { id: runId }, log });
+		if (handler.ok !== true) {
+			return handler;
+		}
+		const target = workflowTarget(transition.to);
+		const log: TrackerLog = {
+			type: "action_started",
+			runId,
+			payload: {
+				...handler.contribution.log,
+				event: "start",
+				to: cleanTransitionTarget(transition.to),
+			},
+		};
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: { ...target, activeRunId: runId },
+				},
+				recordLifecycleLogEffect(
+					id,
+					log,
+					handler.contribution.artifacts,
+					handler.contribution.changes,
+				),
+				...handler.contribution.effects,
+			],
+		});
+		return success({
+			issue: result.issues[id] ?? (await tracker.getIssue(id)),
+			run: { id: runId },
+			log: result.logs[0],
+		});
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
@@ -73,6 +134,7 @@ export async function terminalCommand(
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
+	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
 	if (id === undefined || runId === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -91,6 +153,19 @@ export async function terminalCommand(
 		if (parsedInput?.ok === false) {
 			return parsedInput;
 		}
+		const parsedInputJson =
+			parsedInput === undefined
+				? undefined
+				: parsePayloadValue(parsedInput.data, undefined, "$");
+		if (parsedInputJson?.issues.length) {
+			return failure(
+				"INVALID_ACTION_INPUT",
+				"Action completion input is invalid.",
+				{
+					issues: parsedInputJson.issues,
+				},
+			);
+		}
 		const logs = await tracker.readLogs(id);
 		const existing = logs.find(
 			(log) => log.runId === runId && isTerminalLog(log.type),
@@ -99,8 +174,11 @@ export async function terminalCommand(
 		if (existing !== undefined) {
 			if (
 				existing.type === logType &&
-				(parsedInput === undefined ||
-					terminalLogInputMatches(existing.payload, parsedInput.data))
+				(parsedInputJson === undefined ||
+					terminalLogInputMatches(
+						existing.payload,
+						parseJsonValue(parsedInputJson.value),
+					))
 			) {
 				const issue = await tracker.getIssue(id);
 				return success({
@@ -155,15 +233,6 @@ export async function terminalCommand(
 			"$",
 		);
 		const validationIssues = [...payload.issues];
-		const terminalInput = payload.value as JsonValue;
-		const semanticIssue = validateBundledTerminalInput(
-			issue,
-			event,
-			terminalInput,
-		);
-		if (semanticIssue !== undefined) {
-			validationIssues.push(semanticIssue);
-		}
 		if (validationIssues.length > 0) {
 			return failure(
 				"INVALID_ACTION_INPUT",
@@ -171,39 +240,132 @@ export async function terminalCommand(
 				{ issues: validationIssues },
 			);
 		}
+		const terminalInput = parseJsonValue(payload.value);
 		const target =
 			retryTarget ??
 			(transition === undefined ? undefined : workflowTarget(transition.to));
 		if (target === undefined) {
 			return invalidTransition(id, event);
 		}
-		const result = await tracker.completeRun(id, {
-			expect: {
-				version: issue.workflow.version,
-				hash: issue.workflow.hash,
-			},
-			runId,
-			workflow: target,
-			artifacts: bundledArtifactInputs(issue.workflow, terminalInput),
-			log: {
-				type: logType,
-				runId,
-				payload: {
-					event,
-					...(parsedInput === undefined ? {} : { input: terminalInput }),
-					to: target,
+		if (lifecycleHandlers === undefined) {
+			const result = await tracker.completeRun(id, {
+				expect: {
+					version: issue.workflow.version,
+					hash: issue.workflow.hash,
 				},
+				runId,
+				workflow: target,
+				log: {
+					type: logType,
+					runId,
+					payload: {
+						event,
+						...(parsedInput === undefined ? {} : { input: terminalInput }),
+						to: target,
+					},
+				},
+			});
+			await progressRelationshipsAfterLifecycleTransition(
+				tracker,
+				manifest,
+				issue,
+				result.issue,
+			);
+			return success({
+				issue: result.issue,
+				run: { id: runId, status: event },
+				log: result.log,
+			});
+		}
+		const handler =
+			transition === undefined
+				? { ok: true as const, contribution: emptyLifecycleContribution() }
+				: await runLifecycleTransitionHandler(lifecycleHandlers, {
+						manifest,
+						transition,
+						issue,
+						event,
+						input: terminalInput,
+						runId,
+					});
+		if (handler.ok !== true) {
+			return handler;
+		}
+		const log: TrackerLog = {
+			type: logType,
+			runId,
+			payload: {
+				...handler.contribution.log,
+				event,
+				...(parsedInput === undefined ? {} : { input: terminalInput }),
+				to: target,
 			},
+		};
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: { ...target, activeRunId: undefined },
+				},
+				recordLifecycleLogEffect(
+					id,
+					log,
+					handler.contribution.artifacts,
+					handler.contribution.changes,
+				),
+				...handler.contribution.effects,
+			],
 		});
-		await progressParentSpecAfterTicketDone(tracker, issue, result.issue);
+		const updated = result.issues[id] ?? (await tracker.getIssue(id));
+		await progressRelationshipsAfterLifecycleTransition(
+			tracker,
+			manifest,
+			issue,
+			updated,
+		);
 		return success({
-			issue: result.issue,
+			issue: updated,
 			run: { id: runId, status: event },
-			log: result.log,
+			log: result.logs[0],
 		});
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
+}
+
+function emptyLifecycleContribution(): {
+	log: Record<string, JsonValue>;
+	artifacts: Array<WorkflowArtifactInput>;
+	changes: Array<Omit<WorkflowChange, "id">>;
+	effects: [];
+} {
+	return { log: {}, artifacts: [], changes: [], effects: [] };
+}
+
+function recordLifecycleLogEffect(
+	id: string,
+	log: TrackerLog,
+	artifacts: Array<WorkflowArtifactInput>,
+	changes: Array<Omit<WorkflowChange, "id">>,
+): {
+	type: "record-artifacts";
+	issue: { id: string };
+	artifacts?: Array<WorkflowArtifactInput>;
+	changes?: Array<Omit<WorkflowChange, "id">>;
+	log: TrackerLog;
+} {
+	return {
+		type: "record-artifacts",
+		issue: { id },
+		...(artifacts.length === 0 ? {} : { artifacts }),
+		...(changes.length === 0 ? {} : { changes }),
+		log,
+	};
 }
 
 export async function escalateCommand(
@@ -226,18 +388,14 @@ export async function escalateCommand(
 		if (parsedInput.ok === false) {
 			return parsedInput;
 		}
-		if (
-			!isRecord(parsedInput.data) ||
-			typeof parsedInput.data.reason !== "string" ||
-			parsedInput.data.reason.trim() === ""
-		) {
+		const payload = parsePayloadValue(
+			parsedInput.data,
+			manifest.lifecycle?.escalation?.input ?? escalationInputSchema,
+			"$",
+		);
+		if (payload.issues.length > 0) {
 			return failure("INVALID_ACTION_INPUT", "Escalation input is invalid.", {
-				issues: [
-					{
-						path: "$.reason",
-						message: "Escalation reason must be a non-empty string.",
-					},
-				],
+				issues: payload.issues,
 			});
 		}
 		const issue = await tracker.getIssue(id);
@@ -258,7 +416,7 @@ export async function escalateCommand(
 				type: "human_intervention_needed",
 				payload: {
 					event: "escalate",
-					input: parsedInput.data as JsonValue,
+					input: parseJsonValue(payload.value),
 					from,
 					to,
 				},

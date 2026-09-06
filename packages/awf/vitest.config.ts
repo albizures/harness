@@ -5,7 +5,13 @@ export default defineConfig({
 	test: {
 		globals: false,
 		environment: "node",
-		include: ["src/**/*.test.ts", "src/**/*.integration.test.ts"],
+		include: ["test/unit/**/*.test.ts", "test/integration/**/*.test.ts"],
 		passWithNoTests: true,
+		coverage: {
+			provider: "v8",
+			reporter: ["text", "html", "json"],
+			include: ["src/**/*.ts"],
+			exclude: ["dist/**", "test/**", "**/*.d.ts", "*.config.ts"],
+		},
 	},
 });

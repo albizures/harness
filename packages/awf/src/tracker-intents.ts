@@ -1,13 +1,11 @@
 import {
-	IssueNotFoundError,
 	NeedReconciliationError,
-	ProjectionConflictError,
 	type Tracker,
 	type TrackerAdapter,
 	type TrackerAdapterPrimitiveReads,
 	type TrackerAdapterPrimitiveOperations,
-	type TrackerApplyPlanIntent,
-	type TrackerApplyPlanResult,
+	type TrackerApplyWorkflowEffectsIntent,
+	type TrackerApplyWorkflowEffectsResult,
 	type TrackerCompleteRunIntent,
 	type TrackerCreateWorkflowIssueIntent,
 	type TrackerEscalateIntent,
@@ -21,11 +19,16 @@ import {
 	type TrackerResumeIntent,
 	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
-	type WorkflowArtifact,
-	type WorkflowChange,
-	type WorkflowIssue,
-	type WorkflowLog,
 } from "./tracker.ts";
+import type { WorkflowArtifact } from "./workflow/artifact.ts";
+import type { WorkflowChange } from "./workflow/change.ts";
+import {
+	IssueNotFoundError,
+	type CreateIssueInput,
+	type WorkflowIssue,
+} from "./workflow/issue.ts";
+import type { WorkflowLog } from "./workflow/log.ts";
+import { ProjectionConflictError } from "./workflow/projection.ts";
 
 export type TrackerIntentModulePrimitives = TrackerAdapterPrimitiveOperations &
 	TrackerAdapterPrimitiveReads & {
@@ -182,7 +185,10 @@ class PrimitiveTrackerIntentModule implements Tracker {
 				await this.primitives.addDependency(input.issueId, input.blockedById);
 				await this.verifyDependency(input.issueId, input.blockedById, true);
 			} else {
-				await this.primitives.removeDependency(input.issueId, input.blockedById);
+				await this.primitives.removeDependency(
+					input.issueId,
+					input.blockedById,
+				);
 				await this.verifyDependency(input.issueId, input.blockedById, false);
 			}
 		} catch (error) {
@@ -196,7 +202,11 @@ class PrimitiveTrackerIntentModule implements Tracker {
 		expected: boolean,
 	): Promise<void> {
 		if (this.primitives.verification?.verifyChild !== undefined) {
-			await this.primitives.verification.verifyChild(parentId, childId, expected);
+			await this.primitives.verification.verifyChild(
+				parentId,
+				childId,
+				expected,
+			);
 			return;
 		}
 		const [parent, child] = await Promise.all([
@@ -240,70 +250,119 @@ class PrimitiveTrackerIntentModule implements Tracker {
 		}
 	}
 
-	async applyPlan(
-		input: TrackerApplyPlanIntent,
-	): Promise<TrackerApplyPlanResult> {
-		const tickets: Array<{ key: string; id: string }> = [];
+	async applyWorkflowEffects(
+		input: TrackerApplyWorkflowEffectsIntent,
+	): Promise<TrackerApplyWorkflowEffectsResult> {
+		const result: TrackerApplyWorkflowEffectsResult = {
+			issues: {},
+			createdIssues: [],
+			artifacts: [],
+			changes: [],
+			logs: [],
+		};
+		const idsByKey = new Map<string, string>();
+		const rollback: Array<() => Promise<void>> = [];
 		try {
-			for (const ticket of input.tickets) {
-				const issue = await this.primitives.createIssue({
-					title: ticket.title,
-					body: ticket.body,
-					workflow: ticket.workflow,
-				});
-				tickets.push({ key: ticket.key, id: issue.id });
-				await this.changeRelationship({
-					type: "add-child",
-					parentId: input.specId,
-					childId: issue.id,
-				});
-			}
-			const idsByKey = new Map(
-				tickets.map((ticket) => [ticket.key, ticket.id]),
-			);
-			for (const ticket of input.tickets) {
-				const issueId = idsByKey.get(ticket.key);
-				if (issueId === undefined) {
-					throw new NeedReconciliationError(
-						"NEED_RECONCILIATION: plan ticket creation could not be verified.",
-					);
-				}
-				for (const dependencyKey of ticket.dependsOn ?? []) {
-					const blockedById = idsByKey.get(dependencyKey);
-					if (blockedById === undefined) {
-						throw new NeedReconciliationError(
-							"NEED_RECONCILIATION: plan dependency resolution failed.",
-						);
+			for (const effect of input.effects) {
+				if (effect.type === "create-workflow-issue") {
+					const issue = await this.primitives.createIssue(effect.input);
+					if (effect.key !== undefined) {
+						idsByKey.set(effect.key, issue.id);
 					}
-					await this.changeRelationship({
-						type: "add-dependency",
-						issueId,
-						blockedById,
+					rollback.push(async () => this.primitives.deleteIssue(issue.id));
+					let current = issue;
+					let log: WorkflowLog | undefined;
+					if (effect.initialLog !== undefined) {
+						log = await this.primitives.appendLog(issue.id, effect.initialLog);
+						result.logs.push(log);
+						current = await this.primitives.getIssue(issue.id);
+					}
+					await this.verifyCreatedIssue(current, effect.input, log);
+					result.issues[issue.id] = current;
+					result.createdIssues.push({
+						key: effect.key,
+						id: issue.id,
+						issue: current,
 					});
+				} else if (effect.type === "update-workflow") {
+					const id = resolveIssueRef(effect.issue, idsByKey);
+					const issue = await this.primitives.updateIssue(id, {
+						expect: effect.expect,
+						workflow: effect.workflow,
+					});
+					await this.verifyWorkflowUpdate(id, effect.workflow);
+					result.issues[id] = issue;
+				} else if (effect.type === "record-artifacts") {
+					const id = resolveIssueRef(effect.issue, idsByKey);
+					for (const artifact of effect.artifacts ?? []) {
+						result.artifacts.push({
+							issueId: id,
+							artifact: await this.primitives.registerArtifact(id, artifact),
+						});
+					}
+					for (const change of effect.changes ?? []) {
+						result.changes.push({
+							issueId: id,
+							change: await this.primitives.registerChange(id, change),
+						});
+					}
+					const log = await this.primitives.appendLog(id, effect.log);
+					result.logs.push(log);
+					await this.verifyRecorded(id, log, result.artifacts, result.changes);
+					result.issues[id] = await this.primitives.getIssue(id);
+				} else if (effect.type === "record-command") {
+					const id = resolveIssueRef(effect.issue, idsByKey);
+					const log = await this.primitives.appendLog(id, effect.log);
+					result.logs.push(log);
+					await this.verifyLog(id, log);
+					result.issues[id] = await this.primitives.getIssue(id);
+				} else if (effect.type === "add-child") {
+					const parentId = resolveIssueRef(effect.parent, idsByKey);
+					const childId = resolveIssueRef(effect.child, idsByKey);
+					await this.primitives.addChild(parentId, childId);
+					rollback.push(async () =>
+						this.primitives.removeChild(parentId, childId),
+					);
+					await this.verifyChild(parentId, childId, true);
+				} else if (effect.type === "remove-child") {
+					const parentId = resolveIssueRef(effect.parent, idsByKey);
+					const childId = resolveIssueRef(effect.child, idsByKey);
+					await this.primitives.removeChild(parentId, childId);
+					rollback.push(async () =>
+						this.primitives.addChild(parentId, childId),
+					);
+					await this.verifyChild(parentId, childId, false);
+				} else if (effect.type === "add-dependency") {
+					const issueId = resolveIssueRef(effect.issue, idsByKey);
+					const blockedById = resolveIssueRef(effect.blockedBy, idsByKey);
+					await this.primitives.addDependency(issueId, blockedById);
+					rollback.push(async () =>
+						this.primitives.removeDependency(issueId, blockedById),
+					);
+					await this.verifyDependency(issueId, blockedById, true);
+				} else {
+					const issueId = resolveIssueRef(effect.issue, idsByKey);
+					const blockedById = resolveIssueRef(effect.blockedBy, idsByKey);
+					await this.primitives.removeDependency(issueId, blockedById);
+					rollback.push(async () =>
+						this.primitives.addDependency(issueId, blockedById),
+					);
+					await this.verifyDependency(issueId, blockedById, false);
 				}
 			}
-			await this.primitives.updateIssue(input.specId, {
-				expect: input.expect,
-				workflow: input.specWorkflow,
-			});
-			const artifacts: Array<WorkflowArtifact> = [];
-			for (const artifact of input.artifacts ?? []) {
-				artifacts.push(
-					await this.primitives.registerArtifact(input.specId, artifact),
-				);
-			}
-			const log = await this.primitives.appendLog(input.specId, {
-				...input.log,
-				payload: { ...asObject(input.log.payload), tickets, artifacts },
-			});
-			await this.verifyPlanApplication(input.specId, tickets, input.tickets);
-			return {
-				spec: await this.primitives.getIssue(input.specId),
-				tickets,
-				artifacts,
-				log,
-			};
+			await this.primitives.verification?.verifyWorkflowEffects?.(
+				result,
+				input.effects,
+			);
+			return result;
 		} catch (error) {
+			for (const undo of rollback.reverse()) {
+				try {
+					await undo();
+				} catch {
+					/* best-effort rollback */
+				}
+			}
 			if (
 				error instanceof NeedReconciliationError ||
 				error instanceof ProjectionConflictError ||
@@ -312,52 +371,81 @@ class PrimitiveTrackerIntentModule implements Tracker {
 				throw error;
 			}
 			throw new NeedReconciliationError(
-				`NEED_RECONCILIATION: plan application intent failed: ${error instanceof Error ? error.message : String(error)}`,
+				`NEED_RECONCILIATION: workflow effects application failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	}
 
-	private async verifyPlanApplication(
-		specId: string,
-		tickets: Array<{ key: string; id: string }>,
-		inputs: TrackerApplyPlanIntent["tickets"],
+	private async verifyCreatedIssue(
+		issue: WorkflowIssue,
+		input: CreateIssueInput,
+		log?: WorkflowLog,
 	): Promise<void> {
-		if (this.primitives.verification?.verifyPlanApplication !== undefined) {
-			await this.primitives.verification.verifyPlanApplication(
-				specId,
-				tickets,
-				inputs,
+		const reread = await this.primitives.getIssue(issue.id);
+		if (
+			reread.title !== input.title ||
+			reread.workflow.kind !== input.workflow.kind
+		) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: workflow issue creation could not be verified.",
 			);
-			return;
 		}
-		const spec = await this.primitives.getIssue(specId);
-		for (const ticket of tickets) {
-			if (!spec.relationships.children.includes(ticket.id)) {
+		if (log !== undefined) {
+			await this.verifyLog(issue.id, log);
+		}
+	}
+
+	private async verifyWorkflowUpdate(
+		id: string,
+		workflow: Record<string, unknown>,
+	): Promise<void> {
+		const issue = await this.primitives.getIssue(id);
+		for (const [field, value] of Object.entries(workflow)) {
+			if ((issue.workflow as Record<string, unknown>)[field] !== value) {
 				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan child relationships could not be verified.",
+					"NEED_RECONCILIATION: workflow-field update could not be verified.",
 				);
 			}
 		}
-		const idsByKey = new Map(tickets.map((ticket) => [ticket.key, ticket.id]));
-		for (const input of inputs) {
-			const issueId = idsByKey.get(input.key);
-			if (issueId === undefined) {
+	}
+
+	private async verifyRecorded(
+		id: string,
+		log: WorkflowLog,
+		artifacts: Array<{ issueId: string; artifact: WorkflowArtifact }>,
+		changes: Array<{ issueId: string; change: WorkflowChange }>,
+	): Promise<void> {
+		const issue = await this.primitives.getIssue(id);
+		for (const { artifact } of artifacts.filter(
+			(entry) => entry.issueId === id,
+		)) {
+			if (!issue.artifacts.some((stored) => stored.id === artifact.id)) {
 				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: plan ticket creation could not be verified.",
+					"NEED_RECONCILIATION: workflow artifact recording could not be verified.",
 				);
 			}
-			const issue = await this.primitives.getIssue(issueId);
-			for (const dependencyKey of input.dependsOn ?? []) {
-				const blockedById = idsByKey.get(dependencyKey);
-				if (
-					blockedById === undefined ||
-					!issue.relationships.dependencies.includes(blockedById)
-				) {
-					throw new NeedReconciliationError(
-						"NEED_RECONCILIATION: plan dependency relationships could not be verified.",
-					);
-				}
+		}
+		for (const { change } of changes.filter((entry) => entry.issueId === id)) {
+			if (!issue.changes.some((stored) => stored.id === change.id)) {
+				throw new NeedReconciliationError(
+					"NEED_RECONCILIATION: workflow change recording could not be verified.",
+				);
 			}
+		}
+		await this.verifyLog(id, log);
+	}
+
+	private async verifyLog(id: string, log: WorkflowLog): Promise<void> {
+		const logs = await this.primitives.readLogs(id);
+		if (
+			!logs.some(
+				(stored) =>
+					stored.sequence === log.sequence && stored.type === log.type,
+			)
+		) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: workflow log addition could not be verified.",
+			);
 		}
 	}
 
@@ -384,10 +472,20 @@ class PrimitiveTrackerIntentModule implements Tracker {
 	}
 }
 
-function asObject(value: unknown): Record<string, unknown> {
-	return value !== null && typeof value === "object" && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
+function resolveIssueRef(
+	ref: { id: string } | { key: string },
+	idsByKey: Map<string, string>,
+): string {
+	if ("id" in ref) {
+		return ref.id;
+	}
+	const id = idsByKey.get(ref.key);
+	if (id === undefined) {
+		throw new NeedReconciliationError(
+			`NEED_RECONCILIATION: workflow issue key '${ref.key}' could not be resolved.`,
+		);
+	}
+	return id;
 }
 
 function relationshipIntentError(error: unknown): Error {

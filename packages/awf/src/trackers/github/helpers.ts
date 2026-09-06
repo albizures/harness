@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
-import type { WorkflowManifest } from "../../manifest.ts";
+import { isJsonRecord, isJsonValue, jsonRecordSchema } from "../../json.ts";
+import type { WorkflowManifest } from "../../manifest/manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
+	type WorkflowProjection,
+} from "../../workflow/projection.ts";
+import type { WorkflowChange } from "../../workflow/change.ts";
+import type { WorkflowArtifact } from "../../workflow/artifact.ts";
+import type { WorkflowLog } from "../../workflow/log.ts";
+import {
 	IssueNotFoundError,
 	type IssueRelationships,
-	type WorkflowArtifact,
-	type WorkflowChange,
-	type WorkflowLog,
-	type WorkflowProjection,
-} from "../../tracker.ts";
+} from "../../workflow/issue.ts";
 
 const PROJECTION_SCHEMA_VERSION = 1;
 const MACHINE_COMMENT_VERSION = 1;
@@ -37,6 +40,7 @@ export type ProjectionMetadata = {
 	workflow: WorkflowProjection;
 	artifacts: Array<WorkflowArtifact>;
 	changes: Array<WorkflowChange>;
+	relationships?: Pick<IssueRelationships, "generatedBy">;
 };
 
 export function hasWorkflowProjectionLabels(
@@ -311,12 +315,16 @@ export function metadataFromProjection(
 	workflow: WorkflowProjection,
 	artifacts: Array<WorkflowArtifact>,
 	changes: Array<WorkflowChange>,
+	relationships?: Pick<IssueRelationships, "generatedBy">,
 ): ProjectionMetadata {
 	return {
 		schemaVersion: PROJECTION_SCHEMA_VERSION,
 		workflow,
 		artifacts: cloneJson(artifacts) as Array<WorkflowArtifact>,
 		changes: cloneJson(changes) as Array<WorkflowChange>,
+		...(relationships?.generatedBy === undefined
+			? {}
+			: { relationships: { generatedBy: relationships.generatedBy } }),
 	};
 }
 
@@ -332,7 +340,9 @@ export function isProjectionMetadata(
 		Array.isArray(value.artifacts) &&
 		value.artifacts.every(isWorkflowArtifact) &&
 		Array.isArray(value.changes) &&
-		value.changes.every(isWorkflowChange)
+		value.changes.every(isWorkflowChange) &&
+		(value.relationships === undefined ||
+			isMetadataRelationships(value.relationships))
 	);
 }
 
@@ -356,7 +366,8 @@ export function isWorkflowLog(value: unknown): value is WorkflowLog {
 		typeof value.sequence === "number" &&
 		typeof value.issueId === "string" &&
 		typeof value.type === "string" &&
-		(value.runId === undefined || typeof value.runId === "string")
+		(value.runId === undefined || typeof value.runId === "string") &&
+		(value.payload === undefined || isJsonValue(value.payload))
 	);
 }
 
@@ -391,6 +402,16 @@ function isWorkflowChange(value: unknown): value is WorkflowChange {
 	);
 }
 
+function isMetadataRelationships(
+	value: unknown,
+): value is Pick<IssueRelationships, "generatedBy"> {
+	return (
+		isRecord(value) &&
+		Object.keys(value).every((key) => key === "generatedBy") &&
+		(value.generatedBy === undefined || typeof value.generatedBy === "string")
+	);
+}
+
 const WORKFLOW_ARTIFACT_FIELDS = new Set([
 	"id",
 	"kind",
@@ -418,21 +439,6 @@ const ARTIFACT_KINDS = new Set([
 
 function isArtifactKind(value: unknown): boolean {
 	return typeof value === "string" && ARTIFACT_KINDS.has(value);
-}
-
-function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
-	return isRecord(value) && Object.values(value).every(isJsonValue);
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-	return (
-		value === null ||
-		typeof value === "string" ||
-		typeof value === "number" ||
-		typeof value === "boolean" ||
-		(Array.isArray(value) && value.every(isJsonValue)) ||
-		isJsonRecord(value)
-	);
 }
 
 export function validateProjectionShape(
@@ -497,6 +503,9 @@ export function normalizeRelationships(
 		children: [...(relationships.children ?? [])],
 		dependencies: [...(relationships.dependencies ?? [])],
 		dependents: [...(relationships.dependents ?? [])],
+		...(relationships.generatedBy === undefined
+			? {}
+			: { generatedBy: relationships.generatedBy }),
 	};
 }
 
@@ -543,8 +552,6 @@ export function cloneJson(value: unknown): unknown {
 export function asObject(
 	value: JsonValue | undefined,
 ): Record<string, JsonValue> {
-	if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-		return value as Record<string, JsonValue>;
-	}
-	return {};
+	const parsed = jsonRecordSchema.safeParse(value);
+	return parsed.success ? parsed.data : {};
 }

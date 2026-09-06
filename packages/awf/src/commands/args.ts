@@ -2,7 +2,7 @@ import { failure, type Envelope } from "../envelope.ts";
 import { readOption, unknownCommand } from "./shared.ts";
 
 const maxReconcileArgumentCount = 3;
-const createHandoffArgumentCount = 6;
+const createWithSourceArgumentCount = 6;
 export function validateKnownCommand(
 	args: Array<string>,
 ): Envelope | undefined {
@@ -43,9 +43,20 @@ export function validateKnownCommand(
 				return unknownCommand(args);
 			}
 			return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
+		case "workflow":
+			return validateWorkflowArguments(args);
 		default:
 			return unknownCommand(args);
 	}
+}
+
+function validateWorkflowArguments(args: Array<string>): Envelope | undefined {
+	if (args.length === 2 && args[1] === "describe") {
+		return undefined;
+	}
+	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+		usage: "awf workflow describe",
+	});
 }
 
 function validateReady(args: Array<string>): Envelope | undefined {
@@ -89,7 +100,7 @@ function validateManifestCommandArguments(
 				!source.startsWith("-") &&
 				input !== undefined &&
 				input !== "" &&
-				args.length === createHandoffArgumentCount &&
+				args.length === createWithSourceArgumentCount &&
 				args.every((arg) => allowed.has(arg))
 			) {
 				return undefined;

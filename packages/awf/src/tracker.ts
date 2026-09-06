@@ -1,199 +1,58 @@
-import type { JsonValue } from "type-fest";
-import {
-	validateArtifactReferenceValue,
-	type ArtifactKind,
-} from "./manifest.ts";
-
-export type WorkflowProjection = {
-	kind: string;
-	state: string;
-	action: string;
-	reason?: string;
-	activeRunId?: string;
-	version: number;
-	hash: string;
-};
-
-export type IssueRelationships = {
-	parent?: string;
-	children: Array<string>;
-	dependencies: Array<string>;
-	dependents: Array<string>;
-};
-
-export type StructuredWorkflowArtifactReference = {
-	type: ArtifactKind;
-	ref?: string;
-	url?: string;
-	path?: string;
-	id?: string;
-	title?: string;
-	metadata?: Record<string, JsonValue>;
-};
-
-export type WorkflowArtifact = {
-	id: string;
-	kind: ArtifactKind;
-	uri: string;
-	name?: string;
-} & Partial<StructuredWorkflowArtifactReference>;
-
-export type WorkflowArtifactInput = Omit<WorkflowArtifact, "id"> & {
-	id?: string;
-};
-
-export function normalizeWorkflowArtifactInput(
-	input: WorkflowArtifactInput,
-	id: string,
-): WorkflowArtifact {
-	validateWorkflowArtifactInput(input);
-	return {
-		...compatibilityStructuredArtifactFields(input.kind, input.uri),
-		...input,
-		type: input.type ?? input.kind,
-		id,
-	};
-}
-
-export function validateWorkflowArtifactInput(
-	input: WorkflowArtifactInput,
-): void {
-	const uriIssue = validateArtifactReferenceValue(input.uri, input.kind);
-	if (uriIssue !== undefined) {
-		throw new Error(uriIssue);
-	}
-	if (input.type !== undefined && input.type !== input.kind) {
-		throw new Error(`Artifact type must be '${input.kind}'.`);
-	}
-	for (const [field, value] of structuredArtifactFields(input.kind, input)) {
-		const fieldIssue = validateArtifactReferenceValue(value, input.kind);
-		if (fieldIssue !== undefined) {
-			throw new Error(`${field}: ${fieldIssue}`);
-		}
-	}
-}
-
-function structuredArtifactFields(
-	kind: ArtifactKind,
-	input: WorkflowArtifactInput,
-): Array<["ref" | "url" | "path", string]> {
-	const field = structuredArtifactField(kind);
-	const value = input[field];
-	return value === undefined ? [] : [[field, value]];
-}
-
-function structuredArtifactField(kind: ArtifactKind): "ref" | "url" | "path" {
-	if (kind === "pull-request" || kind === "url") {
-		return "url";
-	}
-	if (kind === "file") {
-		return "path";
-	}
-	return "ref";
-}
-
-function compatibilityStructuredArtifactFields(
-	kind: ArtifactKind,
-	uri: string,
-): Partial<StructuredWorkflowArtifactReference> {
-	if (kind === "pull-request" || kind === "url") {
-		return { type: kind, url: uri };
-	}
-	if (kind === "file") {
-		return { type: kind, path: uri };
-	}
-	return { type: kind, ref: uri };
-}
-
-export type WorkflowChange = {
-	id: string;
-	kind: ArtifactKind;
-	uri: string;
-	summary?: string;
-};
-
-export type WorkflowIssue = {
-	id: string;
-	title: string;
-	body?: string;
-	workflow: WorkflowProjection;
-	relationships: IssueRelationships;
-	artifacts: Array<WorkflowArtifact>;
-	changes: Array<WorkflowChange>;
-};
-
-export type WorkflowLog = {
-	sequence: number;
-	issueId: string;
-	type: string;
-	runId?: string;
-	payload?: JsonValue;
-};
-
-export type CreateIssueInput = {
-	id?: string;
-	title: string;
-	body?: string;
-	workflow: Omit<WorkflowProjection, "version" | "hash"> & { version?: number };
-	relationships?: Partial<IssueRelationships>;
-	logs?: Array<Omit<WorkflowLog, "issueId">>;
-};
-
-export type SeedIssueInput =
-	| CreateIssueInput
-	| {
-			id: string;
-			title: string;
-			body?: string;
-			labels: Array<string>;
-			relationships?: Partial<IssueRelationships>;
-			version?: number;
-	  };
-
-export type UpdateIssueInput = {
-	expect?: { version?: number; hash?: string };
-	title?: string;
-	body?: string;
-	workflow?: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-};
+import type {
+	WorkflowArtifact,
+	WorkflowArtifactInput,
+} from "./workflow/artifact.ts";
+import type { WorkflowChange } from "./workflow/change.ts";
+import type {
+	CreateIssueInput,
+	UpdateIssueInput,
+	WorkflowIssue,
+} from "./workflow/issue.ts";
+import type { WorkflowLog } from "./workflow/log.ts";
+import type { WorkflowProjection } from "./workflow/projection.ts";
 
 export type TrackerProjectionExpectation = NonNullable<
 	UpdateIssueInput["expect"]
 >;
 
+export type TrackerLog = Omit<WorkflowLog, "sequence" | "issueId">;
+export type TrackerWorkflow = Partial<
+	Omit<WorkflowProjection, "version" | "hash">
+>;
+
 export type TrackerCreateWorkflowIssueIntent = CreateIssueInput & {
-	initialLog?: Omit<WorkflowLog, "sequence" | "issueId">;
+	initialLog?: TrackerLog;
 };
 
 export type TrackerStartRunIntent = {
 	expect: TrackerProjectionExpectation;
 	runId: string;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	workflow: TrackerWorkflow;
+	log: TrackerLog;
 };
 
 export type TrackerCompleteRunIntent = {
 	expect: TrackerProjectionExpectation;
 	runId: string;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	workflow: TrackerWorkflow;
 	artifacts?: Array<WorkflowArtifactInput>;
 	changes?: Array<Omit<WorkflowChange, "id">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerRecordArtifactsIntent = {
 	artifacts?: Array<WorkflowArtifactInput>;
 	changes?: Array<Omit<WorkflowChange, "id">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerRecordCommandIntent = {
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	log: TrackerLog;
 };
 
 export type TrackerAdvanceWorkflowIntent = {
 	expect: TrackerProjectionExpectation;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
+	workflow: TrackerWorkflow;
 };
 
 export type TrackerRepairIssueIntent = TrackerAdvanceWorkflowIntent;
@@ -207,8 +66,8 @@ export type TrackerRecordArtifactsResult = {
 
 export type TrackerEscalateIntent = {
 	expect: TrackerProjectionExpectation;
-	workflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+	workflow: TrackerWorkflow;
+	log: TrackerLog;
 };
 
 export type TrackerResumeIntent = TrackerEscalateIntent;
@@ -219,26 +78,52 @@ export type TrackerRelationshipIntent =
 	| { type: "add-dependency"; issueId: string; blockedById: string }
 	| { type: "remove-dependency"; issueId: string; blockedById: string };
 
-export type TrackerApplyPlanIntent = {
-	specId: string;
-	expect: TrackerProjectionExpectation;
-	specWorkflow: Partial<Omit<WorkflowProjection, "version" | "hash">>;
-	tickets: Array<{
-		key: string;
-		title: string;
-		body?: string;
-		workflow: CreateIssueInput["workflow"];
-		dependsOn?: Array<string>;
-	}>;
-	artifacts?: Array<WorkflowArtifactInput>;
-	log: Omit<WorkflowLog, "sequence" | "issueId">;
+export type TrackerIssueRef = { id: string } | { key: string };
+
+export type TrackerWorkflowEffect =
+	| {
+			type: "create-workflow-issue";
+			key?: string;
+			input: CreateIssueInput;
+			initialLog?: TrackerLog;
+	  }
+	| {
+			type: "update-workflow";
+			issue: TrackerIssueRef;
+			expect: TrackerProjectionExpectation;
+			workflow: TrackerWorkflow;
+	  }
+	| {
+			type: "record-artifacts";
+			issue: TrackerIssueRef;
+			artifacts?: Array<WorkflowArtifactInput>;
+			changes?: Array<Omit<WorkflowChange, "id">>;
+			log: TrackerLog;
+	  }
+	| { type: "record-command"; issue: TrackerIssueRef; log: TrackerLog }
+	| { type: "add-child"; parent: TrackerIssueRef; child: TrackerIssueRef }
+	| { type: "remove-child"; parent: TrackerIssueRef; child: TrackerIssueRef }
+	| {
+			type: "add-dependency";
+			issue: TrackerIssueRef;
+			blockedBy: TrackerIssueRef;
+	  }
+	| {
+			type: "remove-dependency";
+			issue: TrackerIssueRef;
+			blockedBy: TrackerIssueRef;
+	  };
+
+export type TrackerApplyWorkflowEffectsIntent = {
+	effects: Array<TrackerWorkflowEffect>;
 };
 
-export type TrackerApplyPlanResult = {
-	spec: WorkflowIssue;
-	tickets: Array<{ key: string; id: string }>;
-	artifacts: Array<WorkflowArtifact>;
-	log: WorkflowLog;
+export type TrackerApplyWorkflowEffectsResult = {
+	issues: Record<string, WorkflowIssue>;
+	createdIssues: Array<{ key?: string; id: string; issue: WorkflowIssue }>;
+	artifacts: Array<{ issueId: string; artifact: WorkflowArtifact }>;
+	changes: Array<{ issueId: string; change: WorkflowChange }>;
+	logs: Array<WorkflowLog>;
 };
 
 export type TrackerIssueInspection = {
@@ -273,7 +158,9 @@ export type Tracker = {
 		input: TrackerResumeIntent,
 	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
 	changeRelationship: (input: TrackerRelationshipIntent) => Promise<void>;
-	applyPlan: (input: TrackerApplyPlanIntent) => Promise<TrackerApplyPlanResult>;
+	applyWorkflowEffects: (
+		input: TrackerApplyWorkflowEffectsIntent,
+	) => Promise<TrackerApplyWorkflowEffectsResult>;
 	recordCommand: (
 		id: string,
 		input: TrackerRecordCommandIntent,
@@ -309,10 +196,7 @@ export type TrackerAdapterPrimitiveReads = {
 export type TrackerAdapterPrimitiveOperations = {
 	createIssue: (input: CreateIssueInput) => Promise<WorkflowIssue>;
 	updateIssue: (id: string, input: UpdateIssueInput) => Promise<WorkflowIssue>;
-	appendLog: (
-		id: string,
-		input: Omit<WorkflowLog, "sequence" | "issueId">,
-	) => Promise<WorkflowLog>;
+	appendLog: (id: string, input: TrackerLog) => Promise<WorkflowLog>;
 	addChild: (parentId: string, childId: string) => Promise<void>;
 	removeChild: (parentId: string, childId: string) => Promise<void>;
 	addDependency: (issueId: string, blockedById: string) => Promise<void>;
@@ -339,10 +223,9 @@ export type TrackerVerificationHooks = {
 		blockedById: string,
 		expected: boolean,
 	) => void | Promise<void>;
-	verifyPlanApplication?: (
-		specId: string,
-		tickets: Array<{ key: string; id: string }>,
-		inputs: TrackerApplyPlanIntent["tickets"],
+	verifyWorkflowEffects?: (
+		result: TrackerApplyWorkflowEffectsResult,
+		effects: Array<TrackerWorkflowEffect>,
 	) => void | Promise<void>;
 };
 
@@ -350,34 +233,11 @@ export type TrackerAdapterPrimitives = TrackerAdapterPrimitiveOperations;
 
 export type TrackerAdapter = Tracker & TrackerAdapterPrimitiveOperations;
 
-export class ProjectionConflictError extends Error {
-	constructor(
-		message = "Workflow projection expectation does not match current projection.",
-	) {
-		super(message);
-		this.name = "ProjectionConflictError";
-	}
-}
-
 export class NeedReconciliationError extends Error {
 	constructor(
 		message = "NEED_RECONCILIATION: tracker intent verification failed.",
 	) {
 		super(message);
 		this.name = "NeedReconciliationError";
-	}
-}
-
-export class CorruptWorkflowProjectionError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "CorruptWorkflowProjectionError";
-	}
-}
-
-export class IssueNotFoundError extends Error {
-	constructor(id: string) {
-		super(`Workflow issue '${id}' was not found.`);
-		this.name = "IssueNotFoundError";
 	}
 }

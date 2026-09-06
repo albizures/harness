@@ -7,6 +7,8 @@
 			"!pnpm-lock.yaml",
 			"!skills-lock.json",
 			"!**/CHANGELOG.md",
+			"!**/coverage",
+			"!**/dist",
 			"!.changeset/*.md"
 		]
 	},

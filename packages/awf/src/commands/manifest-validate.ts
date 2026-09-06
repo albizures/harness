@@ -1,5 +1,6 @@
 import { failure, success, type Envelope } from "../envelope.ts";
-import { loadManifest, ManifestValidationError } from "../manifest.ts";
+import { ManifestValidationError } from "../manifest/manifest.ts";
+import { loadManifest } from "../workflow-module.ts";
 
 export async function validateManifestCommand(
 	path: string | undefined,

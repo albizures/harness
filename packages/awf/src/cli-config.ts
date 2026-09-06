@@ -1,14 +1,22 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JsonValue } from "type-fest";
-import { defaultManifest } from "./default-manifest.ts";
+import type { CommandHandlers } from "./command-handlers.ts";
+import type { LifecycleTransitionHandlers } from "./lifecycle-handlers.ts";
+import {
+	agentDevelopmentCommandHandlers,
+	agentDevelopmentLifecycleHandlers,
+	agentDevelopmentManifest,
+} from "./workflows/agent-development/index.ts";
 import { failure, type Envelope } from "./envelope.ts";
 import {
 	ManifestValidationError,
+	type WorkflowManifest,
+} from "./manifest/manifest.ts";
+import {
 	WorkflowModuleLoadError,
 	loadWorkflowModule,
-	type WorkflowManifest,
-} from "./manifest.ts";
+} from "./workflow-module.ts";
 import type { Tracker } from "./tracker.ts";
 import { createFileSystemTracker } from "./trackers/filesystem.ts";
 
@@ -16,6 +24,8 @@ export type CliBinding = {
 	args: Array<string>;
 	manifest: WorkflowManifest;
 	tracker: Tracker;
+	commandHandlers: CommandHandlers;
+	lifecycleHandlers?: LifecycleTransitionHandlers;
 };
 
 export async function bindCliExecution(
@@ -32,11 +42,11 @@ export async function bindCliExecution(
 
 	const configPath = parsed.configPath ?? discoverDefaultConfig(cwd);
 	if (configPath === undefined) {
-		return {
-			args: parsed.args,
-			manifest: defaultManifest,
-			tracker: defaultTracker(),
-		};
+		return failure(
+			"CONFIG_LOAD_FAILED",
+			"AWF requires an explicit workflow config. Create ./awf.config.ts or pass --config <path>; to use the bundled agent-development workflow, explicitly export agentDevelopmentManifest from your config.",
+			{ expected: resolve(cwd, "awf.config.ts") },
+		);
 	}
 
 	if (parsed.explicit && !existsSync(configPath)) {
@@ -45,10 +55,28 @@ export async function bindCliExecution(
 
 	try {
 		const workflowModule = await loadWorkflowModule(configPath);
+		const bundledHandlers =
+			workflowModule.manifest.workflow.id ===
+			agentDevelopmentManifest.workflow.id
+				? agentDevelopmentCommandHandlers
+				: {};
+		const bundledLifecycleHandlers =
+			workflowModule.manifest.workflow.id ===
+			agentDevelopmentManifest.workflow.id
+				? agentDevelopmentLifecycleHandlers
+				: {};
 		return {
 			args: parsed.args,
 			manifest: workflowModule.manifest,
 			tracker: workflowModule.tracker ?? defaultTracker(),
+			commandHandlers: {
+				...bundledHandlers,
+				...workflowModule.commandHandlers,
+			},
+			lifecycleHandlers: {
+				...bundledLifecycleHandlers,
+				...workflowModule.lifecycleHandlers,
+			},
 		};
 	} catch (error) {
 		return configFailure(
