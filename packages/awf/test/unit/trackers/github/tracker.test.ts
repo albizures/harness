@@ -63,6 +63,40 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 	expect(updated.workflow.version).toBe(2);
 });
 
+it("should project Task subkind as metadata without masquerading as GitHub kind label", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({
+		api,
+		manifest: genericTaskManifest,
+	});
+
+	const issue = await tracker.createIssue({
+		title: "Research task",
+		workflow: {
+			kind: "task",
+			state: "ready",
+			action: "work",
+			data: { subkind: "research" },
+		},
+	});
+
+	expect(api.issue(1).labels.sort()).toEqual([
+		"awf:agent-workflow:action:work",
+		"awf:agent-workflow:kind:task",
+		"awf:agent-workflow:state:ready",
+	]);
+	expect(api.issue(1).labels).not.toContain("awf:agent-workflow:kind:research");
+	expect(issue.workflow).toMatchObject({
+		kind: "task",
+		state: "ready",
+		action: "work",
+		data: { subkind: "research" },
+	});
+	expect((await tracker.getIssue(issue.id)).workflow.data).toEqual({
+		subkind: "research",
+	});
+});
+
 it("should project agent-workflow Spec create fields to reserved GitHub labels and log comments", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({

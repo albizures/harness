@@ -112,6 +112,9 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 			continue;
 		}
 		lines.push(`- ${String(kind.id)} (${String(kind.label)})`);
+		if (Array.isArray(kind.subkinds)) {
+			lines.push(`  - Subkinds: ${formatList(kind.subkinds)}`);
+		}
 		if (isRecord(kind.initial)) {
 			lines.push(`  - Initial: ${formatStateRef(kind.initial)}`);
 		}
@@ -359,6 +362,20 @@ function formatHelp(data: Record<string, JsonValue>): string {
 			`  ${String(command.usage ?? command.name ?? "")}  ${String(command.description ?? "")}`.trimEnd(),
 		);
 	}
+	const readiness = isRecord(data.readiness) ? data.readiness : undefined;
+	if (readiness !== undefined && Array.isArray(readiness.subkinds)) {
+		const subkinds = readiness.subkinds.filter(
+			(item): item is Record<string, JsonValue> => isRecord(item),
+		);
+		if (subkinds.length > 0) {
+			lines.push("", "Subkinds:");
+			for (const item of subkinds) {
+				lines.push(
+					`  ${String(item.kind)}: ${formatList(item.values)} (${String(item.kind)} remains the kind)`,
+				);
+			}
+		}
+	}
 	lines.push("", "Use --json for machine-readable output.");
 	return lines.join("\n");
 }
@@ -444,9 +461,29 @@ function formatLogs(logs: Array<JsonValue>): string {
 }
 
 function formatWorkflow(workflow: Record<string, JsonValue>): string {
-	return [workflow.kind, workflow.state, workflow.action, workflow.reason]
+	const lifecycle = [
+		workflow.kind,
+		workflow.state,
+		workflow.action,
+		workflow.reason,
+	]
 		.filter((value) => typeof value === "string" && value !== "none")
 		.join("/");
+	const subkind = workflowSubkind(workflow);
+	return subkind === undefined
+		? lifecycle
+		: `${lifecycle}; subkind: ${subkind}`;
+}
+
+function workflowSubkind(
+	workflow: Record<string, JsonValue>,
+): string | undefined {
+	if (typeof workflow.subkind === "string") {
+		return workflow.subkind;
+	}
+	return isRecord(workflow.data) && typeof workflow.data.subkind === "string"
+		? workflow.data.subkind
+		: undefined;
 }
 
 function formatValue(value: JsonValue): string {

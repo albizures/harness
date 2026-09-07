@@ -71,7 +71,10 @@ it("should export a valid explicit bundled workflow module", () => {
 it("should expose Spec execution and Task work lifecycle through help and describe surfaces", async () => {
 	const help = assertSuccess(await execute(["--help"])) as {
 		commands: Array<{ usage: string }>;
-		readiness: { filters: Array<Record<string, string>> };
+		readiness: {
+			filters: Array<Record<string, string>>;
+			subkinds: Array<{ kind: string; values: Array<string> }>;
+		};
 	};
 	expect(help.commands.map((command) => command.usage)).toEqual(
 		expect.arrayContaining([
@@ -87,6 +90,9 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		{ kind: "spec", state: "ready", action: "integration-test" },
 		{ kind: "spec", state: "ready", action: "merge" },
 		{ kind: "task", state: "ready", action: "work" },
+	]);
+	expect(help.readiness.subkinds).toEqual([
+		{ kind: "task", values: ["work", "research", "prototype"] },
 	]);
 
 	const description = assertSuccess(
@@ -524,9 +530,18 @@ it("should store Task subkind as workflow data without changing lifecycle readin
 	expect(research.issue.workflow).not.toHaveProperty("subkind");
 
 	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
-		items: Array<{ id: string }>;
+		items: Array<{ id: string; workflow: Record<string, unknown> }>;
 	};
-	expect(ready.items.map((item) => item.id)).toContain(research.issue.id);
+	const readyResearch = ready.items.find(
+		(item) => item.id === research.issue.id,
+	);
+	expect(readyResearch?.workflow).toMatchObject({
+		kind: "task",
+		state: "ready",
+		action: "work",
+		subkind: "research",
+	});
+	expect(readyResearch?.workflow).not.toHaveProperty("data");
 });
 
 it("should record generated generic Task provenance without blocking readiness", async () => {

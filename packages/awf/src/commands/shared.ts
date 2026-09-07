@@ -689,6 +689,7 @@ export function cleanWorkflowFields(
 			state: workflow.state,
 			action: workflow.action,
 			reason: workflow.reason,
+			subkind: readWorkflowSubkind(workflow),
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
 }

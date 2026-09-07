@@ -503,7 +503,12 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 			{
 				id: "ready-work",
 				title: "Ready work ticket",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					subkind: "work",
+				},
 				suggestedCommand: {
 					argv: ["start", "ready-work"],
 					display: "awf start ready-work",
@@ -514,7 +519,12 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 			{
 				id: "ready-research",
 				title: "Ready research ticket",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					subkind: "research",
+				},
 				blocking: [
 					{
 						gate: "concurrency",

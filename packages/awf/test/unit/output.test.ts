@@ -28,6 +28,26 @@ it("should ensure that text output renders help without requiring a subprocess",
 	expect(output).toContain("Use --json for machine-readable output.");
 });
 
+it("should ensure that text help renders subkind selection separately from kind", () => {
+	const output = serializeCliOutput(
+		{
+			ok: true,
+			data: {
+				name: "awf",
+				commands: [],
+				readiness: {
+					subkinds: [{ kind: "task", values: ["work", "research"] }],
+				},
+			},
+		},
+		"text",
+	);
+
+	expect(output).toContain(
+		"Subkinds:\n  task: work, research (task remains the kind)",
+	);
+});
+
 it("should ensure that JSON output serializes the envelope exactly", () => {
 	const output = serializeCliOutput(
 		{ ok: true, data: { name: "awf", commands: [] } },
@@ -85,6 +105,34 @@ it("should ensure that text output renders ready items and suggested commands", 
 	);
 });
 
+it("should ensure that text output renders Task subkind separately from lifecycle fields", () => {
+	const output = serializeCliOutput(
+		{
+			ok: true,
+			data: {
+				items: [
+					{
+						id: "42",
+						title: "Research CLI",
+						workflow: {
+							kind: "task",
+							state: "ready",
+							action: "work",
+							subkind: "research",
+						},
+						suggestedCommand: { display: "awf start 42" },
+					},
+				],
+			},
+		},
+		"text",
+	);
+
+	expect(output).toBe(
+		"42 Research CLI [task/ready/work; subkind: research] — awf start 42\n",
+	);
+});
+
 it("should ensure that text output renders workflow descriptions as deterministic Markdown", () => {
 	const output = serializeCliOutput(
 		{
@@ -103,6 +151,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
 					{
 						id: "ticket",
 						label: "Ticket",
+						subkinds: ["bug", "feature"],
 						initial: { state: "ready", action: "implement" },
 						transitions: [
 							{
@@ -171,6 +220,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
 ## Kinds
 
 - ticket (Ticket)
+  - Subkinds: bug, feature
   - Initial: ready/implement
   - Transitions:
     - ready/implement --start [input required]--> running/implement/blocked
@@ -223,6 +273,27 @@ it("should ensure that text output renders issue, run, created issue, log, and m
 	).toBe(
 		"1 Spec [spec/running/plan]\nRun: run-1 (active)\nCreated issues:\n  2 Ticket\n",
 	);
+
+	expect(
+		serializeCliOutput(
+			{
+				ok: true,
+				data: {
+					issue: {
+						id: "3",
+						title: "Research",
+						workflow: {
+							kind: "task",
+							state: "ready",
+							action: "work",
+							data: { subkind: "research" },
+						},
+					},
+				},
+			},
+			"text",
+		),
+	).toBe("3 Research [task/ready/work; subkind: research]\n");
 
 	expect(
 		serializeCliOutput(

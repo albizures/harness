@@ -65,7 +65,12 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 		});
 		const { issue: ticket } = await tracker.createWorkflowIssue({
 			title: "Durable Ticket",
-			workflow: { kind: "ticket", state: "ready", action: "implement" },
+			workflow: {
+				kind: "ticket",
+				state: "ready",
+				action: "implement",
+				data: { subkind: "research" },
+			},
 			initialLog: { type: "workflow_created" },
 		});
 		const { issue: blocker } = await tracker.createWorkflowIssue({
@@ -142,6 +147,8 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 		expect((await reloaded.getIssue(spec.id)).relationships.children).toEqual([
 			ticket.id,
 		]);
+		expect(reloadedTicket.workflow.kind).toBe("ticket");
+		expect(reloadedTicket.workflow.data).toEqual({ subkind: "research" });
 		expect(reloadedTicket.relationships.parent).toBe(spec.id);
 		expect(reloadedTicket.relationships.dependencies).toEqual([blocker.id]);
 		expect(

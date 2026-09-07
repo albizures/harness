@@ -113,6 +113,7 @@ function manifestCommandUsage(command: ManifestCommand): string {
 export function helpReadiness(manifest: WorkflowManifest): {
 	filters: Array<HelpReadinessFilterSpec>;
 	namedFilters: Array<HelpNamedReadinessFilterSpec>;
+	subkinds: Array<{ kind: string; values: Array<string> }>;
 } {
 	return {
 		filters: readinessFilters(manifest).map((filter) => ({ ...filter })),
@@ -120,5 +121,10 @@ export function helpReadiness(manifest: WorkflowManifest): {
 			...filter,
 			usage: `awf ready --filter ${filter.name}=<${filter.kind}>`,
 		})),
+		subkinds: manifest.kinds.flatMap((kind) =>
+			kind.subkinds === undefined
+				? []
+				: [{ kind: kind.id, values: [...kind.subkinds] }],
+		),
 	};
 }

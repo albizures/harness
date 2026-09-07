@@ -89,4 +89,5 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 			usage: "awf ready --filter spec=<spec>",
 		},
 	]);
+	expect(helpReadiness(manifest).subkinds).toEqual([]);
 });
