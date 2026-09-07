@@ -265,7 +265,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 	expect(serialized).not.toContain("typeName");
 });
 
-it("should ensure that CLI workflow describe requires config discovery", async () => {
+it("should ensure that CLI workflow describe uses the no-config agent-workflow default", async () => {
 	await withTempDir(async (dir) => {
 		const result = spawnSync(
 			process.execPath,
@@ -273,10 +273,13 @@ it("should ensure that CLI workflow describe requires config discovery", async (
 			{ cwd: dir, encoding: "utf8" },
 		);
 
-		expect(result.status).toBe(1);
+		expect(result.status).toBe(0);
 		const envelope = JSON.parse(result.stdout);
-		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
-		expect(envelope.error.message).toMatch(/explicit workflow config/);
+		expect(envelope.data.workflow.id).toBe("agent-workflow");
+		expect(envelope.data.kinds.map((kind: { id: string }) => kind.id)).toEqual([
+			"spec",
+			"task",
+		]);
 	});
 });
 
@@ -347,10 +350,9 @@ it("should ensure that CLI discovers only ./awf.config.ts from the current worki
 			{ cwd: child, encoding: "utf8" },
 		);
 
-		expect(notDiscoveredFromParent.status).toBe(1);
+		expect(notDiscoveredFromParent.status).toBe(0);
 		const envelope = JSON.parse(notDiscoveredFromParent.stdout);
-		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
-		expect(envelope.error.message).toMatch(/explicit workflow config/);
+		expect(envelope.data.items).toEqual([]);
 	});
 });
 
@@ -373,18 +375,25 @@ it("should ensure that CLI global --config loads a workflow module before comman
 	});
 });
 
-it("should ensure that CLI without a workflow config fails instead of defaulting to the bundled manifest", async () => {
+it("should ensure that CLI without a workflow config defaults to the bundled agent-workflow manifest", async () => {
 	await withTempDir(async (dir) => {
 		const created = spawnSync(
 			process.execPath,
 			[cliPath.pathname, "--json", "create", "spec", "--input", "-"],
-			{ cwd: dir, encoding: "utf8", input: "# No default\n" },
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({ title: "No default", body: "# No default\n" }),
+			},
 		);
 
-		expect(created.status).toBe(1);
+		expect(created.status).toBe(0);
 		const envelope = JSON.parse(created.stdout);
-		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
-		expect(envelope.error.message).toMatch(/explicit workflow config/);
+		expect(envelope.data.issue.workflow).toMatchObject({
+			kind: "spec",
+			state: "ready",
+			action: "work",
+		});
 	});
 });
 

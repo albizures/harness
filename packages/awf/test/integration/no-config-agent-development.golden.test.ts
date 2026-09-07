@@ -51,19 +51,25 @@ async function createAgentDevelopmentConfig(cwd: string): Promise<void> {
 	);
 }
 
-it("should ensure that no config fails clearly instead of loading the bundled workflow implicitly", async () => {
-	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-fails-"));
+it("should ensure that no config loads the bundled agent-workflow manifest", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "awf-no-config-agent-workflow-"));
 
-	expect(
-		await runAwf(cwd, ["create", "spec", "--input", "-"], "# Spec"),
-	).toEqual({
-		ok: false,
-		error: {
-			code: "CONFIG_LOAD_FAILED",
-			message:
-				"AWF requires an explicit workflow config. Create ./awf.config.ts or pass --config <path>; to use the bundled agent-development workflow, explicitly export agentDevelopmentManifest from your config.",
-			details: { expected: join(cwd, "awf.config.ts") },
+	const created = expectSuccess(
+		await runAwf(
+			cwd,
+			["create", "spec", "--input", "-"],
+			JSON.stringify({ title: "Spec", body: "# Spec" }),
+		),
+	) as Record<string, unknown>;
+
+	expect(created).toMatchObject({
+		issue: {
+			id: "1",
+			title: "Spec",
+			body: "# Spec",
+			workflow: { kind: "spec", state: "ready", action: "work" },
 		},
+		log: { sequence: 1, issueId: "1", type: "spec-create_created" },
 	});
 });
 

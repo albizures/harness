@@ -28,19 +28,20 @@ export const manifest = agentDevelopmentManifest;
 `;
 }
 
-it("should ensure that missing workflow config returns a stable failure envelope", async () => {
+it("should bind the bundled agent-workflow manifest when config is missing", async () => {
 	await withTempDir(async (dir) => {
 		const binding = await bindCliExecution(["ready"], dir);
 
-		expect(binding).toEqual({
-			ok: false,
-			error: {
-				code: "CONFIG_LOAD_FAILED",
-				message:
-					"AWF requires an explicit workflow config. Create ./awf.config.ts or pass --config <path>; to use the bundled agent-development workflow, explicitly export agentDevelopmentManifest from your config.",
-				details: { expected: join(dir, "awf.config.ts") },
-			},
-		});
+		expect("manifest" in binding).toBe(true);
+		if (!("manifest" in binding)) {
+			throw new Error("expected cli binding");
+		}
+		expect(binding.args).toEqual(["ready"]);
+		expect(binding.manifest.workflow.id).toBe("agent-workflow");
+		expect(binding.manifest.kinds.map((kind) => kind.id)).toEqual([
+			"spec",
+			"task",
+		]);
 	});
 });
 
@@ -59,10 +60,11 @@ it("should ensure that default config discovery is limited to the current workin
 		expect(fromCurrentDirectory.manifest.workflow.id).toBe("agent-development");
 
 		const fromChildDirectory = await bindCliExecution(["ready"], child);
-		expect(fromChildDirectory).toMatchObject({
-			ok: false,
-			error: { code: "CONFIG_LOAD_FAILED" },
-		});
+		expect("manifest" in fromChildDirectory).toBe(true);
+		if (!("manifest" in fromChildDirectory)) {
+			throw new Error("expected cli binding");
+		}
+		expect(fromChildDirectory.manifest.workflow.id).toBe("agent-workflow");
 	});
 });
 

@@ -49,7 +49,7 @@ const workTransitions = [
 
 export const genericTaskManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "generic-task" },
+	workflow: { id: "agent-workflow" },
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],

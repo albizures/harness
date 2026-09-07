@@ -37,7 +37,7 @@ The project-local TypeScript file, conventionally `awf.config.ts`, that the AWF 
 _Avoid_: global config, manifest file, workflow definition file
 
 **Bundled workflow**:
-A Workflow definition shipped with the CLI package. The first bundled workflow is the agent-development workflow using Spec and Ticket workflow issue kinds, with Handoff represented as an artifact rather than a workflow issue kind.
+A Workflow definition shipped with the CLI package. The first bundled workflow is `agent-workflow`, the agent-development workflow using Spec, Task, and Wayfinder workflow issue kinds, with Handoff represented as an artifact rather than a workflow issue kind.
 _Avoid_: built-in special case, example-only workflow
 
 **Handoff artifact**:
@@ -61,8 +61,12 @@ The core domain object managed by the Workflow runtime. A Workflow issue is a tr
 _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 
 **Task**:
-A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself.
+A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
 _Avoid_: ticket, implementation action
+
+**Grilling**:
+A collaborative conversation Workflow issue for reaching shared understanding or pressure-testing a decision with a human. A Grilling issue is a top-level kind in `agent-workflow`, may stand alone or support a Wayfinder or Spec, and is not agent-executable merely because it is ready.
+_Avoid_: task subkind, autonomous agent work, ordinary waiting-human pause
 
 **Generated-by relationship**:
 A directional Task-to-Task provenance relationship from a generated Task back to the source Task that caused it to exist. It explains task origin separately from Spec containment and dependency blocking.

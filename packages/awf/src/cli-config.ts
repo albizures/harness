@@ -8,6 +8,11 @@ import {
 	agentDevelopmentLifecycleHandlers,
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
+import {
+	genericTaskCommandHandlers,
+	genericTaskLifecycleHandlers,
+	genericTaskManifest,
+} from "./workflows/generic-task/index.ts";
 import { failure, type Envelope } from "./envelope.ts";
 import {
 	ManifestValidationError,
@@ -42,11 +47,13 @@ export async function bindCliExecution(
 
 	const configPath = parsed.configPath ?? discoverDefaultConfig(cwd);
 	if (configPath === undefined) {
-		return failure(
-			"CONFIG_LOAD_FAILED",
-			"AWF requires an explicit workflow config. Create ./awf.config.ts or pass --config <path>; to use the bundled agent-development workflow, explicitly export agentDevelopmentManifest from your config.",
-			{ expected: resolve(cwd, "awf.config.ts") },
-		);
+		return {
+			args: parsed.args,
+			manifest: genericTaskManifest,
+			tracker: defaultTracker(),
+			commandHandlers: genericTaskCommandHandlers,
+			lifecycleHandlers: genericTaskLifecycleHandlers,
+		};
 	}
 
 	if (parsed.explicit && !existsSync(configPath)) {
@@ -55,16 +62,10 @@ export async function bindCliExecution(
 
 	try {
 		const workflowModule = await loadWorkflowModule(configPath);
-		const bundledHandlers =
-			workflowModule.manifest.workflow.id ===
-			agentDevelopmentManifest.workflow.id
-				? agentDevelopmentCommandHandlers
-				: {};
-		const bundledLifecycleHandlers =
-			workflowModule.manifest.workflow.id ===
-			agentDevelopmentManifest.workflow.id
-				? agentDevelopmentLifecycleHandlers
-				: {};
+		const bundledHandlers = bundledCommandHandlers(workflowModule.manifest);
+		const bundledLifecycleHandlers = bundledLifecycleHandlersFor(
+			workflowModule.manifest,
+		);
 		return {
 			args: parsed.args,
 			manifest: workflowModule.manifest,
@@ -137,6 +138,28 @@ function configFailure(
 	details: Record<string, JsonValue> = {},
 ): Envelope {
 	return failure("CONFIG_LOAD_FAILED", message, { path, ...details });
+}
+
+function bundledCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
+	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
+		return agentDevelopmentCommandHandlers;
+	}
+	if (manifest.workflow.id === genericTaskManifest.workflow.id) {
+		return genericTaskCommandHandlers;
+	}
+	return {};
+}
+
+function bundledLifecycleHandlersFor(
+	manifest: WorkflowManifest,
+): LifecycleTransitionHandlers {
+	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
+		return agentDevelopmentLifecycleHandlers;
+	}
+	if (manifest.workflow.id === genericTaskManifest.workflow.id) {
+		return genericTaskLifecycleHandlers;
+	}
+	return {};
 }
 
 function formatConfigError(error: unknown): string {

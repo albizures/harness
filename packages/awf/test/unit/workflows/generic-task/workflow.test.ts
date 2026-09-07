@@ -8,6 +8,11 @@ import { validateManifest } from "../../../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../../../src/trackers/memory.ts";
 import type { Envelope } from "../../../../src/envelope.ts";
 import {
+	agentWorkflowCommandHandlers,
+	agentWorkflowLifecycleHandlers,
+	agentWorkflowManifest,
+} from "../../../../src/workflows/agent-workflow/index.ts";
+import {
 	commandHandlers,
 	genericTaskCommandHandlers,
 	genericTaskLifecycleHandlers,
@@ -35,12 +40,15 @@ function assertSuccess(
 
 it("should export a valid explicit bundled workflow module", () => {
 	expect(manifest).toBe(genericTaskManifest);
+	expect(agentWorkflowManifest).toBe(genericTaskManifest);
 	expect(commandHandlers).toBe(genericTaskCommandHandlers);
+	expect(agentWorkflowCommandHandlers).toBe(genericTaskCommandHandlers);
 	expect(lifecycleHandlers).toBe(genericTaskLifecycleHandlers);
+	expect(agentWorkflowLifecycleHandlers).toBe(genericTaskLifecycleHandlers);
 	expect(Object.keys(genericTaskCommandHandlers)).toEqual(["task-create"]);
 	expect(genericTaskLifecycleHandlers).toEqual({});
 	expect(validateManifest(genericTaskManifest)).toEqual([]);
-	expect(genericTaskManifest.workflow.id).toBe("generic-task");
+	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
 	expect(genericTaskManifest.vocabulary).toEqual({
 		states: ["ready", "running", "done", "need-human"],
 		actions: ["work", "none"],
@@ -84,7 +92,7 @@ it("should expose Spec and Task work lifecycle through help and describe surface
 		commands: Array<{ id: string; cli: { usage: string } }>;
 		readiness?: { filters: Array<Record<string, string>> };
 	};
-	expect(description.workflow.id).toBe("generic-task");
+	expect(description.workflow.id).toBe("agent-workflow");
 	expect(description.kinds).toMatchObject([
 		{ id: "spec", initial: { state: "ready", action: "work" } },
 		{ id: "task", initial: { state: "ready", action: "work" } },
@@ -213,8 +221,8 @@ it("should leave a generic Spec explicitly ready for work after child Tasks comp
 	expect(ready.items.map((item) => item.id)).toEqual(["spec"]);
 });
 
-it("should validate the bundled generic-task module through the manifest validate command", async () => {
-	const cwd = await mkdtemp(join(tmpdir(), "awf-generic-task-validate-"));
+it("should validate the bundled agent-workflow module through the manifest validate command", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "awf-agent-workflow-validate-"));
 	const configPath = join(cwd, "awf.config.ts");
 	await writeFile(
 		configPath,
@@ -223,7 +231,11 @@ it("should validate the bundled generic-task module through the manifest validat
 
 	expect(await validateManifestCommand(configPath)).toEqual({
 		ok: true,
-		data: { manifest: "generic-task", version: "v1", kinds: ["spec", "task"] },
+		data: {
+			manifest: "agent-workflow",
+			version: "v1",
+			kinds: ["spec", "task"],
+		},
 	});
 });
 

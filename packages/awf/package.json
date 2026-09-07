@@ -14,6 +14,7 @@
 		"./manifest/definition": "./dist/manifest/definition.js",
 		"./workflow-module": "./dist/workflow-module.js",
 		"./workflows/agent-development": "./dist/workflows/agent-development/index.js",
+		"./workflows/agent-workflow": "./dist/workflows/agent-workflow/index.js",
 		"./workflows/generic-task": "./dist/workflows/generic-task/index.js"
 	},
 	"files": [

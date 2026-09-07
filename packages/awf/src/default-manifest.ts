@@ -1,1 +1,1 @@
-export { agentDevelopmentManifest as defaultManifest } from "./workflows/agent-development/manifest.ts";
+export { genericTaskManifest as defaultManifest } from "./workflows/generic-task/manifest.ts";

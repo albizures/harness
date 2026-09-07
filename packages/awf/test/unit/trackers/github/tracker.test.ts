@@ -63,7 +63,7 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 	expect(updated.workflow.version).toBe(2);
 });
 
-it("should project generic-task Spec create fields to reserved GitHub labels and log comments", async () => {
+it("should project agent-workflow Spec create fields to reserved GitHub labels and log comments", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
@@ -87,13 +87,13 @@ it("should project generic-task Spec create fields to reserved GitHub labels and
 		"# Generic Spec\n\nWork this through the generic-task workflow.",
 	);
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:generic-task:action:work",
-		"awf:generic-task:kind:spec",
-		"awf:generic-task:state:ready",
+		"awf:agent-workflow:action:work",
+		"awf:agent-workflow:kind:spec",
+		"awf:agent-workflow:state:ready",
 	]);
 	expect(api.issue(1).comments.map((comment) => comment.body)).toEqual([
-		expect.stringContaining("<!-- awf:current v1 generic-task -->"),
-		expect.stringContaining("<!-- awf:log v1 generic-task -->"),
+		expect.stringContaining("<!-- awf:current v1 agent-workflow -->"),
+		expect.stringContaining("<!-- awf:log v1 agent-workflow -->"),
 	]);
 });
 

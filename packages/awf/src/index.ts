@@ -16,6 +16,11 @@ export {
 	genericTaskManifest,
 } from "./workflows/generic-task/index.ts";
 export {
+	agentWorkflowCommandHandlers,
+	agentWorkflowLifecycleHandlers,
+	agentWorkflowManifest,
+} from "./workflows/agent-workflow/index.ts";
+export {
 	failure,
 	serializeEnvelope,
 	success,
