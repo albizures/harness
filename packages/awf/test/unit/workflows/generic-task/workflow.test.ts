@@ -51,7 +51,7 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
 	expect(genericTaskManifest.vocabulary).toEqual({
 		states: ["ready", "running", "done", "need-human"],
-		actions: ["work", "none"],
+		actions: ["planning", "work", "integration-test", "merge", "none"],
 		reasons: [],
 		events: ["start", "succeed", "fail"],
 	});
@@ -65,7 +65,7 @@ it("should export a valid explicit bundled workflow module", () => {
 	]);
 });
 
-it("should expose Spec and Task work lifecycle through help and describe surfaces", async () => {
+it("should expose Spec execution and Task work lifecycle through help and describe surfaces", async () => {
 	const help = assertSuccess(await execute(["--help"])) as {
 		commands: Array<{ usage: string }>;
 		readiness: { filters: Array<Record<string, string>> };
@@ -80,7 +80,9 @@ it("should expose Spec and Task work lifecycle through help and describe surface
 		]),
 	);
 	expect(help.readiness.filters).toEqual([
-		{ kind: "spec", state: "ready", action: "work" },
+		{ kind: "spec", state: "ready", action: "planning" },
+		{ kind: "spec", state: "ready", action: "integration-test" },
+		{ kind: "spec", state: "ready", action: "merge" },
 		{ kind: "task", state: "ready", action: "work" },
 	]);
 
@@ -94,7 +96,7 @@ it("should expose Spec and Task work lifecycle through help and describe surface
 	};
 	expect(description.workflow.id).toBe("agent-workflow");
 	expect(description.kinds).toMatchObject([
-		{ id: "spec", initial: { state: "ready", action: "work" } },
+		{ id: "spec", initial: { state: "ready", action: "planning" } },
 		{ id: "task", initial: { state: "ready", action: "work" } },
 	]);
 	expect(description.commands.map((command) => command.cli.usage)).toEqual([
@@ -104,24 +106,24 @@ it("should expose Spec and Task work lifecycle through help and describe surface
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });
 
-it("should report generic Specs ready only at child Task phase boundaries", async () => {
+it("should block Spec integration-test readiness until child Tasks are done", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "empty-spec",
 				title: "Empty Spec",
-				workflow: { kind: "spec", state: "ready", action: "work" },
+				workflow: { kind: "spec", state: "ready", action: "integration-test" },
 			},
 			{
 				id: "blocked-spec",
 				title: "Blocked Spec",
-				workflow: { kind: "spec", state: "ready", action: "work" },
+				workflow: { kind: "spec", state: "ready", action: "integration-test" },
 				relationships: { children: ["open-task"] },
 			},
 			{
 				id: "done-spec",
 				title: "Done Spec",
-				workflow: { kind: "spec", state: "ready", action: "work" },
+				workflow: { kind: "spec", state: "ready", action: "integration-test" },
 				relationships: { children: ["done-task"] },
 			},
 			{
@@ -146,18 +148,18 @@ it("should report generic Specs ready only at child Task phase boundaries", asyn
 
 	expect(ready.items.map((item) => item.id)).toEqual([
 		"done-spec",
-		"empty-spec",
 		"open-task",
 	]);
 	expect(ready.blocked).toEqual([
 		{
 			id: "blocked-spec",
 			title: "Blocked Spec",
-			workflow: { kind: "spec", state: "ready", action: "work" },
+			workflow: { kind: "spec", state: "ready", action: "integration-test" },
 			blocking: [
 				{
 					gate: "tasks-done",
 					relationship: "children",
+					minimum: 1,
 					blockedBy: [
 						{
 							id: "open-task",
@@ -168,16 +170,28 @@ it("should report generic Specs ready only at child Task phase boundaries", asyn
 				},
 			],
 		},
+		{
+			id: "empty-spec",
+			title: "Empty Spec",
+			workflow: { kind: "spec", state: "ready", action: "integration-test" },
+			blocking: [
+				{
+					gate: "tasks-done",
+					relationship: "children",
+					minimum: 1,
+				},
+			],
+		},
 	]);
 });
 
-it("should leave a generic Spec explicitly ready for work after child Tasks complete", async () => {
+it("should advance a planned Spec to integration-test readiness after child Tasks complete", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "spec",
 				title: "Spec",
-				workflow: { kind: "spec", state: "ready", action: "work" },
+				workflow: { kind: "spec", state: "ready", action: "none" },
 				relationships: { children: ["task"] },
 			},
 			{
@@ -212,7 +226,7 @@ it("should leave a generic Spec explicitly ready for work after child Tasks comp
 	expect((await tracker.getIssue("spec")).workflow).toMatchObject({
 		kind: "spec",
 		state: "ready",
-		action: "work",
+		action: "integration-test",
 	});
 
 	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
@@ -239,7 +253,7 @@ it("should validate the bundled agent-workflow module through the manifest valid
 	});
 });
 
-it("should create generic Specs from structured JSON with initial workflow fields and creation log", async () => {
+it("should create generic Specs from structured JSON ready for planning with creation log", async () => {
 	const tracker = createInMemoryTracker();
 
 	const created = assertSuccess(
@@ -267,7 +281,7 @@ it("should create generic Specs from structured JSON with initial workflow field
 	expect(created.issue.workflow).toMatchObject({
 		kind: "spec",
 		state: "ready",
-		action: "work",
+		action: "planning",
 	});
 	expect(created.log).toMatchObject({
 		type: "spec-create_created",
@@ -281,6 +295,96 @@ it("should create generic Specs from structured JSON with initial workflow field
 	expect(
 		(await tracker.readLogs(created.issue.id)).map((log) => log.type),
 	).toEqual(["spec-create_created"]);
+});
+
+it("should advance generic Specs through planning, integration-test, merge, and done", async () => {
+	const tracker = createInMemoryTracker();
+	const created = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+
+	const planningRun = assertSuccess(
+		await execute(["start", created.issue.id], { tracker }),
+	) as { run: { id: string } };
+	expect(
+		assertSuccess(
+			await execute(
+				[
+					"succeed",
+					created.issue.id,
+					"--run",
+					planningRun.run.id,
+					"--input",
+					"-",
+				],
+				{ tracker, stdin: "{}" },
+			),
+		) as { issue: { workflow: Record<string, string> } },
+	).toMatchObject({ issue: { workflow: { state: "ready", action: "none" } } });
+
+	const task = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: created.issue.id,
+				title: "Task",
+				description: "Implement it.",
+				profile: "implement",
+			}),
+		}),
+	) as { issue: { id: string } };
+	const taskRun = assertSuccess(
+		await execute(["start", task.issue.id], { tracker }),
+	) as {
+		run: { id: string };
+	};
+	assertSuccess(
+		await execute(
+			["succeed", task.issue.id, "--run", taskRun.run.id, "--input", "-"],
+			{
+				tracker,
+				stdin: "{}",
+			},
+		),
+	);
+	expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject({
+		state: "ready",
+		action: "integration-test",
+	});
+
+	const integrationRun = assertSuccess(
+		await execute(["start", created.issue.id], { tracker }),
+	) as { run: { id: string } };
+	expect(
+		assertSuccess(
+			await execute(
+				[
+					"succeed",
+					created.issue.id,
+					"--run",
+					integrationRun.run.id,
+					"--input",
+					"-",
+				],
+				{ tracker, stdin: "{}" },
+			),
+		) as { issue: { workflow: Record<string, string> } },
+	).toMatchObject({ issue: { workflow: { state: "ready", action: "merge" } } });
+
+	const mergeRun = assertSuccess(
+		await execute(["start", created.issue.id], { tracker }),
+	) as { run: { id: string } };
+	expect(
+		assertSuccess(
+			await execute(
+				["succeed", created.issue.id, "--run", mergeRun.run.id, "--input", "-"],
+				{ tracker, stdin: "{}" },
+			),
+		) as { issue: { workflow: Record<string, string> } },
+	).toMatchObject({ issue: { workflow: { state: "done", action: "none" } } });
 });
 
 it("should reject malformed generic Spec create input before tracker mutation", async () => {

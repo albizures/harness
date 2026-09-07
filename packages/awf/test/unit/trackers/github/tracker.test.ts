@@ -87,7 +87,7 @@ it("should project agent-workflow Spec create fields to reserved GitHub labels a
 		"# Generic Spec\n\nWork this through the generic-task workflow.",
 	);
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:work",
+		"awf:agent-workflow:action:planning",
 		"awf:agent-workflow:kind:spec",
 		"awf:agent-workflow:state:ready",
 	]);

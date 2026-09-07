@@ -392,7 +392,7 @@ it("should ensure that CLI without a workflow config defaults to the bundled age
 		expect(envelope.data.issue.workflow).toMatchObject({
 			kind: "spec",
 			state: "ready",
-			action: "work",
+			action: "planning",
 		});
 	});
 });

@@ -67,7 +67,7 @@ it("should ensure that no config loads the bundled agent-workflow manifest", asy
 			id: "1",
 			title: "Spec",
 			body: "# Spec",
-			workflow: { kind: "spec", state: "ready", action: "work" },
+			workflow: { kind: "spec", state: "ready", action: "planning" },
 		},
 		log: { sequence: 1, issueId: "1", type: "spec-create_created" },
 	});

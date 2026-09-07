@@ -2,7 +2,13 @@ import { z } from "zod";
 import { defineManifest } from "../../manifest/definition.ts";
 
 const states = ["ready", "running", "done", "need-human"] as const;
-const actions = ["work", "none"] as const;
+const actions = [
+	"planning",
+	"work",
+	"integration-test",
+	"merge",
+	"none",
+] as const;
 const events = ["start", "succeed", "fail"] as const;
 
 const createInput = z
@@ -28,6 +34,49 @@ const createOutput = z.object({
 	issue: z.object({ id: z.string() }),
 	log: z.object({ type: z.string() }),
 });
+
+const specTransitions = [
+	{
+		from: { state: "ready", action: "planning" },
+		event: "start",
+		to: { state: "running", action: "planning" },
+	},
+	{
+		from: { state: "ready", action: "planning" },
+		event: "succeed",
+		to: { state: "ready", action: "none" },
+	},
+	{
+		from: { state: "running", action: "planning" },
+		event: "succeed",
+		to: { state: "ready", action: "none" },
+	},
+	{
+		from: { state: "ready", action: "integration-test" },
+		event: "start",
+		to: { state: "running", action: "integration-test" },
+	},
+	{
+		from: { state: "running", action: "integration-test" },
+		event: "succeed",
+		to: { state: "ready", action: "merge" },
+	},
+	{
+		from: { state: "running", action: "integration-test" },
+		event: "fail",
+		to: { state: "ready", action: "planning" },
+	},
+	{
+		from: { state: "ready", action: "merge" },
+		event: "start",
+		to: { state: "running", action: "merge" },
+	},
+	{
+		from: { state: "running", action: "merge" },
+		event: "succeed",
+		to: { state: "done", action: "none" },
+	},
+] as const;
 
 const workTransitions = [
 	{
@@ -60,16 +109,32 @@ export const genericTaskManifest = defineManifest({
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { task: 3 } },
 	readiness: {
 		filters: [
-			{ kind: "spec", state: "ready", action: "work" },
+			{ kind: "spec", state: "ready", action: "planning" },
+			{ kind: "spec", state: "ready", action: "integration-test" },
+			{ kind: "spec", state: "ready", action: "merge" },
 			{ kind: "task", state: "ready", action: "work" },
 		],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
 		relationshipPolicies: [
 			{
 				relationship: "children",
-				where: { kind: "spec", state: "ready", action: "work" },
-				children: { all: { kind: "task", state: "done", action: "none" } },
+				where: { kind: "spec", state: "ready", action: "integration-test" },
+				children: {
+					all: { kind: "task", state: "done", action: "none" },
+					min: 1,
+				},
 				gate: "tasks-done",
+			},
+		],
+	},
+	lifecycle: {
+		relationshipPolicies: [
+			{
+				relationship: "parent",
+				child: { kind: "task", state: "done", action: "none" },
+				parent: { kind: "spec", state: "ready", action: "none" },
+				siblings: { all: { kind: "task", state: "done" }, min: 1 },
+				to: { state: "ready", action: "integration-test" },
 			},
 		],
 	},
@@ -77,8 +142,8 @@ export const genericTaskManifest = defineManifest({
 		{
 			id: "spec",
 			label: "Spec",
-			initial: { state: "ready", action: "work" },
-			transitions: [...workTransitions],
+			initial: { state: "ready", action: "planning" },
+			transitions: [...specTransitions],
 		},
 		{
 			id: "task",
@@ -105,7 +170,7 @@ export const genericTaskManifest = defineManifest({
 		{
 			id: "spec-create",
 			cli: { verb: "create", target: "spec" },
-			target: { kind: "spec", action: "work" },
+			target: { kind: "spec", action: "planning" },
 			input: createInput,
 			output: createOutput,
 		},
