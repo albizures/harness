@@ -25,10 +25,18 @@ type TaskCreateInput = {
 	generatedBy?: string;
 };
 
+type GrillingCreateInput = {
+	title: string;
+	description: string;
+	parent?: string;
+};
+
 const createTaskCommand: CommandHandler = taskCreateCommand;
+const createGrillingCommand: CommandHandler = grillingCreateCommand;
 
 export const genericTaskCommandHandlers: CommandHandlers = {
 	"task-create": createTaskCommand,
+	"grilling-create": createGrillingCommand,
 };
 
 async function taskCreateCommand({
@@ -137,6 +145,93 @@ async function taskCreateCommand({
 	}
 }
 
+async function grillingCreateCommand({
+	command,
+	manifest,
+	tracker,
+	input,
+}: Parameters<CommandHandler>[0]): Promise<Envelope> {
+	const grillingKind = getKind(manifest, "grilling");
+	if (grillingKind === undefined) {
+		return failure(
+			"MANIFEST_UNSUPPORTED",
+			"Manifest does not define grilling kind.",
+		);
+	}
+	const grillingInput = parseGrillingCreateInput(input);
+	if (grillingInput === undefined) {
+		return failure(
+			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+			"Workflow command input is invalid.",
+		);
+	}
+
+	try {
+		const parent =
+			grillingInput.parent === undefined
+				? undefined
+				: await tracker.getIssue(grillingInput.parent);
+		if (
+			parent !== undefined &&
+			parent.workflow.kind !== "spec" &&
+			parent.workflow.kind !== "wayfinder"
+		) {
+			return failure(
+				"INVALID_GRILLING_PARENT",
+				"Grilling parent must be a Spec or Wayfinder issue.",
+				{ parent: parent.id, actualKind: parent.workflow.kind },
+			);
+		}
+
+		const createEffect = {
+			type: "create-workflow-issue" as const,
+			key: "grilling",
+			input: {
+				title: genericIssueTitle(grillingInput, "grilling"),
+				body: grillingInput.description,
+				workflow: {
+					kind: "grilling",
+					...initialWorkflowTarget(grillingKind.initial),
+				},
+			},
+			initialLog: {
+				type: `${command.id}_created`,
+				payload: { input: grillingInput },
+			},
+		};
+		const applied = await tracker.applyWorkflowEffects({
+			effects: [
+				createEffect,
+				...(parent === undefined
+					? []
+					: [
+							{
+								type: "add-child" as const,
+								parent: { id: parent.id },
+								child: { key: "grilling" },
+							},
+						]),
+			],
+		});
+		const created = applied.createdIssues[0];
+		if (created === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: workflow issue creation could not be verified.",
+			);
+		}
+		const issue = await tracker.getIssue(created.id);
+		const log = applied.logs[0];
+		if (log === undefined) {
+			throw new NeedReconciliationError(
+				"NEED_RECONCILIATION: creation log was not recorded.",
+			);
+		}
+		return validateOrSucceed(command, { issue, log });
+	} catch (error) {
+		return lifecycleError("new", error);
+	}
+}
+
 function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
 	if (!isRecord(input)) {
 		return undefined;
@@ -208,6 +303,19 @@ async function resolveGeneratedBy(
 
 function isTaskSubkind(value: unknown): value is TaskCreateInput["subkind"] {
 	return value === "work" || value === "research" || value === "prototype";
+}
+
+function parseGrillingCreateInput(
+	input: JsonValue,
+): GrillingCreateInput | undefined {
+	if (!isRecord(input)) {
+		return undefined;
+	}
+	return {
+		title: String(input.title),
+		description: String(input.description),
+		...(typeof input.parent === "string" ? { parent: input.parent } : {}),
+	};
 }
 
 function taskBody(input: TaskCreateInput): string {

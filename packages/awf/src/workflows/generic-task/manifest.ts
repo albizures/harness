@@ -4,6 +4,7 @@ import { defineManifest } from "../../manifest/definition.ts";
 const states = [
 	"ready",
 	"running",
+	"in-discussion",
 	"done",
 	"need-human",
 	"waiting-human",
@@ -11,6 +12,7 @@ const states = [
 const actions = [
 	"planning",
 	"work",
+	"discuss",
 	"integration-test",
 	"merge",
 	"none",
@@ -36,6 +38,11 @@ const taskCreateInput = z.strictObject({
 	subkind: z.enum(taskSubkinds).optional(),
 	dependsOn: z.array(z.string().trim().min(1)).optional(),
 	generatedBy: z.string().trim().min(1).optional(),
+});
+const grillingCreateInput = z.strictObject({
+	title: z.string().trim().min(1),
+	description: z.string().trim().min(1),
+	parent: z.string().trim().min(1).optional(),
 });
 
 const createOutput = z.object({
@@ -104,6 +111,19 @@ const workTransitions = [
 	},
 ] as const;
 
+const grillingTransitions = [
+	{
+		from: { state: "ready", action: "discuss" },
+		event: "start",
+		to: { state: "in-discussion", action: "discuss" },
+	},
+	{
+		from: { state: "in-discussion", action: "discuss" },
+		event: "succeed",
+		to: { state: "done", action: "none" },
+	},
+] as const;
+
 export const genericTaskManifest = defineManifest({
 	version: "v1",
 	workflow: { id: "agent-workflow" },
@@ -154,11 +174,23 @@ export const genericTaskManifest = defineManifest({
 			transitions: [...specTransitions],
 		},
 		{
+			id: "wayfinder",
+			label: "Wayfinder",
+			initial: { state: "ready", action: "planning" },
+			transitions: [...specTransitions],
+		},
+		{
 			id: "task",
 			label: "Task",
 			initial: { state: "ready", action: "work" },
 			subkinds: [...taskSubkinds],
 			transitions: [...workTransitions],
+		},
+		{
+			id: "grilling",
+			label: "Grilling",
+			initial: { state: "ready", action: "discuss" },
+			transitions: [...grillingTransitions],
 		},
 	],
 	relationships: [
@@ -174,6 +206,18 @@ export const genericTaskManifest = defineManifest({
 			to: "task",
 			projection: { type: "dependency" },
 		},
+		{
+			id: "spec-grilling",
+			from: "spec",
+			to: "grilling",
+			projection: { type: "parent-child" },
+		},
+		{
+			id: "wayfinder-grilling",
+			from: "wayfinder",
+			to: "grilling",
+			projection: { type: "parent-child" },
+		},
 	],
 	commands: [
 		{
@@ -184,10 +228,24 @@ export const genericTaskManifest = defineManifest({
 			output: createOutput,
 		},
 		{
+			id: "wayfinder-create",
+			cli: { verb: "create", target: "wayfinder" },
+			target: { kind: "wayfinder", action: "planning" },
+			input: createInput,
+			output: createOutput,
+		},
+		{
 			id: "task-create",
 			cli: { verb: "create", target: "task" },
 			target: { kind: "task", action: "work" },
 			input: taskCreateInput,
+			output: createOutput,
+		},
+		{
+			id: "grilling-create",
+			cli: { verb: "create", target: "grilling" },
+			target: { kind: "grilling", action: "discuss" },
+			input: grillingCreateInput,
 			output: createOutput,
 		},
 	],

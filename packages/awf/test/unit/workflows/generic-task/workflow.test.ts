@@ -45,26 +45,50 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(agentWorkflowCommandHandlers).toBe(genericTaskCommandHandlers);
 	expect(lifecycleHandlers).toBe(genericTaskLifecycleHandlers);
 	expect(agentWorkflowLifecycleHandlers).toBe(genericTaskLifecycleHandlers);
-	expect(Object.keys(genericTaskCommandHandlers)).toEqual(["task-create"]);
+	expect(Object.keys(genericTaskCommandHandlers)).toEqual([
+		"task-create",
+		"grilling-create",
+	]);
 	expect(genericTaskLifecycleHandlers).toEqual({});
 	expect(validateManifest(genericTaskManifest)).toEqual([]);
 	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
 	expect(genericTaskManifest.vocabulary).toEqual({
-		states: ["ready", "running", "done", "need-human", "waiting-human"],
-		actions: ["planning", "work", "integration-test", "merge", "none"],
+		states: [
+			"ready",
+			"running",
+			"in-discussion",
+			"done",
+			"need-human",
+			"waiting-human",
+		],
+		actions: [
+			"planning",
+			"work",
+			"discuss",
+			"integration-test",
+			"merge",
+			"none",
+		],
 		reasons: [],
 		events: ["start", "succeed", "fail", "pause", "respond"],
 	});
 	expect(genericTaskManifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",
+		"wayfinder",
 		"task",
+		"grilling",
 	]);
 	expect(
 		genericTaskManifest.kinds.find((kind) => kind.id === "task")?.subkinds,
 	).toEqual(["work", "research", "prototype"]);
+	expect(
+		genericTaskManifest.kinds.find((kind) => kind.id === "grilling")?.subkinds,
+	).toBeUndefined();
 	expect(genericTaskManifest.commands.map((command) => command.id)).toEqual([
 		"spec-create",
+		"wayfinder-create",
 		"task-create",
+		"grilling-create",
 	]);
 });
 
@@ -79,7 +103,9 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 	expect(help.commands.map((command) => command.usage)).toEqual(
 		expect.arrayContaining([
 			"awf create spec --input <file|->",
+			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
+			"awf create grilling --input <file|->",
 			"awf start <id>",
 			"awf succeed <id> --run <run> --input <file|->",
 			"awf fail <id> --run <run> --input <file|->",
@@ -110,15 +136,19 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 	expect(description.workflow.id).toBe("agent-workflow");
 	expect(description.kinds).toMatchObject([
 		{ id: "spec", initial: { state: "ready", action: "planning" } },
+		{ id: "wayfinder", initial: { state: "ready", action: "planning" } },
 		{
 			id: "task",
 			initial: { state: "ready", action: "work" },
 			subkinds: ["work", "research", "prototype"],
 		},
+		{ id: "grilling", initial: { state: "ready", action: "discuss" } },
 	]);
 	expect(description.commands.map((command) => command.cli.usage)).toEqual([
 		"awf create spec --input <file|->",
+		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
+		"awf create grilling --input <file|->",
 	]);
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });
@@ -265,7 +295,7 @@ it("should validate the bundled agent-workflow module through the manifest valid
 		data: {
 			manifest: "agent-workflow",
 			version: "v1",
-			kinds: ["spec", "task"],
+			kinds: ["spec", "wayfinder", "task", "grilling"],
 		},
 	});
 });
@@ -542,6 +572,128 @@ it("should store Task subkind as workflow data without changing lifecycle readin
 		subkind: "research",
 	});
 	expect(readyResearch?.workflow).not.toHaveProperty("data");
+});
+
+it("should create Grilling as collaborative work without offering it as autonomous ready work", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const wayfinder = assertSuccess(
+		await execute(["create", "wayfinder", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Wayfinder", content: "# Explore" }),
+		}),
+	) as { issue: { id: string } };
+
+	const standalone = assertSuccess(
+		await execute(["create", "grilling", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				title: "Pressure-test",
+				description: "Pressure-test the decision.",
+			}),
+		}),
+	) as {
+		issue: {
+			id: string;
+			workflow: Record<string, unknown>;
+			relationships: { parent?: string };
+		};
+	};
+	const specChild = assertSuccess(
+		await execute(["create", "grilling", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				title: "Spec questions",
+				description: "Resolve spec questions.",
+				parent: spec.issue.id,
+			}),
+		}),
+	) as { issue: { id: string; relationships: { parent?: string } } };
+	const wayfinderChild = assertSuccess(
+		await execute(["create", "grilling", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				title: "Explore questions",
+				description: "Resolve exploration questions.",
+				parent: wayfinder.issue.id,
+			}),
+		}),
+	) as { issue: { id: string; relationships: { parent?: string } } };
+
+	expect(standalone.issue.workflow).toMatchObject({
+		kind: "grilling",
+		state: "ready",
+		action: "discuss",
+	});
+	expect(standalone.issue.workflow).not.toHaveProperty("data.subkind");
+	expect(standalone.issue.relationships.parent).toBeUndefined();
+	expect(specChild.issue.relationships.parent).toBe(spec.issue.id);
+	expect(wayfinderChild.issue.relationships.parent).toBe(wayfinder.issue.id);
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string; workflow: Record<string, unknown> }>;
+	};
+	expect(ready.items.map((item) => item.id)).not.toContain(standalone.issue.id);
+
+	const started = assertSuccess(
+		await execute(["start", standalone.issue.id], { tracker }),
+	) as { issue: { workflow: Record<string, unknown> }; run: { id: string } };
+	expect(started.issue.workflow).toMatchObject({
+		kind: "grilling",
+		state: "in-discussion",
+		action: "discuss",
+	});
+
+	const done = assertSuccess(
+		await execute(["succeed", standalone.issue.id, "--run", started.run.id], {
+			tracker,
+		}),
+	) as { issue: { workflow: Record<string, unknown> } };
+	expect(done.issue.workflow).toMatchObject({
+		kind: "grilling",
+		state: "done",
+		action: "none",
+	});
+});
+
+it("should reject Grilling parents that are not Spec or Wayfinder issues", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const task = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Task",
+				description: "Do work.",
+				profile: "implement",
+			}),
+		}),
+	) as { issue: { id: string } };
+
+	const rejected = await execute(["create", "grilling", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({
+			title: "Invalid",
+			description: "Invalid parent.",
+			parent: task.issue.id,
+		}),
+	});
+
+	expect(rejected).toMatchObject({
+		ok: false,
+		error: { code: "INVALID_GRILLING_PARENT" },
+	});
 });
 
 it("should record generated generic Task provenance without blocking readiness", async () => {

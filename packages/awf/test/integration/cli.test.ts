@@ -278,7 +278,9 @@ it("should ensure that CLI workflow describe uses the no-config agent-workflow d
 		expect(envelope.data.workflow.id).toBe("agent-workflow");
 		expect(envelope.data.kinds.map((kind: { id: string }) => kind.id)).toEqual([
 			"spec",
+			"wayfinder",
 			"task",
+			"grilling",
 		]);
 	});
 });

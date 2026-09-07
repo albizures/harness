@@ -63,6 +63,7 @@ Example commands:
 ```sh
 awf --config ./awf.config.ts create spec --input ./spec.json
 awf --config ./awf.config.ts create task --input ./task.json
+awf --config ./awf.config.ts create grilling --input ./grilling.json
 awf --config ./awf.config.ts ready
 ```
 
@@ -75,7 +76,7 @@ A generic Spec create input provides `title` plus `body` or `content`:
 }
 ```
 
-A generic Task create input belongs to a Spec, carries a project-owned profile, may declare a durable subkind (`work`, `research`, or `prototype`; defaults to `work`), and may record provenance or dependency ordering explicitly:
+A generic Task create input belongs to a Spec, carries a project-owned profile, may declare a durable subkind (`work`, `research`, or `prototype`; defaults to `work`), and may record provenance or dependency ordering explicitly. Grilling is a separate top-level collaborative kind, not a Task subkind:
 
 ```json
 {
@@ -88,6 +89,18 @@ A generic Task create input belongs to a Spec, carries a project-owned profile, 
 	"dependsOn": ["43"]
 }
 ```
+
+A Grilling create input provides a title and description, plus an optional parent Spec or Wayfinder id. Without a parent, the Grilling stands alone:
+
+```json
+{
+	"title": "Pressure-test importer scope",
+	"description": "Discuss whether retry policy belongs in this Spec.",
+	"parent": "42"
+}
+```
+
+Grilling starts at `ready/discuss`, moves to `in-discussion/discuss` when started, and finishes at `done/none`. It is not included in the default ready-work filters, so ordinary autonomous agent-ready work does not pick it up as a Task.
 
 ## Policy boundaries
 

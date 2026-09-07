@@ -40,7 +40,9 @@ it("should bind the bundled agent-workflow manifest when config is missing", asy
 		expect(binding.manifest.workflow.id).toBe("agent-workflow");
 		expect(binding.manifest.kinds.map((kind) => kind.id)).toEqual([
 			"spec",
+			"wayfinder",
 			"task",
+			"grilling",
 		]);
 	});
 });
