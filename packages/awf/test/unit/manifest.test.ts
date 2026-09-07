@@ -77,7 +77,7 @@ it("should reject loaded TypeScript workflow manifests with Zod-owned shape erro
 					.filter((path) => path.includes("projection.type")),
 			).toEqual(["$.relationships[2].projection.type"]);
 			expect(issues.map((issue) => issue.message).join("\n")).toMatch(
-				/parent-child or dependency/,
+				/parent-child, dependency, or generated-by/,
 			);
 			return true;
 		},

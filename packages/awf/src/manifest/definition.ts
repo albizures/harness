@@ -862,11 +862,15 @@ function validateRelationship(
 		);
 		return;
 	}
-	if (!["parent-child", "dependency"].includes(String(value.projection.type))) {
+	if (
+		!["parent-child", "dependency", "generated-by"].includes(
+			String(value.projection.type),
+		)
+	) {
 		issue(
 			issues,
 			`${path}.projection.type`,
-			"Relationship projection type must be parent-child or dependency.",
+			"Relationship projection type must be parent-child, dependency, or generated-by.",
 		);
 	}
 	if (

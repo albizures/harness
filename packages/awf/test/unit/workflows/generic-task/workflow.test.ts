@@ -938,6 +938,23 @@ it("should reject Grilling parents that are not Spec or Wayfinder issues", async
 	});
 });
 
+it("should declare generated generic Task provenance separately from containment and dependencies", () => {
+	const relationships = genericTaskManifest.relationships?.map(
+		(relationship) => ({
+			id: relationship.id,
+			projection: relationship.projection.type,
+		}),
+	);
+
+	expect(relationships).toEqual(
+		expect.arrayContaining([
+			{ id: "spec-task", projection: "parent-child" },
+			{ id: "task-blocks-task", projection: "dependency" },
+			{ id: "task-generated-by-task", projection: "generated-by" },
+		]),
+	);
+});
+
 it("should record generated generic Task provenance without blocking readiness", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(

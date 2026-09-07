@@ -101,7 +101,7 @@ export type WorkflowDescriptionV1 = {
 		from: string;
 		to: string;
 		projection: {
-			type: "parent-child" | "dependency";
+			type: "parent-child" | "dependency" | "generated-by";
 			direction?: "outbound" | "inbound";
 		};
 	}>;

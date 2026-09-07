@@ -232,6 +232,12 @@ export const genericTaskManifest = defineManifest({
 			projection: { type: "dependency" },
 		},
 		{
+			id: "task-generated-by-task",
+			from: "task",
+			to: "task",
+			projection: { type: "generated-by" },
+		},
+		{
 			id: "spec-grilling",
 			from: "spec",
 			to: "grilling",

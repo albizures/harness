@@ -71,7 +71,7 @@ export type ManifestRelationship = {
 	from: Identifier;
 	to: Identifier;
 	projection: {
-		type: "parent-child" | "dependency";
+		type: "parent-child" | "dependency" | "generated-by";
 		direction?: "outbound" | "inbound";
 	};
 };
@@ -304,9 +304,9 @@ export const workflowManifestStructuralSchema = z.strictObject({
 				from: z.string(),
 				to: z.string(),
 				projection: z.strictObject({
-					type: z.enum(["parent-child", "dependency"], {
+					type: z.enum(["parent-child", "dependency", "generated-by"], {
 						error:
-							"Relationship projection type must be parent-child or dependency.",
+							"Relationship projection type must be parent-child, dependency, or generated-by.",
 					}),
 					direction: z.enum(["outbound", "inbound"]).optional(),
 				}),

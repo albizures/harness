@@ -783,7 +783,7 @@ it("should ensure that CLI returns a stable validation error envelope for a gene
 		"$.relationships[2].projection.type",
 	);
 	expect(envelope.error.details.issues.at(-1).message).toMatch(
-		/parent-child or dependency/,
+		/parent-child, dependency, or generated-by/,
 	);
 });
 

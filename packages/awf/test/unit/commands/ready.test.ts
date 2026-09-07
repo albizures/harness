@@ -85,7 +85,7 @@ it("should ensure that runtime commands reject unsupported workflow manifest rel
 					{
 						path: "$.relationships[0].projection.type",
 						message:
-							"Relationship projection type must be parent-child or dependency.",
+							"Relationship projection type must be parent-child, dependency, or generated-by.",
 					},
 				],
 			},
