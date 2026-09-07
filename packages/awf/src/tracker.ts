@@ -94,6 +94,13 @@ export type TrackerWorkflowEffect =
 			workflow: TrackerWorkflow;
 	  }
 	| {
+			type: "update-issue";
+			issue: TrackerIssueRef;
+			expect?: TrackerProjectionExpectation;
+			title?: string;
+			body?: string;
+	  }
+	| {
 			type: "record-artifacts";
 			issue: TrackerIssueRef;
 			artifacts?: Array<WorkflowArtifactInput>;

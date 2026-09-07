@@ -53,6 +53,9 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(Object.keys(genericTaskLifecycleHandlers)).toEqual([
 		"wayfinder:ready/planning:succeed",
 		"wayfinder:running/planning:succeed",
+		"task:running/work:succeed",
+		"spec:running/merge:succeed",
+		"grilling:in-discussion/discuss:succeed",
 	]);
 	expect(validateManifest(genericTaskManifest)).toEqual([]);
 	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
@@ -661,7 +664,12 @@ it("should complete Wayfinder maps only by explicit success after all children a
 	assertSuccess(
 		await execute(
 			["succeed", task.issue.id, "--run", taskRun.run.id, "--input", "-"],
-			{ tracker, stdin: "{}" },
+			{
+				tracker,
+				stdin: JSON.stringify({
+					outcome: { type: "completed", facts: ["Explored the route."] },
+				}),
+			},
 		),
 	);
 	expect((await tracker.getIssue(wayfinder.issue.id)).workflow).toMatchObject({
@@ -682,6 +690,130 @@ it("should complete Wayfinder maps only by explicit success after all children a
 		state: "done",
 		action: "none",
 	});
+});
+
+it("should validate Wayfinder child terminal outcomes and allow coarse map body revisions", async () => {
+	const tracker = createInMemoryTracker();
+	const wayfinder = assertSuccess(
+		await execute(["create", "wayfinder", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Map", content: "# Old map" }),
+		}),
+	) as { issue: { id: string } };
+	const task = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Explore",
+				description: "Explore route.",
+				profile: "research",
+			}),
+		}),
+	) as { issue: { id: string } };
+
+	const run = assertSuccess(
+		await execute(["start", task.issue.id], { tracker }),
+	) as {
+		run: { id: string };
+	};
+	const missing = await execute(
+		["succeed", task.issue.id, "--run", run.run.id],
+		{ tracker },
+	);
+	expect(missing).toMatchObject({
+		ok: false,
+		error: { code: "WAYFINDER_CHILD_OUTCOME_INVALID" },
+	});
+
+	const completed = assertSuccess(
+		await execute(
+			["succeed", task.issue.id, "--run", run.run.id, "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					outcome: { type: "completed", facts: ["Found the shortest route."] },
+					mapRevision: { body: "# Updated map" },
+				}),
+			},
+		),
+	) as { log: { payload: { outcome: Record<string, unknown> } } };
+	expect(completed.log.payload.outcome).toEqual({
+		type: "completed",
+		facts: ["Found the shortest route."],
+	});
+	expect((await tracker.getIssue(wayfinder.issue.id)).body).toBe(
+		"# Updated map",
+	);
+
+	const grilling = assertSuccess(
+		await execute(["create", "grilling", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Decide",
+				description: "Resolve a decision.",
+			}),
+		}),
+	) as { issue: { id: string } };
+	const grillingRun = assertSuccess(
+		await execute(["start", grilling.issue.id], { tracker }),
+	) as { run: { id: string } };
+	assertSuccess(
+		await execute(
+			[
+				"succeed",
+				grilling.issue.id,
+				"--run",
+				grillingRun.run.id,
+				"--input",
+				"-",
+			],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					outcome: {
+						type: "decision",
+						resolution: "Use the simpler route.",
+						gist: "Simplicity beats coverage for now.",
+					},
+				}),
+			},
+		),
+	);
+
+	const outOfScopeTask = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Ignore",
+				description: "Check unrelated route.",
+				profile: "research",
+			}),
+		}),
+	) as { issue: { id: string } };
+	const outOfScopeRun = assertSuccess(
+		await execute(["start", outOfScopeTask.issue.id], { tracker }),
+	) as { run: { id: string } };
+	assertSuccess(
+		await execute(
+			[
+				"succeed",
+				outOfScopeTask.issue.id,
+				"--run",
+				outOfScopeRun.run.id,
+				"--input",
+				"-",
+			],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					outcome: { type: "out-of-scope", scopeNote: "Owned by another map." },
+				}),
+			},
+		),
+	);
 });
 
 it("should create Grilling as collaborative work without offering it as autonomous ready work", async () => {

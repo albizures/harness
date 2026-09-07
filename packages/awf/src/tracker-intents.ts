@@ -25,6 +25,7 @@ import type { WorkflowChange } from "./workflow/change.ts";
 import {
 	IssueNotFoundError,
 	type CreateIssueInput,
+	type UpdateIssueInput,
 	type WorkflowIssue,
 } from "./workflow/issue.ts";
 import type { WorkflowLog } from "./workflow/log.ts";
@@ -291,6 +292,24 @@ class PrimitiveTrackerIntentModule implements Tracker {
 						workflow: effect.workflow,
 					});
 					await this.verifyWorkflowUpdate(id, effect.workflow);
+					result.issues[id] = issue;
+				} else if (effect.type === "update-issue") {
+					const id = resolveIssueRef(effect.issue, idsByKey);
+					const before = await this.primitives.getIssue(id);
+					const update: UpdateIssueInput = {
+						...(effect.expect === undefined ? {} : { expect: effect.expect }),
+						...(effect.title === undefined ? {} : { title: effect.title }),
+						...(effect.body === undefined ? {} : { body: effect.body }),
+					};
+					const issue = await this.primitives.updateIssue(id, update);
+					rollback.push(async () => {
+						await this.primitives.updateIssue(id, {
+							title: before.title,
+							...(before.body === undefined
+								? { body: "" }
+								: { body: before.body }),
+						});
+					});
 					result.issues[id] = issue;
 				} else if (effect.type === "record-artifacts") {
 					const id = resolveIssueRef(effect.issue, idsByKey);
