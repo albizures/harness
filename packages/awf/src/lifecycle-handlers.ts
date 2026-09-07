@@ -5,7 +5,10 @@ import type {
 	ManifestTransition,
 	WorkflowManifest,
 } from "./manifest/manifest.ts";
-import type { TrackerWorkflowEffect } from "./tracker.ts";
+import type {
+	TrackerAdapterPrimitiveReads,
+	TrackerWorkflowEffect,
+} from "./tracker.ts";
 import type { WorkflowArtifactInput } from "./workflow/artifact.ts";
 import type { WorkflowChange } from "./workflow/change.ts";
 import type { WorkflowIssue } from "./workflow/issue.ts";
@@ -14,7 +17,7 @@ export type LifecycleTransitionHandlerContext = {
 	manifest: WorkflowManifest;
 	transition: ManifestTransition;
 	issue: WorkflowIssue;
-	tracker: import("./tracker.ts").Tracker;
+	tracker: TrackerAdapterPrimitiveReads;
 	event: string;
 	input: JsonValue;
 	runId?: string;

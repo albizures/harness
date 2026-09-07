@@ -4,6 +4,7 @@ import { z } from "zod";
 import { failure, success, type Envelope } from "../envelope.ts";
 import { parseJsonValue } from "../json.ts";
 import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
+import type { TrackerAdapterPrimitiveReads } from "../tracker.ts";
 import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
 import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker, TrackerLog } from "../tracker.ts";
@@ -93,7 +94,7 @@ export async function startCommand(
 			manifest,
 			transition,
 			issue,
-			tracker,
+			tracker: lifecycleHandlerTracker(tracker),
 			event: "start",
 			input: {},
 			runId,
@@ -299,7 +300,7 @@ export async function terminalCommand(
 						manifest,
 						transition,
 						issue,
-						tracker,
+						tracker: lifecycleHandlerTracker(tracker),
 						event,
 						input: terminalInput,
 						runId,
@@ -352,6 +353,21 @@ export async function terminalCommand(
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
+}
+
+function lifecycleHandlerTracker(
+	tracker: Tracker,
+): TrackerAdapterPrimitiveReads {
+	const reads: TrackerAdapterPrimitiveReads = {
+		getIssue: (id) => tracker.getIssue(id),
+		listIssues: () => tracker.listIssues(),
+		readLogs: (id) => tracker.readLogs(id),
+	};
+	const inspectIssue = tracker.inspectIssue;
+	if (inspectIssue !== undefined) {
+		reads.inspectIssue = (id) => inspectIssue(id);
+	}
+	return reads;
 }
 
 function emptyLifecycleContribution(): {

@@ -861,8 +861,11 @@ it("should ensure that generic lifecycle transition handlers receive validated i
 			manifest,
 			stdin: JSON.stringify({ n: "2" }),
 			lifecycleHandlers: {
-				"work:running/do:succeed": ({ input }) => ({
-					log: { doubled: (input as { n: number }).n * 2 },
+				"work:running/do:succeed": ({ input, tracker }) => ({
+					log: {
+						doubled: (input as { n: number }).n * 2,
+						canMutate: "applyWorkflowEffects" in tracker,
+					},
 					artifacts: [
 						{
 							kind: "inline",
@@ -902,6 +905,7 @@ it("should ensure that generic lifecycle transition handlers receive validated i
 		input: { n: 2 },
 		to: { state: "done", action: "none" },
 		doubled: 4,
+		canMutate: false,
 	});
 	expect(await tracker.getIssue("child")).toMatchObject({
 		id: "child",

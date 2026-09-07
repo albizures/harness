@@ -366,6 +366,85 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 	expect(messages).toMatch(/Named readiness filter kind must be known/);
 });
 
+it("should reject executable hook fields embedded in workflow semantic declarations", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "semantic-hooks" },
+		vocabulary: {
+			states: ["ready", "running", "waiting-human", "done"],
+			actions: ["planning", "work", "none"],
+			reasons: [],
+			events: ["start", "succeed", "respond"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		readiness: {
+			filters: [{ kind: "task", state: "ready", action: "work" }],
+		},
+		kinds: [
+			{
+				id: "wayfinder",
+				label: "Wayfinder",
+				initial: { state: "ready", action: "planning" },
+				transitions: [
+					{
+						from: { state: "ready", action: "planning" },
+						event: "start",
+						to: { state: "running", action: "planning" },
+					},
+				],
+			},
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				subkinds: ["research"],
+				transitions: [],
+			},
+		],
+		commands: [],
+	});
+	const invalid = {
+		...manifest,
+		readiness: {
+			filters: [
+				{
+					kind: "task",
+					state: "ready",
+					action: "work",
+					handler: () => undefined,
+				},
+			],
+		},
+		kinds: manifest.kinds.map((kind) =>
+			kind.id === "task"
+				? { ...kind, subkinds: ["research", { id: "prototype", run() {} }] }
+				: {
+						...kind,
+						transitions: kind.transitions.map((transition) => ({
+							...transition,
+							hooks: { onSucceed() {} },
+						})),
+					},
+		),
+		lifecycle: {
+			resume: {
+				allow: [{ kind: "task", actions: ["work"], execute() {} }],
+			},
+		},
+	};
+
+	const messages = validateManifest(invalid)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/\.subkinds\[1\]\.run/);
+	expect(messages).toMatch(/\.readiness\.filters\[0\]\.handler/);
+	expect(messages).toMatch(/\.transitions\[0\]\.hooks/);
+	expect(messages).toMatch(/\.lifecycle\.resume\.allow\[0\]\.execute/);
+	expect(messages).toMatch(/Executable hook fields/);
+	expect(messages).toMatch(/Executable hooks are not allowed/);
+});
+
 it("should reject tracker as a manifest field inside defineManifest data", () => {
 	const manifestWithTracker = {
 		version: "v1",
