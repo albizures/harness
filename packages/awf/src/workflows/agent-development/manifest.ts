@@ -2,7 +2,13 @@ import { z } from "zod";
 import { defineManifest } from "../../manifest/definition.ts";
 import { artifacts } from "../../workflow/artifact.ts";
 
-const states = ["ready", "running", "done", "need-human"] as const;
+const states = [
+	"ready",
+	"running",
+	"done",
+	"need-human",
+	"waiting-human",
+] as const;
 const actions = [
 	"plan",
 	"implement",
@@ -76,7 +82,7 @@ export const agentDevelopmentManifest = defineManifest({
 		states: [...states],
 		actions: [...actions],
 		reasons: ["dependencies"],
-		events: ["start", "succeed", "fail"],
+		events: ["start", "succeed", "fail", "pause", "respond"],
 	},
 	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },

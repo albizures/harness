@@ -169,7 +169,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 		workflow: { id: "agent-development" },
 		concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 		vocabulary: {
-			states: ["ready", "running", "done", "need-human"],
+			states: ["ready", "running", "done", "need-human", "waiting-human"],
 			actions: [
 				"plan",
 				"implement",
@@ -180,7 +180,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				"none",
 			],
 			reasons: ["dependencies"],
-			events: ["start", "succeed", "fail"],
+			events: ["start", "succeed", "fail", "pause", "respond"],
 		},
 		readiness: {
 			filters: [

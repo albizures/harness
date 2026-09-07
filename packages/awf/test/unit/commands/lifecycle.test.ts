@@ -51,6 +51,151 @@ it("should ensure that start moves a ready issue to running, stores one active r
 	expect(logs[0]?.runId).toBe(data.run.id);
 });
 
+it("should ensure that pause moves a running issue to waiting-human, clears its active run, and logs pause metadata", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Need product answer",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					activeRunId: "run-1",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["pause", "123", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({
+			reason: "Need clarification on the API shape.",
+			resumeAction: "fix",
+		}),
+	});
+
+	expect(envelope.ok).toBe(true);
+	const data = (
+		envelope as {
+			ok: true;
+			data: {
+				issue: {
+					workflow: { state: string; action: string; activeRunId?: string };
+				};
+				log: {
+					type: string;
+					runId?: string;
+					payload?: Record<string, unknown>;
+				};
+			};
+		}
+	).data;
+	expect(data.issue.workflow).toMatchObject({
+		state: "waiting-human",
+		action: "none",
+	});
+	expect(data.issue.workflow.activeRunId).toBeUndefined();
+	expect(data.log.type).toBe("human_input_needed");
+	expect(data.log.runId).toBe("run-1");
+	expect(data.log.payload).toMatchObject({
+		event: "pause",
+		pausedAction: "implement",
+		resumeAction: "fix",
+		reason: "Need clarification on the API shape.",
+	});
+	const getEnvelope = await execute(["get", "123"], { tracker });
+	const getData = (getEnvelope as { ok: true; data: { runs: unknown } }).data;
+	expect(getData.runs).toEqual({
+		activeRunId: undefined,
+		attempts: [{ runId: "run-1", status: "paused" }],
+	});
+});
+
+it("should ensure that respond resumes a waiting-human issue to a valid ready action from the pause metadata by default", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Answer received",
+				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
+				logs: [
+					{
+						sequence: 1,
+						type: "human_input_needed",
+						runId: "run-1",
+						payload: {
+							event: "pause",
+							pausedAction: "implement",
+							reason: "Need API decision.",
+						},
+					},
+				],
+			},
+		],
+	});
+
+	const envelope = await execute(["respond", "123", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({
+			response: "Use the smaller public API.",
+			sufficient: true,
+		}),
+	});
+
+	expect(envelope.ok).toBe(true);
+	const updated = await tracker.getIssue("123");
+	expect(updated.workflow).toMatchObject({
+		state: "ready",
+		action: "implement",
+	});
+	const logs = await tracker.readLogs("123");
+	expect(logs.map((log) => log.type)).toEqual([
+		"human_input_needed",
+		"human_response_received",
+	]);
+	expect(logs[1]?.payload).toMatchObject({
+		event: "respond",
+		response: "Use the smaller public API.",
+		sufficient: true,
+		resumeAction: "implement",
+	});
+});
+
+it("should ensure that respond keeps an insufficient response waiting for the human", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Partial answer",
+				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
+			},
+		],
+	});
+
+	const envelope = await execute(["respond", "123", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({
+			response: "I only know part of it.",
+			sufficient: false,
+		}),
+	});
+
+	expect(envelope.ok).toBe(true);
+	const updated = await tracker.getIssue("123");
+	expect(updated.workflow).toMatchObject({
+		state: "waiting-human",
+		action: "none",
+	});
+	const logs = await tracker.readLogs("123");
+	expect(logs[0]?.type).toBe("human_response_received");
+	expect(logs[0]?.payload).toMatchObject({
+		event: "respond",
+		response: "I only know part of it.",
+		sufficient: false,
+	});
+});
+
 it("should ensure that succeed applies generic relationship-driven lifecycle progression", async () => {
 	const manifest = defineManifest({
 		version: "v1",

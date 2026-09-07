@@ -72,6 +72,18 @@ const runtimeCommands: Array<CommandSpec> = [
 		description: "Mark a run as failed.",
 	},
 	{
+		name: "pause",
+		usage: "awf pause <id> --input <file|->",
+		description:
+			"Pause a running action for ordinary human input and clear its active run.",
+	},
+	{
+		name: "respond",
+		usage: "awf respond <id> --input <file|->",
+		description:
+			"Record human response context and resume or keep waiting-human work.",
+	},
+	{
 		name: "escalate",
 		usage: "awf escalate <id> --input <file|->",
 		description: "Move work to need-human/none with a human-readable reason.",

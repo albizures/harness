@@ -20,10 +20,12 @@ export function validateKnownCommand(
 		case "succeed":
 		case "fail":
 			return validateTerminalArguments(args, command);
+		case "pause":
+		case "respond":
 		case "escalate":
 			return requirePositionalAndOption(
 				args,
-				"awf escalate <id> --input <file|->",
+				`awf ${command} <id> --input <file|->`,
 				"--input",
 				1,
 			);

@@ -21,6 +21,8 @@ import { getIssueCommand } from "./commands/get.ts";
 import { helpCommands, helpReadiness } from "./commands/help.ts";
 import {
 	escalateCommand,
+	pauseCommand,
+	respondCommand,
 	resumeCommand,
 	startCommand,
 	terminalCommand,
@@ -149,6 +151,23 @@ export async function execute(
 			manifest,
 			options.stdin,
 			lifecycleHandlersFor(manifest, options),
+		);
+	}
+	if (args[0] === "pause") {
+		return pauseCommand(
+			args[1],
+			readOption(args, "--input"),
+			tracker,
+			options.stdin,
+		);
+	}
+	if (args[0] === "respond") {
+		return respondCommand(
+			args[1],
+			readOption(args, "--input"),
+			tracker,
+			manifest,
+			options.stdin,
 		);
 	}
 	if (args[0] === "escalate") {

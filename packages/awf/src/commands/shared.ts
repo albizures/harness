@@ -926,6 +926,9 @@ export function deriveRuns(
 		if (log.type === "action_failed") {
 			attempt.status = "failed";
 		}
+		if (log.type === "human_input_needed") {
+			attempt.status = "paused";
+		}
 	}
 	if (activeRunId !== undefined && !attempts.has(activeRunId)) {
 		attempts.set(activeRunId, { runId: activeRunId, status: "running" });

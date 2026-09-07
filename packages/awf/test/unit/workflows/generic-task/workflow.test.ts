@@ -50,10 +50,10 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(validateManifest(genericTaskManifest)).toEqual([]);
 	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
 	expect(genericTaskManifest.vocabulary).toEqual({
-		states: ["ready", "running", "done", "need-human"],
+		states: ["ready", "running", "done", "need-human", "waiting-human"],
 		actions: ["planning", "work", "integration-test", "merge", "none"],
 		reasons: [],
-		events: ["start", "succeed", "fail"],
+		events: ["start", "succeed", "fail", "pause", "respond"],
 	});
 	expect(genericTaskManifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",

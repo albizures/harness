@@ -26,6 +26,8 @@ const knownConfigCommands = new Set([
 	"start",
 	"succeed",
 	"fail",
+	"pause",
+	"respond",
 	"escalate",
 	"resume",
 ]);

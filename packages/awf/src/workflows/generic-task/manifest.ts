@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { defineManifest } from "../../manifest/definition.ts";
 
-const states = ["ready", "running", "done", "need-human"] as const;
+const states = [
+	"ready",
+	"running",
+	"done",
+	"need-human",
+	"waiting-human",
+] as const;
 const actions = [
 	"planning",
 	"work",
@@ -9,7 +15,7 @@ const actions = [
 	"merge",
 	"none",
 ] as const;
-const events = ["start", "succeed", "fail"] as const;
+const events = ["start", "succeed", "fail", "pause", "respond"] as const;
 const taskSubkinds = ["work", "research", "prototype"] as const;
 
 const createInput = z
