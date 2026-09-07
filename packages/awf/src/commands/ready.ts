@@ -58,14 +58,14 @@ export async function readyCommand(
 		.sort((left, right) => compareReadyIssues(left.issue, right.issue));
 
 	return success({
-		items: candidates.map(readyItem),
+		items: candidates.map((issue) => readyItem(issue, manifest)),
 		...(blocked.length === 0
 			? {}
 			: {
 					blocked: blocked.map(({ issue, blocking }) => ({
 						id: issue.id,
 						title: issue.title,
-						workflow: cleanWorkflowFields(issue.workflow),
+						workflow: cleanWorkflowFields(issue.workflow, manifest),
 						blocking,
 					})),
 				}),

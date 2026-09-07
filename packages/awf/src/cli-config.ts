@@ -9,10 +9,10 @@ import {
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
 import {
-	genericTaskCommandHandlers,
-	genericTaskLifecycleHandlers,
-	genericTaskManifest,
-} from "./workflows/generic-task/index.ts";
+	agentWorkflowCommandHandlers,
+	agentWorkflowLifecycleHandlers,
+	agentWorkflowManifest,
+} from "./workflows/agent-workflow/index.ts";
 import { failure, type Envelope } from "./envelope.ts";
 import {
 	ManifestValidationError,
@@ -49,10 +49,10 @@ export async function bindCliExecution(
 	if (configPath === undefined) {
 		return {
 			args: parsed.args,
-			manifest: genericTaskManifest,
+			manifest: agentWorkflowManifest,
 			tracker: defaultTracker(),
-			commandHandlers: genericTaskCommandHandlers,
-			lifecycleHandlers: genericTaskLifecycleHandlers,
+			commandHandlers: agentWorkflowCommandHandlers,
+			lifecycleHandlers: agentWorkflowLifecycleHandlers,
 		};
 	}
 
@@ -144,8 +144,8 @@ function bundledCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
 	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
 		return agentDevelopmentCommandHandlers;
 	}
-	if (manifest.workflow.id === genericTaskManifest.workflow.id) {
-		return genericTaskCommandHandlers;
+	if (manifest.workflow.id === agentWorkflowManifest.workflow.id) {
+		return agentWorkflowCommandHandlers;
 	}
 	return {};
 }
@@ -156,8 +156,8 @@ function bundledLifecycleHandlersFor(
 	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
 		return agentDevelopmentLifecycleHandlers;
 	}
-	if (manifest.workflow.id === genericTaskManifest.workflow.id) {
-		return genericTaskLifecycleHandlers;
+	if (manifest.workflow.id === agentWorkflowManifest.workflow.id) {
+		return agentWorkflowLifecycleHandlers;
 	}
 	return {};
 }

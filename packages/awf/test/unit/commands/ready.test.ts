@@ -575,6 +575,71 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 	});
 });
 
+it("should ensure that ready treats a missing subkind as the kind default for concurrency", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "running-work",
+				title: "Running default work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					activeRunId: "run-work",
+				},
+			},
+			{
+				id: "ready-work",
+				title: "Ready default work ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			concurrency: {
+				perIssue: 1,
+				perWorkflow: 3,
+				perKind: { ticket: 3 },
+				perSubkind: { ticket: { work: 1 } },
+			},
+			kinds: defaultTicketOnlyReadyManifest.kinds.map((kind) =>
+				kind.id === "ticket" ? { ...kind, subkinds: ["work"] } : kind,
+			),
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		items: [],
+		blocked: [
+			{
+				id: "ready-work",
+				title: "Ready default work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					subkind: "work",
+				},
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "subkind",
+						kind: "ticket",
+						subkind: "work",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
 it("should ensure that ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [

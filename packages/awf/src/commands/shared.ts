@@ -471,15 +471,18 @@ export function namedReadinessFilter(
 	);
 }
 
-export function readyItem(issue: {
-	id: string;
-	title: string;
-	workflow: WorkflowFields;
-}) {
+export function readyItem(
+	issue: {
+		id: string;
+		title: string;
+		workflow: WorkflowFields;
+	},
+	manifest?: WorkflowManifest,
+) {
 	return {
 		id: issue.id,
 		title: issue.title,
-		workflow: cleanWorkflowFields(issue.workflow),
+		workflow: cleanWorkflowFields(issue.workflow, manifest),
 		suggestedCommand: {
 			argv: ["start", issue.id],
 			display: `awf start ${issue.id}`,
@@ -555,7 +558,7 @@ export function concurrencyBlocking(
 			active: activeForKind,
 		});
 	}
-	const subkind = readWorkflowSubkind(workflow);
+	const subkind = readWorkflowSubkind(workflow, manifest);
 	const subkindLimit =
 		subkind === undefined
 			? undefined
@@ -564,7 +567,7 @@ export function concurrencyBlocking(
 		const activeForSubkind = activeIssues.filter(
 			(issue) =>
 				issue.workflow.kind === kind &&
-				readWorkflowSubkind(issue.workflow) === subkind,
+				readWorkflowSubkind(issue.workflow, manifest) === subkind,
 		).length;
 		if (activeForSubkind >= subkindLimit) {
 			blocking.push({
@@ -580,10 +583,14 @@ export function concurrencyBlocking(
 	return blocking;
 }
 
-function readWorkflowSubkind(workflow: WorkflowFields): string | undefined {
-	return typeof workflow.data?.subkind === "string"
-		? workflow.data.subkind
-		: undefined;
+function readWorkflowSubkind(
+	workflow: WorkflowFields,
+	manifest?: WorkflowManifest,
+): string | undefined {
+	if (typeof workflow.data?.subkind === "string") {
+		return workflow.data.subkind;
+	}
+	return manifest?.kinds.find((kind) => kind.id === workflow.kind)?.subkinds?.[0];
 }
 
 export function isDone(
@@ -682,6 +689,7 @@ export function compareReadyIssues(
 
 export function cleanWorkflowFields(
 	workflow: WorkflowFields,
+	manifest?: WorkflowManifest,
 ): Record<string, string> {
 	return Object.fromEntries(
 		Object.entries({
@@ -689,7 +697,7 @@ export function cleanWorkflowFields(
 			state: workflow.state,
 			action: workflow.action,
 			reason: workflow.reason,
-			subkind: readWorkflowSubkind(workflow),
+			subkind: readWorkflowSubkind(workflow, manifest),
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
 }

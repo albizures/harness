@@ -6,9 +6,9 @@ import {
 	agentDevelopmentManifest,
 } from "./workflows/agent-development/index.ts";
 import {
-	genericTaskCommandHandlers,
-	genericTaskManifest,
-} from "./workflows/generic-task/index.ts";
+	agentWorkflowCommandHandlers,
+	agentWorkflowManifest,
+} from "./workflows/agent-workflow/index.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
 import { describeWorkflow } from "./manifest/description.ts";
 import { validateManifest } from "./manifest/definition.ts";
@@ -47,8 +47,8 @@ function defaultCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
 	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
 		return agentDevelopmentCommandHandlers;
 	}
-	if (manifest.workflow.id === genericTaskManifest.workflow.id) {
-		return genericTaskCommandHandlers;
+	if (manifest.workflow.id === agentWorkflowManifest.workflow.id) {
+		return agentWorkflowCommandHandlers;
 	}
 	return {};
 }
