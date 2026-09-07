@@ -533,6 +533,14 @@ function validateWorkflowProjection(
 			`Issue '${id}' has malformed active run projection data.`,
 		);
 	}
+	if (
+		projection.data !== undefined &&
+		!jsonRecordSchema.safeParse(projection.data).success
+	) {
+		throw new CorruptWorkflowProjectionError(
+			`Issue '${id}' has malformed workflow data.`,
+		);
+	}
 }
 
 function withHash(

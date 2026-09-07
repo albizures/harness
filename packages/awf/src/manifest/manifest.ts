@@ -23,6 +23,7 @@ export type ManifestKind = {
 	id: Identifier;
 	label: string;
 	initial: ManifestStateReference;
+	subkinds?: Array<Identifier>;
 	transitions: Array<ManifestTransition>;
 };
 
@@ -266,6 +267,7 @@ export const workflowManifestStructuralSchema = z.strictObject({
 			id: z.string(),
 			label: z.string().min(1),
 			initial: stateReferenceSchema,
+			subkinds: z.array(z.string()).optional(),
 			transitions: z.array(
 				z.strictObject({
 					from: stateReferenceSchema,

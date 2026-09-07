@@ -92,6 +92,7 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			issues,
 			true,
 		);
+		validateSubkinds(kind.subkinds, `${path}.subkinds`, issues);
 		collectStateAction(kind.initial, localActions);
 		for (const [transitionIndex, transition] of readArray(
 			kind.transitions,
@@ -247,6 +248,17 @@ function validateUniqueId(
 		}
 		seen.add(value);
 	}
+}
+
+function validateSubkinds(
+	value: unknown,
+	path: string,
+	issues: Array<ValidationIssue>,
+): void {
+	if (value === undefined) {
+		return;
+	}
+	readIdentifierSet(value, path, issues);
 }
 
 function readIdentifierSet(

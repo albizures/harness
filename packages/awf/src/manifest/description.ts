@@ -45,6 +45,7 @@ export type WorkflowDescriptionV1 = {
 		id: string;
 		label: string;
 		initial: WorkflowDescriptionStateRefV1;
+		subkinds?: Array<string>;
 		transitions: Array<{
 			from: WorkflowDescriptionStateRefV1;
 			event: string;
@@ -123,6 +124,7 @@ export function describeWorkflow(
 			id: kind.id,
 			label: kind.label,
 			initial: stateRef(kind.initial),
+			...(kind.subkinds === undefined ? {} : { subkinds: [...kind.subkinds] }),
 			transitions: kind.transitions.map((transition) => ({
 				from: stateRef(transition.from),
 				event: transition.event,

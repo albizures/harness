@@ -10,6 +10,7 @@ const actions = [
 	"none",
 ] as const;
 const events = ["start", "succeed", "fail"] as const;
+const taskSubkinds = ["work", "research", "prototype"] as const;
 
 const createInput = z
 	.strictObject({
@@ -26,6 +27,7 @@ const taskCreateInput = z.strictObject({
 	title: z.string().trim().min(1),
 	description: z.string().trim().min(1),
 	profile: z.string().trim().min(1),
+	subkind: z.enum(taskSubkinds).optional(),
 	dependsOn: z.array(z.string().trim().min(1)).optional(),
 	generatedBy: z.string().trim().min(1).optional(),
 });
@@ -149,6 +151,7 @@ export const genericTaskManifest = defineManifest({
 			id: "task",
 			label: "Task",
 			initial: { state: "ready", action: "work" },
+			subkinds: [...taskSubkinds],
 			transitions: [...workTransitions],
 		},
 	],

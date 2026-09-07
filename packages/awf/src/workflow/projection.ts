@@ -1,9 +1,12 @@
+import type { JsonValue } from "type-fest";
+
 export type WorkflowProjection = {
 	kind: string;
 	state: string;
 	action: string;
 	reason?: string;
 	activeRunId?: string;
+	data?: Record<string, JsonValue>;
 	version: number;
 	hash: string;
 };

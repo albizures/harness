@@ -59,6 +59,9 @@ it("should export a valid explicit bundled workflow module", () => {
 		"spec",
 		"task",
 	]);
+	expect(
+		genericTaskManifest.kinds.find((kind) => kind.id === "task")?.subkinds,
+	).toEqual(["work", "research", "prototype"]);
 	expect(genericTaskManifest.commands.map((command) => command.id)).toEqual([
 		"spec-create",
 		"task-create",
@@ -90,14 +93,22 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		await execute(["workflow", "describe"]),
 	) as {
 		workflow: { id: string };
-		kinds: Array<{ id: string; initial: Record<string, string> }>;
+		kinds: Array<{
+			id: string;
+			initial: Record<string, string>;
+			subkinds?: Array<string>;
+		}>;
 		commands: Array<{ id: string; cli: { usage: string } }>;
 		readiness?: { filters: Array<Record<string, string>> };
 	};
 	expect(description.workflow.id).toBe("agent-workflow");
 	expect(description.kinds).toMatchObject([
 		{ id: "spec", initial: { state: "ready", action: "planning" } },
-		{ id: "task", initial: { state: "ready", action: "work" } },
+		{
+			id: "task",
+			initial: { state: "ready", action: "work" },
+			subkinds: ["work", "research", "prototype"],
+		},
 	]);
 	expect(description.commands.map((command) => command.cli.usage)).toEqual([
 		"awf create spec --input <file|->",
@@ -448,6 +459,7 @@ it("should create generic Tasks under Specs with routing profiles and dependenci
 
 	expect(created.issue.body).toContain("Profile: implement");
 	expect(created.issue.workflow).toMatchObject({
+		data: { subkind: "work" },
 		kind: "task",
 		state: "ready",
 		action: "work",
@@ -479,6 +491,42 @@ it("should create generic Tasks under Specs with routing profiles and dependenci
 			}),
 		]),
 	);
+});
+
+it("should store Task subkind as workflow data without changing lifecycle readiness", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+
+	const research = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Research",
+				description: "Research the approach.",
+				profile: "implement",
+				subkind: "research",
+			}),
+		}),
+	) as { issue: { id: string; workflow: Record<string, unknown> } };
+
+	expect(research.issue.workflow).toMatchObject({
+		kind: "task",
+		state: "ready",
+		action: "work",
+		data: { subkind: "research" },
+	});
+	expect(research.issue.workflow).not.toHaveProperty("subkind");
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+	};
+	expect(ready.items.map((item) => item.id)).toContain(research.issue.id);
 });
 
 it("should record generated generic Task provenance without blocking readiness", async () => {

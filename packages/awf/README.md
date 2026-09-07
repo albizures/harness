@@ -75,7 +75,7 @@ A generic Spec create input provides `title` plus `body` or `content`:
 }
 ```
 
-A generic Task create input belongs to a Spec, carries a project-owned profile, and may record provenance or dependency ordering explicitly:
+A generic Task create input belongs to a Spec, carries a project-owned profile, may declare a durable subkind (`work`, `research`, or `prototype`; defaults to `work`), and may record provenance or dependency ordering explicitly:
 
 ```json
 {
@@ -83,6 +83,7 @@ A generic Task create input belongs to a Spec, carries a project-owned profile, 
 	"title": "Add importer retry tests",
 	"description": "Cover retry and permanent-failure behavior.",
 	"profile": "test-engineering",
+	"subkind": "work",
 	"generatedBy": "42",
 	"dependsOn": ["43"]
 }
@@ -90,7 +91,7 @@ A generic Task create input belongs to a Spec, carries a project-owned profile, 
 
 ## Policy boundaries
 
-AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
+AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Generic Task subkind is durable workflow data separate from the lifecycle tuple; readiness still matches kind, state, action, and reason. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
 
 In `generic-task`, a Spec starts ready for `planning`. Completing planning leaves the Spec at `ready/none` while its implementation Tasks run. When the required child Tasks are done, generic lifecycle relationship policies advance the Spec to `ready/integration-test`; from there it can run integration-test, merge, and finish at `done/none` through ordinary legal lifecycle transitions. Task generation remains an explicit command or handler outcome recorded through normal tracker mutations.
 

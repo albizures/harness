@@ -20,6 +20,7 @@ type TaskCreateInput = {
 	title: string;
 	description: string;
 	profile: string;
+	subkind: "work" | "research" | "prototype";
 	dependsOn?: Array<string>;
 	generatedBy?: string;
 };
@@ -97,6 +98,7 @@ async function taskCreateCommand({
 						workflow: {
 							kind: "task",
 							...initialWorkflowTarget(taskKind.initial),
+							data: { subkind: taskInput.subkind },
 						},
 						relationships:
 							taskInput.generatedBy === undefined
@@ -144,6 +146,7 @@ function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
 		title: String(input.title),
 		description: String(input.description),
 		profile: String(input.profile),
+		subkind: isTaskSubkind(input.subkind) ? input.subkind : "work",
 		...(Array.isArray(input.dependsOn) &&
 		input.dependsOn.every((dependency) => typeof dependency === "string")
 			? { dependsOn: input.dependsOn }
@@ -201,6 +204,10 @@ async function resolveGeneratedBy(
 		};
 	}
 	return { ok: true };
+}
+
+function isTaskSubkind(value: unknown): value is TaskCreateInput["subkind"] {
+	return value === "work" || value === "research" || value === "prototype";
 }
 
 function taskBody(input: TaskCreateInput): string {

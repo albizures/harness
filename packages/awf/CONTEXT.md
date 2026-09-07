@@ -61,7 +61,7 @@ The core domain object managed by the Workflow runtime. A Workflow issue is a tr
 _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 
 **Task**:
-A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
+A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, durable subkind (`work`, `research`, or `prototype`; default `work`), and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
 _Avoid_: ticket, implementation action
 
 **Grilling**:
@@ -71,6 +71,10 @@ _Avoid_: task subkind, autonomous agent work, ordinary waiting-human pause
 **Generated-by relationship**:
 A directional Task-to-Task provenance relationship from a generated Task back to the source Task that caused it to exist. It explains task origin separately from Spec containment and dependency blocking.
 _Avoid_: implicit follow-up, child task provenance
+
+**Task subkind**:
+Manifest-declared durable workflow data on a Task that classifies the work as `work`, `research`, or `prototype` without changing the kind/state/action/reason lifecycle tuple or readiness matching.
+_Avoid_: profile routing policy, lifecycle action, readiness gate
 
 **Task profile**:
 A project-specific freeform routing label on a Task that indicates what kind of agent or worker should pick it up. The Workflow runtime treats the profile as data for selection and routing rather than as workflow semantics.
