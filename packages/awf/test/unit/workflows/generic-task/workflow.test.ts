@@ -46,10 +46,14 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(lifecycleHandlers).toBe(genericTaskLifecycleHandlers);
 	expect(agentWorkflowLifecycleHandlers).toBe(genericTaskLifecycleHandlers);
 	expect(Object.keys(genericTaskCommandHandlers)).toEqual([
+		"spec-create",
 		"task-create",
 		"grilling-create",
 	]);
-	expect(genericTaskLifecycleHandlers).toEqual({});
+	expect(Object.keys(genericTaskLifecycleHandlers)).toEqual([
+		"wayfinder:ready/planning:succeed",
+		"wayfinder:running/planning:succeed",
+	]);
 	expect(validateManifest(genericTaskManifest)).toEqual([]);
 	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
 	expect(genericTaskManifest.vocabulary).toEqual({
@@ -572,6 +576,112 @@ it("should store Task subkind as workflow data without changing lifecycle readin
 		subkind: "research",
 	});
 	expect(readyResearch?.workflow).not.toHaveProperty("data");
+});
+
+it("should create Tasks and Specs under Wayfinder maps without offering the Wayfinder as autonomous ready work", async () => {
+	const tracker = createInMemoryTracker();
+	const wayfinder = assertSuccess(
+		await execute(["create", "wayfinder", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Map", content: "# Explore" }),
+		}),
+	) as { issue: { id: string } };
+
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				title: "Route spec",
+				content: "# Build this route",
+				parent: wayfinder.issue.id,
+			}),
+		}),
+	) as { issue: { id: string; relationships: { parent?: string } } };
+	const task = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Explore route",
+				description: "Research the route.",
+				profile: "research",
+				subkind: "research",
+			}),
+		}),
+	) as { issue: { id: string; relationships: { parent?: string } } };
+
+	expect(spec.issue.relationships.parent).toBe(wayfinder.issue.id);
+	expect(task.issue.relationships.parent).toBe(wayfinder.issue.id);
+	expect(
+		(await tracker.getIssue(wayfinder.issue.id)).relationships.children,
+	).toEqual([spec.issue.id, task.issue.id]);
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+	};
+	expect(ready.items.map((item) => item.id)).not.toContain(wayfinder.issue.id);
+	expect(ready.items.map((item) => item.id)).toContain(task.issue.id);
+});
+
+it("should complete Wayfinder maps only by explicit success after all children are done", async () => {
+	const tracker = createInMemoryTracker();
+	const wayfinder = assertSuccess(
+		await execute(["create", "wayfinder", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ title: "Map", content: "# Explore" }),
+		}),
+	) as { issue: { id: string } };
+	const task = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Explore route",
+				description: "Research the route.",
+				profile: "research",
+			}),
+		}),
+	) as { issue: { id: string } };
+
+	let started = assertSuccess(
+		await execute(["start", wayfinder.issue.id], { tracker }),
+	) as { run: { id: string } };
+	const blocked = await execute(
+		["succeed", wayfinder.issue.id, "--run", started.run.id, "--input", "-"],
+		{ tracker, stdin: "{}" },
+	);
+	expect(blocked).toMatchObject({
+		ok: false,
+		error: { code: "WAYFINDER_CHILDREN_INCOMPLETE" },
+	});
+
+	const taskRun = assertSuccess(
+		await execute(["start", task.issue.id], { tracker }),
+	) as { run: { id: string } };
+	assertSuccess(
+		await execute(
+			["succeed", task.issue.id, "--run", taskRun.run.id, "--input", "-"],
+			{ tracker, stdin: "{}" },
+		),
+	);
+	expect((await tracker.getIssue(wayfinder.issue.id)).workflow).toMatchObject({
+		kind: "wayfinder",
+		state: "running",
+		action: "planning",
+	});
+
+	started = { run: { id: started.run.id } };
+	const done = assertSuccess(
+		await execute(
+			["succeed", wayfinder.issue.id, "--run", started.run.id, "--input", "-"],
+			{ tracker, stdin: "{}" },
+		),
+	) as { issue: { workflow: Record<string, string> } };
+	expect(done.issue.workflow).toMatchObject({
+		kind: "wayfinder",
+		state: "done",
+		action: "none",
+	});
 });
 
 it("should create Grilling as collaborative work without offering it as autonomous ready work", async () => {

@@ -14,6 +14,7 @@ export type LifecycleTransitionHandlerContext = {
 	manifest: WorkflowManifest;
 	transition: ManifestTransition;
 	issue: WorkflowIssue;
+	tracker: import("./tracker.ts").Tracker;
 	event: string;
 	input: JsonValue;
 	runId?: string;

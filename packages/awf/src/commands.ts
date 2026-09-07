@@ -7,6 +7,7 @@ import {
 } from "./workflows/agent-development/index.ts";
 import {
 	agentWorkflowCommandHandlers,
+	agentWorkflowLifecycleHandlers,
 	agentWorkflowManifest,
 } from "./workflows/agent-workflow/index.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
@@ -57,10 +58,12 @@ function lifecycleHandlersFor(
 	manifest: WorkflowManifest,
 	options: ExecuteOptions,
 ): LifecycleTransitionHandlers | undefined {
-	const bundled =
-		manifest.workflow.id === agentDevelopmentManifest.workflow.id
-			? agentDevelopmentLifecycleHandlers
-			: undefined;
+	let bundled: LifecycleTransitionHandlers | undefined;
+	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
+		bundled = agentDevelopmentLifecycleHandlers;
+	} else if (manifest.workflow.id === agentWorkflowManifest.workflow.id) {
+		bundled = agentWorkflowLifecycleHandlers;
+	}
 	if (bundled === undefined) {
 		return options.lifecycleHandlers;
 	}

@@ -25,20 +25,27 @@ const createInput = z
 		title: z.string().trim().min(1),
 		body: z.string().trim().min(1).optional(),
 		content: z.string().trim().min(1).optional(),
+		parent: z.string().trim().min(1).optional(),
 	})
 	.refine(
 		(input) => input.body !== undefined || input.content !== undefined,
 		"Either body or content is required.",
 	);
-const taskCreateInput = z.strictObject({
-	spec: z.string().trim().min(1),
-	title: z.string().trim().min(1),
-	description: z.string().trim().min(1),
-	profile: z.string().trim().min(1),
-	subkind: z.enum(taskSubkinds).optional(),
-	dependsOn: z.array(z.string().trim().min(1)).optional(),
-	generatedBy: z.string().trim().min(1).optional(),
-});
+const taskCreateInput = z
+	.strictObject({
+		spec: z.string().trim().min(1).optional(),
+		parent: z.string().trim().min(1).optional(),
+		title: z.string().trim().min(1),
+		description: z.string().trim().min(1),
+		profile: z.string().trim().min(1),
+		subkind: z.enum(taskSubkinds).optional(),
+		dependsOn: z.array(z.string().trim().min(1)).optional(),
+		generatedBy: z.string().trim().min(1).optional(),
+	})
+	.refine(
+		(input) => input.spec !== undefined || input.parent !== undefined,
+		"Either spec or parent is required.",
+	);
 const grillingCreateInput = z.strictObject({
 	title: z.string().trim().min(1),
 	description: z.string().trim().min(1),
@@ -111,6 +118,24 @@ const workTransitions = [
 	},
 ] as const;
 
+const wayfinderTransitions = [
+	{
+		from: { state: "ready", action: "planning" },
+		event: "start",
+		to: { state: "running", action: "planning" },
+	},
+	{
+		from: { state: "ready", action: "planning" },
+		event: "succeed",
+		to: { state: "done", action: "none" },
+	},
+	{
+		from: { state: "running", action: "planning" },
+		event: "succeed",
+		to: { state: "done", action: "none" },
+	},
+] as const;
+
 const grillingTransitions = [
 	{
 		from: { state: "ready", action: "discuss" },
@@ -177,7 +202,7 @@ export const genericTaskManifest = defineManifest({
 			id: "wayfinder",
 			label: "Wayfinder",
 			initial: { state: "ready", action: "planning" },
-			transitions: [...specTransitions],
+			transitions: [...wayfinderTransitions],
 		},
 		{
 			id: "task",
@@ -210,6 +235,18 @@ export const genericTaskManifest = defineManifest({
 			id: "spec-grilling",
 			from: "spec",
 			to: "grilling",
+			projection: { type: "parent-child" },
+		},
+		{
+			id: "wayfinder-task",
+			from: "wayfinder",
+			to: "task",
+			projection: { type: "parent-child" },
+		},
+		{
+			id: "wayfinder-spec",
+			from: "wayfinder",
+			to: "spec",
 			projection: { type: "parent-child" },
 		},
 		{

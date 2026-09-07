@@ -1,11 +1,9 @@
-import type { LifecycleTransitionHandlers } from "../../lifecycle-handlers.ts";
-
 export { genericTaskCommandHandlers } from "./command-handlers.ts";
+export { genericTaskLifecycleHandlers } from "./lifecycle.ts";
 export {
 	genericTaskManifest,
 	genericTaskManifest as agentWorkflowManifest,
 } from "./manifest.ts";
 export { genericTaskManifest as manifest } from "./manifest.ts";
-export const genericTaskLifecycleHandlers: LifecycleTransitionHandlers = {};
 export { genericTaskCommandHandlers as commandHandlers } from "./command-handlers.ts";
-export { genericTaskLifecycleHandlers as lifecycleHandlers };
+export { genericTaskLifecycleHandlers as lifecycleHandlers } from "./lifecycle.ts";
