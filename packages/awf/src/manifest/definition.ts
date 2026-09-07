@@ -64,11 +64,11 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 	);
 
 	validateGithub(value.github, issues);
-	validateConcurrency(value.concurrency, issues);
 
 	const kinds = readArray(value.kinds, "$.kinds", issues);
 	const kindIds = new Set<string>();
 	const kindActions = new Map<string, Set<string>>();
+	const kindSubkinds = new Map<string, Set<string>>();
 	for (const [index, kind] of kinds.entries()) {
 		const path = `$.kinds[${index}]`;
 		if (!isRecord(kind)) {
@@ -92,7 +92,14 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			issues,
 			true,
 		);
-		validateSubkinds(kind.subkinds, `${path}.subkinds`, issues);
+		const localSubkinds = validateSubkinds(
+			kind.subkinds,
+			`${path}.subkinds`,
+			issues,
+		);
+		if (typeof kind.id === "string") {
+			kindSubkinds.set(kind.id, localSubkinds);
+		}
 		collectStateAction(kind.initial, localActions);
 		for (const [transitionIndex, transition] of readArray(
 			kind.transitions,
@@ -115,6 +122,7 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 		}
 	}
 
+	validateConcurrency(value.concurrency, kindIds, kindSubkinds, issues);
 	validateReadiness(value.readiness, kindIds, states, actions, reasons, issues);
 	validateLifecyclePolicies(
 		value.lifecycle,
@@ -254,11 +262,11 @@ function validateSubkinds(
 	value: unknown,
 	path: string,
 	issues: Array<ValidationIssue>,
-): void {
+): Set<string> {
 	if (value === undefined) {
-		return;
+		return new Set();
 	}
-	readIdentifierSet(value, path, issues);
+	return readIdentifierSet(value, path, issues);
 }
 
 function readIdentifierSet(
@@ -305,6 +313,8 @@ function validateGithub(value: unknown, issues: Array<ValidationIssue>): void {
 
 function validateConcurrency(
 	value: unknown,
+	kindIds: Set<string>,
+	kindSubkinds: Map<string, Set<string>>,
 	issues: Array<ValidationIssue>,
 ): void {
 	if (!isRecord(value)) {
@@ -329,6 +339,48 @@ function validateConcurrency(
 				"$.concurrency.perWorkflow",
 				"perWorkflow concurrency must be a positive integer.",
 			);
+		}
+	}
+	if (value.perSubkind !== undefined) {
+		if (!isRecord(value.perSubkind)) {
+			issue(
+				issues,
+				"$.concurrency.perSubkind",
+				"perSubkind concurrency must be an object.",
+			);
+			return;
+		}
+		for (const [kind, subkindLimits] of Object.entries(value.perSubkind)) {
+			const kindPath = `$.concurrency.perSubkind.${kind}`;
+			if (!kindIds.has(kind)) {
+				issue(issues, kindPath, "perSubkind kind must reference a known kind.");
+			}
+			if (!isRecord(subkindLimits)) {
+				issue(issues, kindPath, "perSubkind kind limits must be an object.");
+				continue;
+			}
+			const knownSubkinds = kindSubkinds.get(kind) ?? new Set<string>();
+			for (const [subkind, limit] of Object.entries(subkindLimits)) {
+				const path = `${kindPath}.${subkind}`;
+				if (!knownSubkinds.has(subkind)) {
+					issue(
+						issues,
+						path,
+						"perSubkind subkind must reference a known subkind.",
+					);
+				}
+				if (
+					typeof limit !== "number" ||
+					!Number.isInteger(limit) ||
+					limit < 1
+				) {
+					issue(
+						issues,
+						path,
+						"perSubkind concurrency must be a positive integer.",
+					);
+				}
+			}
 		}
 	}
 }

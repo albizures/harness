@@ -442,6 +442,94 @@ it("should ensure that ready excludes candidates blocked by manifest concurrency
 	});
 });
 
+it("should ensure that ready blocks tasks when applicable subkind concurrency is saturated", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "running-research",
+				title: "Running research ticket",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					activeRunId: "run-research",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-research",
+				title: "Ready research ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-work",
+				title: "Ready work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					data: { subkind: "work" },
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			concurrency: {
+				perIssue: 1,
+				perWorkflow: 3,
+				perKind: { ticket: 3 },
+				perSubkind: { ticket: { research: 1 } },
+			},
+			kinds: defaultTicketOnlyReadyManifest.kinds.map((kind) =>
+				kind.id === "ticket"
+					? { ...kind, subkinds: ["research", "work"] }
+					: kind,
+			),
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		items: [
+			{
+				id: "ready-work",
+				title: "Ready work ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				suggestedCommand: {
+					argv: ["start", "ready-work"],
+					display: "awf start ready-work",
+				},
+			},
+		],
+		blocked: [
+			{
+				id: "ready-research",
+				title: "Ready research ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "subkind",
+						kind: "ticket",
+						subkind: "research",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
 it("should ensure that ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [

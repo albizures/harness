@@ -40,6 +40,7 @@ export type WorkflowDescriptionV1 = {
 		perIssue: 1;
 		perWorkflow?: number;
 		perKind?: Record<string, number>;
+		perSubkind?: Record<string, Record<string, number>>;
 	};
 	kinds: Array<{
 		id: string;
@@ -194,6 +195,15 @@ function describeConcurrency(manifest: WorkflowManifest) {
 		...(manifest.concurrency.perKind === undefined
 			? {}
 			: { perKind: { ...manifest.concurrency.perKind } }),
+		...(manifest.concurrency.perSubkind === undefined
+			? {}
+			: {
+					perSubkind: Object.fromEntries(
+						Object.entries(manifest.concurrency.perSubkind).map(
+							([kind, limits]) => [kind, { ...limits }],
+						),
+					),
+				}),
 	};
 }
 

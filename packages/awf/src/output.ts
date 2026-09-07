@@ -95,6 +95,16 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 			lines.push(`- Per kind ${kind}: ${String(limit)}`);
 		}
 	}
+	if (isRecord(concurrency.perSubkind)) {
+		for (const [kind, limits] of Object.entries(concurrency.perSubkind)) {
+			if (!isRecord(limits)) {
+				continue;
+			}
+			for (const [subkind, limit] of Object.entries(limits)) {
+				lines.push(`- Per subkind ${kind}/${subkind}: ${String(limit)}`);
+			}
+		}
+	}
 
 	lines.push("", "## Kinds", "");
 	for (const kind of data.kinds as Array<JsonValue>) {

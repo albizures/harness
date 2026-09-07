@@ -31,6 +31,7 @@ export type WorkflowFields = {
 	action?: string;
 	reason?: string;
 	activeRunId?: string;
+	data?: Record<string, JsonValue>;
 };
 
 export function readOption(
@@ -498,7 +499,7 @@ export function readinessBlocking(
 	return [
 		...dependencyBlocking(issue, byId),
 		...relationshipReadinessBlocking(issue, byId, manifest),
-		...concurrencyBlocking(issue.workflow.kind, manifest, activeIssues),
+		...concurrencyBlocking(issue.workflow, manifest, activeIssues),
 	];
 }
 
@@ -526,11 +527,12 @@ export function dependencyBlocking(
 }
 
 export function concurrencyBlocking(
-	kind: string,
+	workflow: WorkflowFields,
 	manifest: WorkflowManifest,
 	activeIssues: Array<{ workflow: WorkflowFields }>,
 ): Array<Record<string, JsonValue>> {
 	const blocking: Array<Record<string, JsonValue>> = [];
+	const { kind } = workflow;
 	const workflowLimit = manifest.concurrency.perWorkflow;
 	if (workflowLimit !== undefined && activeIssues.length >= workflowLimit) {
 		blocking.push({
@@ -553,7 +555,35 @@ export function concurrencyBlocking(
 			active: activeForKind,
 		});
 	}
+	const subkind = readWorkflowSubkind(workflow);
+	const subkindLimit =
+		subkind === undefined
+			? undefined
+			: manifest.concurrency.perSubkind?.[kind]?.[subkind];
+	if (subkind !== undefined && subkindLimit !== undefined) {
+		const activeForSubkind = activeIssues.filter(
+			(issue) =>
+				issue.workflow.kind === kind &&
+				readWorkflowSubkind(issue.workflow) === subkind,
+		).length;
+		if (activeForSubkind >= subkindLimit) {
+			blocking.push({
+				gate: "concurrency",
+				scope: "subkind",
+				kind,
+				subkind,
+				limit: subkindLimit,
+				active: activeForSubkind,
+			});
+		}
+	}
 	return blocking;
+}
+
+function readWorkflowSubkind(workflow: WorkflowFields): string | undefined {
+	return typeof workflow.data?.subkind === "string"
+		? workflow.data.subkind
+		: undefined;
 }
 
 export function isDone(

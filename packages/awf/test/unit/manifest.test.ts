@@ -240,6 +240,53 @@ it("should ensure that public Zod authoring helpers declare and validate artifac
 	expect(invalid.error.issues.length).toBe(invalidArtifactReferenceCount);
 });
 
+it("should validate per-subkind concurrency against declared kind subkinds", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "subkind-concurrency" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["implement"],
+			reasons: [],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: {
+			perIssue: 1,
+			perSubkind: { ticket: { bug: 1, feature: 2 } },
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				subkinds: ["bug", "feature"],
+				transitions: [],
+			},
+		],
+		commands: [],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+
+	const invalid = {
+		...manifest,
+		concurrency: {
+			perIssue: 1,
+			perSubkind: {
+				ticket: { bug: 0, feature: 1.5, missing: 1 },
+				missing: { bug: 1 },
+			},
+		},
+	};
+	const messages = validateManifest(invalid)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/perSubkind kind must reference a known kind/);
+	expect(messages).toMatch(/perSubkind subkind must reference a known subkind/);
+	expect(messages).toMatch(/perSubkind concurrency must be a positive integer/);
+});
+
 it("should validate manifest-declared CLI targets and named readiness filters", () => {
 	const manifest = defineManifest({
 		version: "v1",

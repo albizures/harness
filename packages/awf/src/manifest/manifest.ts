@@ -102,6 +102,7 @@ export type WorkflowManifest = {
 		perIssue: 1;
 		perWorkflow?: number;
 		perKind?: Record<string, number>;
+		perSubkind?: Record<string, Record<string, number>>;
 	};
 	readiness?: {
 		filters: Array<ManifestReadinessFilter>;
@@ -193,6 +194,9 @@ export const workflowManifestStructuralSchema = z.strictObject({
 		perIssue: z.literal(1),
 		perWorkflow: z.number().int().positive().optional(),
 		perKind: z.record(z.string(), z.number().int().positive()).optional(),
+		perSubkind: z
+			.record(z.string(), z.record(z.string(), z.number().int().positive()))
+			.optional(),
 	}),
 	readiness: z
 		.strictObject({
