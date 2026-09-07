@@ -532,7 +532,33 @@ export async function respondCommand(
 			!isReadyAction(manifest, issue.workflow.kind, resumeAction) ||
 			!resumePolicyAllows(manifest, issue.workflow.kind, resumeAction)
 		) {
-			return policyViolation(id, "respond", resumeAction ?? "");
+			const to = { state: "need-human", action: "none" };
+			const { issue: updated, log } = await tracker.escalateWorkflow(id, {
+				expect: {
+					version: issue.workflow.version,
+					hash: issue.workflow.hash,
+				},
+				workflow: {
+					state: "need-human",
+					action: "none",
+					reason: undefined,
+					activeRunId: undefined,
+				},
+				log: {
+					type: "human_intervention_needed",
+					payload: {
+						event: "respond",
+						input: parseJsonValue(payload.value),
+						from,
+						to,
+						response: input.response,
+						sufficient: true,
+						...(resumeAction === undefined ? {} : { resumeAction }),
+						...(pause?.reason === undefined ? {} : { reason: pause.reason }),
+					},
+				},
+			});
+			return success({ issue: updated, log });
 		}
 		const to = { state: "ready", action: resumeAction };
 		const result = await tracker.applyWorkflowEffects({

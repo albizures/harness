@@ -196,6 +196,53 @@ it("should ensure that respond keeps an insufficient response waiting for the hu
 	});
 });
 
+it("should ensure that invalid waiting-human resume targets become exceptional need-human intervention", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Invalid response target",
+				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
+				logs: [
+					{
+						sequence: 1,
+						type: "human_input_needed",
+						runId: "run-1",
+						payload: { event: "pause", pausedAction: "not-ready" },
+					},
+				],
+			},
+		],
+	});
+
+	const envelope = await execute(["respond", "123", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({
+			response: "Try the unknown action.",
+			sufficient: true,
+		}),
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect((await tracker.getIssue("123")).workflow).toMatchObject({
+		state: "need-human",
+		action: "none",
+	});
+	const logs = await tracker.readLogs("123");
+	expect(logs.map((log) => log.type)).toEqual([
+		"human_input_needed",
+		"human_intervention_needed",
+	]);
+	expect(logs[1]?.payload).toMatchObject({
+		event: "respond",
+		from: { state: "waiting-human", action: "none" },
+		to: { state: "need-human", action: "none" },
+		response: "Try the unknown action.",
+		sufficient: true,
+		resumeAction: "not-ready",
+	});
+});
+
 it("should ensure that succeed applies generic relationship-driven lifecycle progression", async () => {
 	const manifest = defineManifest({
 		version: "v1",

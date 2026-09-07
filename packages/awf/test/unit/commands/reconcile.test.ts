@@ -75,7 +75,7 @@ it("should ensure that reconcile --apply performs deterministic safe active-run 
 	).toBe(true);
 });
 
-it("should ensure that reconcile leaves ambiguous active-run drift for humans", async () => {
+it("should ensure that reconcile applies ambiguous active-run drift as need-human intervention", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -93,14 +93,19 @@ it("should ensure that reconcile leaves ambiguous active-run drift for humans", 
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe(undefined);
+	const updated = await tracker.getIssue("123");
+	expect(updated.workflow).toMatchObject({
+		state: "need-human",
+		action: "none",
+	});
+	expect(updated.workflow.activeRunId).toBeUndefined();
 	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
-				diagnostics: Array<{ repair: string }>;
+				diagnostics: Array<{ repair: string; applied?: boolean }>;
 			}
-		).diagnostics[0]?.repair,
-	).toBe("need-human");
+		).diagnostics[0],
+	).toMatchObject({ repair: "need-human", applied: true });
 });
 
 it("should ensure that reconcile reports malformed logs and corrupt current metadata", async () => {

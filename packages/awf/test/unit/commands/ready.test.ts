@@ -286,6 +286,12 @@ it("should ensure that ready applies generic manifest relationship policies with
 				relationships: { children: ["open-task"] },
 			},
 			{
+				id: "goal-waiting",
+				title: "Goal waiting",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				relationships: { children: ["waiting-task"] },
+			},
+			{
 				id: "done-task",
 				title: "Done task",
 				workflow: { kind: "ticket", state: "done", action: "none" },
@@ -296,6 +302,12 @@ it("should ensure that ready applies generic manifest relationship policies with
 				title: "Open task",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
 				relationships: { parent: "goal-blocked" },
+			},
+			{
+				id: "waiting-task",
+				title: "Waiting task",
+				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
+				relationships: { parent: "goal-waiting" },
 			},
 		],
 	});
@@ -349,6 +361,29 @@ it("should ensure that ready applies generic manifest relationship policies with
 									kind: "ticket",
 									state: "ready",
 									action: "implement",
+								},
+							},
+						],
+					},
+				],
+			},
+			{
+				id: "goal-waiting",
+				title: "Goal waiting",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				blocking: [
+					{
+						gate: "children-done",
+						relationship: "children",
+						minimum: 1,
+						blockedBy: [
+							{
+								id: "waiting-task",
+								title: "Waiting task",
+								workflow: {
+									kind: "ticket",
+									state: "waiting-human",
+									action: "none",
 								},
 							},
 						],
