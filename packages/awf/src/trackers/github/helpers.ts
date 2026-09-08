@@ -344,6 +344,8 @@ export function isProjection(value: unknown): value is WorkflowProjection {
 		(value.activeRunId === undefined ||
 			typeof value.activeRunId === "string") &&
 		(value.data === undefined || isJsonRecord(value.data)) &&
+		(value.semanticVersion === undefined ||
+			typeof value.semanticVersion === "string") &&
 		typeof value.version === "number" &&
 		typeof value.hash === "string"
 	);
@@ -382,6 +384,9 @@ export function validateProjectionShape(
 	}
 	if (projection.reason === "" || projection.activeRunId === "") {
 		throw needsReconciliation(id, "malformed optional projection data");
+	}
+	if (projection.semanticVersion === "") {
+		throw needsReconciliation(id, "malformed workflow semantic version data");
 	}
 	if (projection.data !== undefined && !isJsonRecord(projection.data)) {
 		throw needsReconciliation(id, "malformed workflow data");

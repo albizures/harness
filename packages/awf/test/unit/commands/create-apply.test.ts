@@ -75,6 +75,9 @@ it("should ensure that create spec records one generic workflow effects intent w
 			expect(effect.input.workflow.kind).toBe("spec");
 			expect(effect.input.workflow.state).toBe("ready");
 			expect(effect.input.workflow.action).toBe("plan");
+			expect(effect.input.workflow.semanticVersion).toBe(
+				agentDevelopmentManifest.workflow.version,
+			);
 			expect(effect.initialLog?.type).toBe("spec_created");
 			const issue: WorkflowIssue = {
 				id: "1",
@@ -796,6 +799,7 @@ it("should ensure that generic create stores the manifest-parsed JSON-compatible
 	const issue = (envelope.data as CreateSpecData).issue;
 	expect(issue.title).toBe("Parsed title");
 	expect(issue.body).toBe("Parsed body");
+	expect(issue.workflow.semanticVersion).toBe(manifest.workflow.version);
 	expect(
 		JSON.parse((await tracker.readLogs(issue.id))[0]?.message ?? "{}"),
 	).toEqual({
@@ -884,6 +888,82 @@ it("should ensure that generic apply rejects non-JSON-compatible parsed input be
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
+it("should ensure that generic apply rejects recorded workflow semantic version mismatches before writing logs", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ticket-1",
+				title: "Ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					semanticVersion: "9.0.0",
+				},
+			},
+		],
+	});
+	const manifest = manifestWithGenericCommands();
+
+	const envelope = await execute(
+		["apply", "annotate", "ticket-1", "--input", "-"],
+		{
+			tracker,
+			manifest,
+			stdin: JSON.stringify({ comment: "Add context." }),
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"NEED_RECONCILIATION",
+	);
+	expect(envelope.ok ? undefined : envelope.error.message).toMatch(
+		/Migrate or reconcile/,
+	);
+	expect(await tracker.readLogs("ticket-1")).toEqual([]);
+});
+
+it("should ensure that command handlers reject recorded workflow semantic version mismatches before mutating", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "item-1",
+				title: "Item",
+				workflow: {
+					kind: "item",
+					state: "ready",
+					action: "review",
+					semanticVersion: "9.0.0",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["apply", "memo", "item-1", "--input", "-"], {
+		tracker,
+		manifest: genericWorkflowManifest(),
+		commandHandlers: {
+			"memo-apply": async ({ issueId, tracker: handlerTracker }) => {
+				await handlerTracker.recordCommand(issueId ?? "", {
+					log: { type: "memo_applied" },
+				});
+				return { applied: true };
+			},
+		},
+		stdin: JSON.stringify({ summary: "Needs more work." }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"NEED_RECONCILIATION",
+	);
+	expect(envelope.ok ? undefined : envelope.error.message).toMatch(
+		/Migrate or reconcile/,
+	);
+	expect(await tracker.readLogs("item-1")).toEqual([]);
+});
+
 it("should ensure that generic apply logs the manifest-parsed JSON-compatible payload", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -952,7 +1032,7 @@ it("should ensure that command handlers receive manifest-validated input", async
 		{
 			input: { title: "Meeting", body: "Notes" },
 			command: "memo-create",
-			sameTracker: true,
+			sameTracker: false,
 		},
 	]);
 	expect(await tracker.listIssues()).toEqual([]);

@@ -477,6 +477,14 @@ function validateWorkflowProjection(
 		);
 	}
 	if (
+		projection.semanticVersion !== undefined &&
+		projection.semanticVersion === ""
+	) {
+		throw new CorruptWorkflowProjectionError(
+			`Issue '${id}' has malformed workflow semantic version projection data.`,
+		);
+	}
+	if (
 		projection.data !== undefined &&
 		!jsonRecordSchema.safeParse(projection.data).success
 	) {

@@ -5,7 +5,14 @@ import type {
 	ManifestCommand,
 	WorkflowManifest,
 } from "../manifest/manifest.ts";
-import { NeedReconciliationError, type Tracker } from "../tracker.ts";
+import type { CreateIssueInput } from "../workflow/issue.ts";
+import {
+	NeedReconciliationError,
+	type Tracker,
+	type TrackerApplyWorkflowEffectsIntent,
+	type TrackerIssueRef,
+	type TrackerWorkflowEffect,
+} from "../tracker.ts";
 import {
 	genericIssueBody,
 	genericIssueTitle,
@@ -40,11 +47,12 @@ export async function manifestCommand(
 			},
 		);
 	}
+	const versionedTracker = workflowVersionTracker(tracker, manifest);
 	const handler = commandHandlers[command.id];
 	if (handler !== undefined) {
 		return handledManifestCommand(
 			args,
-			tracker,
+			versionedTracker,
 			manifest,
 			stdin,
 			command,
@@ -54,7 +62,7 @@ export async function manifestCommand(
 	if (verb === "create") {
 		return createGenericWorkflowIssueCommand(
 			readOption(args, "--input"),
-			tracker,
+			versionedTracker,
 			manifest,
 			stdin,
 			command,
@@ -63,7 +71,7 @@ export async function manifestCommand(
 	return applyGenericWorkflowCommand(
 		args[2],
 		readOption(args, "--input"),
-		tracker,
+		versionedTracker,
 		stdin,
 		command,
 	);
@@ -78,18 +86,24 @@ async function handledManifestCommand(
 	handler: NonNullable<CommandHandlers[string]>,
 ): Promise<Envelope> {
 	if (handler.rawInput === true) {
-		const result = await handler({
-			command,
-			manifest,
-			tracker,
-			input: null,
-			args,
-			...(stdin === undefined ? {} : { stdin }),
-		});
-		if (isEnvelope(result)) {
-			return result.ok ? validateHandlerSuccess(command, result.data) : result;
+		try {
+			const result = await handler({
+				command,
+				manifest,
+				tracker,
+				input: null,
+				args,
+				...(stdin === undefined ? {} : { stdin }),
+			});
+			if (isEnvelope(result)) {
+				return result.ok
+					? validateHandlerSuccess(command, result.data)
+					: result;
+			}
+			return validateHandlerSuccess(command, result);
+		} catch (error) {
+			return lifecycleError("new", error);
 		}
-		return validateHandlerSuccess(command, result);
 	}
 	const verb = args[0] as "create" | "apply";
 	const issueId = verb === "apply" ? args[2] : undefined;
@@ -114,20 +128,24 @@ async function handledManifestCommand(
 	if (!payload.ok) {
 		return payload;
 	}
-	const result = await handler({
-		command,
-		manifest,
-		tracker,
-		input: payload.data,
-		...(issueId === undefined ? {} : { issueId }),
-	});
-	if (isEnvelope(result)) {
-		if (!result.ok) {
-			return result;
+	try {
+		const result = await handler({
+			command,
+			manifest,
+			tracker,
+			input: payload.data,
+			...(issueId === undefined ? {} : { issueId }),
+		});
+		if (isEnvelope(result)) {
+			if (!result.ok) {
+				return result;
+			}
+			return validateHandlerSuccess(command, result.data);
 		}
-		return validateHandlerSuccess(command, result.data);
+		return validateHandlerSuccess(command, result);
+	} catch (error) {
+		return lifecycleError(issueId ?? "new", error);
 	}
-	return validateHandlerSuccess(command, result);
 }
 
 function validateHandlerSuccess(
@@ -139,6 +157,178 @@ function validateHandlerSuccess(
 
 function isEnvelope(value: unknown): value is Envelope {
 	return isRecord(value) && typeof value.ok === "boolean";
+}
+
+function workflowVersionTracker(
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+): Tracker {
+	const semanticVersion = manifest.workflow.version;
+	const overrides: Partial<Tracker> = {
+		createWorkflowIssue: (input) =>
+			tracker.createWorkflowIssue({
+				...input,
+				workflow: withWorkflowSemanticVersion(input.workflow, semanticVersion),
+			}),
+		applyWorkflowEffects: async (input) => {
+			await validateWorkflowEffectVersions(tracker, input, semanticVersion);
+			return tracker.applyWorkflowEffects({
+				effects: input.effects.map((effect) =>
+					withWorkflowEffectSemanticVersion(effect, semanticVersion),
+				),
+			});
+		},
+		startRun: async (id, input) => {
+			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
+			return tracker.startRun(id, input);
+		},
+		completeRun: async (id, input) => {
+			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
+			return tracker.completeRun(id, input);
+		},
+		escalateWorkflow: async (id, input) => {
+			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
+			return tracker.escalateWorkflow(id, input);
+		},
+		resumeWorkflow: async (id, input) => {
+			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
+			return tracker.resumeWorkflow(id, input);
+		},
+		recordCommand: async (id, input) => {
+			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
+			return tracker.recordCommand(id, input);
+		},
+		advanceWorkflow: async (id, input) => {
+			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
+			return tracker.advanceWorkflow(id, input);
+		},
+		changeRelationship: async (input) => {
+			if (input.type === "add-child" || input.type === "remove-child") {
+				await validateIssueWorkflowSemanticVersion(
+					tracker,
+					input.parentId,
+					semanticVersion,
+				);
+				await validateIssueWorkflowSemanticVersion(
+					tracker,
+					input.childId,
+					semanticVersion,
+				);
+			} else {
+				await validateIssueWorkflowSemanticVersion(
+					tracker,
+					input.issueId,
+					semanticVersion,
+				);
+				await validateIssueWorkflowSemanticVersion(
+					tracker,
+					input.blockedById,
+					semanticVersion,
+				);
+			}
+			return tracker.changeRelationship(input);
+		},
+	};
+	return new Proxy(tracker, {
+		get(target, property, receiver) {
+			const override = Reflect.get(overrides, property, overrides);
+			if (override !== undefined) {
+				return typeof override === "function"
+					? override.bind(overrides)
+					: override;
+			}
+			const value = Reflect.get(target, property, receiver);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	}) as Tracker;
+}
+
+function withWorkflowSemanticVersion<T extends CreateIssueInput["workflow"]>(
+	workflow: T,
+	semanticVersion: string,
+): T {
+	return { ...workflow, semanticVersion };
+}
+
+function withWorkflowEffectSemanticVersion(
+	effect: TrackerWorkflowEffect,
+	semanticVersion: string,
+): TrackerWorkflowEffect {
+	if (effect.type !== "create-workflow-issue") {
+		return effect;
+	}
+	return {
+		...effect,
+		input: {
+			...effect.input,
+			workflow: withWorkflowSemanticVersion(
+				effect.input.workflow,
+				semanticVersion,
+			),
+		},
+	};
+}
+
+async function validateWorkflowEffectVersions(
+	tracker: Tracker,
+	input: TrackerApplyWorkflowEffectsIntent,
+	semanticVersion: string,
+): Promise<void> {
+	const createdIds = new Set<string>();
+	const createdKeys = new Set<string>();
+	for (const effect of input.effects) {
+		if (effect.type === "create-workflow-issue") {
+			if (effect.input.id !== undefined) {
+				createdIds.add(effect.input.id);
+			}
+			if (effect.key !== undefined) {
+				createdKeys.add(effect.key);
+			}
+			continue;
+		}
+		for (const ref of existingIssueRefs(effect)) {
+			if ("id" in ref && !createdIds.has(ref.id)) {
+				await validateIssueWorkflowSemanticVersion(
+					tracker,
+					ref.id,
+					semanticVersion,
+				);
+			} else if ("key" in ref && !createdKeys.has(ref.key)) {
+				throw new NeedReconciliationError(
+					`NEED_RECONCILIATION: workflow issue key '${ref.key}' could not be resolved before version validation.`,
+				);
+			}
+		}
+	}
+}
+
+function existingIssueRefs(
+	effect: Exclude<TrackerWorkflowEffect, { type: "create-workflow-issue" }>,
+): Array<TrackerIssueRef> {
+	if (effect.type === "update-workflow" || effect.type === "update-issue") {
+		return [effect.issue];
+	}
+	if (effect.type === "record-command") {
+		return [effect.issue];
+	}
+	if (effect.type === "add-child" || effect.type === "remove-child") {
+		return [effect.parent, effect.child];
+	}
+	return [effect.issue, effect.blockedBy];
+}
+
+async function validateIssueWorkflowSemanticVersion(
+	tracker: Tracker,
+	id: string,
+	loadedVersion: string,
+): Promise<void> {
+	const issue = await tracker.getIssue(id);
+	const recordedVersion = issue.workflow.semanticVersion;
+	if (recordedVersion !== undefined && recordedVersion !== loadedVersion) {
+		throw new NeedReconciliationError(
+			`NEED_RECONCILIATION: Issue '${id}' records workflow version '${recordedVersion}', but loaded workflow version is '${loadedVersion}'. Migrate or reconcile the workflow issue before proceeding.`,
+		);
+	}
 }
 
 export async function createGenericWorkflowIssueCommand(
