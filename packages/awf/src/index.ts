@@ -93,8 +93,6 @@ export {
 	type TrackerCreateWorkflowIssueIntent,
 	type TrackerEscalateIntent,
 	type TrackerProjectionExpectation,
-	type TrackerRecordArtifactsIntent,
-	type TrackerRecordArtifactsResult,
 	type TrackerRelationshipIntent,
 	type TrackerWorkflowEffect,
 	type TrackerResumeIntent,

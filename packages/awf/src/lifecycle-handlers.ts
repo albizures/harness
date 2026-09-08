@@ -1,6 +1,5 @@
 import type { JsonValue } from "type-fest";
 import { failure, type ErrorEnvelope } from "./envelope.ts";
-import { isJsonRecord } from "./json.ts";
 import type {
 	ManifestTransition,
 	WorkflowManifest,
@@ -9,8 +8,6 @@ import type {
 	TrackerAdapterPrimitiveReads,
 	TrackerWorkflowEffect,
 } from "./tracker.ts";
-import type { WorkflowArtifactInput } from "./workflow/artifact.ts";
-import type { WorkflowChange } from "./workflow/change.ts";
 import type { WorkflowIssue } from "./workflow/issue.ts";
 
 export type LifecycleTransitionHandlerContext = {
@@ -24,12 +21,6 @@ export type LifecycleTransitionHandlerContext = {
 };
 
 export type LifecycleTransitionHandlerContribution = {
-	/** Additional JSON object fields to merge into the core lifecycle log payload. */
-	log?: Record<string, unknown>;
-	/** Artifacts to record on the transitioning issue with the core lifecycle log. */
-	artifacts?: Array<WorkflowArtifactInput>;
-	/** Changes to record on the transitioning issue with the core lifecycle log. */
-	changes?: Array<Omit<WorkflowChange, "id">>;
 	/** Additional declarative workflow effects to apply in the same verified batch. */
 	effects?: Array<TrackerWorkflowEffect>;
 };
@@ -48,9 +39,6 @@ export type LifecycleTransitionHandlers = Record<
 >;
 
 export type ParsedLifecycleHandlerContribution = {
-	log: Record<string, JsonValue>;
-	artifacts: Array<WorkflowArtifactInput>;
-	changes: Array<Omit<WorkflowChange, "id">>;
 	effects: Array<TrackerWorkflowEffect>;
 };
 
@@ -110,7 +98,7 @@ export async function runLifecycleTransitionHandler(
 }
 
 function emptyContribution(): ParsedLifecycleHandlerContribution {
-	return { log: {}, artifacts: [], changes: [], effects: [] };
+	return { effects: [] };
 }
 
 function parseLifecycleHandlerContribution(
@@ -128,30 +116,6 @@ function parseLifecycleHandlerContribution(
 			"Lifecycle transition handler output is invalid.",
 			{ issues: [{ path: "$", message: "Handler output must be an object." }] },
 		);
-	}
-	if (contribution.log !== undefined && !isJsonRecord(contribution.log)) {
-		issues.push({
-			path: "$.log",
-			message: "Handler log payload additions must be a JSON object.",
-		});
-	}
-	if (
-		contribution.artifacts !== undefined &&
-		!Array.isArray(contribution.artifacts)
-	) {
-		issues.push({
-			path: "$.artifacts",
-			message: "Handler artifacts must be an array.",
-		});
-	}
-	if (
-		contribution.changes !== undefined &&
-		!Array.isArray(contribution.changes)
-	) {
-		issues.push({
-			path: "$.changes",
-			message: "Handler changes must be an array.",
-		});
 	}
 	if (
 		contribution.effects !== undefined &&
@@ -172,9 +136,6 @@ function parseLifecycleHandlerContribution(
 	return {
 		ok: true,
 		contribution: {
-			log: (contribution.log ?? {}) as Record<string, JsonValue>,
-			artifacts: contribution.artifacts ?? [],
-			changes: contribution.changes ?? [],
 			effects: contribution.effects ?? [],
 		},
 	};

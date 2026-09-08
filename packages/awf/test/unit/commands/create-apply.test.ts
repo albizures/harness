@@ -1,6 +1,6 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -17,7 +17,6 @@ import {
 } from "../../../src/tracker.ts";
 import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 import type { WorkflowIssue } from "../../../src/workflow/issue.ts";
-import type { WorkflowArtifact } from "../../../src/workflow/artifact.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
@@ -29,12 +28,9 @@ type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {
 	outcome: string;
 	tickets: Array<{ key: string }>;
-	artifact: WorkflowArtifact;
 };
 type ReadyData = { items: Array<{ id: string }> };
-type HandoffData = {
-	artifact: WorkflowArtifact;
-};
+type HandoffData = { log: { type: string } };
 
 it("should ensure that create spec creates a bundled workflow Spec from Markdown input", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-spec-"));
@@ -98,8 +94,6 @@ it("should ensure that create spec records one generic workflow effects intent w
 			return {
 				issues: { "1": issue },
 				createdIssues: [{ id: "1", issue }],
-				artifacts: [],
-				changes: [],
 				logs: [
 					{
 						...effect.initialLog,
@@ -200,7 +194,7 @@ it("should ensure that create command input rejects Zod-parsed values that are n
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-it("should ensure that create handoff validates input and attaches a Handoff artifact to the source issue", async () => {
+it("should ensure that create handoff validates input and records a log on the source issue", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -229,14 +223,7 @@ it("should ensure that create handoff validates input and attaches a Handoff art
 		throw new Error("expected success");
 	}
 	const data = envelope.data as HandoffData;
-	expect(data.artifact).toEqual({
-		id: "artifact-1",
-		kind: "handoff",
-		uri: "Next agent: inspect the retry path.",
-		name: "Handoff",
-		type: "handoff",
-		ref: "Next agent: inspect the retry path.",
-	});
+	expect(data.log.type).toBe("handoff_created");
 	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 	expect((await tracker.readLogs("ticket-1")).map((log) => log.type)).toEqual([
 		"handoff_created",
@@ -287,7 +274,7 @@ it("should ensure that create handoff rejects malformed Handoff artifact data be
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
-it("should ensure that create handoff records artifact and log through one tracker intent", async () => {
+it("should ensure that create handoff records log through one tracker intent", async () => {
 	const seed = createInMemoryTracker({
 		issues: [
 			{
@@ -309,38 +296,15 @@ it("should ensure that create handoff records artifact and log through one track
 			intents.push("applyWorkflowEffects");
 			expect(effects).toHaveLength(1);
 			const effect = effects[0];
-			expect(effect?.type).toBe("record-artifacts");
-			if (effect?.type !== "record-artifacts") {
-				throw new Error("expected record artifacts effect");
+			expect(effect?.type).toBe("record-command");
+			if (effect?.type !== "record-command") {
+				throw new Error("expected record command effect");
 			}
 			expect(effect.issue).toEqual({ id: "123" });
-			expect(effect.artifacts).toEqual([
-				{
-					kind: "handoff",
-					uri: "handoff.md",
-					name: "Handoff",
-					type: "handoff",
-					ref: "handoff.md",
-				},
-			]);
 			expect(effect.log.type).toBe("handoff_created");
 			return {
 				issues: { "123": issue },
 				createdIssues: [],
-				artifacts: [
-					{
-						issueId: "123",
-						artifact: {
-							id: "artifact-1",
-							kind: "handoff",
-							uri: "handoff.md",
-							name: "Handoff",
-							type: "handoff",
-							ref: "handoff.md",
-						},
-					},
-				],
-				changes: [],
 				logs: [{ ...effect.log, issueId: "123", sequence: 1 }],
 			};
 		},
@@ -531,17 +495,6 @@ it("should ensure that apply plan creates tickets, relationships, dependencies, 
 	});
 	expect(spec.relationships.children).toEqual(["1", "2"]);
 	expect(spec).not.toHaveProperty("artifacts");
-	const planArtifactPath = relative(process.cwd(), plan);
-	expect(data.artifact).toEqual({
-		id: "artifact-1",
-		kind: "file",
-		uri: planArtifactPath,
-		name: "Plan bundle",
-		type: "file",
-		path: planArtifactPath,
-		title: "Submitted plan bundle",
-		metadata: { ticketCount: 2 },
-	});
 	expect((await tracker.getIssue("2")).relationships.dependencies).toEqual([
 		"1",
 	]);
@@ -742,7 +695,7 @@ it("should ensure that apply plan dispatches the bundle as one tracker-owned wor
 				"create-workflow-issue",
 				"add-child",
 				"update-workflow",
-				"record-artifacts",
+				"record-command",
 			]);
 			return base.applyWorkflowEffects(input);
 		},
@@ -1319,7 +1272,6 @@ function failingTracker(
 		createWorkflowIssue: base.createWorkflowIssue.bind(base),
 		startRun: base.startRun.bind(base),
 		completeRun: base.completeRun.bind(base),
-		recordArtifacts: base.recordArtifacts.bind(base),
 		recordCommand: base.recordCommand.bind(base),
 		escalateWorkflow: base.escalateWorkflow.bind(base),
 		resumeWorkflow: base.resumeWorkflow.bind(base),
@@ -1338,8 +1290,6 @@ function failingTracker(
 		addDependency: base.addDependency.bind(base),
 		removeDependency: base.removeDependency.bind(base),
 		deleteIssue: base.deleteIssue.bind(base),
-		registerArtifact: base.registerArtifact.bind(base),
-		registerChange: base.registerChange.bind(base),
 	};
 	return Object.assign(tracker, overrides);
 }
@@ -1352,7 +1302,6 @@ function createNoTouchTracker(): Tracker {
 		createWorkflowIssue: touched,
 		startRun: touched,
 		completeRun: touched,
-		recordArtifacts: touched,
 		escalateWorkflow: touched,
 		resumeWorkflow: touched,
 		changeRelationship: touched,

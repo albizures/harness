@@ -34,10 +34,6 @@ it("should ensure that file-backed tracker initializes missing state and persist
 			workflow: { kind: "ticket", state: "ready", action: "implement" },
 		});
 		await tracker.appendLog(issue.id, { type: "created" });
-		await tracker.registerArtifact(issue.id, {
-			kind: "file",
-			uri: "docs/result.md",
-		});
 
 		expect((await stat(dirname(file))).isDirectory()).toBe(true);
 		const reloaded = createFileSystemTracker({ path: file });
@@ -102,20 +98,6 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 			},
 			runId: "run-1",
 			workflow: { state: "done", action: "none" },
-			artifacts: [
-				{
-					kind: "file",
-					uri: "docs/implementation.md",
-					name: "Implementation notes",
-				},
-			],
-			changes: [
-				{
-					kind: "git-ref",
-					uri: "abc123",
-					summary: "Implemented filesystem persistence",
-				},
-			],
 			log: { type: "action_succeeded", runId: "run-1" },
 		});
 

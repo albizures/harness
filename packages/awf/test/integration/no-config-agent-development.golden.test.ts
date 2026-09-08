@@ -113,11 +113,6 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			workflow: { kind: "spec", state: "ready", action: "none" },
 		},
 		tickets: [{ id: "2", key: "api" }],
-		artifact: {
-			id: "artifact-1",
-			kind: "inline",
-			metadata: { ticketCount: 1 },
-		},
 		log: { sequence: 2, issueId: "1", type: "plan_applied" },
 	});
 
@@ -196,11 +191,6 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 		),
 	).toMatchObject({
 		source: "2",
-		artifact: {
-			id: "artifact-2",
-			kind: "handoff",
-			uri: "Next: review the API surface.",
-		},
 		log: { sequence: 3, issueId: "2", type: "handoff_created" },
 	});
 

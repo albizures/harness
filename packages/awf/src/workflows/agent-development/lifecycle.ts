@@ -1,8 +1,6 @@
 import {
 	isRecord,
-	parseStructuredArtifactInput,
 	type RuntimeValidationIssue,
-	type StructuredArtifactInput,
 } from "../../commands/shared.ts";
 import { failure } from "../../envelope.ts";
 import {
@@ -53,8 +51,6 @@ function bundledTerminalHandler({
 	if (semanticIssue !== undefined) {
 		validationIssues.push(semanticIssue);
 	}
-	const bundledArtifacts = parseBundledArtifactInputs(issue.workflow, input);
-	validationIssues.push(...bundledArtifacts.issues);
 	if (validationIssues.length > 0) {
 		return failure(
 			"INVALID_ACTION_INPUT",
@@ -64,7 +60,7 @@ function bundledTerminalHandler({
 			},
 		);
 	}
-	return { artifacts: bundledArtifacts.artifacts };
+	return undefined;
 }
 
 function validateBundledTerminalInput(
@@ -96,47 +92,4 @@ function validateBundledTerminalInput(
 		};
 	}
 	return undefined;
-}
-
-function parseBundledArtifactInputs(
-	workflow: WorkflowIssue["workflow"],
-	input: unknown,
-): {
-	artifacts: Array<StructuredArtifactInput>;
-	issues: Array<RuntimeValidationIssue>;
-} {
-	if (!isRecord(input)) {
-		return { artifacts: [], issues: [] };
-	}
-	const artifacts: Array<StructuredArtifactInput> = [];
-	const issues: Array<RuntimeValidationIssue> = [];
-	if (workflow.kind === "ticket" && workflow.action === "implement") {
-		const artifact = parseStructuredArtifactInput(
-			input.implementationPr,
-			"pull-request",
-			"Implementation PR",
-			"$.implementationPr",
-		);
-		if (artifact.issue !== undefined) {
-			issues.push(artifact.issue);
-		}
-		if (artifact.value !== undefined) {
-			artifacts.push(artifact.value);
-		}
-	}
-	if (workflow.kind === "spec" && workflow.action === "integration-test") {
-		const artifact = parseStructuredArtifactInput(
-			input.specPr,
-			"pull-request",
-			"Spec PR",
-			"$.specPr",
-		);
-		if (artifact.issue !== undefined) {
-			issues.push(artifact.issue);
-		}
-		if (artifact.value !== undefined) {
-			artifacts.push(artifact.value);
-		}
-	}
-	return { artifacts, issues };
 }

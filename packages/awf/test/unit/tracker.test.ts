@@ -105,43 +105,6 @@ it("should ensure that generated-by provenance is normalized separately from blo
 	);
 });
 
-it("should ensure that artifact and change registrations do not widen returned workflow issues", async () => {
-	const tracker = createInMemoryTracker();
-	const issue = await tracker.createIssue({
-		title: "Artifacts",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
-	});
-
-	const artifact = await tracker.registerArtifact(issue.id, {
-		kind: "file",
-		uri: "docs/plan.md",
-		name: "Plan",
-	});
-	const change = await tracker.registerChange(issue.id, {
-		kind: "git-ref",
-		uri: "abc123",
-		summary: "Implementation commit",
-	});
-
-	const read = await tracker.getIssue(issue.id);
-	expect(artifact).toEqual({
-		id: "artifact-1",
-		kind: "file",
-		uri: "docs/plan.md",
-		name: "Plan",
-		type: "file",
-		path: "docs/plan.md",
-	});
-	expect(change).toEqual({
-		id: "change-1",
-		kind: "git-ref",
-		uri: "abc123",
-		summary: "Implementation commit",
-	});
-	expect(read).not.toHaveProperty("artifacts");
-	expect(read).not.toHaveProperty("changes");
-});
-
 it("should ensure that duplicate or malformed workflow projection fields are corruption", async () => {
 	const duplicate = createInMemoryTracker({
 		issues: [

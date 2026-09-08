@@ -73,10 +73,7 @@ async function validateWayfinderChildTerminalOutcome({
 			body: parsed.data.mapRevision.body,
 		});
 	}
-	return {
-		log: { outcome: parsed.data.outcome },
-		effects,
-	};
+	return { effects };
 }
 
 async function validateWayfinderChildrenTerminal({

@@ -824,7 +824,6 @@ function createNoTouchTracker(): Tracker {
 		createWorkflowIssue: touched,
 		startRun: touched,
 		completeRun: touched,
-		recordArtifacts: touched,
 		escalateWorkflow: touched,
 		resumeWorkflow: touched,
 		changeRelationship: touched,

@@ -1,12 +1,6 @@
 import type { WorkflowManifest } from "../../manifest/manifest.ts";
 import type { TrackerIssueInspection, TrackerLog } from "../../tracker.ts";
 import {
-	normalizeWorkflowArtifactInput,
-	type WorkflowArtifact,
-	type WorkflowArtifactInput,
-} from "../../workflow/artifact.ts";
-import type { WorkflowChange } from "../../workflow/change.ts";
-import {
 	type CreateIssueInput,
 	IssueNotFoundError,
 	type UpdateIssueInput,
@@ -36,7 +30,6 @@ import {
 	sameProjection,
 	normalizeRelationships,
 	parseIssueNumber,
-	validatePullRequestArtifact,
 	needsReconciliation,
 	validateGitHubTrackerCapabilities,
 	validateProjectionShape,
@@ -49,8 +42,6 @@ export class GitHubTracker {
 	readonly verification;
 	private readonly api: GitHubTrackerApi;
 	private readonly manifest: WorkflowManifest;
-	private readonly nextArtifactNumberByIssue = new Map<string, number>();
-	private readonly nextChangeNumberByIssue = new Map<string, number>();
 
 	constructor(api: GitHubTrackerApi, manifest: WorkflowManifest) {
 		this.api = api;
@@ -259,38 +250,6 @@ export class GitHubTracker {
 			);
 		}
 		await this.api.deleteIssue(parseIssueNumber(id));
-	}
-
-	async registerArtifact(
-		issueId: string,
-		input: WorkflowArtifactInput,
-	): Promise<WorkflowArtifact> {
-		await this.readProjectedIssue(issueId);
-		return normalizeWorkflowArtifactInput(
-			input,
-			input.id ?? `artifact-${this.nextArtifactNumber(issueId)}`,
-		);
-	}
-
-	async registerChange(
-		issueId: string,
-		input: Omit<WorkflowChange, "id">,
-	): Promise<WorkflowChange> {
-		validatePullRequestArtifact(input.kind, input.uri);
-		await this.readProjectedIssue(issueId);
-		return { id: `change-${this.nextChangeNumber(issueId)}`, ...input };
-	}
-
-	private nextArtifactNumber(issueId: string): number {
-		const next = this.nextArtifactNumberByIssue.get(issueId) ?? 1;
-		this.nextArtifactNumberByIssue.set(issueId, next + 1);
-		return next;
-	}
-
-	private nextChangeNumber(issueId: string): number {
-		const next = this.nextChangeNumberByIssue.get(issueId) ?? 1;
-		this.nextChangeNumberByIssue.set(issueId, next + 1);
-		return next;
 	}
 
 	private async readProjectedIssue(

@@ -22,17 +22,9 @@ import {
 	type WorkflowProjection,
 } from "../workflow/projection.ts";
 import type { WorkflowLog } from "../workflow/log.ts";
-import {
-	normalizeWorkflowArtifactInput,
-	type WorkflowArtifact,
-	type WorkflowArtifactInput,
-} from "../workflow/artifact.ts";
-import type { WorkflowChange } from "../workflow/change.ts";
 
 export class WorkflowTrackerState {
 	private readonly issues = new Map<string, StoredIssue>();
-	private readonly artifacts = new Map<string, Array<WorkflowArtifact>>();
-	private readonly changes = new Map<string, Array<WorkflowChange>>();
 	private nextIssueNumber = 1;
 
 	constructor(seed: Array<SeedIssueInput> = []) {
@@ -50,21 +42,6 @@ export class WorkflowTrackerState {
 		for (const issue of snapshot.issues) {
 			state.issues.set(issue.id, cloneJson(issue) as StoredIssue);
 		}
-		for (const [issueId, artifacts] of Object.entries(
-			snapshot.artifacts ?? {},
-		)) {
-			state.artifacts.set(
-				issueId,
-				cloneJson(artifacts) as Array<WorkflowArtifact>,
-			);
-		}
-		for (const [issueId, changes] of Object.entries(snapshot.changes ?? {})) {
-			state.changes.set(issueId, cloneJson(changes) as Array<WorkflowChange>);
-		}
-		for (const issue of snapshot.issues) {
-			state.artifacts.set(issue.id, state.artifacts.get(issue.id) ?? []);
-			state.changes.set(issue.id, state.changes.get(issue.id) ?? []);
-		}
 		return state;
 	}
 
@@ -74,18 +51,6 @@ export class WorkflowTrackerState {
 			nextIssueNumber: this.nextIssueNumber,
 			issues: [...this.issues.values()].map(
 				(issue) => cloneJson(issue) as StoredIssue,
-			),
-			artifacts: Object.fromEntries(
-				[...this.artifacts.entries()].map(([issueId, artifacts]) => [
-					issueId,
-					cloneJson(artifacts) as Array<WorkflowArtifact>,
-				]),
-			),
-			changes: Object.fromEntries(
-				[...this.changes.entries()].map(([issueId, changes]) => [
-					issueId,
-					cloneJson(changes) as Array<WorkflowChange>,
-				]),
 			),
 		};
 	}
@@ -97,8 +62,6 @@ export class WorkflowTrackerState {
 		}
 		const stored = normalizeIssue({ ...input, id });
 		this.issues.set(id, stored);
-		this.artifacts.set(id, []);
-		this.changes.set(id, []);
 		return cloneIssue(stored);
 	}
 
@@ -226,35 +189,6 @@ export class WorkflowTrackerState {
 			this.removeDependency(dependentId, id);
 		}
 		this.issues.delete(id);
-		this.artifacts.delete(id);
-		this.changes.delete(id);
-	}
-
-	registerArtifact(
-		issueId: string,
-		input: WorkflowArtifactInput,
-	): WorkflowArtifact {
-		this.requireIssue(issueId);
-		const artifacts = this.artifacts.get(issueId) ?? [];
-		const artifact = normalizeWorkflowArtifactInput(
-			input,
-			input.id ?? `artifact-${artifacts.length + 1}`,
-		);
-		artifacts.push(artifact);
-		this.artifacts.set(issueId, artifacts);
-		return cloneJson(artifact) as WorkflowArtifact;
-	}
-
-	registerChange(
-		issueId: string,
-		input: Omit<WorkflowChange, "id">,
-	): WorkflowChange {
-		this.requireIssue(issueId);
-		const changes = this.changes.get(issueId) ?? [];
-		const change = { id: `change-${changes.length + 1}`, ...input };
-		changes.push(change);
-		this.changes.set(issueId, changes);
-		return cloneJson(change) as WorkflowChange;
 	}
 
 	verifyChild(parentId: string, childId: string, expected: boolean): void {
@@ -294,28 +228,6 @@ export class WorkflowTrackerState {
 		for (const created of result.createdIssues) {
 			this.getIssue(created.id);
 		}
-		for (const { issueId, artifact } of result.artifacts) {
-			if (
-				!(this.artifacts.get(issueId) ?? []).some(
-					(stored) => stored.id === artifact.id,
-				)
-			) {
-				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: workflow artifact recording could not be verified.",
-				);
-			}
-		}
-		for (const { issueId, change } of result.changes) {
-			if (
-				!(this.changes.get(issueId) ?? []).some(
-					(stored) => stored.id === change.id,
-				)
-			) {
-				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: workflow change recording could not be verified.",
-				);
-			}
-		}
 		for (const log of result.logs) {
 			if (
 				!this.readLogs(log.issueId).some(
@@ -351,8 +263,6 @@ export class WorkflowTrackerState {
 			);
 		}
 		this.issues.set(normalized.id, normalized);
-		this.artifacts.set(normalized.id, []);
-		this.changes.set(normalized.id, []);
 		const numeric = Number(normalized.id);
 		if (Number.isInteger(numeric) && numeric >= this.nextIssueNumber) {
 			this.nextIssueNumber = numeric + 1;
@@ -402,8 +312,6 @@ export type WorkflowTrackerStateSnapshot = {
 	version: 1;
 	nextIssueNumber: number;
 	issues: Array<StoredIssue>;
-	artifacts?: Record<string, Array<WorkflowArtifact>>;
-	changes?: Record<string, Array<WorkflowChange>>;
 };
 
 type StoredIssue = Omit<WorkflowIssue, "workflow" | "artifacts" | "changes"> & {

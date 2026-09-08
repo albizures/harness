@@ -1,9 +1,4 @@
 import type {
-	WorkflowArtifact,
-	WorkflowArtifactInput,
-} from "./workflow/artifact.ts";
-import type { WorkflowChange } from "./workflow/change.ts";
-import type {
 	CreateIssueInput,
 	UpdateIssueInput,
 	WorkflowIssue,
@@ -35,14 +30,6 @@ export type TrackerCompleteRunIntent = {
 	expect: TrackerProjectionExpectation;
 	runId: string;
 	workflow: TrackerWorkflow;
-	artifacts?: Array<WorkflowArtifactInput>;
-	changes?: Array<Omit<WorkflowChange, "id">>;
-	log: TrackerLog;
-};
-
-export type TrackerRecordArtifactsIntent = {
-	artifacts?: Array<WorkflowArtifactInput>;
-	changes?: Array<Omit<WorkflowChange, "id">>;
 	log: TrackerLog;
 };
 
@@ -56,13 +43,6 @@ export type TrackerAdvanceWorkflowIntent = {
 };
 
 export type TrackerRepairIssueIntent = TrackerAdvanceWorkflowIntent;
-
-export type TrackerRecordArtifactsResult = {
-	issue: WorkflowIssue;
-	log: WorkflowLog;
-	artifacts: Array<WorkflowArtifact>;
-	changes: Array<WorkflowChange>;
-};
 
 export type TrackerEscalateIntent = {
 	expect: TrackerProjectionExpectation;
@@ -100,13 +80,6 @@ export type TrackerWorkflowEffect =
 			title?: string;
 			body?: string;
 	  }
-	| {
-			type: "record-artifacts";
-			issue: TrackerIssueRef;
-			artifacts?: Array<WorkflowArtifactInput>;
-			changes?: Array<Omit<WorkflowChange, "id">>;
-			log: TrackerLog;
-	  }
 	| { type: "record-command"; issue: TrackerIssueRef; log: TrackerLog }
 	| { type: "add-child"; parent: TrackerIssueRef; child: TrackerIssueRef }
 	| { type: "remove-child"; parent: TrackerIssueRef; child: TrackerIssueRef }
@@ -128,8 +101,6 @@ export type TrackerApplyWorkflowEffectsIntent = {
 export type TrackerApplyWorkflowEffectsResult = {
 	issues: Record<string, WorkflowIssue>;
 	createdIssues: Array<{ key?: string; id: string; issue: WorkflowIssue }>;
-	artifacts: Array<{ issueId: string; artifact: WorkflowArtifact }>;
-	changes: Array<{ issueId: string; change: WorkflowChange }>;
 	logs: Array<WorkflowLog>;
 };
 
@@ -151,11 +122,7 @@ export type Tracker = {
 	completeRun: (
 		id: string,
 		input: TrackerCompleteRunIntent,
-	) => Promise<TrackerRecordArtifactsResult>;
-	recordArtifacts: (
-		id: string,
-		input: TrackerRecordArtifactsIntent,
-	) => Promise<TrackerRecordArtifactsResult>;
+	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
 	escalateWorkflow: (
 		id: string,
 		input: TrackerEscalateIntent,
@@ -209,14 +176,6 @@ export type TrackerAdapterPrimitiveOperations = {
 	addDependency: (issueId: string, blockedById: string) => Promise<void>;
 	removeDependency: (issueId: string, blockedById: string) => Promise<void>;
 	deleteIssue: (id: string) => Promise<void>;
-	registerArtifact: (
-		issueId: string,
-		input: WorkflowArtifactInput,
-	) => Promise<WorkflowArtifact>;
-	registerChange: (
-		issueId: string,
-		input: Omit<WorkflowChange, "id">,
-	) => Promise<WorkflowChange>;
 };
 
 export type TrackerVerificationHooks = {

@@ -736,7 +736,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 			},
 		),
 	) as { log: { message: string } };
-	expect(JSON.parse(completed.log.message).outcome).toEqual({
+	expect(JSON.parse(completed.log.message).input.outcome).toEqual({
 		type: "completed",
 		facts: ["Found the shortest route."],
 	});

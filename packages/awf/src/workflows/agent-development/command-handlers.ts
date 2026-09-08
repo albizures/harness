@@ -180,32 +180,24 @@ async function createHandoffCommand(
 		const applied = await tracker.applyWorkflowEffects({
 			effects: [
 				{
-					type: "record-artifacts",
+					type: "record-command",
 					issue: { id: sourceId },
-					artifacts: [artifactInput.value],
 					log: {
 						type: "handoff_created",
 						message: stableStringify({
 							input: parsed.data,
-							artifact: artifactInput.value,
 						}),
 					},
 				},
 			],
 		});
-		const artifact = applied.artifacts[0]?.artifact;
-		if (artifact === undefined) {
-			throw new NeedReconciliationError(
-				"NEED_RECONCILIATION: handoff artifact was not recorded.",
-			);
-		}
 		const log = applied.logs[0];
 		if (log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: workflow log addition could not be verified.",
 			);
 		}
-		return validateOrSucceed(command, { source: sourceId, artifact, log });
+		return validateOrSucceed(command, { source: sourceId, log });
 	} catch (error) {
 		return lifecycleError(sourceId, error);
 	}
@@ -303,9 +295,8 @@ async function applyPlanCommand(
 				workflow: { ...workflowTarget(target), activeRunId: undefined },
 			},
 			{
-				type: "record-artifacts" as const,
+				type: "record-command" as const,
 				issue: { id: specId },
-				artifacts: [planBundleArtifactInput(inputPath, plan.tickets.length)],
 				log: {
 					type: "plan_applied",
 					message: stableStringify({
@@ -326,12 +317,6 @@ async function applyPlanCommand(
 			}
 			return { key: ticket.key, id: created.id };
 		});
-		const artifact = applied.artifacts[0]?.artifact;
-		if (artifact === undefined) {
-			throw new NeedReconciliationError(
-				"NEED_RECONCILIATION: plan bundle artifact was not recorded.",
-			);
-		}
 		const log = applied.logs.at(-1);
 		if (log === undefined) {
 			throw new NeedReconciliationError(
@@ -342,7 +327,6 @@ async function applyPlanCommand(
 			outcome: "SUCCESS",
 			spec: applied.issues[specId] ?? (await tracker.getIssue(specId)),
 			tickets,
-			artifact,
 			log,
 		});
 	} catch (error) {
@@ -631,16 +615,6 @@ function validateOrSucceed(
 	data: Parameters<typeof success>[0],
 ): Envelope {
 	return success(data);
-}
-
-function planBundleArtifactInput(inputPath: string, ticketCount: number) {
-	const reference = planBundleArtifactReference(inputPath, ticketCount);
-	return {
-		...reference,
-		kind: reference.type,
-		uri: reference.type === "file" ? reference.path : reference.ref,
-		name: "Plan bundle",
-	};
 }
 
 function planBundleArtifactReference(

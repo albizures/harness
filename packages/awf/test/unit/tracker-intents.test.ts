@@ -12,8 +12,6 @@ import type {
 	WorkflowIssue,
 } from "../../src/workflow/issue.ts";
 import type { WorkflowLog } from "../../src/workflow/log.ts";
-import type { WorkflowArtifactInput } from "../../src/workflow/artifact.ts";
-import type { WorkflowChange } from "../../src/workflow/change.ts";
 
 it("should ensure that tracker adapter composition exposes public intents without adapter-owned choreography", async () => {
 	const state = new WorkflowTrackerState();
@@ -21,8 +19,6 @@ it("should ensure that tracker adapter composition exposes public intents withou
 		createIssue: async (input) => state.createIssue(input),
 		updateIssue: async (id, input) => state.updateIssue(id, input),
 		appendLog: async (id, input) => state.appendLog(id, input),
-		registerArtifact: async (issueId, input) =>
-			state.registerArtifact(issueId, input),
 		getIssue: async (id) => state.getIssue(id),
 		readLogs: async (id) => state.readLogs(id),
 	});
@@ -74,12 +70,6 @@ it("should ensure that tracker intent module composes adapter primitives and ver
 		removeDependency: async (issueId: string, blockedById: string) =>
 			state.removeDependency(issueId, blockedById),
 		deleteIssue: async (id: string) => state.deleteIssue(id),
-		registerArtifact: async (issueId: string, input: WorkflowArtifactInput) =>
-			state.registerArtifact(issueId, input),
-		registerChange: async (
-			issueId: string,
-			input: Omit<WorkflowChange, "id">,
-		) => state.registerChange(issueId, input),
 		getIssue: async (id: string) => state.getIssue(id),
 		listIssues: async () => state.listIssues(),
 		readLogs: async (id: string) => state.readLogs(id),
@@ -177,8 +167,6 @@ it("should ensure that tracker intent module verifies generic workflow effects w
 			addChild: async (parentId, childId) => state.addChild(parentId, childId),
 			addDependency: async (issueId, blockedById) =>
 				state.addDependency(issueId, blockedById),
-			registerArtifact: async (issueId, input) =>
-				state.registerArtifact(issueId, input),
 			getIssue: async (id) => state.getIssue(id),
 			readLogs: async (id) => state.readLogs(id),
 		}),
@@ -217,11 +205,8 @@ it("should ensure that tracker intent module verifies generic workflow effects w
 				workflow: { state: "ready", action: "none" },
 			},
 			{
-				type: "record-artifacts",
+				type: "record-command",
 				issue: { id: spec.id },
-				artifacts: [
-					{ kind: "file", uri: "bundle.json", name: "Workflow bundle" },
-				],
 				log: {
 					type: "workflow-applied",
 					message: JSON.stringify({ input: "bundle.json" }),
@@ -240,17 +225,6 @@ it("should ensure that tracker intent module verifies generic workflow effects w
 	]);
 	expect((await tracker.getIssue("2")).relationships.dependencies).toEqual([
 		"1",
-	]);
-	expect(result.artifacts).toEqual([
-		expect.objectContaining({
-			issueId: "spec-1",
-			artifact: expect.objectContaining({
-				id: "artifact-1",
-				kind: "file",
-				uri: "bundle.json",
-				name: "Workflow bundle",
-			}),
-		}),
 	]);
 	expect(result.logs.at(-1)?.message).toBe(
 		JSON.stringify({ input: "bundle.json" }),
@@ -505,7 +479,7 @@ it("should ensure that tracker intent module starts runs by projecting the activ
 	]);
 });
 
-it("should ensure that tracker intent module completes runs before recording outputs and terminal logs", async () => {
+it("should ensure that tracker intent module completes runs before recording terminal logs", async () => {
 	const calls: Array<string> = [];
 	let storedIssue: WorkflowIssue = {
 		...workflowIssue({ id: "1", title: "Ticket" }),
@@ -528,20 +502,6 @@ it("should ensure that tracker intent module completes runs before recording out
 				};
 				return storedIssue;
 			},
-			registerArtifact: async (issueId, input) => {
-				calls.push(`registerArtifact:${issueId}:${input.kind}:${input.uri}`);
-				const artifact = {
-					...input,
-					type: input.type ?? input.kind,
-					id: "artifact-1",
-				};
-				return artifact;
-			},
-			registerChange: async (issueId, input) => {
-				calls.push(`registerChange:${issueId}:${input.kind}:${input.uri}`);
-				const change = { id: "change-1", ...input };
-				return change;
-			},
 			appendLog: async (id, input) => {
 				calls.push(`appendLog:${id}:${input.type}:${input.runId}`);
 				return { ...input, issueId: id, sequence: 1 };
@@ -557,8 +517,6 @@ it("should ensure that tracker intent module completes runs before recording out
 		expect: { version: 1, hash: "hash-1" },
 		runId: "run-1",
 		workflow: { state: "done", action: "none" },
-		artifacts: [{ kind: "file", uri: "artifact.md" }],
-		changes: [{ kind: "pull-request", uri: "https://github.com/o/r/pull/1" }],
 		log: { type: "run-completed", runId: "run-1" },
 	});
 
@@ -567,76 +525,10 @@ it("should ensure that tracker intent module completes runs before recording out
 		action: "none",
 		activeRunId: undefined,
 	});
-	expect(result.artifacts).toEqual([
-		expect.objectContaining({
-			id: "artifact-1",
-			kind: "file",
-			uri: "artifact.md",
-		}),
-	]);
-	expect(result.changes).toEqual([
-		expect.objectContaining({
-			id: "change-1",
-			kind: "pull-request",
-			uri: "https://github.com/o/r/pull/1",
-		}),
-	]);
 	expect(result.log).toMatchObject({ type: "run-completed", runId: "run-1" });
 	expect(calls).toEqual([
 		"updateIssue:1:done:none:undefined",
-		"registerArtifact:1:file:artifact.md",
-		"registerChange:1:pull-request:https://github.com/o/r/pull/1",
 		"appendLog:1:run-completed:run-1",
-		"getIssue:1",
-	]);
-});
-
-it("should ensure that tracker intent module records artifacts, changes, and workflow logs together", async () => {
-	const calls: Array<string> = [];
-	const storedIssue = workflowIssue({ id: "1", title: "Ticket" });
-	const tracker = createTrackerIntentModule(
-		primitiveStubs({
-			registerArtifact: async (issueId, input) => {
-				calls.push(`registerArtifact:${issueId}:${input.kind}:${input.uri}`);
-				const artifact = {
-					...input,
-					type: input.type ?? input.kind,
-					id: "artifact-1",
-				};
-				return artifact;
-			},
-			registerChange: async (issueId, input) => {
-				calls.push(`registerChange:${issueId}:${input.kind}:${input.uri}`);
-				const change = { id: "change-1", ...input };
-				return change;
-			},
-			appendLog: async (id, input) => {
-				calls.push(`appendLog:${id}:${input.type}`);
-				return { ...input, issueId: id, sequence: 1 };
-			},
-			getIssue: async (id) => {
-				calls.push(`getIssue:${id}`);
-				return storedIssue;
-			},
-		}),
-	);
-
-	const result = await tracker.recordArtifacts("1", {
-		artifacts: [{ kind: "file", uri: "notes.md" }],
-		changes: [{ kind: "pull-request", uri: "https://github.com/o/r/pull/2" }],
-		log: { type: "artifacts-recorded" },
-	});
-
-	expect(result.issue).not.toHaveProperty("artifacts");
-	expect(result.issue).not.toHaveProperty("changes");
-	expect(result.log).toMatchObject({
-		type: "artifacts-recorded",
-		issueId: "1",
-	});
-	expect(calls).toEqual([
-		"registerArtifact:1:file:notes.md",
-		"registerChange:1:pull-request:https://github.com/o/r/pull/2",
-		"appendLog:1:artifacts-recorded",
 		"getIssue:1",
 	]);
 });
@@ -680,12 +572,6 @@ function primitiveStubs(
 		addDependency: async () => {},
 		removeDependency: async () => {},
 		deleteIssue: async () => {},
-		registerArtifact: async (_issueId, input) => ({
-			...input,
-			type: input.type ?? input.kind,
-			id: input.id ?? "artifact-1",
-		}),
-		registerChange: async (_issueId, input) => ({ id: "change-1", ...input }),
 		getIssue: async () => defaultIssue,
 		listIssues: async () => [defaultIssue],
 		readLogs: async () => [],

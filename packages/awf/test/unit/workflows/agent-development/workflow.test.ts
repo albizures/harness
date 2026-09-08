@@ -2,7 +2,6 @@ import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../../src/commands.ts";
 import { validateManifest } from "../../../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../../../src/trackers/memory.ts";
-import type { WorkflowArtifact } from "../../../../src/workflow/artifact.ts";
 import type { WorkflowIssue } from "../../../../src/workflow/issue.ts";
 import {
 	agentDevelopmentCommandHandlers,
@@ -23,9 +22,8 @@ function execute(
 type CreateSpecData = { issue: WorkflowIssue };
 type ApplyPlanData = {
 	tickets: Array<{ key: string; id: string }>;
-	artifact: WorkflowArtifact;
 };
-type HandoffData = { artifact: WorkflowArtifact };
+type HandoffData = { log: { type: string } };
 type TerminalData = { issue: WorkflowIssue; log: { message?: string } };
 
 function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
@@ -109,7 +107,7 @@ it("should create a Spec through the bundled command handler", async () => {
 	).toEqual(["spec_created"]);
 });
 
-it("should apply a bundled plan into tickets, parent-child links, dependencies, and a plan artifact", async () => {
+it("should apply a bundled plan into tickets, parent-child links, dependencies, and a plan log", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -142,12 +140,6 @@ it("should apply a bundled plan into tickets, parent-child links, dependencies, 
 		{ key: "one", id: "1" },
 		{ key: "two", id: "2" },
 	]);
-	expect(data.artifact).toMatchObject({
-		kind: "inline",
-		type: "inline",
-		name: "Plan bundle",
-		metadata: { ticketCount: 2 },
-	});
 	const spec = await tracker.getIssue("spec-1");
 	expect(spec.workflow).toMatchObject({
 		kind: "spec",
@@ -194,7 +186,7 @@ it("should reject bundled plan payloads with duplicate or unknown dependency key
 	expect((await tracker.getIssue("spec-1")).relationships.children).toEqual([]);
 });
 
-it("should record bundled handoffs as workflow artifacts", async () => {
+it("should record bundled handoffs as workflow logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -217,11 +209,7 @@ it("should record bundled handoffs as workflow artifacts", async () => {
 		),
 	);
 
-	expect(data.artifact).toMatchObject({
-		kind: "handoff",
-		type: "handoff",
-		ref: "Continue with review.",
-	});
+	expect(data.log.type).toBe("handoff_created");
 	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 });
 

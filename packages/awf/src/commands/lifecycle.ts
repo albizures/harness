@@ -8,8 +8,6 @@ import type { TrackerAdapterPrimitiveReads } from "../tracker.ts";
 import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
 import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker, TrackerLog } from "../tracker.ts";
-import type { WorkflowArtifactInput } from "../workflow/artifact.ts";
-import type { WorkflowChange } from "../workflow/change.ts";
 import {
 	cleanCurrentTarget,
 	cleanTransitionTarget,
@@ -103,7 +101,6 @@ export async function startCommand(
 			type: "action_started",
 			runId,
 			message: stableStringify({
-				...handler.contribution.log,
 				event: "start",
 				to: cleanTransitionTarget(transition.to),
 			}),
@@ -119,12 +116,7 @@ export async function startCommand(
 					},
 					workflow: { ...target, activeRunId: runId },
 				},
-				recordLifecycleLogEffect(
-					id,
-					log,
-					handler.contribution.artifacts,
-					handler.contribution.changes,
-				),
+				{ type: "record-command", issue: { id }, log },
 				...handler.contribution.effects,
 			],
 		});
@@ -290,7 +282,6 @@ export async function terminalCommand(
 			type: logType,
 			runId,
 			message: stableStringify({
-				...handler.contribution.log,
 				event,
 				...(parsedInput === undefined ? {} : { input: terminalInput }),
 				to: target,
@@ -307,12 +298,7 @@ export async function terminalCommand(
 					},
 					workflow: { ...target, activeRunId: undefined },
 				},
-				recordLifecycleLogEffect(
-					id,
-					log,
-					handler.contribution.artifacts,
-					handler.contribution.changes,
-				),
+				{ type: "record-command", issue: { id }, log },
 				...handler.contribution.effects,
 			],
 		});
@@ -348,34 +334,8 @@ function lifecycleHandlerTracker(
 	return reads;
 }
 
-function emptyLifecycleContribution(): {
-	log: Record<string, JsonValue>;
-	artifacts: Array<WorkflowArtifactInput>;
-	changes: Array<Omit<WorkflowChange, "id">>;
-	effects: [];
-} {
-	return { log: {}, artifacts: [], changes: [], effects: [] };
-}
-
-function recordLifecycleLogEffect(
-	id: string,
-	log: TrackerLog,
-	artifacts: Array<WorkflowArtifactInput>,
-	changes: Array<Omit<WorkflowChange, "id">>,
-): {
-	type: "record-artifacts";
-	issue: { id: string };
-	artifacts?: Array<WorkflowArtifactInput>;
-	changes?: Array<Omit<WorkflowChange, "id">>;
-	log: TrackerLog;
-} {
-	return {
-		type: "record-artifacts",
-		issue: { id },
-		...(artifacts.length === 0 ? {} : { artifacts }),
-		...(changes.length === 0 ? {} : { changes }),
-		log,
-	};
+function emptyLifecycleContribution(): { effects: [] } {
+	return { effects: [] };
 }
 
 export async function pauseCommand(

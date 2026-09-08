@@ -5,11 +5,6 @@ import type {
 	TrackerLog,
 } from "../tracker.ts";
 import type {
-	WorkflowArtifact,
-	WorkflowArtifactInput,
-} from "../workflow/artifact.ts";
-import type { WorkflowChange } from "../workflow/change.ts";
-import type {
 	CreateIssueInput,
 	SeedIssueInput,
 	UpdateIssueInput,
@@ -123,23 +118,5 @@ export class WorkflowStateTracker {
 	async deleteIssue(id: string): Promise<void> {
 		this.state.deleteIssue(id);
 		this.onMutation();
-	}
-
-	async registerArtifact(
-		issueId: string,
-		input: WorkflowArtifactInput,
-	): Promise<WorkflowArtifact> {
-		const result = this.state.registerArtifact(issueId, input);
-		this.onMutation();
-		return result;
-	}
-
-	async registerChange(
-		issueId: string,
-		input: Omit<WorkflowChange, "id">,
-	): Promise<WorkflowChange> {
-		const result = this.state.registerChange(issueId, input);
-		this.onMutation();
-		return result;
 	}
 }

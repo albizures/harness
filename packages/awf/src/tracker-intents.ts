@@ -10,8 +10,6 @@ import {
 	type TrackerCreateWorkflowIssueIntent,
 	type TrackerEscalateIntent,
 	type TrackerIssueInspection,
-	type TrackerRecordArtifactsIntent,
-	type TrackerRecordArtifactsResult,
 	type TrackerRecordCommandIntent,
 	type TrackerRelationshipIntent,
 	type TrackerAdvanceWorkflowIntent,
@@ -20,8 +18,6 @@ import {
 	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
 } from "./tracker.ts";
-import type { WorkflowArtifact } from "./workflow/artifact.ts";
-import type { WorkflowChange } from "./workflow/change.ts";
 import {
 	IssueNotFoundError,
 	type CreateIssueInput,
@@ -99,32 +95,15 @@ class PrimitiveTrackerIntentModule implements Tracker {
 	async completeRun(
 		id: string,
 		input: TrackerCompleteRunIntent,
-	): Promise<TrackerRecordArtifactsResult> {
+	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
 		await this.primitives.updateIssue(id, {
 			expect: input.expect,
 			workflow: { ...input.workflow, activeRunId: undefined },
 		});
-		return this.recordArtifacts(id, input);
-	}
-
-	async recordArtifacts(
-		id: string,
-		input: TrackerRecordArtifactsIntent,
-	): Promise<TrackerRecordArtifactsResult> {
-		const artifacts: Array<WorkflowArtifact> = [];
-		for (const artifact of input.artifacts ?? []) {
-			artifacts.push(await this.primitives.registerArtifact(id, artifact));
-		}
-		const changes: Array<WorkflowChange> = [];
-		for (const change of input.changes ?? []) {
-			changes.push(await this.primitives.registerChange(id, change));
-		}
 		const log = await this.primitives.appendLog(id, input.log);
 		return {
 			issue: await this.primitives.getIssue(id),
 			log,
-			artifacts,
-			changes,
 		};
 	}
 
@@ -257,8 +236,6 @@ class PrimitiveTrackerIntentModule implements Tracker {
 		const result: TrackerApplyWorkflowEffectsResult = {
 			issues: {},
 			createdIssues: [],
-			artifacts: [],
-			changes: [],
 			logs: [],
 		};
 		const idsByKey = new Map<string, string>();
@@ -311,24 +288,6 @@ class PrimitiveTrackerIntentModule implements Tracker {
 						});
 					});
 					result.issues[id] = issue;
-				} else if (effect.type === "record-artifacts") {
-					const id = resolveIssueRef(effect.issue, idsByKey);
-					for (const artifact of effect.artifacts ?? []) {
-						result.artifacts.push({
-							issueId: id,
-							artifact: await this.primitives.registerArtifact(id, artifact),
-						});
-					}
-					for (const change of effect.changes ?? []) {
-						result.changes.push({
-							issueId: id,
-							change: await this.primitives.registerChange(id, change),
-						});
-					}
-					const log = await this.primitives.appendLog(id, effect.log);
-					result.logs.push(log);
-					await this.verifyRecorded(id, log, result.artifacts, result.changes);
-					result.issues[id] = await this.primitives.getIssue(id);
 				} else if (effect.type === "record-command") {
 					const id = resolveIssueRef(effect.issue, idsByKey);
 					const log = await this.primitives.appendLog(id, effect.log);
@@ -426,17 +385,6 @@ class PrimitiveTrackerIntentModule implements Tracker {
 				);
 			}
 		}
-	}
-
-	private async verifyRecorded(
-		id: string,
-		log: WorkflowLog,
-		artifacts: Array<{ issueId: string; artifact: WorkflowArtifact }>,
-		changes: Array<{ issueId: string; change: WorkflowChange }>,
-	): Promise<void> {
-		void artifacts;
-		void changes;
-		await this.verifyLog(id, log);
 	}
 
 	private async verifyLog(id: string, log: WorkflowLog): Promise<void> {

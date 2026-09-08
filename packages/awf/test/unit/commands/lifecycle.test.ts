@@ -681,7 +681,7 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 	});
 });
 
-it("should ensure that generic lifecycle transition handlers receive JSON input and contribute log payload, artifacts, and effects", async () => {
+it("should ensure that generic lifecycle transition handlers receive JSON input and contribute effects", async () => {
 	const manifest = {
 		version: "v1" as const,
 		workflow: { id: "generic" },
@@ -735,30 +735,22 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 			manifest,
 			stdin: JSON.stringify({ n: "2" }),
 			lifecycleHandlers: {
-				"work:running/do:succeed": ({ input, tracker }) => ({
-					log: {
-						doubled: (input as { n: number }).n * 2,
-						canMutate: "applyWorkflowEffects" in tracker,
-					},
-					artifacts: [
-						{
-							kind: "inline",
-							uri: "handler:summary",
-							name: "Handler summary",
-							text: "done",
-						},
-					],
-					effects: [
-						{
-							type: "create-workflow-issue",
-							input: {
-								id: "child",
-								title: "Follow-up",
-								workflow: { kind: "work", state: "ready", action: "do" },
+				"work:running/do:succeed": ({ input, tracker }) => {
+					expect(input).toEqual({ n: "2" });
+					expect("applyWorkflowEffects" in tracker).toBe(false);
+					return {
+						effects: [
+							{
+								type: "create-workflow-issue",
+								input: {
+									id: "child",
+									title: "Follow-up",
+									workflow: { kind: "work", state: "ready", action: "do" },
+								},
 							},
-						},
-					],
-				}),
+						],
+					};
+				},
 			},
 		},
 	);
@@ -778,8 +770,6 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 		event: "succeed",
 		input: { n: "2" },
 		to: { state: "done", action: "none" },
-		doubled: 4,
-		canMutate: false,
 	});
 	expect(await tracker.getIssue("child")).toMatchObject({
 		id: "child",
@@ -837,7 +827,7 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 			manifest,
 			stdin: JSON.stringify({ ok: true }),
 			lifecycleHandlers: {
-				"work:running/do:succeed": () => ({ log: { bad: Symbol("x") } }),
+				"work:running/do:succeed": () => ({ effects: "invalid" }) as never,
 			},
 		},
 	);

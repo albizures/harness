@@ -492,10 +492,7 @@ export const tracker = createInMemoryTracker({
 });
 
 export const lifecycleHandlers = {
-	"article:running/publish:succeed": ({ input }) => ({
-		log: { summary: input.summary, external: true },
-		artifacts: [{ kind: "inline", uri: "handler:summary", name: "Handler summary" }],
-	}),
+	"article:running/publish:succeed": () => undefined,
 };
 `,
 		);
@@ -525,8 +522,7 @@ export const lifecycleHandlers = {
 		expect(
 			JSON.parse(JSON.parse(result.stdout).data.log.message),
 		).toMatchObject({
-			summary: "Published externally",
-			external: true,
+			input: { summary: "Published externally" },
 		});
 	});
 });

@@ -147,11 +147,8 @@ for (const family of trackerFamilies) {
 							workflow: { state: "ready", action: "none" },
 						},
 						{
-							type: "record-artifacts",
+							type: "record-command",
 							issue: { id: "spec-1" },
-							artifacts: [
-								{ kind: "file", uri: "plans/workflow.json", name: "Workflow" },
-							],
 							log: {
 								type: "workflow_applied",
 								message: JSON.stringify({ source: "workflow" }),
@@ -173,11 +170,6 @@ for (const family of trackerFamilies) {
 				expect(
 					(await tracker.getIssue(finishId)).relationships.dependencies,
 				).toEqual([setupId]);
-				expect(result.artifacts[0]?.artifact).toMatchObject({
-					kind: "file",
-					uri: "plans/workflow.json",
-					name: "Workflow",
-				});
 				expect((await tracker.readLogs("spec-1"))[0]?.message).toBe(
 					JSON.stringify({ source: "workflow" }),
 				);
@@ -192,7 +184,7 @@ for (const family of trackerFamilies) {
 		);
 	});
 
-	it(`should preserve JSON-compatible artifact metadata and log payloads for ${family.name}`, async () => {
+	it(`should preserve JSON-compatible log payloads for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "JSON conformance ticket",
@@ -205,38 +197,23 @@ for (const family of trackerFamilies) {
 				},
 			});
 
-			const artifact = await tracker.registerArtifact(created.issue.id, {
-				kind: "file",
-				uri: "docs/result.md",
-				metadata: {
-					count: 2,
-					nested: { ok: true, values: ["alpha", null] },
-				},
-			});
 			await tracker.recordCommand(created.issue.id, {
 				log: {
 					type: "json_payload_recorded",
-					message: JSON.stringify({
-						artifact,
-						flags: [true, false],
-						empty: null,
-					}),
+					message: JSON.stringify({ flags: [true, false], empty: null }),
 				},
 			});
 
-			expect(await tracker.getIssue(created.issue.id)).not.toHaveProperty(
-				"artifacts",
-			);
 			expect(
 				(await tracker.readLogs(created.issue.id)).map((log) => log.message),
 			).toEqual([
 				JSON.stringify({ nested: { values: ["one", 2, true, null] } }),
-				JSON.stringify({ artifact, flags: [true, false], empty: null }),
+				JSON.stringify({ flags: [true, false], empty: null }),
 			]);
 		});
 	});
 
-	it(`should record artifacts, changes, and terminal logs for ${family.name}`, async () => {
+	it(`should record terminal logs for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "Conformance ticket",
@@ -259,8 +236,6 @@ for (const family of trackerFamilies) {
 				},
 				runId: "run-1",
 				workflow: { state: "done", action: "none" },
-				artifacts: [{ kind: "file", uri: "docs/result.md" }],
-				changes: [{ kind: "git-ref", uri: "abc123", summary: "Implemented" }],
 				log: { type: "action_succeeded", runId: "run-1" },
 			});
 
@@ -269,12 +244,6 @@ for (const family of trackerFamilies) {
 				action: "none",
 			});
 			expect(completed.issue.workflow).not.toHaveProperty("activeRunId");
-			expect(completed.artifacts).toEqual([
-				expect.objectContaining({ kind: "file", uri: "docs/result.md" }),
-			]);
-			expect(completed.changes).toEqual([
-				expect.objectContaining({ kind: "git-ref", uri: "abc123" }),
-			]);
 			expect(completed.issue).not.toHaveProperty("artifacts");
 			expect(completed.issue).not.toHaveProperty("changes");
 			expect(
@@ -332,11 +301,8 @@ for (const family of trackerFamilies) {
 								child: { key: "a" },
 							},
 							{
-								type: "record-artifacts",
-								issue: { id: "spec-1" },
-								artifacts: [
-									{ kind: "file", uri: "https://example.com/not-a-file" },
-								],
+								type: "record-command",
+								issue: { key: "missing" },
 								log: { type: "workflow_applied" },
 							},
 						],
