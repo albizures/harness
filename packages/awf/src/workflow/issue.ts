@@ -1,5 +1,3 @@
-import type { WorkflowArtifact } from "./artifact.ts";
-import type { WorkflowChange } from "./change.ts";
 import type { WorkflowLog } from "./log.ts";
 import type { WorkflowProjection } from "./projection.ts";
 
@@ -9,8 +7,6 @@ export type WorkflowIssue = {
 	body?: string;
 	workflow: WorkflowProjection;
 	relationships: IssueRelationships;
-	artifacts: Array<WorkflowArtifact>;
-	changes: Array<WorkflowChange>;
 };
 
 export type CreateIssueInput = {

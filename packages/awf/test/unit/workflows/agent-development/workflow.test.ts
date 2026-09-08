@@ -26,7 +26,7 @@ type ApplyPlanData = {
 	artifact: WorkflowArtifact;
 };
 type HandoffData = { artifact: WorkflowArtifact };
-type TerminalData = { issue: WorkflowIssue };
+type TerminalData = { issue: WorkflowIssue; log: { message?: string } };
 
 function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	expect(envelope.ok).toBe(true);
@@ -222,9 +222,7 @@ it("should record bundled handoffs as workflow artifacts", async () => {
 		type: "handoff",
 		ref: "Continue with review.",
 	});
-	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([
-		data.artifact,
-	]);
+	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 });
 
 it("should ensure that bundled lifecycle handlers enforce terminal verdicts and record pull request artifacts", async () => {
@@ -284,11 +282,8 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 		state: "ready",
 		action: "review",
 	});
-	expect((await tracker.getIssue("ticket-2")).artifacts).toEqual([
-		expect.objectContaining({
-			kind: "pull-request",
-			type: "pull-request",
-			url: "https://github.com/albizures/harness/pull/1",
-		}),
-	]);
+	expect(await tracker.getIssue("ticket-2")).not.toHaveProperty("artifacts");
+	expect(data.log.message).toContain(
+		"https://github.com/albizures/harness/pull/1",
+	);
 });

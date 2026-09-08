@@ -12,6 +12,7 @@ import {
 	initialWorkflowTarget,
 	isRecord,
 	lifecycleError,
+	stableStringify,
 } from "../../commands/shared.ts";
 
 type CreateInput = {
@@ -97,7 +98,7 @@ async function specCreateCommand({
 					},
 					initialLog: {
 						type: `${command.id}_created`,
-						payload: { input: specInput },
+						message: stableStringify({ input: specInput }),
 					},
 				},
 				...(parent === undefined
@@ -213,7 +214,7 @@ async function taskCreateCommand({
 					},
 					initialLog: {
 						type: `${command.id}_created`,
-						payload: { input: taskInput },
+						message: stableStringify({ input: taskInput }),
 					},
 				},
 				{
@@ -298,7 +299,7 @@ async function grillingCreateCommand({
 			},
 			initialLog: {
 				type: `${command.id}_created`,
-				payload: { input: grillingInput },
+				message: stableStringify({ input: grillingInput }),
 			},
 		};
 		const applied = await tracker.applyWorkflowEffects({

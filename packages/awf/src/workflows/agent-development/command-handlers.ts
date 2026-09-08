@@ -27,6 +27,7 @@ import {
 	readOption,
 	validateWorkflowCommandInput,
 	workflowTarget,
+	stableStringify,
 } from "../../commands/shared.ts";
 import { agentDevelopmentManifest } from "./manifest.ts";
 
@@ -100,7 +101,10 @@ async function createSpecCommand(
 						body: spec.content,
 						workflow: { kind: "spec", ...initialWorkflowTarget(kind.initial) },
 					},
-					initialLog: { type: "spec_created", payload: { input: inputPath } },
+					initialLog: {
+						type: "spec_created",
+						message: stableStringify({ input: inputPath }),
+					},
 				},
 			],
 		});
@@ -181,10 +185,10 @@ async function createHandoffCommand(
 					artifacts: [artifactInput.value],
 					log: {
 						type: "handoff_created",
-						payload: {
-							input: parsed.data as never,
+						message: stableStringify({
+							input: parsed.data,
 							artifact: artifactInput.value,
-						},
+						}),
 					},
 				},
 			],
@@ -304,9 +308,9 @@ async function applyPlanCommand(
 				artifacts: [planBundleArtifactInput(inputPath, plan.tickets.length)],
 				log: {
 					type: "plan_applied",
-					payload: {
+					message: stableStringify({
 						input: planBundleArtifactReference(inputPath, plan.tickets.length),
-					},
+					}),
 				},
 			},
 		];

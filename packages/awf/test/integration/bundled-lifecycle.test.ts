@@ -66,7 +66,7 @@ it("should ensure that bundled Ticket workflow progresses through implementation
 		state: issue.workflow.state,
 		action: issue.workflow.action,
 	}).toEqual({ state: "done", action: "none" });
-	expect(issue.artifacts.map((artifact) => artifact.uri)).toEqual([pr(1)]);
+	expect(issue).not.toHaveProperty("artifacts");
 });
 
 it("should ensure that bundled Ticket changes-requested review returns to fix and review", async () => {

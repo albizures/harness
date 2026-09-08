@@ -222,7 +222,10 @@ it("should ensure that tracker intent module verifies generic workflow effects w
 				artifacts: [
 					{ kind: "file", uri: "bundle.json", name: "Workflow bundle" },
 				],
-				log: { type: "workflow-applied", payload: { input: "bundle.json" } },
+				log: {
+					type: "workflow-applied",
+					message: JSON.stringify({ input: "bundle.json" }),
+				},
 			},
 		],
 	});
@@ -249,7 +252,9 @@ it("should ensure that tracker intent module verifies generic workflow effects w
 			}),
 		}),
 	]);
-	expect(result.logs.at(-1)?.payload).toEqual({ input: "bundle.json" });
+	expect(result.logs.at(-1)?.message).toBe(
+		JSON.stringify({ input: "bundle.json" }),
+	);
 });
 
 it("should ensure that tracker intent module verifies relationship intents with adapter reads when hooks are absent", async () => {
@@ -530,19 +535,11 @@ it("should ensure that tracker intent module completes runs before recording out
 					type: input.type ?? input.kind,
 					id: "artifact-1",
 				};
-				storedIssue = {
-					...storedIssue,
-					artifacts: [...storedIssue.artifacts, artifact],
-				};
 				return artifact;
 			},
 			registerChange: async (issueId, input) => {
 				calls.push(`registerChange:${issueId}:${input.kind}:${input.uri}`);
 				const change = { id: "change-1", ...input };
-				storedIssue = {
-					...storedIssue,
-					changes: [...storedIssue.changes, change],
-				};
 				return change;
 			},
 			appendLog: async (id, input) => {
@@ -596,7 +593,7 @@ it("should ensure that tracker intent module completes runs before recording out
 
 it("should ensure that tracker intent module records artifacts, changes, and workflow logs together", async () => {
 	const calls: Array<string> = [];
-	let storedIssue = workflowIssue({ id: "1", title: "Ticket" });
+	const storedIssue = workflowIssue({ id: "1", title: "Ticket" });
 	const tracker = createTrackerIntentModule(
 		primitiveStubs({
 			registerArtifact: async (issueId, input) => {
@@ -606,19 +603,11 @@ it("should ensure that tracker intent module records artifacts, changes, and wor
 					type: input.type ?? input.kind,
 					id: "artifact-1",
 				};
-				storedIssue = {
-					...storedIssue,
-					artifacts: [...storedIssue.artifacts, artifact],
-				};
 				return artifact;
 			},
 			registerChange: async (issueId, input) => {
 				calls.push(`registerChange:${issueId}:${input.kind}:${input.uri}`);
 				const change = { id: "change-1", ...input };
-				storedIssue = {
-					...storedIssue,
-					changes: [...storedIssue.changes, change],
-				};
 				return change;
 			},
 			appendLog: async (id, input) => {
@@ -638,8 +627,8 @@ it("should ensure that tracker intent module records artifacts, changes, and wor
 		log: { type: "artifacts-recorded" },
 	});
 
-	expect(result.issue.artifacts).toEqual(result.artifacts);
-	expect(result.issue.changes).toEqual(result.changes);
+	expect(result.issue).not.toHaveProperty("artifacts");
+	expect(result.issue).not.toHaveProperty("changes");
 	expect(result.log).toMatchObject({
 		type: "artifacts-recorded",
 		issueId: "1",
@@ -675,8 +664,6 @@ function workflowIssue(input: { id: string; title: string }): WorkflowIssue {
 			dependencies: [],
 			dependents: [],
 		},
-		artifacts: [],
-		changes: [],
 	};
 }
 

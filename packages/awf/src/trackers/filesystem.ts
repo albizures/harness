@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { isJsonRecord, isJsonValue } from "../json.ts";
+import { isJsonRecord } from "../json.ts";
 import { createTrackerAdapter } from "../tracker-intents.ts";
 import type { TrackerAdapter } from "../tracker.ts";
 import { WorkflowStateTracker } from "./memory.ts";
@@ -104,7 +104,11 @@ function isWorkflowTrackerStateSnapshot(
 		Number.isInteger(candidate.nextIssueNumber) &&
 		candidate.nextIssueNumber >= 1 &&
 		Array.isArray(candidate.issues) &&
-		candidate.issues.every(isStoredIssueLike)
+		candidate.issues.every(isStoredIssueLike) &&
+		(candidate.artifacts === undefined ||
+			isStoredArtifactsByIssue(candidate.artifacts)) &&
+		(candidate.changes === undefined ||
+			isStoredChangesByIssue(candidate.changes))
 	);
 }
 
@@ -120,9 +124,8 @@ function isStoredIssueLike(value: unknown): boolean {
 		typeof issue.workflow === "object" &&
 		issue.relationships !== null &&
 		typeof issue.relationships === "object" &&
-		Array.isArray(issue.artifacts) &&
-		issue.artifacts.every(isStoredArtifactLike) &&
-		Array.isArray(issue.changes) &&
+		issue.artifacts === undefined &&
+		issue.changes === undefined &&
 		Array.isArray(issue.logs) &&
 		issue.logs.every(isStoredLogLike)
 	);
@@ -141,6 +144,38 @@ function isStoredArtifactLike(value: unknown): boolean {
 	);
 }
 
+function isStoredChangesByIssue(value: unknown): boolean {
+	return (
+		isJsonRecord(value) &&
+		Object.values(value).every(
+			(changes) => Array.isArray(changes) && changes.every(isStoredChangeLike),
+		)
+	);
+}
+
+function isStoredArtifactsByIssue(value: unknown): boolean {
+	return (
+		isJsonRecord(value) &&
+		Object.values(value).every(
+			(artifacts) =>
+				Array.isArray(artifacts) && artifacts.every(isStoredArtifactLike),
+		)
+	);
+}
+
+function isStoredChangeLike(value: unknown): boolean {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const change = value as Record<string, unknown>;
+	return (
+		typeof change.id === "string" &&
+		typeof change.kind === "string" &&
+		typeof change.uri === "string" &&
+		(change.summary === undefined || typeof change.summary === "string")
+	);
+}
+
 function isStoredLogLike(value: unknown): boolean {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
 		return false;
@@ -150,6 +185,8 @@ function isStoredLogLike(value: unknown): boolean {
 		typeof log.sequence === "number" &&
 		typeof log.issueId === "string" &&
 		typeof log.type === "string" &&
-		(log.payload === undefined || isJsonValue(log.payload))
+		(log.runId === undefined || typeof log.runId === "string") &&
+		(log.message === undefined || typeof log.message === "string") &&
+		log.payload === undefined
 	);
 }

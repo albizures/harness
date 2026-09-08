@@ -28,9 +28,9 @@ import {
 	readInput,
 	resumePolicyAllows,
 	retryPolicyAllows,
-	terminalLogInputMatches,
 	terminalLogType,
 	workflowTarget,
+	stableStringify,
 } from "./shared.ts";
 
 const nonEmptyString = z.string().refine((value) => value.trim() !== "", {
@@ -78,10 +78,10 @@ export async function startCommand(
 				log: {
 					type: "action_started",
 					runId,
-					payload: {
+					message: stableStringify({
 						event: "start",
 						to: cleanTransitionTarget(transition.to),
-					},
+					}),
 				},
 			});
 			return success({ issue: updated, run: { id: runId }, log });
@@ -102,11 +102,11 @@ export async function startCommand(
 		const log: TrackerLog = {
 			type: "action_started",
 			runId,
-			payload: {
+			message: stableStringify({
 				...handler.contribution.log,
 				event: "start",
 				to: cleanTransitionTarget(transition.to),
-			},
+			}),
 		};
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
@@ -187,8 +187,8 @@ export async function terminalCommand(
 			if (
 				existing.type === logType &&
 				(parsedInputJson === undefined ||
-					terminalLogInputMatches(
-						existing.payload,
+					terminalLogInputMatchesMessage(
+						existing.message,
 						parseJsonValue(parsedInputJson.value),
 					))
 			) {
@@ -252,11 +252,11 @@ export async function terminalCommand(
 				log: {
 					type: logType,
 					runId,
-					payload: {
+					message: stableStringify({
 						event,
 						...(parsedInput === undefined ? {} : { input: terminalInput }),
 						to: target,
-					},
+					}),
 				},
 			});
 			await progressRelationshipsAfterLifecycleTransition(
@@ -289,12 +289,12 @@ export async function terminalCommand(
 		const log: TrackerLog = {
 			type: logType,
 			runId,
-			payload: {
+			message: stableStringify({
 				...handler.contribution.log,
 				event,
 				...(parsedInput === undefined ? {} : { input: terminalInput }),
 				to: target,
-			},
+			}),
 		};
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
@@ -438,7 +438,7 @@ export async function pauseCommand(
 					log: {
 						type: "human_input_needed",
 						runId: issue.workflow.activeRunId,
-						payload: {
+						message: stableStringify({
 							event: "pause",
 							input: parseJsonValue(payload.value),
 							from,
@@ -446,7 +446,7 @@ export async function pauseCommand(
 							pausedAction,
 							resumeAction,
 							reason: input.reason,
-						},
+						}),
 					},
 				},
 			],
@@ -510,7 +510,7 @@ export async function respondCommand(
 			const { issue: updated, log } = await tracker.recordCommand(id, {
 				log: {
 					type: "human_response_received",
-					payload: {
+					message: stableStringify({
 						event: "respond",
 						input: parseJsonValue(payload.value),
 						from,
@@ -518,7 +518,7 @@ export async function respondCommand(
 						response: input.response,
 						sufficient: false,
 						...(resumeAction === undefined ? {} : { resumeAction }),
-					},
+					}),
 				},
 			});
 			return success({ issue: updated, log });
@@ -542,7 +542,7 @@ export async function respondCommand(
 				},
 				log: {
 					type: "human_intervention_needed",
-					payload: {
+					message: stableStringify({
 						event: "respond",
 						input: parseJsonValue(payload.value),
 						from,
@@ -551,7 +551,7 @@ export async function respondCommand(
 						sufficient: true,
 						...(resumeAction === undefined ? {} : { resumeAction }),
 						...(pause?.reason === undefined ? {} : { reason: pause.reason }),
-					},
+					}),
 				},
 			});
 			return success({ issue: updated, log });
@@ -578,7 +578,7 @@ export async function respondCommand(
 					issue: { id },
 					log: {
 						type: "human_response_received",
-						payload: {
+						message: stableStringify({
 							event: "respond",
 							input: parseJsonValue(payload.value),
 							from,
@@ -587,7 +587,7 @@ export async function respondCommand(
 							sufficient: true,
 							resumeAction,
 							...(pause?.reason === undefined ? {} : { reason: pause.reason }),
-						},
+						}),
 					},
 				},
 			],
@@ -601,23 +601,49 @@ export async function respondCommand(
 	}
 }
 
+function terminalLogInputMatchesMessage(
+	message: string | undefined,
+	input: JsonValue,
+): boolean {
+	if (message === undefined) {
+		return true;
+	}
+	let data: unknown;
+	try {
+		data = JSON.parse(message);
+	} catch {
+		return true;
+	}
+	if (!isRecord(data) || data.input === undefined) {
+		return true;
+	}
+	return stableStringify(data.input) === stableStringify(input);
+}
+
 function latestHumanPause(
 	logs: Array<TrackerLog>,
 ): { reason?: string; resumeAction?: string } | undefined {
 	for (const log of [...logs].reverse()) {
-		if (log.type !== "human_input_needed" || !isRecord(log.payload)) {
+		if (log.type !== "human_input_needed" || log.message === undefined) {
+			continue;
+		}
+		let data: unknown;
+		try {
+			data = JSON.parse(log.message);
+		} catch {
+			continue;
+		}
+		if (!isRecord(data)) {
 			continue;
 		}
 		let resumeAction: string | undefined;
-		if (typeof log.payload.resumeAction === "string") {
-			resumeAction = log.payload.resumeAction;
-		} else if (typeof log.payload.pausedAction === "string") {
-			resumeAction = log.payload.pausedAction;
+		if (typeof data.resumeAction === "string") {
+			resumeAction = data.resumeAction;
+		} else if (typeof data.pausedAction === "string") {
+			resumeAction = data.pausedAction;
 		}
 		return {
-			...(typeof log.payload.reason === "string"
-				? { reason: log.payload.reason }
-				: {}),
+			...(typeof data.reason === "string" ? { reason: data.reason } : {}),
 			...(resumeAction === undefined ? {} : { resumeAction }),
 		};
 	}
@@ -660,12 +686,12 @@ export async function escalateCommand(
 			},
 			log: {
 				type: "human_intervention_needed",
-				payload: {
+				message: stableStringify({
 					event: "escalate",
 					input: parseJsonValue(parsedInput.data),
 					from,
 					to,
-				},
+				}),
 			},
 		});
 		return success({ issue: updated, log });
@@ -709,7 +735,10 @@ export async function resumeCommand(
 			},
 			log: {
 				type: "action_resumed",
-				payload: { event: "resume", to: { state: "ready", action } },
+				message: stableStringify({
+					event: "resume",
+					to: { state: "ready", action },
+				}),
 			},
 		});
 		return success({ issue: updated, log });

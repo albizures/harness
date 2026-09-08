@@ -744,16 +744,6 @@ export function isTerminalLog(type: string): boolean {
 	return type === "action_succeeded" || type === "action_failed";
 }
 
-export function terminalLogInputMatches(
-	payload: JsonValue | undefined,
-	input: JsonValue,
-): boolean {
-	if (!isRecord(payload) || payload.input === undefined) {
-		return true;
-	}
-	return stableStringify(payload.input) === stableStringify(input);
-}
-
 export function initialWorkflowTarget(target: {
 	state: string;
 	action?: string;

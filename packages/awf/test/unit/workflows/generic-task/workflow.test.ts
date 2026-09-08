@@ -325,7 +325,7 @@ it("should create generic Specs from structured JSON ready for planning with cre
 			body: string;
 			workflow: Record<string, string>;
 		};
-		log: { type: string; payload: unknown };
+		log: { type: string; message: string };
 	};
 
 	expect(created.issue.title).toBe("Write the spec");
@@ -337,13 +337,11 @@ it("should create generic Specs from structured JSON ready for planning with cre
 		state: "ready",
 		action: "planning",
 	});
-	expect(created.log).toMatchObject({
-		type: "spec-create_created",
-		payload: {
-			input: {
-				title: "Write the spec",
-				content: "# Write the spec\n\nDefine the work in Markdown.",
-			},
+	expect(created.log.type).toBe("spec-create_created");
+	expect(JSON.parse(created.log.message)).toEqual({
+		input: {
+			title: "Write the spec",
+			content: "# Write the spec\n\nDefine the work in Markdown.",
 		},
 	});
 	expect(
@@ -497,7 +495,7 @@ it("should create generic Tasks under Specs with routing profiles and dependenci
 			workflow: Record<string, string>;
 			relationships: { parent?: string; dependencies: Array<string> };
 		};
-		log: { payload: unknown };
+		log: { message: string };
 	};
 
 	expect(created.issue.body).toContain("Profile: implement");
@@ -737,8 +735,8 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 				}),
 			},
 		),
-	) as { log: { payload: { outcome: Record<string, unknown> } } };
-	expect(completed.log.payload.outcome).toEqual({
+	) as { log: { message: string } };
+	expect(JSON.parse(completed.log.message).outcome).toEqual({
 		type: "completed",
 		facts: ["Found the shortest route."],
 	});

@@ -77,17 +77,6 @@ function validateBundledTerminalInput(
 	}
 	if (
 		issue.workflow.kind === "ticket" &&
-		issue.workflow.action === "implement" &&
-		event === "succeed" &&
-		issue.artifacts.some((artifact) => artifact.kind === "pull-request")
-	) {
-		return {
-			path: "$.implementationPr",
-			message: "Ticket already has an implementation pull request artifact.",
-		};
-	}
-	if (
-		issue.workflow.kind === "ticket" &&
 		issue.workflow.action === "review" &&
 		input.verdict !== (event === "succeed" ? "approved" : "changes-requested")
 	) {

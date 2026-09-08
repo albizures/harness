@@ -522,7 +522,9 @@ export const lifecycleHandlers = {
 		);
 
 		expect(result.status).toBe(0);
-		expect(JSON.parse(result.stdout).data.log.payload).toMatchObject({
+		expect(
+			JSON.parse(JSON.parse(result.stdout).data.log.message),
+		).toMatchObject({
 			summary: "Published externally",
 			external: true,
 		});

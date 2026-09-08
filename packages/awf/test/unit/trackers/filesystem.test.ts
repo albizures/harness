@@ -47,9 +47,7 @@ it("should ensure that file-backed tracker initializes missing state and persist
 		expect((await reloaded.readLogs(issue.id)).map((log) => log.type)).toEqual([
 			"created",
 		]);
-		expect((await reloaded.getIssue(issue.id)).artifacts[0]?.uri).toBe(
-			"docs/result.md",
-		);
+		expect(await reloaded.getIssue(issue.id)).not.toHaveProperty("artifacts");
 	});
 });
 
@@ -154,24 +152,8 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 		expect(
 			(await reloaded.getIssue(blocker.id)).relationships.dependents,
 		).toEqual([ticket.id]);
-		expect(reloadedTicket.artifacts).toEqual([
-			{
-				id: "artifact-1",
-				kind: "file",
-				uri: "docs/implementation.md",
-				name: "Implementation notes",
-				type: "file",
-				path: "docs/implementation.md",
-			},
-		]);
-		expect(reloadedTicket.changes).toEqual([
-			{
-				id: "change-1",
-				kind: "git-ref",
-				uri: "abc123",
-				summary: "Implemented filesystem persistence",
-			},
-		]);
+		expect(reloadedTicket).not.toHaveProperty("artifacts");
+		expect(reloadedTicket).not.toHaveProperty("changes");
 		expect(nextIssue.issue.id).toBe("4");
 	});
 });
@@ -213,7 +195,7 @@ it("should ensure that file-backed tracker writes a complete JSON state file wit
 	});
 });
 
-it("should ensure that file-backed tracker rejects non-JSON artifact metadata in stored state", async () => {
+it("should ensure that file-backed tracker rejects legacy artifact fields in stored issue state", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		await writeFile(

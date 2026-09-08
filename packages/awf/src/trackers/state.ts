@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
-import { jsonRecordSchema, parseJsonValue } from "../json.ts";
+import { jsonRecordSchema } from "../json.ts";
 import {
 	NeedReconciliationError,
 	type TrackerApplyWorkflowEffectsResult,
 	type TrackerIssueInspection,
+	type TrackerLog,
 	type TrackerWorkflowEffect,
 } from "../tracker.ts";
 import {
@@ -30,6 +31,8 @@ import type { WorkflowChange } from "../workflow/change.ts";
 
 export class WorkflowTrackerState {
 	private readonly issues = new Map<string, StoredIssue>();
+	private readonly artifacts = new Map<string, Array<WorkflowArtifact>>();
+	private readonly changes = new Map<string, Array<WorkflowChange>>();
 	private nextIssueNumber = 1;
 
 	constructor(seed: Array<SeedIssueInput> = []) {
@@ -47,6 +50,21 @@ export class WorkflowTrackerState {
 		for (const issue of snapshot.issues) {
 			state.issues.set(issue.id, cloneJson(issue) as StoredIssue);
 		}
+		for (const [issueId, artifacts] of Object.entries(
+			snapshot.artifacts ?? {},
+		)) {
+			state.artifacts.set(
+				issueId,
+				cloneJson(artifacts) as Array<WorkflowArtifact>,
+			);
+		}
+		for (const [issueId, changes] of Object.entries(snapshot.changes ?? {})) {
+			state.changes.set(issueId, cloneJson(changes) as Array<WorkflowChange>);
+		}
+		for (const issue of snapshot.issues) {
+			state.artifacts.set(issue.id, state.artifacts.get(issue.id) ?? []);
+			state.changes.set(issue.id, state.changes.get(issue.id) ?? []);
+		}
 		return state;
 	}
 
@@ -56,6 +74,18 @@ export class WorkflowTrackerState {
 			nextIssueNumber: this.nextIssueNumber,
 			issues: [...this.issues.values()].map(
 				(issue) => cloneJson(issue) as StoredIssue,
+			),
+			artifacts: Object.fromEntries(
+				[...this.artifacts.entries()].map(([issueId, artifacts]) => [
+					issueId,
+					cloneJson(artifacts) as Array<WorkflowArtifact>,
+				]),
+			),
+			changes: Object.fromEntries(
+				[...this.changes.entries()].map(([issueId, changes]) => [
+					issueId,
+					cloneJson(changes) as Array<WorkflowChange>,
+				]),
 			),
 		};
 	}
@@ -67,6 +97,8 @@ export class WorkflowTrackerState {
 		}
 		const stored = normalizeIssue({ ...input, id });
 		this.issues.set(id, stored);
+		this.artifacts.set(id, []);
+		this.changes.set(id, []);
 		return cloneIssue(stored);
 	}
 
@@ -127,16 +159,11 @@ export class WorkflowTrackerState {
 		return cloneIssue(issue);
 	}
 
-	appendLog(
-		id: string,
-		input: Omit<WorkflowLog, "sequence" | "issueId">,
-	): WorkflowLog {
+	appendLog(id: string, input: TrackerLog): WorkflowLog {
 		const issue = this.requireHealthyIssue(id);
 		const log = cloneJson({
 			...input,
-			...(input.payload === undefined
-				? {}
-				: { payload: parseJsonValue(input.payload) }),
+			...(input.message === undefined ? {} : { message: input.message }),
 			issueId: id,
 			sequence: issue.logs.length + 1,
 		}) as WorkflowLog;
@@ -199,18 +226,22 @@ export class WorkflowTrackerState {
 			this.removeDependency(dependentId, id);
 		}
 		this.issues.delete(id);
+		this.artifacts.delete(id);
+		this.changes.delete(id);
 	}
 
 	registerArtifact(
 		issueId: string,
 		input: WorkflowArtifactInput,
 	): WorkflowArtifact {
-		const issue = this.requireIssue(issueId);
+		this.requireIssue(issueId);
+		const artifacts = this.artifacts.get(issueId) ?? [];
 		const artifact = normalizeWorkflowArtifactInput(
 			input,
-			input.id ?? `artifact-${issue.artifacts.length + 1}`,
+			input.id ?? `artifact-${artifacts.length + 1}`,
 		);
-		issue.artifacts.push(artifact);
+		artifacts.push(artifact);
+		this.artifacts.set(issueId, artifacts);
 		return cloneJson(artifact) as WorkflowArtifact;
 	}
 
@@ -218,9 +249,11 @@ export class WorkflowTrackerState {
 		issueId: string,
 		input: Omit<WorkflowChange, "id">,
 	): WorkflowChange {
-		const issue = this.requireIssue(issueId);
-		const change = { id: `change-${issue.changes.length + 1}`, ...input };
-		issue.changes.push(change);
+		this.requireIssue(issueId);
+		const changes = this.changes.get(issueId) ?? [];
+		const change = { id: `change-${changes.length + 1}`, ...input };
+		changes.push(change);
+		this.changes.set(issueId, changes);
 		return cloneJson(change) as WorkflowChange;
 	}
 
@@ -263,7 +296,7 @@ export class WorkflowTrackerState {
 		}
 		for (const { issueId, artifact } of result.artifacts) {
 			if (
-				!this.getIssue(issueId).artifacts.some(
+				!(this.artifacts.get(issueId) ?? []).some(
 					(stored) => stored.id === artifact.id,
 				)
 			) {
@@ -274,7 +307,7 @@ export class WorkflowTrackerState {
 		}
 		for (const { issueId, change } of result.changes) {
 			if (
-				!this.getIssue(issueId).changes.some(
+				!(this.changes.get(issueId) ?? []).some(
 					(stored) => stored.id === change.id,
 				)
 			) {
@@ -318,6 +351,8 @@ export class WorkflowTrackerState {
 			);
 		}
 		this.issues.set(normalized.id, normalized);
+		this.artifacts.set(normalized.id, []);
+		this.changes.set(normalized.id, []);
 		const numeric = Number(normalized.id);
 		if (Number.isInteger(numeric) && numeric >= this.nextIssueNumber) {
 			this.nextIssueNumber = numeric + 1;
@@ -367,9 +402,11 @@ export type WorkflowTrackerStateSnapshot = {
 	version: 1;
 	nextIssueNumber: number;
 	issues: Array<StoredIssue>;
+	artifacts?: Record<string, Array<WorkflowArtifact>>;
+	changes?: Record<string, Array<WorkflowChange>>;
 };
 
-type StoredIssue = Omit<WorkflowIssue, "workflow"> & {
+type StoredIssue = Omit<WorkflowIssue, "workflow" | "artifacts" | "changes"> & {
 	workflow: WorkflowProjection;
 	logs: Array<unknown>;
 	labels?: Array<string>;
@@ -486,8 +523,6 @@ function normalizeIssue(input: CreateIssueInput & { id: string }): StoredIssue {
 			version: input.workflow.version ?? 1,
 		}),
 		relationships: normalizeRelationships(input.relationships),
-		artifacts: [],
-		changes: [],
 		logs: (input.logs ?? []).map((log, index) => ({
 			...log,
 			issueId: input.id,

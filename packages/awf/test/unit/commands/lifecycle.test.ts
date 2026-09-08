@@ -85,7 +85,7 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 				log: {
 					type: string;
 					runId?: string;
-					payload?: Record<string, unknown>;
+					message?: string;
 				};
 			};
 		}
@@ -97,7 +97,7 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 	expect(data.issue.workflow.activeRunId).toBeUndefined();
 	expect(data.log.type).toBe("human_input_needed");
 	expect(data.log.runId).toBe("run-1");
-	expect(data.log.payload).toMatchObject({
+	expect(JSON.parse(data.log.message ?? "{}")).toMatchObject({
 		event: "pause",
 		pausedAction: "implement",
 		resumeAction: "fix",
@@ -123,11 +123,11 @@ it("should ensure that respond resumes a waiting-human issue to a valid ready ac
 						sequence: 1,
 						type: "human_input_needed",
 						runId: "run-1",
-						payload: {
+						message: JSON.stringify({
 							event: "pause",
 							pausedAction: "implement",
 							reason: "Need API decision.",
-						},
+						}),
 					},
 				],
 			},
@@ -153,7 +153,7 @@ it("should ensure that respond resumes a waiting-human issue to a valid ready ac
 		"human_input_needed",
 		"human_response_received",
 	]);
-	expect(logs[1]?.payload).toMatchObject({
+	expect(JSON.parse(logs[1]?.message ?? "{}")).toMatchObject({
 		event: "respond",
 		response: "Use the smaller public API.",
 		sufficient: true,
@@ -188,7 +188,7 @@ it("should ensure that respond keeps an insufficient response waiting for the hu
 	});
 	const logs = await tracker.readLogs("123");
 	expect(logs[0]?.type).toBe("human_response_received");
-	expect(logs[0]?.payload).toMatchObject({
+	expect(JSON.parse(logs[0]?.message ?? "{}")).toMatchObject({
 		event: "respond",
 		response: "I only know part of it.",
 		sufficient: false,
@@ -207,7 +207,10 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 						sequence: 1,
 						type: "human_input_needed",
 						runId: "run-1",
-						payload: { event: "pause", pausedAction: "not-ready" },
+						message: JSON.stringify({
+							event: "pause",
+							pausedAction: "not-ready",
+						}),
 					},
 				],
 			},
@@ -232,7 +235,7 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 		"human_input_needed",
 		"human_intervention_needed",
 	]);
-	expect(logs[1]?.payload).toMatchObject({
+	expect(JSON.parse(logs[1]?.message ?? "{}")).toMatchObject({
 		event: "respond",
 		from: { state: "waiting-human", action: "none" },
 		to: { state: "need-human", action: "none" },
@@ -413,7 +416,9 @@ it("should ensure that failed running actions retry the same ready action by def
 		action: data.issue.workflow.action,
 		reason: data.issue.workflow.reason,
 	}).toEqual({ state: "ready", action: "merge", reason: undefined });
-	expect((await tracker.readLogs("123"))[0]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
+	).toEqual({
 		event: "fail",
 		input: { verdict: "changes-requested", findings: [findingArtifact("bug")] },
 		to: { state: "ready", action: "merge" },
@@ -439,7 +444,9 @@ it("should ensure that explicit escalation moves work to need-human none and log
 	expect(envelope.ok).toBe(true);
 	expect((await tracker.getIssue("123")).workflow.state).toBe("need-human");
 	expect((await tracker.getIssue("123")).workflow.action).toBe("none");
-	expect((await tracker.readLogs("123"))[0]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
+	).toEqual({
 		event: "escalate",
 		input: { reason: "review requires product decision" },
 		from: { state: "ready", action: "review" },
@@ -476,7 +483,9 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 		},
 	);
 	expect(terminal.ok).toBe(true);
-	expect((await tracker.readLogs("running"))[0]?.payload).toMatchObject({
+	expect(
+		JSON.parse((await tracker.readLogs("running"))[0]?.message ?? "{}"),
+	).toMatchObject({
 		input: { arbitrary: { nested: true } },
 	});
 
@@ -485,7 +494,9 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 		stdin: JSON.stringify({ arbitrary: true, extra: [1] }),
 	});
 	expect(escalated.ok).toBe(true);
-	expect((await tracker.readLogs("escalate"))[0]?.payload).toMatchObject({
+	expect(
+		JSON.parse((await tracker.readLogs("escalate"))[0]?.message ?? "{}"),
+	).toMatchObject({
 		input: { arbitrary: true, extra: [1] },
 	});
 });
@@ -640,7 +651,10 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 	await tracker.appendLog("123", {
 		type: "action_succeeded",
 		runId: "run-1",
-		payload: { event: "succeed", to: { state: "done", action: "none" } },
+		message: JSON.stringify({
+			event: "succeed",
+			to: { state: "done", action: "none" },
+		}),
 	});
 
 	const retry = await execute(
@@ -757,10 +771,10 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 		action: "none",
 	});
 	expect(updatedWorkflow.activeRunId).toBeUndefined();
-	expect((await tracker.getIssue("123")).artifacts).toMatchObject([
-		{ kind: "inline", uri: "handler:summary", name: "Handler summary" },
-	]);
-	expect((await tracker.readLogs("123"))[0]?.payload).toEqual({
+	expect(await tracker.getIssue("123")).not.toHaveProperty("artifacts");
+	expect(
+		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
+	).toEqual({
 		event: "succeed",
 		input: { n: "2" },
 		to: { state: "done", action: "none" },
@@ -875,7 +889,9 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		action: failed.issue.workflow.action,
 		reason: failed.issue.workflow.reason,
 	}).toEqual({ state: "ready", action: "implement", reason: undefined });
-	expect((await tracker.readLogs("retry"))[0]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs("retry"))[0]?.message ?? "{}"),
+	).toEqual({
 		event: "fail",
 		input: { reason: "temporary CI failure" },
 		to: { state: "ready", action: "implement" },
@@ -902,7 +918,9 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		state: (await tracker.getIssue("human")).workflow.state,
 		action: (await tracker.getIssue("human")).workflow.action,
 	}).toEqual({ state: "need-human", action: "none" });
-	expect((await tracker.readLogs("human"))[0]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs("human"))[0]?.message ?? "{}"),
+	).toEqual({
 		event: "escalate",
 		input: { reason: "needs product decision" },
 		from: { state: "ready", action: "review" },
@@ -920,7 +938,9 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		"human_intervention_needed",
 		"action_resumed",
 	]);
-	expect((await tracker.readLogs("human"))[1]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs("human"))[1]?.message ?? "{}"),
+	).toEqual({
 		event: "resume",
 		to: { state: "ready", action: "fix" },
 	});

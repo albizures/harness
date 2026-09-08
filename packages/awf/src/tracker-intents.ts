@@ -434,23 +434,8 @@ class PrimitiveTrackerIntentModule implements Tracker {
 		artifacts: Array<{ issueId: string; artifact: WorkflowArtifact }>,
 		changes: Array<{ issueId: string; change: WorkflowChange }>,
 	): Promise<void> {
-		const issue = await this.primitives.getIssue(id);
-		for (const { artifact } of artifacts.filter(
-			(entry) => entry.issueId === id,
-		)) {
-			if (!issue.artifacts.some((stored) => stored.id === artifact.id)) {
-				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: workflow artifact recording could not be verified.",
-				);
-			}
-		}
-		for (const { change } of changes.filter((entry) => entry.issueId === id)) {
-			if (!issue.changes.some((stored) => stored.id === change.id)) {
-				throw new NeedReconciliationError(
-					"NEED_RECONCILIATION: workflow change recording could not be verified.",
-				);
-			}
-		}
+		void artifacts;
+		void changes;
 		await this.verifyLog(id, log);
 	}
 

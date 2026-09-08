@@ -1,6 +1,5 @@
-import { parseJsonValue } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest/manifest.ts";
-import type { TrackerIssueInspection } from "../../tracker.ts";
+import type { TrackerIssueInspection, TrackerLog } from "../../tracker.ts";
 import {
 	normalizeWorkflowArtifactInput,
 	type WorkflowArtifact,
@@ -50,6 +49,8 @@ export class GitHubTracker {
 	readonly verification;
 	private readonly api: GitHubTrackerApi;
 	private readonly manifest: WorkflowManifest;
+	private readonly nextArtifactNumberByIssue = new Map<string, number>();
+	private readonly nextChangeNumberByIssue = new Map<string, number>();
 
 	constructor(api: GitHubTrackerApi, manifest: WorkflowManifest) {
 		this.api = api;
@@ -72,7 +73,7 @@ export class GitHubTracker {
 			version: input.workflow.version ?? 1,
 		});
 		const labels = labelsForProjection(this.manifest, projection);
-		const metadata = metadataFromProjection(projection, [], [], {
+		const metadata = metadataFromProjection(projection, {
 			generatedBy: input.relationships?.generatedBy,
 		});
 		const created = await this.api.createIssue({
@@ -150,7 +151,7 @@ export class GitHubTracker {
 			await this.projectLabels(number, next);
 			await this.upsertProjectionComment(
 				number,
-				metadataFromProjection(next, current.artifacts, current.changes, {
+				metadataFromProjection(next, {
 					generatedBy: current.relationships.generatedBy,
 				}),
 			);
@@ -166,17 +167,12 @@ export class GitHubTracker {
 		return this.readProjectedIssue(id);
 	}
 
-	async appendLog(
-		id: string,
-		input: Omit<WorkflowLog, "sequence" | "issueId">,
-	): Promise<WorkflowLog> {
+	async appendLog(id: string, input: TrackerLog): Promise<WorkflowLog> {
 		const number = parseIssueNumber(id);
 		const logs = await this.readLogs(id);
 		const log = cloneJson({
 			...input,
-			...(input.payload === undefined
-				? {}
-				: { payload: parseJsonValue(input.payload) }),
+			...(input.message === undefined ? {} : { message: input.message }),
 			issueId: id,
 			sequence: logs.length + 1,
 		}) as WorkflowLog;
@@ -269,28 +265,11 @@ export class GitHubTracker {
 		issueId: string,
 		input: WorkflowArtifactInput,
 	): Promise<WorkflowArtifact> {
-		const issue = await this.readProjectedIssue(issueId);
-		const artifact = normalizeWorkflowArtifactInput(
+		await this.readProjectedIssue(issueId);
+		return normalizeWorkflowArtifactInput(
 			input,
-			input.id ?? `artifact-${issue.artifacts.length + 1}`,
+			input.id ?? `artifact-${this.nextArtifactNumber(issueId)}`,
 		);
-		await this.upsertProjectionComment(
-			parseIssueNumber(issueId),
-			metadataFromProjection(
-				issue.workflow,
-				[...issue.artifacts, artifact],
-				issue.changes,
-				{ generatedBy: issue.relationships.generatedBy },
-			),
-		);
-		const reread = await this.readProjectedIssue(issueId);
-		if (!reread.artifacts.some((candidate) => sameJson(candidate, artifact))) {
-			throw needsReconciliation(
-				issueId,
-				"post-artifact projection verification failed",
-			);
-		}
-		return artifact;
 	}
 
 	async registerChange(
@@ -298,25 +277,20 @@ export class GitHubTracker {
 		input: Omit<WorkflowChange, "id">,
 	): Promise<WorkflowChange> {
 		validatePullRequestArtifact(input.kind, input.uri);
-		const issue = await this.readProjectedIssue(issueId);
-		const change = { id: `change-${issue.changes.length + 1}`, ...input };
-		await this.upsertProjectionComment(
-			parseIssueNumber(issueId),
-			metadataFromProjection(
-				issue.workflow,
-				issue.artifacts,
-				[...issue.changes, change],
-				{ generatedBy: issue.relationships.generatedBy },
-			),
-		);
-		const reread = await this.readProjectedIssue(issueId);
-		if (!reread.changes.some((candidate) => sameJson(candidate, change))) {
-			throw needsReconciliation(
-				issueId,
-				"post-change projection verification failed",
-			);
-		}
-		return change;
+		await this.readProjectedIssue(issueId);
+		return { id: `change-${this.nextChangeNumber(issueId)}`, ...input };
+	}
+
+	private nextArtifactNumber(issueId: string): number {
+		const next = this.nextArtifactNumberByIssue.get(issueId) ?? 1;
+		this.nextArtifactNumberByIssue.set(issueId, next + 1);
+		return next;
+	}
+
+	private nextChangeNumber(issueId: string): number {
+		const next = this.nextChangeNumberByIssue.get(issueId) ?? 1;
+		this.nextChangeNumberByIssue.set(issueId, next + 1);
+		return next;
 	}
 
 	private async readProjectedIssue(
@@ -348,9 +322,7 @@ export class GitHubTracker {
 				...(await this.api.readRelationships(issue.number)),
 				...metadata.relationships,
 			}),
-			artifacts: metadata.artifacts,
-			changes: metadata.changes,
-		};
+		} as WorkflowIssue;
 	}
 
 	private async requireGitHubIssue(id: string): Promise<GitHubTrackerIssue> {

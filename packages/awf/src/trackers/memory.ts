@@ -1,5 +1,9 @@
 import { createTrackerAdapter } from "../tracker-intents.ts";
-import type { TrackerAdapter, TrackerIssueInspection } from "../tracker.ts";
+import type {
+	TrackerAdapter,
+	TrackerIssueInspection,
+	TrackerLog,
+} from "../tracker.ts";
 import type {
 	WorkflowArtifact,
 	WorkflowArtifactInput,
@@ -86,10 +90,7 @@ export class WorkflowStateTracker {
 		return result;
 	}
 
-	async appendLog(
-		id: string,
-		input: Omit<WorkflowLog, "sequence" | "issueId">,
-	): Promise<WorkflowLog> {
+	async appendLog(id: string, input: TrackerLog): Promise<WorkflowLog> {
 		const result = this.state.appendLog(id, input);
 		this.onMutation();
 		return result;

@@ -228,17 +228,15 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 		],
 	});
 
-	expect(expectSuccess(await runAwf(cwd, ["get", "2"]))).toMatchObject({
-		issue: {
-			id: "2",
-			workflow: { kind: "ticket", state: "ready", action: "review" },
-			artifacts: [
-				{
-					kind: "pull-request",
-					uri: "https://github.com/albizures/harness/pull/129",
-				},
-				{ kind: "handoff", uri: "Next: review the API surface." },
-			],
-		},
+	const issue = (
+		expectSuccess(await runAwf(cwd, ["get", "2"])) as {
+			issue: Record<string, unknown>;
+		}
+	).issue;
+	expect(issue).toMatchObject({
+		id: "2",
+		workflow: { kind: "ticket", state: "ready", action: "review" },
 	});
+	expect(issue).not.toHaveProperty("artifacts");
+	expect(issue).not.toHaveProperty("changes");
 });

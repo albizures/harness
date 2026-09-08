@@ -18,6 +18,7 @@ import {
 	readInput,
 	workflowCommandByCli,
 	readOption,
+	stableStringify,
 } from "./shared.ts";
 
 export async function manifestCommand(
@@ -184,7 +185,7 @@ export async function createGenericWorkflowIssueCommand(
 			workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
 			initialLog: {
 				type: `${command.id}_created`,
-				payload: { input: payload.data },
+				message: stableStringify({ input: payload.data }),
 			},
 		});
 		if (log === undefined) {
@@ -234,7 +235,7 @@ export async function applyGenericWorkflowCommand(
 		const result = await tracker.recordCommand(issueId, {
 			log: {
 				type: `${command.id}_applied`,
-				payload: { input: payload.data },
+				message: stableStringify({ input: payload.data }),
 			},
 		});
 		const data = { issue: result.issue, log: result.log, outcome: "APPLIED" };

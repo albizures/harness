@@ -34,9 +34,11 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
-				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
+				'<!-- awf:current v1 agent-development -->\n{"schemaVersion":1,',
 			),
 	).toBeTruthy();
+	expect(issue).not.toHaveProperty("artifacts");
+	expect(issue).not.toHaveProperty("changes");
 	expect(issue.workflow.kind).toBe("ticket");
 	expect(issue.workflow.version).toBe(1);
 
@@ -55,7 +57,7 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
-				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
+				'<!-- awf:current v1 agent-development -->\n{"schemaVersion":1,',
 			),
 	).toBeTruthy();
 	const updated = await tracker.getIssue("1");
@@ -204,7 +206,7 @@ it("should append logs as strict machine comments", async () => {
 	await tracker.appendLog(issue.id, { type: "started", runId: "run-1" });
 	await tracker.appendLog(issue.id, {
 		type: "succeeded",
-		payload: { ok: true },
+		message: "ok",
 	});
 
 	expect(api.issue(1).comments.length).toBe(PROJECT_COMMENT_AND_TWO_LOGS);
@@ -388,15 +390,16 @@ it("should register and validates pull-request artifacts", async () => {
 	await expect(
 		tracker.registerArtifact("1", { kind: "pull-request", uri: "not a pr" }),
 	).rejects.toThrow(/Pull request artifact/);
-	await tracker.registerArtifact("1", {
+	const artifact = await tracker.registerArtifact("1", {
 		kind: "pull-request",
 		uri: "https://github.com/albizures/harness/pull/1",
 	});
 
-	expect((await tracker.getIssue("1")).artifacts[0]?.kind).toBe("pull-request");
+	expect(artifact.kind).toBe("pull-request");
+	expect(await tracker.getIssue("1")).not.toHaveProperty("artifacts");
 });
 
-it("should preserve structured artifact fields through GitHub projection reads and logs", async () => {
+it("should preserve structured artifact fields as operation results without widening GitHub workflow projections", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
@@ -420,15 +423,16 @@ it("should preserve structured artifact fields through GitHub projection reads a
 	});
 	await tracker.appendLog("1", {
 		type: "artifact_recorded",
-		payload: { artifacts: [artifact] },
+		message: "artifact recorded",
 	});
 
-	expect((await tracker.getIssue("1")).artifacts).toEqual([artifact]);
-	expect((await tracker.readLogs("1"))[0]?.payload).toEqual({
-		artifacts: [artifact],
-	});
-	expect(api.issue(1).comments[0]?.body ?? "").toMatch(/external-artifact-id/u);
-	expect(api.issue(1).comments[1]?.body ?? "").toMatch(/"artifacts":\[/u);
+	expect(artifact.id).toBe("external-artifact-id");
+	expect(await tracker.getIssue("1")).not.toHaveProperty("artifacts");
+	expect((await tracker.readLogs("1"))[0]?.message).toBe("artifact recorded");
+	expect(api.issue(1).comments[0]?.body ?? "").not.toMatch(
+		/external-artifact-id/u,
+	);
+	expect(api.issue(1).comments[1]?.body ?? "").not.toMatch(/"artifacts":\[/u);
 });
 
 it("should ensure that malformed machine-owned artifact data requires reconciliation", async () => {

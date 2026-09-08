@@ -1,13 +1,11 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "type-fest";
-import { isJsonRecord, isJsonValue, jsonRecordSchema } from "../../json.ts";
+import { isJsonRecord, jsonRecordSchema } from "../../json.ts";
 import type { WorkflowManifest } from "../../manifest/manifest.ts";
 import {
 	CorruptWorkflowProjectionError,
 	type WorkflowProjection,
 } from "../../workflow/projection.ts";
-import type { WorkflowChange } from "../../workflow/change.ts";
-import type { WorkflowArtifact } from "../../workflow/artifact.ts";
 import type { WorkflowLog } from "../../workflow/log.ts";
 import {
 	IssueNotFoundError,
@@ -38,8 +36,6 @@ export async function validateGitHubTrackerCapabilities(api: {
 export type ProjectionMetadata = {
 	schemaVersion: number;
 	workflow: WorkflowProjection;
-	artifacts: Array<WorkflowArtifact>;
-	changes: Array<WorkflowChange>;
 	relationships?: Pick<IssueRelationships, "generatedBy">;
 };
 
@@ -313,15 +309,11 @@ function isReservedMachineMarker(
 
 export function metadataFromProjection(
 	workflow: WorkflowProjection,
-	artifacts: Array<WorkflowArtifact>,
-	changes: Array<WorkflowChange>,
 	relationships?: Pick<IssueRelationships, "generatedBy">,
 ): ProjectionMetadata {
 	return {
 		schemaVersion: PROJECTION_SCHEMA_VERSION,
 		workflow,
-		artifacts: cloneJson(artifacts) as Array<WorkflowArtifact>,
-		changes: cloneJson(changes) as Array<WorkflowChange>,
 		...(relationships?.generatedBy === undefined
 			? {}
 			: { relationships: { generatedBy: relationships.generatedBy } }),
@@ -337,10 +329,8 @@ export function isProjectionMetadata(
 	return (
 		value.schemaVersion === PROJECTION_SCHEMA_VERSION &&
 		isProjection(value.workflow) &&
-		Array.isArray(value.artifacts) &&
-		value.artifacts.every(isWorkflowArtifact) &&
-		Array.isArray(value.changes) &&
-		value.changes.every(isWorkflowChange) &&
+		value.artifacts === undefined &&
+		value.changes === undefined &&
 		(value.relationships === undefined ||
 			isMetadataRelationships(value.relationships))
 	);
@@ -368,38 +358,8 @@ export function isWorkflowLog(value: unknown): value is WorkflowLog {
 		typeof value.issueId === "string" &&
 		typeof value.type === "string" &&
 		(value.runId === undefined || typeof value.runId === "string") &&
-		(value.payload === undefined || isJsonValue(value.payload))
-	);
-}
-
-function isWorkflowArtifact(value: unknown): value is WorkflowArtifact {
-	return (
-		isRecord(value) &&
-		Object.keys(value).every((key) => WORKFLOW_ARTIFACT_FIELDS.has(key)) &&
-		typeof value.id === "string" &&
-		value.id !== "" &&
-		isArtifactKind(value.kind) &&
-		typeof value.uri === "string" &&
-		value.uri !== "" &&
-		(value.name === undefined || typeof value.name === "string") &&
-		(value.type === undefined || value.type === value.kind) &&
-		(value.ref === undefined || typeof value.ref === "string") &&
-		(value.url === undefined || typeof value.url === "string") &&
-		(value.path === undefined || typeof value.path === "string") &&
-		(value.title === undefined || typeof value.title === "string") &&
-		(value.metadata === undefined || isJsonRecord(value.metadata))
-	);
-}
-
-function isWorkflowChange(value: unknown): value is WorkflowChange {
-	return (
-		isRecord(value) &&
-		typeof value.id === "string" &&
-		value.id !== "" &&
-		isArtifactKind(value.kind) &&
-		typeof value.uri === "string" &&
-		value.uri !== "" &&
-		(value.summary === undefined || typeof value.summary === "string")
+		(value.message === undefined || typeof value.message === "string") &&
+		value.payload === undefined
 	);
 }
 
@@ -411,35 +371,6 @@ function isMetadataRelationships(
 		Object.keys(value).every((key) => key === "generatedBy") &&
 		(value.generatedBy === undefined || typeof value.generatedBy === "string")
 	);
-}
-
-const WORKFLOW_ARTIFACT_FIELDS = new Set([
-	"id",
-	"kind",
-	"uri",
-	"name",
-	"type",
-	"ref",
-	"url",
-	"path",
-	"title",
-	"metadata",
-]);
-
-const ARTIFACT_KINDS = new Set([
-	"markdown",
-	"inline",
-	"file",
-	"issue",
-	"pull-request",
-	"url",
-	"git-ref",
-	"handoff",
-	"finding",
-]);
-
-function isArtifactKind(value: unknown): boolean {
-	return typeof value === "string" && ARTIFACT_KINDS.has(value);
 }
 
 export function validateProjectionShape(

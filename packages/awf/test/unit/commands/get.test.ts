@@ -32,8 +32,6 @@ it("should ensure that get reads a workflow issue with a stable envelope shape",
 				hash: "e9812f9a37bab3fda6fab06bf276533986787191c9d806cb01aff52b3d0c0e07",
 			},
 			relationships: { children: [], dependencies: [], dependents: [] },
-			artifacts: [],
-			changes: [],
 		},
 		runs: { activeRunId: undefined, attempts: [] },
 	});

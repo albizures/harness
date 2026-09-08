@@ -56,7 +56,7 @@ for (const family of trackerFamilies) {
 			const created = await tracker.createWorkflowIssue({
 				title: "Conformance ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				initialLog: { type: "workflow_created", payload: { source: "test" } },
+				initialLog: { type: "workflow_created", message: "test" },
 			});
 
 			const started = await tracker.startRun(created.issue.id, {
@@ -154,7 +154,7 @@ for (const family of trackerFamilies) {
 							],
 							log: {
 								type: "workflow_applied",
-								payload: { source: "workflow" },
+								message: JSON.stringify({ source: "workflow" }),
 							},
 						},
 					],
@@ -178,9 +178,9 @@ for (const family of trackerFamilies) {
 					uri: "plans/workflow.json",
 					name: "Workflow",
 				});
-				expect((await tracker.readLogs("spec-1"))[0]?.payload).toEqual({
-					source: "workflow",
-				});
+				expect((await tracker.readLogs("spec-1"))[0]?.message).toBe(
+					JSON.stringify({ source: "workflow" }),
+				);
 			},
 			[
 				{
@@ -199,7 +199,9 @@ for (const family of trackerFamilies) {
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
 				initialLog: {
 					type: "workflow_created",
-					payload: { nested: { values: ["one", 2, true, null] } },
+					message: JSON.stringify({
+						nested: { values: ["one", 2, true, null] },
+					}),
 				},
 			});
 
@@ -214,18 +216,22 @@ for (const family of trackerFamilies) {
 			await tracker.recordCommand(created.issue.id, {
 				log: {
 					type: "json_payload_recorded",
-					payload: { artifact, flags: [true, false], empty: null },
+					message: JSON.stringify({
+						artifact,
+						flags: [true, false],
+						empty: null,
+					}),
 				},
 			});
 
-			expect((await tracker.getIssue(created.issue.id)).artifacts).toEqual([
-				artifact,
-			]);
+			expect(await tracker.getIssue(created.issue.id)).not.toHaveProperty(
+				"artifacts",
+			);
 			expect(
-				(await tracker.readLogs(created.issue.id)).map((log) => log.payload),
+				(await tracker.readLogs(created.issue.id)).map((log) => log.message),
 			).toEqual([
-				{ nested: { values: ["one", 2, true, null] } },
-				{ artifact, flags: [true, false], empty: null },
+				JSON.stringify({ nested: { values: ["one", 2, true, null] } }),
+				JSON.stringify({ artifact, flags: [true, false], empty: null }),
 			]);
 		});
 	});
@@ -263,8 +269,14 @@ for (const family of trackerFamilies) {
 				action: "none",
 			});
 			expect(completed.issue.workflow).not.toHaveProperty("activeRunId");
-			expect(completed.issue.artifacts).toEqual(completed.artifacts);
-			expect(completed.issue.changes).toEqual(completed.changes);
+			expect(completed.artifacts).toEqual([
+				expect.objectContaining({ kind: "file", uri: "docs/result.md" }),
+			]);
+			expect(completed.changes).toEqual([
+				expect.objectContaining({ kind: "git-ref", uri: "abc123" }),
+			]);
+			expect(completed.issue).not.toHaveProperty("artifacts");
+			expect(completed.issue).not.toHaveProperty("changes");
 			expect(
 				(await tracker.readLogs(created.issue.id)).map((log) => log.type),
 			).toEqual(["action_started", "action_succeeded"]);

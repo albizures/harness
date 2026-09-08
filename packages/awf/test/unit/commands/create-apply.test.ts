@@ -94,8 +94,6 @@ it("should ensure that create spec records one generic workflow effects intent w
 					dependencies: [],
 					dependents: [],
 				},
-				artifacts: [],
-				changes: [],
 			};
 			return {
 				issues: { "1": issue },
@@ -239,9 +237,7 @@ it("should ensure that create handoff validates input and attaches a Handoff art
 		type: "handoff",
 		ref: "Next agent: inspect the retry path.",
 	});
-	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([
-		data.artifact,
-	]);
+	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 	expect((await tracker.readLogs("ticket-1")).map((log) => log.type)).toEqual([
 		"handoff_created",
 	]);
@@ -287,7 +283,7 @@ it("should ensure that create handoff rejects malformed Handoff artifact data be
 	expect(envelope.ok ? undefined : envelope.error.details?.issues).toEqual([
 		{ path: "$.handoff.ref", message: "Artifact reference must include ref." },
 	]);
-	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([]);
+	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
@@ -387,7 +383,7 @@ it("should ensure that create handoff rejects invalid manifest-declared input be
 	expect(envelope.ok ? undefined : envelope.error.code).toBe(
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 	);
-	expect((await tracker.getIssue("ticket-1")).artifacts).toEqual([]);
+	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);
 });
 
@@ -534,7 +530,7 @@ it("should ensure that apply plan creates tickets, relationships, dependencies, 
 		action: "none",
 	});
 	expect(spec.relationships.children).toEqual(["1", "2"]);
-	expect(spec.artifacts).toEqual([data.artifact]);
+	expect(spec).not.toHaveProperty("artifacts");
 	const planArtifactPath = relative(process.cwd(), plan);
 	expect(data.artifact).toEqual({
 		id: "artifact-1",
@@ -858,7 +854,9 @@ it("should ensure that generic create stores the manifest-parsed JSON-compatible
 	const issue = (envelope.data as CreateSpecData).issue;
 	expect(issue.title).toBe("Parsed title");
 	expect(issue.body).toBe("Parsed body");
-	expect((await tracker.readLogs(issue.id))[0]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs(issue.id))[0]?.message ?? "{}"),
+	).toEqual({
 		input: { title: "Parsed title", body: "Parsed body" },
 	});
 });
@@ -970,7 +968,9 @@ it("should ensure that generic apply logs the manifest-parsed JSON-compatible pa
 	);
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.readLogs("ticket-1"))[0]?.payload).toEqual({
+	expect(
+		JSON.parse((await tracker.readLogs("ticket-1"))[0]?.message ?? "{}"),
+	).toEqual({
 		input: { note: "Add context." },
 	});
 });
