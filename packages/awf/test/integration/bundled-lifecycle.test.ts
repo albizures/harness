@@ -11,7 +11,7 @@ const integrationImplementationPrNumber = 6;
 const integrationSpecPrNumber = 3;
 
 async function start(tracker: Tracker, id: string): Promise<string> {
-	const envelope = await execute(["start", id], {
+	const envelope = await execute(["run-command", "start", id], {
 		tracker,
 		manifest: agentDevelopmentManifest,
 	});
@@ -26,11 +26,14 @@ async function terminal(
 	run: string,
 	input: Record<string, unknown>,
 ) {
-	const envelope = await execute([event, id, "--run", run, "--input", "-"], {
-		tracker,
-		manifest: agentDevelopmentManifest,
-		stdin: JSON.stringify(input),
-	});
+	const envelope = await execute(
+		["run-command", event, id, "--run", run, "--input", "-"],
+		{
+			tracker,
+			manifest: agentDevelopmentManifest,
+			stdin: JSON.stringify(input),
+		},
+	);
 	expect(envelope.ok).toBe(true);
 	return envelope;
 }

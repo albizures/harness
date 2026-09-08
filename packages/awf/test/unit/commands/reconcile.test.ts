@@ -183,7 +183,7 @@ it("should ensure that normal commands do not silently repair drift before recon
 	});
 
 	const before = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
@@ -193,7 +193,7 @@ it("should ensure that normal commands do not silently repair drift before recon
 	expect(before.ok ? undefined : before.error.code).toBe("RUN_MISMATCH");
 	await execute(["reconcile", "123", "--apply"], { tracker });
 	const after = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),

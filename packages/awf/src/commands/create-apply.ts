@@ -1,6 +1,7 @@
 import type { JsonValue } from "type-fest";
 import type { CommandHandlers } from "../command-handlers.ts";
 import { failure, success, type Envelope } from "../envelope.ts";
+import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
 import type {
 	ManifestCommand,
 	WorkflowManifest,
@@ -14,6 +15,14 @@ import {
 	type TrackerWorkflowEffect,
 } from "../tracker.ts";
 import {
+	escalateCommand,
+	pauseCommand,
+	respondCommand,
+	resumeCommand,
+	startCommand,
+	terminalCommand,
+} from "./lifecycle.ts";
+import {
 	genericIssueBody,
 	genericIssueTitle,
 	initialWorkflowTarget,
@@ -23,6 +32,7 @@ import {
 	parseJsonInput,
 	parseWorkflowCommandInput,
 	readInput,
+	workflowCommand,
 	workflowCommandByCli,
 	readOption,
 	stableStringify,
@@ -34,20 +44,36 @@ export async function manifestCommand(
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
 	commandHandlers: CommandHandlers = {},
+	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
-	const verb = args[0] as "create" | "apply";
-	const target = args[1];
-	const command = workflowCommandByCli(manifest, verb, target);
+	const [verb, target] = args;
+	const command =
+		verb === "run-command"
+			? workflowCommand(manifest, target ?? "")
+			: workflowCommandByCli(manifest, verb ?? "", target);
 	if (command === undefined) {
 		return failure(
-			"UNKNOWN_COMMAND_TARGET",
-			"Workflow command target is not declared by the manifest.",
+			verb === "run-command" ? "UNKNOWN_COMMAND" : "UNKNOWN_COMMAND_TARGET",
+			verb === "run-command"
+				? "Unknown command."
+				: "Workflow command target is not declared by the manifest.",
 			{
-				command: `${verb} ${target}`,
+				command: verb === "run-command" ? args.join(" ") : `${verb} ${target}`,
 			},
 		);
 	}
 	const versionedTracker = workflowVersionTracker(tracker, manifest);
+	const lifecycle = await manifestLifecycleCommand(
+		args,
+		versionedTracker,
+		manifest,
+		stdin,
+		command,
+		lifecycleHandlers,
+	);
+	if (lifecycle !== undefined) {
+		return lifecycle;
+	}
 	const handler = commandHandlers[command.id];
 	if (handler !== undefined) {
 		return handledManifestCommand(
@@ -59,7 +85,8 @@ export async function manifestCommand(
 			handler,
 		);
 	}
-	if (verb === "create") {
+	const effectiveVerb = verb === "run-command" ? command.cli?.verb : verb;
+	if (effectiveVerb === "create") {
 		return createGenericWorkflowIssueCommand(
 			readOption(args, "--input"),
 			versionedTracker,
@@ -68,13 +95,86 @@ export async function manifestCommand(
 			command,
 		);
 	}
-	return applyGenericWorkflowCommand(
-		args[2],
-		readOption(args, "--input"),
-		versionedTracker,
-		stdin,
-		command,
+	if (effectiveVerb === "apply") {
+		return applyGenericWorkflowCommand(
+			args[2],
+			readOption(args, "--input"),
+			versionedTracker,
+			stdin,
+			command,
+		);
+	}
+	return failure(
+		"COMMAND_HANDLER_REQUIRED",
+		"Manifest command requires a command handler.",
+		{
+			command: command.id,
+		},
 	);
+}
+
+async function manifestLifecycleCommand(
+	args: Array<string>,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	stdin: string | undefined,
+	command: ManifestCommand,
+	lifecycleHandlers?: LifecycleTransitionHandlers,
+): Promise<Envelope | undefined> {
+	if (args[0] !== "run-command") {
+		return undefined;
+	}
+	const shifted = [command.id, ...args.slice(2)];
+	if (command.id === "start") {
+		return startCommand(shifted[1], tracker, manifest);
+	}
+	if (command.id === "succeed" || command.id === "fail") {
+		return terminalCommand(
+			command.id,
+			shifted[1],
+			readOption(shifted, "--run"),
+			readOption(shifted, "--input"),
+			tracker,
+			manifest,
+			stdin,
+			lifecycleHandlers,
+		);
+	}
+	if (command.id === "pause") {
+		return pauseCommand(
+			shifted[1],
+			readOption(shifted, "--input"),
+			tracker,
+			stdin,
+		);
+	}
+	if (command.id === "respond") {
+		return respondCommand(
+			shifted[1],
+			readOption(shifted, "--input"),
+			tracker,
+			manifest,
+			stdin,
+		);
+	}
+	if (command.id === "escalate") {
+		return escalateCommand(
+			shifted[1],
+			readOption(shifted, "--input"),
+			tracker,
+			manifest,
+			stdin,
+		);
+	}
+	if (command.id === "resume") {
+		return resumeCommand(
+			shifted[1],
+			readOption(shifted, "--action"),
+			tracker,
+			manifest,
+		);
+	}
+	return undefined;
 }
 
 async function handledManifestCommand(
@@ -105,15 +205,20 @@ async function handledManifestCommand(
 			return lifecycleError("new", error);
 		}
 	}
-	const verb = args[0] as "create" | "apply";
-	const issueId = verb === "apply" ? args[2] : undefined;
+	const routeVerb = args[0] ?? command.cli?.verb ?? "run-command";
+	const commandVerb =
+		routeVerb === "run-command" ? (command.cli?.verb ?? routeVerb) : routeVerb;
+	const issueId = commandVerb === "create" ? undefined : args[2];
 	const inputPath = readOption(args, "--input");
-	if (inputPath === undefined || (verb === "apply" && issueId === undefined)) {
+	if (
+		inputPath === undefined ||
+		(commandVerb !== "create" && issueId === undefined)
+	) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
 			usage:
-				verb === "create"
-					? `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`
-					: `awf apply ${command.cli?.target ?? command.target.action} <issue> --input <file|->`,
+				commandVerb === "create"
+					? `awf ${routeVerb} ${command.cli?.target ?? command.id} --input <file|->`
+					: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
 		});
 	}
 	const raw = await readInput(inputPath, stdin);

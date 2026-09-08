@@ -92,7 +92,7 @@ it("should ensure that text output renders ready items and suggested commands", 
 							state: "ready",
 							action: "implement",
 						},
-						suggestedCommand: { display: "awf start 42" },
+						suggestedCommand: { display: "awf run-command start 42" },
 					},
 				],
 			},
@@ -101,7 +101,7 @@ it("should ensure that text output renders ready items and suggested commands", 
 	);
 
 	expect(output).toBe(
-		"42 Implement CLI [ticket/ready/implement] — awf start 42\n",
+		"42 Implement CLI [ticket/ready/implement] — awf run-command start 42\n",
 	);
 });
 
@@ -120,7 +120,7 @@ it("should ensure that text output renders Task subkind separately from lifecycl
 							action: "work",
 							subkind: "research",
 						},
-						suggestedCommand: { display: "awf start 42" },
+						suggestedCommand: { display: "awf run-command start 42" },
 					},
 				],
 			},
@@ -129,7 +129,7 @@ it("should ensure that text output renders Task subkind separately from lifecycl
 	);
 
 	expect(output).toBe(
-		"42 Research CLI [task/ready/work; subkind: research] — awf start 42\n",
+		"42 Research CLI [task/ready/work; subkind: research] — awf run-command start 42\n",
 	);
 });
 

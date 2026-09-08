@@ -56,43 +56,6 @@ const runtimeCommands: Array<CommandSpec> = [
 		usage: "awf workflow describe",
 		description: "Describe the loaded workflow manifest.",
 	},
-	{
-		name: "start",
-		usage: "awf start <id>",
-		description: "Start the current action.",
-	},
-	{
-		name: "succeed",
-		usage: "awf succeed <id> --run <run> --input <file|->",
-		description: "Mark a run as succeeded.",
-	},
-	{
-		name: "fail",
-		usage: "awf fail <id> --run <run> --input <file|->",
-		description: "Mark a run as failed.",
-	},
-	{
-		name: "pause",
-		usage: "awf pause <id> --input <file|->",
-		description:
-			"Pause a running action for ordinary human input and clear its active run.",
-	},
-	{
-		name: "respond",
-		usage: "awf respond <id> --input <file|->",
-		description:
-			"Record human response context and resume or keep waiting-human work.",
-	},
-	{
-		name: "escalate",
-		usage: "awf escalate <id> --input <file|->",
-		description: "Move work to need-human/none with a human-readable reason.",
-	},
-	{
-		name: "resume",
-		usage: "awf resume <id> --action <action>",
-		description: "Resume need-human work at a valid ready action.",
-	},
 ];
 export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 	return [
@@ -113,13 +76,13 @@ export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 }
 
 function manifestCommandUsage(command: ManifestCommand): string {
-	if (command.cli?.verb === "apply") {
-		return `awf apply ${command.cli.target} <issue> --input <file|->`;
+	if (command.cli?.verb === "create") {
+		if (command.cli.source === true) {
+			return `awf create ${command.cli.target} --source <issue> --input <file|->`;
+		}
+		return `awf create ${command.cli.target} --input <file|->`;
 	}
-	if (command.cli?.source === true) {
-		return `awf create ${command.cli.target} --source <issue> --input <file|->`;
-	}
-	return `awf create ${command.cli?.target ?? "target"} --input <file|->`;
+	return `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id} <issue> --input <file|->`;
 }
 
 export function helpReadiness(manifest: WorkflowManifest): {

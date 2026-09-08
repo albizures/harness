@@ -1,45 +1,29 @@
 import { failure, type Envelope } from "../envelope.ts";
-import { readOption, unknownCommand } from "./shared.ts";
+import type { WorkflowManifest } from "../manifest/manifest.ts";
+import { readOption, unknownCommand, workflowCommandByCli } from "./shared.ts";
 
 const maxReconcileArgumentCount = 3;
 const createWithSourceArgumentCount = 6;
 export function validateKnownCommand(
 	args: Array<string>,
+	manifest?: WorkflowManifest,
 ): Envelope | undefined {
 	const [command, subcommand] = args;
 
 	switch (command) {
 		case "get":
 		case "logs":
-		case "start":
 			return requirePositionalCount(args, 1, `awf ${command} <id>`);
 		case "reconcile":
 			return validateReconcile(args);
 		case "ready":
 			return validateReady(args);
-		case "succeed":
-		case "fail":
-			return validateTerminalArguments(args, command);
-		case "pause":
-		case "respond":
-		case "escalate":
-			return requirePositionalAndOption(
-				args,
-				`awf ${command} <id> --input <file|->`,
-				"--input",
-				1,
-			);
-		case "resume":
-			return requirePositionalAndOption(
-				args,
-				"awf resume <id> --action <action>",
-				"--action",
-				1,
-			);
 		case "create":
 			return validateManifestCommandArguments(args, "create");
 		case "apply":
 			return validateManifestCommandArguments(args, "apply");
+		case "run-command":
+			return validateRunCommandArguments(args);
 		case "manifest":
 			if (subcommand !== "validate") {
 				return unknownCommand(args);
@@ -48,7 +32,7 @@ export function validateKnownCommand(
 		case "workflow":
 			return validateWorkflowArguments(args);
 		default:
-			return unknownCommand(args);
+			return validateManifestCliArguments(args, manifest);
 	}
 }
 
@@ -59,6 +43,31 @@ function validateWorkflowArguments(args: Array<string>): Envelope | undefined {
 	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
 		usage: "awf workflow describe",
 	});
+}
+
+function validateManifestCliArguments(
+	args: Array<string>,
+	manifest: WorkflowManifest | undefined,
+): Envelope | undefined {
+	if (manifest === undefined) {
+		return unknownCommand(args);
+	}
+	const command = workflowCommandByCli(manifest, args[0] ?? "", args[1]);
+	if (command === undefined) {
+		return unknownCommand(args);
+	}
+	return undefined;
+}
+
+function validateRunCommandArguments(
+	args: Array<string>,
+): Envelope | undefined {
+	if (args[1] === undefined || args[1] === "" || args[1].startsWith("-")) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: "awf run-command <command-id> ...",
+		});
+	}
+	return undefined;
 }
 
 function validateReady(args: Array<string>): Envelope | undefined {
@@ -149,36 +158,6 @@ function invalidReadyArguments(): Envelope {
 	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {
 		usage: "awf ready [--filter <name=value>] [--limit <n>]",
 	});
-}
-
-function validateTerminalArguments(
-	args: Array<string>,
-	command: string,
-): Envelope | undefined {
-	const minimumTerminalArgumentCount = 4;
-	const terminalArgumentCountWithInput = 6;
-	const usage = `awf ${command} <id> --run <run> --input <file|->`;
-	if (args[1] === undefined || args[1] === "" || args[1].startsWith("-")) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage,
-		});
-	}
-	const run = readOption(args, "--run");
-	const input = readOption(args, "--input");
-	const allowed = new Set([command, args[1], "--run", run, "--input", input]);
-	if (
-		run === undefined ||
-		run === "" ||
-		(input !== undefined && input === "") ||
-		(input === undefined && args.length !== minimumTerminalArgumentCount) ||
-		(input !== undefined && args.length !== terminalArgumentCountWithInput) ||
-		args.some((arg) => !allowed.has(arg))
-	) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage,
-		});
-	}
-	return undefined;
 }
 
 export type ReadyOptions = {

@@ -56,7 +56,7 @@ export type WorkflowDescriptionV1 = {
 		id: string;
 		target: { kind: string; action: string };
 		cli?: {
-			verb: "create" | "apply";
+			verb: string;
 			target: string;
 			source?: boolean;
 			usage: string;

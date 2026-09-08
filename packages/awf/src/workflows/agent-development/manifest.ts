@@ -214,6 +214,13 @@ export const agentDevelopmentManifest = defineManifest({
 			target: { kind: "ticket", action: "review" },
 			input: handoffCreateInput,
 		},
+		{ id: "start", target: { kind: "ticket", action: "implement" } },
+		{ id: "succeed", target: { kind: "ticket", action: "implement" } },
+		{ id: "fail", target: { kind: "ticket", action: "implement" } },
+		{ id: "pause", target: { kind: "ticket", action: "implement" } },
+		{ id: "respond", target: { kind: "ticket", action: "implement" } },
+		{ id: "escalate", target: { kind: "ticket", action: "implement" } },
+		{ id: "resume", target: { kind: "ticket", action: "implement" } },
 	],
 	relationships: [
 		{

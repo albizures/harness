@@ -51,7 +51,18 @@ it("should export a valid explicit bundled workflow module", () => {
 	]);
 	expect(
 		agentDevelopmentManifest.commands.map((command) => command.id),
-	).toEqual(["spec-create", "plan-apply", "handoff-create"]);
+	).toEqual([
+		"spec-create",
+		"plan-apply",
+		"handoff-create",
+		"start",
+		"succeed",
+		"fail",
+		"pause",
+		"respond",
+		"escalate",
+		"resume",
+	]);
 });
 
 it("should capture agent-development-specific lifecycle and readiness assumptions", () => {
@@ -241,7 +252,15 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 
 	assertFailureCode(
 		await execute(
-			["succeed", "ticket-1", "--run", "run-review", "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				"ticket-1",
+				"--run",
+				"run-review",
+				"--input",
+				"-",
+			],
 			{
 				tracker,
 				stdin: JSON.stringify({ verdict: "changes-requested" }),
@@ -252,7 +271,15 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 
 	const data = assertSuccess<TerminalData>(
 		await execute(
-			["succeed", "ticket-2", "--run", "run-implement", "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				"ticket-2",
+				"--run",
+				"run-implement",
+				"--input",
+				"-",
+			],
 			{
 				tracker,
 				stdin: JSON.stringify({

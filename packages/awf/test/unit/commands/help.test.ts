@@ -26,9 +26,9 @@ it("should ensure that help returns a stable success envelope", async () => {
 	expect(data.name).toBe("awf");
 	expect(data.description).toBe("Agent workflow CLI.");
 	expect(Array.isArray(data.commands)).toBeTruthy();
-	expect(
-		data.commands.some((command) => command.usage === "awf start <id>"),
-	).toBeTruthy();
+	expect(data.commands.some((command) => command.name === "run-command")).toBe(
+		false,
+	);
 	expect(
 		data.commands.some(
 			(command) =>

@@ -284,5 +284,12 @@ export const genericTaskManifest = defineManifest({
 			target: { kind: "grilling", action: "discuss" },
 			input: grillingCreateInput,
 		},
+		{ id: "start", target: { kind: "task", action: "work" } },
+		{ id: "succeed", target: { kind: "task", action: "work" } },
+		{ id: "fail", target: { kind: "task", action: "work" } },
+		{ id: "pause", target: { kind: "task", action: "work" } },
+		{ id: "respond", target: { kind: "task", action: "work" } },
+		{ id: "escalate", target: { kind: "task", action: "work" } },
+		{ id: "resume", target: { kind: "task", action: "work" } },
 	],
 });

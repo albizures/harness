@@ -20,19 +20,11 @@ import { parseReadyOptions, validateKnownCommand } from "./commands/args.ts";
 import { manifestCommand } from "./commands/create-apply.ts";
 import { getIssueCommand } from "./commands/get.ts";
 import { helpCommands, helpReadiness } from "./commands/help.ts";
-import {
-	escalateCommand,
-	pauseCommand,
-	respondCommand,
-	resumeCommand,
-	startCommand,
-	terminalCommand,
-} from "./commands/lifecycle.ts";
 import { logsCommand } from "./commands/logs.ts";
 import { validateManifestCommand } from "./commands/manifest-validate.ts";
 import { readyCommand } from "./commands/ready.ts";
 import { reconcileCommand } from "./commands/reconcile.ts";
-import { readOption } from "./commands/shared.ts";
+import { workflowCommandByCli } from "./commands/shared.ts";
 
 export type { CommandHandlers } from "./command-handlers.ts";
 
@@ -94,23 +86,26 @@ export async function execute(
 		return success({ name: "@albizures/awf", version: "0.0.0" });
 	}
 
-	const parseError = validateKnownCommand(args);
-	if (parseError !== undefined) {
-		return parseError;
-	}
-
 	if (args[0] === "manifest" && args[1] === "validate") {
+		const parseError = validateKnownCommand(args);
+		if (parseError !== undefined) {
+			return parseError;
+		}
 		return validateManifestCommand(args[2]);
 	}
 
 	const tracker = options.tracker ?? createInMemoryTracker();
-	if (args[0] === "get") {
-		return getIssueCommand(args[1], tracker);
-	}
-	if (args[0] === "logs") {
-		return logsCommand(args[1], tracker);
-	}
-	if (args[0] === "reconcile") {
+	if (args[0] === "get" || args[0] === "logs" || args[0] === "reconcile") {
+		const parseError = validateKnownCommand(args);
+		if (parseError !== undefined) {
+			return parseError;
+		}
+		if (args[0] === "get") {
+			return getIssueCommand(args[1], tracker);
+		}
+		if (args[0] === "logs") {
+			return logsCommand(args[1], tracker);
+		}
 		return reconcileCommand(args[1], args.includes("--apply"), tracker);
 	}
 
@@ -129,73 +124,37 @@ export async function execute(
 			{ issues: manifestIssues },
 		);
 	}
+
+	const parseError = validateKnownCommand(args, manifest);
+	if (parseError !== undefined) {
+		return parseError;
+	}
 	if (args[0] === "workflow" && args[1] === "describe") {
 		return success(describeWorkflow(manifest));
 	}
 	if (args[0] === "ready") {
 		return readyCommand(parseReadyOptions(args), tracker, manifest);
 	}
-	if (args[0] === "create" || args[0] === "apply") {
-		return manifestCommand(args, tracker, manifest, options.stdin, {
-			...defaultCommandHandlers(manifest),
-			...options.commandHandlers,
-		});
-	}
-	if (args[0] === "start") {
-		return startCommand(args[1], tracker, manifest, options.lifecycleHandlers);
-	}
-	if (args[0] === "succeed" || args[0] === "fail") {
-		return terminalCommand(
-			args[0],
-			args[1],
-			readOption(args, "--run"),
-			readOption(args, "--input"),
+	if (
+		args[0] === "create" ||
+		args[0] === "apply" ||
+		args[0] === "run-command" ||
+		workflowCommandByCli(manifest, args[0] ?? "", args[1]) !== undefined
+	) {
+		return manifestCommand(
+			args,
 			tracker,
 			manifest,
 			options.stdin,
+			{
+				...defaultCommandHandlers(manifest),
+				...options.commandHandlers,
+			},
 			lifecycleHandlersFor(manifest, options),
 		);
 	}
-	if (args[0] === "pause") {
-		return pauseCommand(
-			args[1],
-			readOption(args, "--input"),
-			tracker,
-			options.stdin,
-		);
-	}
-	if (args[0] === "respond") {
-		return respondCommand(
-			args[1],
-			readOption(args, "--input"),
-			tracker,
-			manifest,
-			options.stdin,
-		);
-	}
-	if (args[0] === "escalate") {
-		return escalateCommand(
-			args[1],
-			readOption(args, "--input"),
-			tracker,
-			manifest,
-			options.stdin,
-		);
-	}
-	if (args[0] === "resume") {
-		return resumeCommand(
-			args[1],
-			readOption(args, "--action"),
-			tracker,
-			manifest,
-		);
-	}
 
-	return failure(
-		"NOT_IMPLEMENTED",
-		"This workflow command is not implemented yet.",
-		{
-			command: args.join(" "),
-		},
-	);
+	return failure("UNKNOWN_COMMAND", "Unknown command.", {
+		command: args.join(" "),
+	});
 }

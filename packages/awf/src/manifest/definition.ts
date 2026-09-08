@@ -822,13 +822,7 @@ function validateCommand(
 				"Command CLI declaration must be an object.",
 			);
 		} else {
-			if (value.cli.verb !== "create" && value.cli.verb !== "apply") {
-				issue(
-					issues,
-					`${path}.cli.verb`,
-					"Command CLI verb must be create or apply.",
-				);
-			}
+			validateId(value.cli.verb, `${path}.cli.verb`, issues);
 			validateId(value.cli.target, `${path}.cli.target`, issues);
 			if (
 				typeof value.cli.verb === "string" &&

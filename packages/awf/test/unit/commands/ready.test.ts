@@ -156,7 +156,10 @@ it("should ensure that ready returns legal executable work after dependency, con
 				id: "10",
 				title: "Ready ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				suggestedCommand: { argv: ["start", "10"], display: "awf start 10" },
+				suggestedCommand: {
+					argv: ["run-command", "start", "10"],
+					display: "awf run-command start 10",
+				},
 			},
 		],
 		blocked: [
@@ -231,8 +234,8 @@ it("should ensure that ready reports dependency-gated Tickets as blocked context
 					title: "Open blocker",
 					workflow: { kind: "ticket", state: "ready", action: "review" },
 					suggestedCommand: {
-						argv: ["start", "blocker"],
-						display: "awf start blocker",
+						argv: ["run-command", "start", "blocker"],
+						display: "awf run-command start blocker",
 					},
 				},
 			],
@@ -338,8 +341,8 @@ it("should ensure that ready applies generic manifest relationship policies with
 				title: "Goal ready",
 				workflow: { kind: "spec", state: "ready", action: "plan" },
 				suggestedCommand: {
-					argv: ["start", "goal-ready"],
-					display: "awf start goal-ready",
+					argv: ["run-command", "start", "goal-ready"],
+					display: "awf run-command start goal-ready",
 				},
 			},
 		],
@@ -545,8 +548,8 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 					subkind: "work",
 				},
 				suggestedCommand: {
-					argv: ["start", "ready-work"],
-					display: "awf start ready-work",
+					argv: ["run-command", "start", "ready-work"],
+					display: "awf run-command start ready-work",
 				},
 			},
 		],

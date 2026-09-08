@@ -59,6 +59,17 @@ const syntheticManifest = defineManifest({
 			target: { kind: "idea", action: "promote" },
 			input: z.strictObject({ note: z.string().min(1) }),
 		},
+		{
+			id: "idea-score",
+			cli: { verb: "score", target: "idea" },
+			target: { kind: "idea", action: "promote" },
+			input: z.strictObject({ score: z.number().int() }),
+		},
+		{
+			id: "hidden-maintenance",
+			target: { kind: "idea", action: "promote" },
+			input: z.strictObject({ note: z.string().min(1) }),
+		},
 	],
 	relationships: [
 		{
@@ -113,6 +124,121 @@ it("should ensure that synthetic workflow dispatches manifest-declared create, a
 	expect((await tracker.readLogs(issueId)).at(-1)?.type).toBe(
 		"idea-promote_applied",
 	);
+});
+
+it("should ensure that synthetic workflow dispatches arbitrary manifest CLI verbs to command handlers", async () => {
+	const calls: Array<{ commandId: string; issueId?: string; input: unknown }> =
+		[];
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "idea-1",
+				title: "Idea",
+				workflow: { kind: "idea", state: "ready", action: "promote" },
+			},
+		],
+	});
+
+	const envelope = await execute(["score", "idea", "idea-1", "--input", "-"], {
+		tracker,
+		manifest: syntheticManifest,
+		stdin: JSON.stringify({ score: 7 }),
+		commandHandlers: {
+			"idea-score": ({ command, issueId, input }) => {
+				if (issueId === undefined) {
+					throw new Error("expected issue id");
+				}
+				calls.push({ commandId: command.id, issueId, input });
+				return { scored: issueId, input };
+			},
+		},
+	});
+
+	expect(envelope).toEqual({
+		ok: true,
+		data: { scored: "idea-1", input: { score: 7 } },
+	});
+	expect(calls).toEqual([
+		{ commandId: "idea-score", issueId: "idea-1", input: { score: 7 } },
+	]);
+});
+
+it("should ensure that run-command dispatches by stable command id and remains hidden from help", async () => {
+	const calls: Array<string> = [];
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "idea-1",
+				title: "Idea",
+				workflow: { kind: "idea", state: "ready", action: "promote" },
+			},
+		],
+	});
+
+	const envelope = await execute(
+		["run-command", "hidden-maintenance", "idea-1", "--input", "-"],
+		{
+			tracker,
+			manifest: syntheticManifest,
+			stdin: JSON.stringify({ note: "Sweep." }),
+			commandHandlers: {
+				"hidden-maintenance": ({ command, issueId, input }) => {
+					if (issueId === undefined) {
+						throw new Error("expected issue id");
+					}
+					calls.push(command.id);
+					return { maintained: issueId, input };
+				},
+			},
+		},
+	);
+	const created = await execute(
+		["run-command", "idea-create", "--input", "-"],
+		{
+			tracker,
+			manifest: syntheticManifest,
+			stdin: JSON.stringify({ title: "By id", body: "Created by id." }),
+		},
+	);
+	const help = await execute(["--help"], { manifest: syntheticManifest });
+
+	expect(envelope).toEqual({
+		ok: true,
+		data: { maintained: "idea-1", input: { note: "Sweep." } },
+	});
+	expect(created.ok).toBe(true);
+	expect(calls).toEqual(["hidden-maintenance"]);
+	expect(
+		(
+			help as { ok: true; data: { commands: Array<{ name: string }> } }
+		).data.commands.map((command) => command.name),
+	).not.toContain("run-command");
+});
+
+it("should ensure that runtime lifecycle verbs are not accepted as top-level built-ins", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "idea-1",
+				title: "Idea",
+				workflow: { kind: "idea", state: "ready", action: "promote" },
+			},
+		],
+	});
+
+	const envelope = await execute(["start", "idea-1"], {
+		tracker,
+		manifest: syntheticManifest,
+	});
+
+	expect(envelope).toEqual({
+		ok: false,
+		error: {
+			code: "UNKNOWN_COMMAND",
+			message: "Unknown command.",
+			details: { command: "start idea-1" },
+		},
+	});
 });
 
 it("should ensure that synthetic workflow dispatch rejects undeclared command and filter names", async () => {

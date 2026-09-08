@@ -30,9 +30,15 @@ export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
 	transitions: Array<ManifestTransitionDefinition>;
 };
 
+export type ManifestCli = {
+	verb: Identifier;
+	target: Identifier;
+	source?: boolean;
+};
+
 export type ManifestCommand = {
 	id: Identifier;
-	cli?: { verb: "create" | "apply"; target: Identifier; source?: boolean };
+	cli?: ManifestCli;
 	target: { kind: Identifier; action: Identifier };
 	input?: PayloadSchema;
 };
@@ -286,7 +292,7 @@ export const workflowManifestStructuralSchema = z.strictObject({
 			id: z.string(),
 			cli: z
 				.strictObject({
-					verb: z.enum(["create", "apply"]),
+					verb: z.string().min(1),
 					target: z.string(),
 					source: z.boolean().optional(),
 				})

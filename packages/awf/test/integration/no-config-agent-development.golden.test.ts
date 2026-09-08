@@ -122,12 +122,17 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 				id: "2",
 				title: "Build API",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				suggestedCommand: { argv: ["start", "2"], display: "awf start 2" },
+				suggestedCommand: {
+					argv: ["run-command", "start", "2"],
+					display: "awf run-command start 2",
+				},
 			},
 		],
 	});
 
-	const started = expectSuccess(await runAwf(cwd, ["start", "2"])) as {
+	const started = expectSuccess(
+		await runAwf(cwd, ["run-command", "start", "2"]),
+	) as {
 		run: { id: string };
 	};
 	const runId = started.run.id;
@@ -155,7 +160,7 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			expectSuccess(
 				await runAwf(
 					cwd,
-					["succeed", "2", "--run", runId, "--input", "-"],
+					["run-command", "succeed", "2", "--run", runId, "--input", "-"],
 					JSON.stringify({
 						implementationPr: {
 							type: "pull-request",

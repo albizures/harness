@@ -47,7 +47,7 @@ export function workflowCommand(
 
 export function workflowCommandByCli(
 	manifest: WorkflowManifest,
-	verb: "create" | "apply",
+	verb: string,
 	target: string | undefined,
 ): ManifestCommand | undefined {
 	return manifest.commands.find(
@@ -366,8 +366,8 @@ export function readyItem(
 		title: issue.title,
 		workflow: cleanWorkflowFields(issue.workflow, manifest),
 		suggestedCommand: {
-			argv: ["start", issue.id],
-			display: `awf start ${issue.id}`,
+			argv: ["run-command", "start", issue.id],
+			display: `awf run-command start ${issue.id}`,
 		},
 	};
 }

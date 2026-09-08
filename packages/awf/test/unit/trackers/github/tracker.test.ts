@@ -407,7 +407,7 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	const createdData = created.data as { issue: { id: string } };
 	const id = createdData.issue.id;
 	expect((await execute(["get", id], { tracker })).ok).toBe(true);
-	const started = await execute(["start", id], { tracker });
+	const started = await execute(["run-command", "start", id], { tracker });
 	expect(started.ok).toBe(true);
 	if (!started.ok) {
 		throw new Error("expected start success");
@@ -417,10 +417,13 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	expect((await execute(["logs", id], { tracker })).ok).toBe(true);
 	expect(
 		(
-			await execute(["succeed", id, "--run", runId, "--input", "-"], {
-				tracker,
-				stdin: JSON.stringify({ tickets: [] }),
-			})
+			await execute(
+				["run-command", "succeed", id, "--run", runId, "--input", "-"],
+				{
+					tracker,
+					stdin: JSON.stringify({ tickets: [] }),
+				},
+			)
 		).ok,
 	).toBe(true);
 });

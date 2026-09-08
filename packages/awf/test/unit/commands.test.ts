@@ -84,7 +84,7 @@ it("should ensure that start records one high-level tracker intent instead of lo
 		},
 	};
 
-	const envelope = await execute(["start", "123"], { tracker });
+	const envelope = await execute(["run-command", "start", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
 	expect(intents).toEqual(["startRun"]);
@@ -112,7 +112,7 @@ function createNoTouchTracker(): Tracker {
 }
 
 it("should ensure that invalid arguments return a stable parse error envelope", async () => {
-	const envelope = await execute(["succeed", "123"]);
+	const envelope = await execute(["run-command", "succeed", "123"]);
 
 	expect(envelope).toEqual({
 		ok: false,

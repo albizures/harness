@@ -12,26 +12,6 @@ declare const process: {
 	exitCode?: number;
 };
 
-const knownConfigCommands = new Set([
-	undefined,
-	"--help",
-	"-h",
-	"get",
-	"logs",
-	"reconcile",
-	"ready",
-	"workflow",
-	"create",
-	"apply",
-	"start",
-	"succeed",
-	"fail",
-	"pause",
-	"respond",
-	"escalate",
-	"resume",
-]);
-
 try {
 	const rawArgs = process.argv.slice(2);
 	const output = parseOutputFormat(rawArgs);
@@ -85,8 +65,7 @@ function commandDoesNotNeedConfig(args: Array<string>): boolean {
 	return (
 		command === "--version" ||
 		command === "-v" ||
-		(command === "manifest" && commandArgs[1] === "validate") ||
-		!knownConfigCommands.has(command)
+		(command === "manifest" && commandArgs[1] === "validate")
 	);
 }
 

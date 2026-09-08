@@ -31,7 +31,7 @@ it("should ensure that start moves a ready issue to running, stores one active r
 		],
 	});
 
-	const envelope = await execute(["start", "123"], { tracker });
+	const envelope = await execute(["run-command", "start", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
 	const data = (
@@ -66,13 +66,16 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 		],
 	});
 
-	const envelope = await execute(["pause", "123", "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify({
-			reason: "Need clarification on the API shape.",
-			resumeAction: "fix",
-		}),
-	});
+	const envelope = await execute(
+		["run-command", "pause", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				reason: "Need clarification on the API shape.",
+				resumeAction: "fix",
+			}),
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	const data = (
@@ -134,13 +137,16 @@ it("should ensure that respond resumes a waiting-human issue to a valid ready ac
 		],
 	});
 
-	const envelope = await execute(["respond", "123", "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify({
-			response: "Use the smaller public API.",
-			sufficient: true,
-		}),
-	});
+	const envelope = await execute(
+		["run-command", "respond", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				response: "Use the smaller public API.",
+				sufficient: true,
+			}),
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	const updated = await tracker.getIssue("123");
@@ -172,13 +178,16 @@ it("should ensure that respond keeps an insufficient response waiting for the hu
 		],
 	});
 
-	const envelope = await execute(["respond", "123", "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify({
-			response: "I only know part of it.",
-			sufficient: false,
-		}),
-	});
+	const envelope = await execute(
+		["run-command", "respond", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				response: "I only know part of it.",
+				sufficient: false,
+			}),
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	const updated = await tracker.getIssue("123");
@@ -217,13 +226,16 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 		],
 	});
 
-	const envelope = await execute(["respond", "123", "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify({
-			response: "Try the unknown action.",
-			sufficient: true,
-		}),
-	});
+	const envelope = await execute(
+		["run-command", "respond", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({
+				response: "Try the unknown action.",
+				sufficient: true,
+			}),
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	expect((await tracker.getIssue("123")).workflow).toMatchObject({
@@ -288,7 +300,15 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 				],
 			},
 		],
-		commands: [],
+		commands: [
+			{ id: "start", target: { kind: "task", action: "do" } },
+			{ id: "succeed", target: { kind: "task", action: "do" } },
+			{ id: "fail", target: { kind: "task", action: "do" } },
+			{ id: "pause", target: { kind: "task", action: "do" } },
+			{ id: "respond", target: { kind: "task", action: "do" } },
+			{ id: "escalate", target: { kind: "task", action: "do" } },
+			{ id: "resume", target: { kind: "task", action: "do" } },
+		],
 	});
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -318,10 +338,13 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 		],
 	});
 
-	const envelope = await execute(["succeed", "finishing", "--run", "run-1"], {
-		tracker,
-		manifest,
-	});
+	const envelope = await execute(
+		["run-command", "succeed", "finishing", "--run", "run-1"],
+		{
+			tracker,
+			manifest,
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	const goal = await tracker.getIssue("goal");
@@ -349,7 +372,7 @@ it("should ensure that succeed applies the manifest terminal transition for the 
 	});
 
 	const envelope = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
@@ -392,7 +415,7 @@ it("should ensure that failed running actions retry the same ready action by def
 	});
 
 	const envelope = await execute(
-		["fail", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "fail", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({
@@ -436,10 +459,13 @@ it("should ensure that explicit escalation moves work to need-human none and log
 		],
 	});
 
-	const envelope = await execute(["escalate", "123", "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify({ reason: "review requires product decision" }),
-	});
+	const envelope = await execute(
+		["run-command", "escalate", "123", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({ reason: "review requires product decision" }),
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	expect((await tracker.getIssue("123")).workflow.state).toBe("need-human");
@@ -476,7 +502,7 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 	});
 
 	const terminal = await execute(
-		["succeed", "running", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "running", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ arbitrary: { nested: true } }),
@@ -489,10 +515,13 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 		input: { arbitrary: { nested: true } },
 	});
 
-	const escalated = await execute(["escalate", "escalate", "--input", "-"], {
-		tracker,
-		stdin: JSON.stringify({ arbitrary: true, extra: [1] }),
-	});
+	const escalated = await execute(
+		["run-command", "escalate", "escalate", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({ arbitrary: true, extra: [1] }),
+		},
+	);
 	expect(escalated.ok).toBe(true);
 	expect(
 		JSON.parse((await tracker.readLogs("escalate"))[0]?.message ?? "{}"),
@@ -511,9 +540,12 @@ it("should ensure that explicit resume chooses a valid next ready action", async
 		],
 	});
 
-	const envelope = await execute(["resume", "123", "--action", "fix"], {
-		tracker,
-	});
+	const envelope = await execute(
+		["run-command", "resume", "123", "--action", "fix"],
+		{
+			tracker,
+		},
+	);
 
 	expect(envelope.ok).toBe(true);
 	const issue = await tracker.getIssue("123");
@@ -552,16 +584,19 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 
 	expect(
 		(
-			await execute(["fail", "123", "--run", "run-1", "--input", "-"], {
-				tracker,
-				manifest,
-				stdin: "{}",
-			})
+			await execute(
+				["run-command", "fail", "123", "--run", "run-1", "--input", "-"],
+				{
+					tracker,
+					manifest,
+					stdin: "{}",
+				},
+			)
 		).ok,
 	).toBe(false);
 	expect(
 		(
-			await execute(["escalate", "123", "--input", "-"], {
+			await execute(["run-command", "escalate", "123", "--input", "-"], {
 				tracker,
 				manifest,
 				stdin: JSON.stringify({ reason: "blocked" }),
@@ -570,7 +605,7 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 	).toBe(false);
 	expect(
 		(
-			await execute(["resume", "human", "--action", "fix"], {
+			await execute(["run-command", "resume", "human", "--action", "fix"], {
 				tracker,
 				manifest,
 			})
@@ -614,7 +649,7 @@ it("should ensure that lifecycle commands reject invalid manifest transitions an
 		],
 	});
 
-	expect(await execute(["start", "done"], { tracker })).toEqual({
+	expect(await execute(["run-command", "start", "done"], { tracker })).toEqual({
 		ok: false,
 		error: {
 			code: "INVALID_TRANSITION",
@@ -624,10 +659,13 @@ it("should ensure that lifecycle commands reject invalid manifest transitions an
 		},
 	});
 	expect(
-		await execute(["succeed", "running", "--run", "other", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
-		}),
+		await execute(
+			["run-command", "succeed", "running", "--run", "other", "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
+			},
+		),
 	).toEqual({
 		ok: false,
 		error: {
@@ -658,7 +696,7 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 	});
 
 	const retry = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ merged: true }),
@@ -667,10 +705,13 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 	expect(retry.ok).toBe(true);
 	expect((await tracker.readLogs("123")).length).toBe(1);
 	expect(
-		await execute(["fail", "123", "--run", "run-1", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({ merged: true }),
-		}),
+		await execute(
+			["run-command", "fail", "123", "--run", "run-1", "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({ merged: true }),
+			},
+		),
 	).toEqual({
 		ok: false,
 		error: {
@@ -711,7 +752,15 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 				],
 			},
 		],
-		commands: [],
+		commands: [
+			{ id: "start", target: { kind: "work", action: "do" } },
+			{ id: "succeed", target: { kind: "work", action: "do" } },
+			{ id: "fail", target: { kind: "work", action: "do" } },
+			{ id: "pause", target: { kind: "work", action: "do" } },
+			{ id: "respond", target: { kind: "work", action: "do" } },
+			{ id: "escalate", target: { kind: "work", action: "do" } },
+			{ id: "resume", target: { kind: "work", action: "do" } },
+		],
 	};
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -729,7 +778,7 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 	});
 
 	const envelope = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			manifest,
@@ -803,7 +852,15 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 				],
 			},
 		],
-		commands: [],
+		commands: [
+			{ id: "start", target: { kind: "work", action: "do" } },
+			{ id: "succeed", target: { kind: "work", action: "do" } },
+			{ id: "fail", target: { kind: "work", action: "do" } },
+			{ id: "pause", target: { kind: "work", action: "do" } },
+			{ id: "respond", target: { kind: "work", action: "do" } },
+			{ id: "escalate", target: { kind: "work", action: "do" } },
+			{ id: "resume", target: { kind: "work", action: "do" } },
+		],
 	};
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -821,7 +878,7 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 	});
 
 	const envelope = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
 			manifest,
@@ -869,10 +926,13 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 	const failed = assertSuccess<{
 		issue: { workflow: { state: string; action: string; reason?: string } };
 	}>(
-		await execute(["fail", "retry", "--run", "run-retry", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({ reason: "temporary CI failure" }),
-		}),
+		await execute(
+			["run-command", "fail", "retry", "--run", "run-retry", "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({ reason: "temporary CI failure" }),
+			},
+		),
 	);
 	expect({
 		state: failed.issue.workflow.state,
@@ -887,9 +947,12 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		to: { state: "ready", action: "implement" },
 	});
 
-	const invalidResume = await execute(["resume", "retry", "--action", "fix"], {
-		tracker,
-	});
+	const invalidResume = await execute(
+		["run-command", "resume", "retry", "--action", "fix"],
+		{
+			tracker,
+		},
+	);
 	expect(invalidResume.ok).toBe(false);
 	expect(invalidResume.ok ? undefined : invalidResume.error).toEqual({
 		code: "INVALID_TRANSITION",
@@ -899,7 +962,7 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 	});
 
 	await assertSuccess(
-		await execute(["escalate", "human", "--input", "-"], {
+		await execute(["run-command", "escalate", "human", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({ reason: "needs product decision" }),
 		}),
@@ -919,7 +982,11 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 
 	const resumed = assertSuccess<{
 		issue: { workflow: { state: string; action: string } };
-	}>(await execute(["resume", "human", "--action", "fix"], { tracker }));
+	}>(
+		await execute(["run-command", "resume", "human", "--action", "fix"], {
+			tracker,
+		}),
+	);
 	expect({
 		state: resumed.issue.workflow.state,
 		action: resumed.issue.workflow.action,

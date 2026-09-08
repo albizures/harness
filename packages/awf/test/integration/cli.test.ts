@@ -239,7 +239,11 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 		"spec",
 		"ticket",
 	]);
-	expect(envelope.data.commands).toMatchObject([
+	expect(
+		envelope.data.commands.filter(
+			(command: { cli?: unknown }) => command.cli !== undefined,
+		),
+	).toMatchObject([
 		{
 			id: "spec-create",
 			cli: { usage: "awf create spec --input <file|->" },
@@ -475,7 +479,7 @@ export const manifest = defineManifest({
 			to: { state: "done", action: "none" },
 		}],
 	}],
-	commands: [],
+	commands: [{ id: "succeed", target: { kind: "article", action: "publish" } }],
 });
 
 export const tracker = createInMemoryTracker({
@@ -504,6 +508,7 @@ export const lifecycleHandlers = {
 				"--json",
 				"--config",
 				configPath,
+				"run-command",
 				"succeed",
 				"article-1",
 				"--run",
@@ -601,10 +606,18 @@ export const manifest = agentDevelopmentManifest;
 				runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
 			).toEqual(["spec_created", "plan_applied"]);
 
-			const started = runCli(["start", ticketId]);
+			const started = runCli(["run-command", "start", ticketId]);
 			expect(runCli(["ready"]).items).toEqual([]);
 			const failed = runCli(
-				["fail", ticketId, "--run", started.run.id, "--input", "-"],
+				[
+					"run-command",
+					"fail",
+					ticketId,
+					"--run",
+					started.run.id,
+					"--input",
+					"-",
+				],
 				{ reason: "transient" },
 			);
 			expect({
@@ -612,23 +625,40 @@ export const manifest = agentDevelopmentManifest;
 				action: failed.issue.workflow.action,
 			}).toEqual({ state: "ready", action: "implement" });
 
-			const restarted = runCli(["start", ticketId]);
+			const restarted = runCli(["run-command", "start", ticketId]);
 			const implemented = runCli(
-				["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
+				[
+					"run-command",
+					"succeed",
+					ticketId,
+					"--run",
+					restarted.run.id,
+					"--input",
+					"-",
+				],
 				{ implementationPr: prArtifact(durableImplementationPrNumber) },
 			);
 			expect({
 				state: implemented.issue.workflow.state,
 				action: implemented.issue.workflow.action,
 			}).toEqual({ state: "ready", action: "review" });
-			const escalated = runCli(["escalate", ticketId, "--input", "-"], {
-				reason: "needs decision",
-			});
+			const escalated = runCli(
+				["run-command", "escalate", ticketId, "--input", "-"],
+				{
+					reason: "needs decision",
+				},
+			);
 			expect({
 				state: escalated.issue.workflow.state,
 				action: escalated.issue.workflow.action,
 			}).toEqual({ state: "need-human", action: "none" });
-			const resumed = runCli(["resume", ticketId, "--action", "fix"]);
+			const resumed = runCli([
+				"run-command",
+				"resume",
+				ticketId,
+				"--action",
+				"fix",
+			]);
 			expect({
 				state: resumed.issue.workflow.state,
 				action: resumed.issue.workflow.action,
@@ -869,6 +899,7 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"succeed",
 			"42",
 			"--run",
@@ -931,6 +962,7 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"succeed",
 			"42",
 			"--run",
@@ -963,6 +995,7 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"start",
 			"42",
 		],
@@ -997,6 +1030,7 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"succeed",
 			"42",
 			"--run",
@@ -1125,9 +1159,20 @@ it(
 			relationships: { parent: specAfterPlan.id },
 		};
 
-		let started = runCli(["start", ticket.id], [specAfterPlan, ticket]);
+		let started = runCli(
+			["run-command", "start", ticket.id],
+			[specAfterPlan, ticket],
+		);
 		let completed = runCli(
-			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				ticket.id,
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			[
 				specAfterPlan,
 				{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
@@ -1138,11 +1183,19 @@ it(
 		let ticketLogs = [started.log, completed.log];
 
 		started = runCli(
-			["start", ticket.id],
+			["run-command", "start", ticket.id],
 			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
 		);
 		completed = runCli(
-			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				ticket.id,
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			[
 				specAfterPlan,
 				{
@@ -1157,11 +1210,19 @@ it(
 		ticketLogs = [...ticketLogs, started.log, completed.log];
 
 		started = runCli(
-			["start", ticket.id],
+			["run-command", "start", ticket.id],
 			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
 		);
 		completed = runCli(
-			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				ticket.id,
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			[
 				specAfterPlan,
 				{
@@ -1180,11 +1241,19 @@ it(
 		};
 
 		started = runCli(
-			["start", specAfterPlan.id],
+			["run-command", "start", specAfterPlan.id],
 			[specReadyForIntegration, ticketIssue],
 		);
 		completed = runCli(
-			["succeed", specAfterPlan.id, "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				specAfterPlan.id,
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			[
 				{
 					...specReadyForIntegration,
@@ -1202,11 +1271,19 @@ it(
 		const specLogs = [started.log, completed.log];
 
 		started = runCli(
-			["start", specIssue.id],
+			["run-command", "start", specIssue.id],
 			[{ ...specIssue, logs: specLogs }, ticketIssue],
 		);
 		completed = runCli(
-			["succeed", specIssue.id, "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				specIssue.id,
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			[
 				{
 					...specIssue,

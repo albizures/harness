@@ -96,6 +96,13 @@ it("should export a valid explicit bundled workflow module", () => {
 		"wayfinder-create",
 		"task-create",
 		"grilling-create",
+		"start",
+		"succeed",
+		"fail",
+		"pause",
+		"respond",
+		"escalate",
+		"resume",
 	]);
 });
 
@@ -113,9 +120,6 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
 			"awf create grilling --input <file|->",
-			"awf start <id>",
-			"awf succeed <id> --run <run> --input <file|->",
-			"awf fail <id> --run <run> --input <file|->",
 		]),
 	);
 	expect(help.readiness.filters).toEqual([
@@ -151,7 +155,11 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		},
 		{ id: "grilling", initial: { state: "ready", action: "discuss" } },
 	]);
-	expect(description.commands.map((command) => command.cli.usage)).toEqual([
+	expect(
+		description.commands.flatMap((command) =>
+			command.cli === undefined ? [] : [command.cli.usage],
+		),
+	).toEqual([
 		"awf create spec --input <file|->",
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
@@ -258,13 +266,21 @@ it("should advance a planned Spec to integration-test readiness after child Task
 	});
 
 	const started = assertSuccess(
-		await execute(["start", "task"], { tracker }),
+		await execute(["run-command", "start", "task"], { tracker }),
 	) as {
 		run: { id: string };
 	};
 	assertSuccess(
 		await execute(
-			["succeed", "task", "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				"task",
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			{
 				tracker,
 				stdin: "{}",
@@ -359,12 +375,13 @@ it("should advance generic Specs through planning, integration-test, merge, and 
 	) as { issue: { id: string } };
 
 	const planningRun = assertSuccess(
-		await execute(["start", created.issue.id], { tracker }),
+		await execute(["run-command", "start", created.issue.id], { tracker }),
 	) as { run: { id: string } };
 	expect(
 		assertSuccess(
 			await execute(
 				[
+					"run-command",
 					"succeed",
 					created.issue.id,
 					"--run",
@@ -389,13 +406,21 @@ it("should advance generic Specs through planning, integration-test, merge, and 
 		}),
 	) as { issue: { id: string } };
 	const taskRun = assertSuccess(
-		await execute(["start", task.issue.id], { tracker }),
+		await execute(["run-command", "start", task.issue.id], { tracker }),
 	) as {
 		run: { id: string };
 	};
 	assertSuccess(
 		await execute(
-			["succeed", task.issue.id, "--run", taskRun.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				task.issue.id,
+				"--run",
+				taskRun.run.id,
+				"--input",
+				"-",
+			],
 			{
 				tracker,
 				stdin: "{}",
@@ -408,12 +433,13 @@ it("should advance generic Specs through planning, integration-test, merge, and 
 	});
 
 	const integrationRun = assertSuccess(
-		await execute(["start", created.issue.id], { tracker }),
+		await execute(["run-command", "start", created.issue.id], { tracker }),
 	) as { run: { id: string } };
 	expect(
 		assertSuccess(
 			await execute(
 				[
+					"run-command",
 					"succeed",
 					created.issue.id,
 					"--run",
@@ -427,12 +453,20 @@ it("should advance generic Specs through planning, integration-test, merge, and 
 	).toMatchObject({ issue: { workflow: { state: "ready", action: "merge" } } });
 
 	const mergeRun = assertSuccess(
-		await execute(["start", created.issue.id], { tracker }),
+		await execute(["run-command", "start", created.issue.id], { tracker }),
 	) as { run: { id: string } };
 	expect(
 		assertSuccess(
 			await execute(
-				["succeed", created.issue.id, "--run", mergeRun.run.id, "--input", "-"],
+				[
+					"run-command",
+					"succeed",
+					created.issue.id,
+					"--run",
+					mergeRun.run.id,
+					"--input",
+					"-",
+				],
 				{ tracker, stdin: "{}" },
 			),
 		) as { issue: { workflow: Record<string, string> } },
@@ -645,10 +679,18 @@ it("should complete Wayfinder maps only by explicit success after all children a
 	) as { issue: { id: string } };
 
 	let started = assertSuccess(
-		await execute(["start", wayfinder.issue.id], { tracker }),
+		await execute(["run-command", "start", wayfinder.issue.id], { tracker }),
 	) as { run: { id: string } };
 	const blocked = await execute(
-		["succeed", wayfinder.issue.id, "--run", started.run.id, "--input", "-"],
+		[
+			"run-command",
+			"succeed",
+			wayfinder.issue.id,
+			"--run",
+			started.run.id,
+			"--input",
+			"-",
+		],
 		{ tracker, stdin: "{}" },
 	);
 	expect(blocked).toMatchObject({
@@ -657,11 +699,19 @@ it("should complete Wayfinder maps only by explicit success after all children a
 	});
 
 	const taskRun = assertSuccess(
-		await execute(["start", task.issue.id], { tracker }),
+		await execute(["run-command", "start", task.issue.id], { tracker }),
 	) as { run: { id: string } };
 	assertSuccess(
 		await execute(
-			["succeed", task.issue.id, "--run", taskRun.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				task.issue.id,
+				"--run",
+				taskRun.run.id,
+				"--input",
+				"-",
+			],
 			{
 				tracker,
 				stdin: JSON.stringify({
@@ -679,7 +729,15 @@ it("should complete Wayfinder maps only by explicit success after all children a
 	started = { run: { id: started.run.id } };
 	const done = assertSuccess(
 		await execute(
-			["succeed", wayfinder.issue.id, "--run", started.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				wayfinder.issue.id,
+				"--run",
+				started.run.id,
+				"--input",
+				"-",
+			],
 			{ tracker, stdin: "{}" },
 		),
 	) as { issue: { workflow: Record<string, string> } };
@@ -711,12 +769,12 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 	) as { issue: { id: string } };
 
 	const run = assertSuccess(
-		await execute(["start", task.issue.id], { tracker }),
+		await execute(["run-command", "start", task.issue.id], { tracker }),
 	) as {
 		run: { id: string };
 	};
 	const missing = await execute(
-		["succeed", task.issue.id, "--run", run.run.id],
+		["run-command", "succeed", task.issue.id, "--run", run.run.id],
 		{ tracker },
 	);
 	expect(missing).toMatchObject({
@@ -726,7 +784,15 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 
 	const completed = assertSuccess(
 		await execute(
-			["succeed", task.issue.id, "--run", run.run.id, "--input", "-"],
+			[
+				"run-command",
+				"succeed",
+				task.issue.id,
+				"--run",
+				run.run.id,
+				"--input",
+				"-",
+			],
 			{
 				tracker,
 				stdin: JSON.stringify({
@@ -755,11 +821,12 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 		}),
 	) as { issue: { id: string } };
 	const grillingRun = assertSuccess(
-		await execute(["start", grilling.issue.id], { tracker }),
+		await execute(["run-command", "start", grilling.issue.id], { tracker }),
 	) as { run: { id: string } };
 	assertSuccess(
 		await execute(
 			[
+				"run-command",
 				"succeed",
 				grilling.issue.id,
 				"--run",
@@ -792,11 +859,14 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 		}),
 	) as { issue: { id: string } };
 	const outOfScopeRun = assertSuccess(
-		await execute(["start", outOfScopeTask.issue.id], { tracker }),
+		await execute(["run-command", "start", outOfScopeTask.issue.id], {
+			tracker,
+		}),
 	) as { run: { id: string } };
 	assertSuccess(
 		await execute(
 			[
+				"run-command",
 				"succeed",
 				outOfScopeTask.issue.id,
 				"--run",
@@ -881,7 +951,7 @@ it("should create Grilling as collaborative work without offering it as autonomo
 	expect(ready.items.map((item) => item.id)).not.toContain(standalone.issue.id);
 
 	const started = assertSuccess(
-		await execute(["start", standalone.issue.id], { tracker }),
+		await execute(["run-command", "start", standalone.issue.id], { tracker }),
 	) as { issue: { workflow: Record<string, unknown> }; run: { id: string } };
 	expect(started.issue.workflow).toMatchObject({
 		kind: "grilling",
@@ -890,9 +960,12 @@ it("should create Grilling as collaborative work without offering it as autonomo
 	});
 
 	const done = assertSuccess(
-		await execute(["succeed", standalone.issue.id, "--run", started.run.id], {
-			tracker,
-		}),
+		await execute(
+			["run-command", "succeed", standalone.issue.id, "--run", started.run.id],
+			{
+				tracker,
+			},
+		),
 	) as { issue: { workflow: Record<string, unknown> } };
 	expect(done.issue.workflow).toMatchObject({
 		kind: "grilling",
@@ -1129,7 +1202,7 @@ it("should run generic Task basic start, succeed, and fail transitions", async (
 	});
 
 	const started = assertSuccess(
-		await execute(["start", created.issue.id], { tracker }),
+		await execute(["run-command", "start", created.issue.id], { tracker }),
 	) as {
 		run: { id: string };
 		issue: { workflow: Record<string, string> };
@@ -1142,7 +1215,15 @@ it("should run generic Task basic start, succeed, and fail transitions", async (
 	expect(
 		assertSuccess(
 			await execute(
-				["succeed", created.issue.id, "--run", started.run.id, "--input", "-"],
+				[
+					"run-command",
+					"succeed",
+					created.issue.id,
+					"--run",
+					started.run.id,
+					"--input",
+					"-",
+				],
 				{ tracker, stdin: "{}" },
 			),
 		) as { issue: { workflow: Record<string, string> } },
@@ -1160,7 +1241,7 @@ it("should run generic Task basic start, succeed, and fail transitions", async (
 		}),
 	) as { issue: { id: string } };
 	const failedRun = assertSuccess(
-		await execute(["start", failedTask.issue.id], { tracker }),
+		await execute(["run-command", "start", failedTask.issue.id], { tracker }),
 	) as {
 		run: { id: string };
 	};
@@ -1168,6 +1249,7 @@ it("should run generic Task basic start, succeed, and fail transitions", async (
 		assertSuccess(
 			await execute(
 				[
+					"run-command",
 					"fail",
 					failedTask.issue.id,
 					"--run",
