@@ -428,7 +428,11 @@ function validateTransition(
 		);
 	}
 	if (value.input !== undefined) {
-		validatePayloadZodSchema(value.input, `${path}.input`, issues);
+		issue(
+			issues,
+			`${path}.input`,
+			"Transition input schemas are not supported.",
+		);
 	}
 }
 
@@ -823,7 +827,11 @@ function validateCommand(
 		validatePayloadZodSchema(value.input, `${path}.input`, issues);
 	}
 	if (value.output !== undefined) {
-		validatePayloadZodSchema(value.output, `${path}.output`, issues);
+		issue(
+			issues,
+			`${path}.output`,
+			"Command output schemas are not supported.",
+		);
 	}
 }
 

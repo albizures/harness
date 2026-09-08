@@ -59,7 +59,6 @@ export {
 	manifestCommandUsage,
 	workflowDescriptionScopeNotes,
 	type WorkflowDescriptionSchemaInputV1,
-	type WorkflowDescriptionSchemaOutputV1,
 	type WorkflowDescriptionStateRefV1,
 	type WorkflowDescriptionV1,
 	type WorkflowDescriptionWorkflowFilterV1,

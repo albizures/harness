@@ -38,12 +38,18 @@ export async function reconcileCommand(
 		let repairedIssue = inspection.issue;
 		if (apply && inspection.issue !== undefined) {
 			const repair = safeRepair ?? needHumanRepair;
-			const workflow =
-				repair === undefined
-					? undefined
-					: repair.repair === "safe"
-						? safeRepairWorkflow(repair)
-						: { state: "need-human", action: "none", activeRunId: undefined };
+			let workflow:
+				| Parameters<Tracker["repairIssue"]>[1]["workflow"]
+				| undefined;
+			if (repair?.repair === "safe") {
+				workflow = safeRepairWorkflow(repair);
+			} else if (repair?.repair === "need-human") {
+				workflow = {
+					state: "need-human",
+					action: "none",
+					activeRunId: undefined,
+				};
+			}
 			if (repair !== undefined && workflow !== undefined) {
 				repairedIssue = await tracker.repairIssue(id, {
 					expect: {

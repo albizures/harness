@@ -86,24 +86,6 @@ export function validateWorkflowCommandInput(
 	return result.ok ? undefined : result;
 }
 
-export function validateWorkflowCommandOutput(
-	command: ManifestCommand | undefined,
-	value: unknown,
-): Envelope | undefined {
-	const result = parsePayloadValue(value, command?.output, "$output");
-	if (result.issues.length === 0) {
-		return undefined;
-	}
-	return failure(
-		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
-		"Workflow command output is invalid.",
-		{
-			...(command === undefined ? {} : { command: command.id }),
-			issues: result.issues,
-		},
-	);
-}
-
 export async function readInput(
 	path: string,
 	stdin: string | undefined,
@@ -590,7 +572,8 @@ function readWorkflowSubkind(
 	if (typeof workflow.data?.subkind === "string") {
 		return workflow.data.subkind;
 	}
-	return manifest?.kinds.find((kind) => kind.id === workflow.kind)?.subkinds?.[0];
+	return manifest?.kinds.find((kind) => kind.id === workflow.kind)
+		?.subkinds?.[0];
 }
 
 export function isDone(

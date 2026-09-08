@@ -10,7 +10,6 @@ export {
 } from "./description.ts";
 export type {
 	WorkflowDescriptionSchemaInputV1,
-	WorkflowDescriptionSchemaOutputV1,
 	WorkflowDescriptionStateRefV1,
 	WorkflowDescriptionV1,
 	WorkflowDescriptionWorkflowFilterV1,

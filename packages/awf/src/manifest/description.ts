@@ -25,7 +25,6 @@ export type WorkflowDescriptionWorkflowFilterV1 = {
 };
 
 export type WorkflowDescriptionSchemaInputV1 = { required: boolean };
-export type WorkflowDescriptionSchemaOutputV1 = { declared: boolean };
 
 export type WorkflowDescriptionV1 = {
 	version: "v1";
@@ -50,7 +49,6 @@ export type WorkflowDescriptionV1 = {
 		transitions: Array<{
 			from: WorkflowDescriptionStateRefV1;
 			event: string;
-			input: WorkflowDescriptionSchemaInputV1;
 			to: WorkflowDescriptionStateRefV1;
 		}>;
 	}>;
@@ -64,7 +62,6 @@ export type WorkflowDescriptionV1 = {
 			usage: string;
 		};
 		input: WorkflowDescriptionSchemaInputV1;
-		output: WorkflowDescriptionSchemaOutputV1;
 	}>;
 	readiness?: {
 		filters: Array<WorkflowDescriptionWorkflowFilterV1>;
@@ -85,7 +82,6 @@ export type WorkflowDescriptionV1 = {
 		retry?: { allow?: Array<{ kind: string; action: string }> };
 		escalation?: {
 			allow?: Array<{ kind: string; action: string }>;
-			input: WorkflowDescriptionSchemaInputV1;
 		};
 		resume?: { allow?: Array<{ kind: string; actions: Array<string> }> };
 		relationshipPolicies?: Array<{
@@ -129,7 +125,6 @@ export function describeWorkflow(
 			transitions: kind.transitions.map((transition) => ({
 				from: stateRef(transition.from),
 				event: transition.event,
-				input: inputMarker(transition.input),
 				to: stateRef(transition.to),
 			})),
 		})),
@@ -145,7 +140,6 @@ export function describeWorkflow(
 						},
 					}),
 			input: inputMarker(command.input),
-			output: { declared: command.output !== undefined },
 		})),
 		...describeReadiness(manifest),
 		...describeLifecycle(manifest),
@@ -270,7 +264,6 @@ function describeLifecycle(manifest: WorkflowManifest) {
 										allow:
 											manifest.lifecycle.escalation.allow.map(policyTarget),
 									}),
-							input: inputMarker(manifest.lifecycle.escalation.input),
 						},
 					}),
 			...(manifest.lifecycle.resume === undefined

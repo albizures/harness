@@ -13,7 +13,6 @@ type ManifestStateReference = {
 export type ManifestTransition = {
 	from: ManifestStateReference;
 	event: Identifier;
-	input?: PayloadSchema;
 	to: ManifestStateReference;
 };
 
@@ -36,7 +35,6 @@ export type ManifestCommand = {
 	cli?: { verb: "create" | "apply"; target: Identifier; source?: boolean };
 	target: { kind: Identifier; action: Identifier };
 	input?: PayloadSchema;
-	output?: PayloadSchema;
 };
 
 export type ManifestReadinessFilter = {
@@ -113,7 +111,6 @@ export type WorkflowManifest = {
 		retry?: { allow?: Array<LifecyclePolicyTarget> };
 		escalation?: {
 			allow?: Array<LifecyclePolicyTarget>;
-			input?: PayloadSchema;
 		};
 		resume?: {
 			allow?: Array<{ kind: Identifier; actions: Array<Identifier> }>;
@@ -235,7 +232,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 			escalation: z
 				.strictObject({
 					allow: z.array(lifecyclePolicyTargetSchema).optional(),
-					input: payloadZodSchemaSchema.optional(),
 				})
 				.optional(),
 			resume: z
@@ -276,7 +272,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 				z.strictObject({
 					from: stateReferenceSchema,
 					event: z.string(),
-					input: payloadZodSchemaSchema.optional(),
 					to: stateReferenceSchema,
 				}),
 			),
@@ -294,7 +289,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 				.optional(),
 			target: z.strictObject({ kind: z.string(), action: z.string() }),
 			input: payloadZodSchemaSchema.optional(),
-			output: payloadZodSchemaSchema.optional(),
 		}),
 	),
 	relationships: z

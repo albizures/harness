@@ -16,7 +16,6 @@ import {
 	parseJsonInput,
 	parseWorkflowCommandInput,
 	readInput,
-	validateWorkflowCommandOutput,
 	workflowCommandByCli,
 	readOption,
 } from "./shared.ts";
@@ -131,13 +130,9 @@ async function handledManifestCommand(
 }
 
 function validateHandlerSuccess(
-	command: ManifestCommand,
+	_command: ManifestCommand,
 	data: JsonValue,
 ): Envelope {
-	const outputValidation = validateWorkflowCommandOutput(command, data);
-	if (outputValidation !== undefined) {
-		return outputValidation;
-	}
 	return success(data);
 }
 
@@ -198,10 +193,6 @@ export async function createGenericWorkflowIssueCommand(
 			);
 		}
 		const data = { issue, log };
-		const outputValidation = validateWorkflowCommandOutput(command, data);
-		if (outputValidation !== undefined) {
-			return outputValidation;
-		}
 		return success(data);
 	} catch (error) {
 		return lifecycleError("new", error);
@@ -247,10 +238,6 @@ export async function applyGenericWorkflowCommand(
 			},
 		});
 		const data = { issue: result.issue, log: result.log, outcome: "APPLIED" };
-		const outputValidation = validateWorkflowCommandOutput(command, data);
-		if (outputValidation !== undefined) {
-			return outputValidation;
-		}
 		return success(data);
 	} catch (error) {
 		return lifecycleError(issueId, error);

@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
@@ -448,32 +447,12 @@ it("should ensure that explicit escalation moves work to need-human none and log
 	});
 });
 
-it("should ensure that terminal command rejects malformed bundled pull request artifacts before mutation", async () => {
-	const manifest = {
-		...agentDevelopmentManifest,
-		kinds: agentDevelopmentManifest.kinds.map((kind) =>
-			kind.id === "ticket"
-				? {
-						...kind,
-						transitions: kind.transitions.map((transition) =>
-							transition.from.state === "running" &&
-							transition.from.action === "implement" &&
-							transition.event === "succeed"
-								? {
-										...transition,
-										input: z.strictObject({ implementationPr: z.unknown() }),
-									}
-								: transition,
-						),
-					}
-				: kind,
-		),
-	};
+it("should ensure that lifecycle commands do not schema-validate arbitrary terminal or escalation payload shapes", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
-				id: "123",
-				title: "Implement lifecycle",
+				id: "running",
+				title: "Terminal payload",
 				workflow: {
 					kind: "ticket",
 					state: "running",
@@ -481,153 +460,35 @@ it("should ensure that terminal command rejects malformed bundled pull request a
 					activeRunId: "run-1",
 				},
 			},
+			{
+				id: "escalate",
+				title: "Escalate payload",
+				workflow: { kind: "ticket", state: "ready", action: "review" },
+			},
 		],
 	});
 
-	const envelope = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
+	const terminal = await execute(
+		["succeed", "running", "--run", "run-1", "--input", "-"],
 		{
 			tracker,
-			manifest,
-			stdin: JSON.stringify({
-				implementationPr: { type: "pull-request", ref: "not-a-pr" },
-			}),
+			stdin: JSON.stringify({ arbitrary: { nested: true } }),
 		},
 	);
-
-	expect(envelope.ok).toBe(false);
-	expect(envelope.ok ? undefined : envelope.error.code).toBe(
-		"INVALID_ACTION_INPUT",
-	);
-	expect(envelope.ok ? undefined : envelope.error.details?.issues).toEqual([
-		{
-			path: "$.implementationPr.url",
-			message: "Artifact reference must include url.",
-		},
-	]);
-	expect((await tracker.getIssue("123")).workflow).toEqual({
-		kind: "ticket",
-		state: "running",
-		action: "implement",
-		activeRunId: "run-1",
-		version: 1,
-		hash: expect.any(String),
-	});
-	expect(await tracker.readLogs("123")).toEqual([]);
-	expect((await tracker.getIssue("123")).artifacts).toEqual([]);
-});
-
-it("should ensure that terminal command rejects schema-valid non-JSON-compatible parsed input before mutation", async () => {
-	const manifest = {
-		...agentDevelopmentManifest,
-		kinds: agentDevelopmentManifest.kinds.map((kind) =>
-			kind.id === "ticket"
-				? {
-						...kind,
-						transitions: kind.transitions.map((transition) =>
-							transition.from.state === "running" &&
-							transition.from.action === "implement" &&
-							transition.event === "succeed"
-								? {
-										...transition,
-										input: z.strictObject({
-											implementationPr: z.string().transform(() => new Date(0)),
-										}),
-									}
-								: transition,
-						),
-					}
-				: kind,
-		),
-	};
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "123",
-				title: "Implement lifecycle",
-				workflow: {
-					kind: "ticket",
-					state: "running",
-					action: "implement",
-					activeRunId: "run-1",
-				},
-			},
-		],
+	expect(terminal.ok).toBe(true);
+	expect((await tracker.readLogs("running"))[0]?.payload).toMatchObject({
+		input: { arbitrary: { nested: true } },
 	});
 
-	const envelope = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
-		{ tracker, manifest, stdin: JSON.stringify({ implementationPr: "ok" }) },
-	);
-
-	expect(envelope.ok).toBe(false);
-	expect(envelope.ok ? undefined : envelope.error.code).toBe(
-		"INVALID_ACTION_INPUT",
-	);
-	expect((await tracker.getIssue("123")).workflow).toEqual({
-		kind: "ticket",
-		state: "running",
-		action: "implement",
-		activeRunId: "run-1",
-		version: 1,
-		hash: expect.any(String),
-	});
-	expect(await tracker.readLogs("123")).toEqual([]);
-	expect((await tracker.getIssue("123")).artifacts).toEqual([]);
-});
-
-it("should ensure that escalation validates input shape and JSON-compatible parsed input before mutation", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "shape",
-				title: "Escalate shape",
-				workflow: { kind: "ticket", state: "ready", action: "review" },
-			},
-			{
-				id: "json",
-				title: "Escalate json",
-				workflow: { kind: "ticket", state: "ready", action: "review" },
-			},
-		],
-	});
-
-	const shapeInvalid = await execute(["escalate", "shape", "--input", "-"], {
+	const escalated = await execute(["escalate", "escalate", "--input", "-"], {
 		tracker,
-		stdin: JSON.stringify({ reason: "blocked", extra: true }),
+		stdin: JSON.stringify({ arbitrary: true, extra: [1] }),
 	});
-	expect(shapeInvalid.ok).toBe(false);
-	expect(shapeInvalid.ok ? undefined : shapeInvalid.error.code).toBe(
-		"INVALID_ACTION_INPUT",
-	);
-	expect(await tracker.readLogs("shape")).toEqual([]);
-	expect((await tracker.getIssue("shape")).workflow.state).toBe("ready");
-
-	const manifest = {
-		...agentDevelopmentManifest,
-		lifecycle: {
-			...agentDevelopmentManifest.lifecycle,
-			escalation: {
-				...agentDevelopmentManifest.lifecycle?.escalation,
-				input: z.strictObject({
-					reason: z.string().transform(() => Symbol("not-json")),
-				}),
-			},
-		},
-	};
-	const jsonInvalid = await execute(["escalate", "json", "--input", "-"], {
-		tracker,
-		manifest,
-		stdin: JSON.stringify({ reason: "blocked" }),
+	expect(escalated.ok).toBe(true);
+	expect((await tracker.readLogs("escalate"))[0]?.payload).toMatchObject({
+		input: { arbitrary: true, extra: [1] },
 	});
-	expect(jsonInvalid.ok).toBe(false);
-	expect(jsonInvalid.ok ? undefined : jsonInvalid.error.code).toBe(
-		"INVALID_ACTION_INPUT",
-	);
-	expect(await tracker.readLogs("json")).toEqual([]);
-	expect((await tracker.getIssue("json")).workflow.state).toBe("ready");
 });
-
 it("should ensure that explicit resume chooses a valid next ready action", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -806,7 +667,7 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 	});
 });
 
-it("should ensure that generic lifecycle transition handlers receive validated input and contribute log payload, artifacts, and effects", async () => {
+it("should ensure that generic lifecycle transition handlers receive JSON input and contribute log payload, artifacts, and effects", async () => {
 	const manifest = {
 		version: "v1" as const,
 		workflow: { id: "generic" },
@@ -831,7 +692,6 @@ it("should ensure that generic lifecycle transition handlers receive validated i
 					{
 						from: { state: "running", action: "do" },
 						event: "succeed",
-						input: z.strictObject({ n: z.string().transform(Number) }),
 						to: { state: "done", action: "none" },
 					},
 				],
@@ -902,7 +762,7 @@ it("should ensure that generic lifecycle transition handlers receive validated i
 	]);
 	expect((await tracker.readLogs("123"))[0]?.payload).toEqual({
 		event: "succeed",
-		input: { n: 2 },
+		input: { n: "2" },
 		to: { state: "done", action: "none" },
 		doubled: 4,
 		canMutate: false,
@@ -934,7 +794,6 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 					{
 						from: { state: "running", action: "do" },
 						event: "succeed",
-						input: z.strictObject({ ok: z.boolean() }),
 						to: { state: "done", action: "none" },
 					},
 				],

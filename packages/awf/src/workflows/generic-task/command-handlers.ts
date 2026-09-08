@@ -12,7 +12,6 @@ import {
 	initialWorkflowTarget,
 	isRecord,
 	lifecycleError,
-	validateWorkflowCommandOutput,
 } from "../../commands/shared.ts";
 
 type CreateInput = {
@@ -441,9 +440,8 @@ function taskBody(input: TaskCreateInput): string {
 }
 
 function validateOrSucceed(
-	command: ManifestCommand,
+	_command: ManifestCommand,
 	data: JsonValue,
 ): Envelope {
-	const outputValidation = validateWorkflowCommandOutput(command, data);
-	return outputValidation ?? success(data);
+	return success(data);
 }

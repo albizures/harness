@@ -137,8 +137,8 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 	});
 });
 
-it("should ensure that public Zod authoring helpers declare and validate artifact payload schemas", () => {
-	const zodOutput = artifacts.object({
+it("should ensure that public Zod authoring helpers declare and validate command input artifact payload schemas", () => {
+	const zodInput = artifacts.object({
 		url: artifacts.url(),
 		file: artifacts.file(),
 		issue: artifacts.issue(),
@@ -171,13 +171,13 @@ it("should ensure that public Zod authoring helpers declare and validate artifac
 			{
 				id: "complete",
 				target: { kind: "ticket", action: "implement" },
-				output: zodOutput,
+				input: zodInput,
 			},
 		],
 	});
 
 	expect(validateManifest(manifest)).toEqual([]);
-	expect(manifest.commands[0]?.output).toBe(zodOutput);
+	expect(manifest.commands[0]?.input).toBe(zodInput);
 
 	const legacyStringValues = {
 		url: "https://example.com/spec",
@@ -216,9 +216,9 @@ it("should ensure that public Zod authoring helpers declare and validate artifac
 			.object({ issue: artifacts.issue() })
 			.safeParse({ issue: legacyStringValues.issue }).success,
 	).toBe(false);
-	expect(zodOutput.parse(structuredValues)).toEqual(structuredValues);
+	expect(zodInput.parse(structuredValues)).toEqual(structuredValues);
 
-	const invalid = zodOutput.safeParse({
+	const invalid = zodInput.safeParse({
 		...structuredValues,
 		url: { type: "url", url: "ftp://example.com/spec" },
 		file: { type: "file", path: "/tmp/spec.md" },
@@ -443,6 +443,53 @@ it("should reject executable hook fields embedded in workflow semantic declarati
 	expect(messages).toMatch(/\.lifecycle\.resume\.allow\[0\]\.execute/);
 	expect(messages).toMatch(/Executable hook fields/);
 	expect(messages).toMatch(/Executable hooks are not allowed/);
+});
+
+it("should reject payload schemas outside command input declarations", () => {
+	const manifest = {
+		version: "v1",
+		workflow: { id: "payload-boundaries" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["implement", "none"],
+			reasons: [],
+			events: ["start", "succeed"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: { escalation: { input: z.object({ reason: z.string() }) } },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "running", action: "implement" },
+						event: "succeed",
+						input: z.object({ summary: z.string() }),
+						to: { state: "ready", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "create-ticket",
+				target: { kind: "ticket", action: "implement" },
+				input: z.object({ title: z.string() }),
+				output: z.object({ id: z.string() }),
+			},
+		],
+	};
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/Command output schemas are not supported/);
+	expect(messages).toMatch(/Transition input schemas are not supported/);
+	expect(messages).toMatch(/lifecycle\.escalation/);
+	expect(messages).not.toMatch(/commands\[0\]\.input.*not supported/);
 });
 
 it("should reject tracker as a manifest field inside defineManifest data", () => {

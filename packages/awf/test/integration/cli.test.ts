@@ -122,7 +122,7 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.stdout).toContain("- spec (Spec)");
 	expect(result.stdout).toContain("- ticket (Ticket)");
 	expect(result.stdout).toContain(
-		"- plan-apply\n  - Usage: awf apply plan <issue> --input <file|->\n  - Target: spec/plan\n  - Input: required\n  - Output: declared",
+		"- plan-apply\n  - Usage: awf apply plan <issue> --input <file|->\n  - Target: spec/plan\n  - Input: required",
 	);
 	expect(result.stdout).toContain(
 		"- handoff-create\n  - Usage: awf create handoff --source <issue> --input <file|->",
@@ -244,19 +244,16 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 			id: "spec-create",
 			cli: { usage: "awf create spec --input <file|->" },
 			input: { required: true },
-			output: { declared: true },
 		},
 		{
 			id: "plan-apply",
 			cli: { usage: "awf apply plan <issue> --input <file|->" },
 			input: { required: true },
-			output: { declared: true },
 		},
 		{
 			id: "handoff-create",
 			cli: { usage: "awf create handoff --source <issue> --input <file|->" },
 			input: { required: true },
-			output: { declared: true },
 		},
 	]);
 	const serialized = JSON.stringify(envelope.data);
@@ -423,7 +420,6 @@ export const manifest = defineManifest({
 		cli: { verb: "create", target: "memo" },
 		target: { kind: "item", action: "draft" },
 		input: z.strictObject({ title: z.string() }),
-		output: z.strictObject({ title: z.string(), handled: z.literal(true) }),
 	}],
 });
 
@@ -461,8 +457,7 @@ it("should ensure that CLI config-exported lifecycle handlers are invoked by tra
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
 			configPath,
-			`import { z } from "zod";
-import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
+			`import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
 import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
 
 export const manifest = defineManifest({
@@ -477,7 +472,6 @@ export const manifest = defineManifest({
 		transitions: [{
 			from: { state: "running", action: "publish" },
 			event: "succeed",
-			input: z.strictObject({ summary: z.string() }),
 			to: { state: "done", action: "none" },
 		}],
 	}],

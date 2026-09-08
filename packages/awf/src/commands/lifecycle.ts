@@ -37,10 +37,6 @@ const nonEmptyString = z.string().refine((value) => value.trim() !== "", {
 	message: "Value must be a non-empty string.",
 });
 
-const escalationInputSchema = z.strictObject({
-	reason: nonEmptyString,
-});
-
 const pauseInputSchema = z.strictObject({
 	reason: nonEmptyString,
 	resumeAction: nonEmptyString.optional(),
@@ -238,25 +234,7 @@ export async function terminalCommand(
 		) {
 			return policyViolation(id, "retry", issue.workflow.action);
 		}
-		if (transition?.input !== undefined && parsedInput === undefined) {
-			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-				usage: `awf ${event} <id> --run <run> --input <file|->`,
-			});
-		}
-		const payload = parsePayloadValue(
-			parsedInput?.data ?? {},
-			transition?.input,
-			"$",
-		);
-		const validationIssues = [...payload.issues];
-		if (validationIssues.length > 0) {
-			return failure(
-				"INVALID_ACTION_INPUT",
-				"Action completion input is invalid.",
-				{ issues: validationIssues },
-			);
-		}
-		const terminalInput = parseJsonValue(payload.value);
+		const terminalInput = parseJsonValue(parsedInputJson?.value ?? {});
 		const target =
 			retryTarget ??
 			(transition === undefined ? undefined : workflowTarget(transition.to));
@@ -666,16 +644,6 @@ export async function escalateCommand(
 		if (parsedInput.ok === false) {
 			return parsedInput;
 		}
-		const payload = parsePayloadValue(
-			parsedInput.data,
-			manifest.lifecycle?.escalation?.input ?? escalationInputSchema,
-			"$",
-		);
-		if (payload.issues.length > 0) {
-			return failure("INVALID_ACTION_INPUT", "Escalation input is invalid.", {
-				issues: payload.issues,
-			});
-		}
 		const issue = await tracker.getIssue(id);
 		if (!escalationPolicyAllows(manifest, issue.workflow)) {
 			return policyViolation(id, "escalation", issue.workflow.action);
@@ -694,7 +662,7 @@ export async function escalateCommand(
 				type: "human_intervention_needed",
 				payload: {
 					event: "escalate",
-					input: parseJsonValue(payload.value),
+					input: parseJsonValue(parsedInput.data),
 					from,
 					to,
 				},

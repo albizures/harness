@@ -592,44 +592,6 @@ it("should ensure that apply plan rejects manifest-invalid command input before 
 	expect(await tracker.readLogs("spec-1")).toEqual([]);
 });
 
-it("should ensure that apply plan reports manifest-invalid command output instead of returning success", async () => {
-	const dir = await mkdtemp(join(tmpdir(), "awf-bad-output-"));
-	const plan = join(dir, "plan.json");
-	await writeFile(
-		plan,
-		JSON.stringify({
-			tickets: [{ key: "a", title: "A", content: "A" }],
-		}),
-		"utf8",
-	);
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "spec-1",
-				title: "Spec",
-				workflow: { kind: "spec", state: "ready", action: "plan" },
-			},
-		],
-	});
-	const manifest = manifestWithPlanCommandSchema({
-		output: z.object({ tickets: z.number().int() }),
-	});
-
-	const envelope = await execute(["apply", "plan", "spec-1", "--input", plan], {
-		tracker,
-		manifest,
-	});
-
-	expect(envelope.ok).toBe(false);
-	expect(envelope.ok ? undefined : envelope.error.code).toBe(
-		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
-	);
-	expect((await tracker.getIssue("spec-1")).workflow.action).toBe("none");
-	expect((await tracker.readLogs("spec-1")).map((log) => log.type)).toEqual([
-		"plan_applied",
-	]);
-});
-
 it("should ensure that apply plan rejects invalid bundles before mutating the tracker", async () => {
 	const dir = await mkdtemp(join(tmpdir(), "awf-bad-plan-"));
 	const plan = join(dir, "plan.json");
@@ -1013,13 +975,12 @@ it("should ensure that generic apply logs the manifest-parsed JSON-compatible pa
 	});
 });
 
-it("should ensure that command handlers receive manifest-validated input and core validates successful output", async () => {
+it("should ensure that command handlers receive manifest-validated input", async () => {
 	const tracker = createInMemoryTracker();
 	const manifest = genericWorkflowManifest({
 		createInput: z
 			.strictObject({ name: z.string(), text: z.string() })
 			.transform((value) => ({ title: value.name, body: value.text })),
-		createOutput: z.strictObject({ externalId: z.string(), title: z.string() }),
 	});
 	const seen: Array<unknown> = [];
 	const commandHandlers: CommandHandlers = {
@@ -1078,12 +1039,11 @@ it("should ensure that command handlers are not invoked when input validation fa
 	expect(calls).toBe(0);
 });
 
-it("should ensure that handler success output validation failures are returned as errors", async () => {
+it("should ensure that handler success output is not schema-validated", async () => {
 	const envelope = await execute(["create", "memo", "--input", "-"], {
 		tracker: createInMemoryTracker(),
 		manifest: genericWorkflowManifest({
 			createInput: z.strictObject({ title: z.string() }),
-			createOutput: z.strictObject({ externalId: z.string() }),
 		}),
 		commandHandlers: {
 			"memo-create": async () => ({ externalId: 42 }),
@@ -1091,10 +1051,7 @@ it("should ensure that handler success output validation failures are returned a
 		stdin: JSON.stringify({ title: "Meeting" }),
 	});
 
-	expect(envelope.ok).toBe(false);
-	expect(envelope.ok ? undefined : envelope.error.code).toBe(
-		"WORKFLOW_COMMAND_OUTPUT_VALIDATION_FAILED",
-	);
+	expect(envelope).toEqual({ ok: true, data: { externalId: 42 } });
 });
 
 it("should ensure that handler failure envelopes pass through without output validation", async () => {
@@ -1110,7 +1067,6 @@ it("should ensure that handler failure envelopes pass through without output val
 		}),
 		manifest: genericWorkflowManifest({
 			applyInput: z.strictObject({ summary: z.string() }),
-			applyOutput: z.strictObject({ impossible: z.string() }),
 		}),
 		commandHandlers: {
 			"memo-apply": async ({ issueId, input }) => {
@@ -1175,7 +1131,6 @@ it("should ensure that apply command handlers receive the parsed issue id", asyn
 		applyInput: z
 			.strictObject({ note: z.string() })
 			.transform((value) => ({ comment: value.note })),
-		applyOutput: z.strictObject({ issueId: z.string(), comment: z.string() }),
 	});
 
 	const envelope = await execute(["apply", "memo", "item-1", "--input", "-"], {
@@ -1254,7 +1209,7 @@ it("should ensure that apply plan reports need-reconciliation instead of rolling
 });
 
 function manifestWithPlanCommandSchema(
-	schemas: Pick<WorkflowManifest["commands"][number], "input" | "output">,
+	schemas: Pick<WorkflowManifest["commands"][number], "input">,
 ): WorkflowManifest {
 	return manifestWithCommandSchema("plan-apply", schemas);
 }
@@ -1288,9 +1243,7 @@ function manifestWithGenericCommands(
 function genericWorkflowManifest(
 	options: {
 		createInput?: WorkflowManifest["commands"][number]["input"];
-		createOutput?: WorkflowManifest["commands"][number]["output"];
 		applyInput?: WorkflowManifest["commands"][number]["input"];
-		applyOutput?: WorkflowManifest["commands"][number]["output"];
 	} = {},
 ): WorkflowManifest {
 	return {
@@ -1323,14 +1276,12 @@ function genericWorkflowManifest(
 				cli: { verb: "create", target: "memo" },
 				target: { kind: "item", action: "draft" },
 				input: options.createInput,
-				output: options.createOutput,
 			},
 			{
 				id: "memo-apply",
 				cli: { verb: "apply", target: "memo" },
 				target: { kind: "item", action: "review" },
 				input: options.applyInput,
-				output: options.applyOutput,
 			},
 		],
 	};
@@ -1338,7 +1289,7 @@ function genericWorkflowManifest(
 
 function manifestWithCommandSchema(
 	id: string,
-	schemas: Pick<WorkflowManifest["commands"][number], "input" | "output">,
+	schemas: Pick<WorkflowManifest["commands"][number], "input">,
 ): WorkflowManifest {
 	return {
 		...agentDevelopmentManifest,

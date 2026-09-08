@@ -52,11 +52,6 @@ const grillingCreateInput = z.strictObject({
 	parent: z.string().trim().min(1).optional(),
 });
 
-const createOutput = z.object({
-	issue: z.object({ id: z.string() }),
-	log: z.object({ type: z.string() }),
-});
-
 const specTransitions = [
 	{
 		from: { state: "ready", action: "planning" },
@@ -268,28 +263,24 @@ export const genericTaskManifest = defineManifest({
 			cli: { verb: "create", target: "spec" },
 			target: { kind: "spec", action: "planning" },
 			input: createInput,
-			output: createOutput,
 		},
 		{
 			id: "wayfinder-create",
 			cli: { verb: "create", target: "wayfinder" },
 			target: { kind: "wayfinder", action: "planning" },
 			input: createInput,
-			output: createOutput,
 		},
 		{
 			id: "task-create",
 			cli: { verb: "create", target: "task" },
 			target: { kind: "task", action: "work" },
 			input: taskCreateInput,
-			output: createOutput,
 		},
 		{
 			id: "grilling-create",
 			cli: { verb: "create", target: "grilling" },
 			target: { kind: "grilling", action: "discuss" },
 			input: grillingCreateInput,
-			output: createOutput,
 		},
 	],
 });

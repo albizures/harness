@@ -26,7 +26,6 @@ import {
 	parseStructuredArtifactInput,
 	readOption,
 	validateWorkflowCommandInput,
-	validateWorkflowCommandOutput,
 	workflowTarget,
 } from "../../commands/shared.ts";
 import { agentDevelopmentManifest } from "./manifest.ts";
@@ -624,11 +623,10 @@ function findWorkflowTransition(
 }
 
 function validateOrSucceed(
-	command: ManifestCommand,
+	_command: ManifestCommand,
 	data: Parameters<typeof success>[0],
 ): Envelope {
-	const outputValidation = validateWorkflowCommandOutput(command, data);
-	return outputValidation ?? success(data);
+	return success(data);
 }
 
 function planBundleArtifactInput(inputPath: string, ticketCount: number) {

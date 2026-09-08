@@ -4,7 +4,6 @@ import { describeWorkflow } from "../../src/manifest/description.ts";
 import { defineManifest } from "../../src/manifest/index.ts";
 
 const stringInput = z.object({ value: z.string() });
-const objectOutput = z.object({ ok: z.boolean() });
 
 function descriptionManifest() {
 	return defineManifest({
@@ -43,7 +42,6 @@ function descriptionManifest() {
 			retry: { allow: [{ kind: "ticket", action: "implement" }] },
 			escalation: {
 				allow: [{ kind: "spec", action: "plan" }],
-				input: stringInput,
 			},
 			resume: { allow: [{ kind: "spec", actions: ["plan", "review"] }] },
 			relationshipPolicies: [
@@ -65,7 +63,6 @@ function descriptionManifest() {
 					{
 						from: { state: "backlog", action: "plan" },
 						event: "schedule",
-						input: stringInput,
 						to: { state: "ready", action: "plan" },
 					},
 					{
@@ -88,7 +85,6 @@ function descriptionManifest() {
 				cli: { verb: "create", target: "spec" },
 				target: { kind: "spec", action: "plan" },
 				input: stringInput,
-				output: objectOutput,
 			},
 			{
 				id: "createTicketFromSpec",
@@ -151,36 +147,30 @@ describe("when building a Workflow description DTO", () => {
 		).toEqual(["spec-tickets"]);
 	});
 
-	it("should use schema presence markers and generated manifest CLI usage", () => {
+	it("should use command input schema presence markers and generated manifest CLI usage", () => {
 		const description = describeWorkflow(descriptionManifest());
 
 		expect(description.kinds[0]?.transitions).toMatchObject([
-			{ event: "schedule", input: { required: true } },
-			{ event: "start", input: { required: false } },
+			{ event: "schedule" },
+			{ event: "start" },
 		]);
 		expect(description.commands).toMatchObject([
 			{
 				id: "createSpec",
 				cli: { usage: "awf create spec --input <file|->" },
 				input: { required: true },
-				output: { declared: true },
 			},
 			{
 				id: "createTicketFromSpec",
 				cli: { usage: "awf create ticket --source <issue> --input <file|->" },
 				input: { required: false },
-				output: { declared: false },
 			},
 			{
 				id: "applyPlan",
 				cli: { usage: "awf apply plan <issue> --input <file|->" },
 				input: { required: true },
-				output: { declared: false },
 			},
 		]);
-		expect(description.lifecycle?.escalation?.input).toEqual({
-			required: true,
-		});
 		expect(JSON.stringify(description)).not.toContain("_def");
 		expect(JSON.stringify(description)).not.toContain("secret-prefix");
 	});

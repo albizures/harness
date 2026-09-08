@@ -223,7 +223,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
   - Subkinds: bug, feature
   - Initial: ready/implement
   - Transitions:
-    - ready/implement --start [input required]--> running/implement/blocked
+    - ready/implement --start--> running/implement/blocked
 
 ## Commands
 
@@ -231,7 +231,6 @@ it("should ensure that text output renders workflow descriptions as deterministi
   - Usage: awf create ticket --input <file|->
   - Target: ticket/implement
   - Input: required
-  - Output: not declared
 
 ## Readiness
 

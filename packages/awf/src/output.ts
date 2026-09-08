@@ -131,12 +131,8 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 			) {
 				continue;
 			}
-			const input =
-				isRecord(transition.input) && transition.input.required === true
-					? " [input required]"
-					: "";
 			lines.push(
-				`    - ${formatStateRef(transition.from)} --${String(transition.event)}${input}--> ${formatStateRef(transition.to)}`,
+				`    - ${formatStateRef(transition.from)} --${String(transition.event)}--> ${formatStateRef(transition.to)}`,
 			);
 		}
 	}
@@ -155,9 +151,6 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 		}
 		lines.push(
 			`  - Input: ${isRecord(command.input) && command.input.required === true ? "required" : "not required"}`,
-		);
-		lines.push(
-			`  - Output: ${isRecord(command.output) && command.output.declared === true ? "declared" : "not declared"}`,
 		);
 	}
 
@@ -245,9 +238,6 @@ function formatLifecycleDescription(
 	if (isRecord(lifecycle.escalation)) {
 		lines.push("- Escalation:");
 		formatPolicyTargets(lines, lifecycle.escalation.allow);
-		lines.push(
-			`  - Input: ${isRecord(lifecycle.escalation.input) && lifecycle.escalation.input.required === true ? "required" : "not required"}`,
-		);
 	}
 	if (isRecord(lifecycle.resume)) {
 		lines.push("- Resume:");
