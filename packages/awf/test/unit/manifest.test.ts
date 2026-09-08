@@ -86,7 +86,7 @@ it("should reject loaded TypeScript workflow manifests with Zod-owned shape erro
 it("should ensure that defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "tiny" },
+		workflow: { id: "tiny", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement"],
@@ -144,7 +144,7 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 it("should validate per-subkind concurrency against declared kind subkinds", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "subkind-concurrency" },
+		workflow: { id: "subkind-concurrency", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement"],
@@ -188,10 +188,90 @@ it("should validate per-subkind concurrency against declared kind subkinds", () 
 	expect(messages).toMatch(/perSubkind concurrency must be a positive integer/);
 });
 
+it("should require a workflow semantic version", () => {
+	const issues = validateManifest({
+		version: "v1",
+		workflow: { id: "missing-semantic-version" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["implement"],
+			reasons: [],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [],
+			},
+		],
+		commands: [],
+	});
+
+	expect(
+		issues.map((issue) => `${issue.path} ${issue.message}`).join("\n"),
+	).toMatch(/\$\.workflow\.version.*semantic version is required/);
+});
+
+it("should validate lifecycle active and terminal states against the workflow vocabulary", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "lifecycle-states", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["implement", "none"],
+			reasons: [],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: {
+			activeStates: ["running"],
+			terminalStates: ["done"],
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [],
+			},
+		],
+		commands: [],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+	expect(
+		validateManifest({
+			...manifest,
+			lifecycle: {
+				activeStates: ["running", "missing-active"],
+				terminalStates: ["done", "missing-terminal"],
+			},
+		})
+			.map((issue) => `${issue.path} ${issue.message}`)
+			.join("\n"),
+	).toMatch(/activeStates\[1\].*known state/);
+	expect(
+		validateManifest({
+			...manifest,
+			lifecycle: {
+				activeStates: ["running"],
+				terminalStates: ["done", "missing-terminal"],
+			},
+		})
+			.map((issue) => `${issue.path} ${issue.message}`)
+			.join("\n"),
+	).toMatch(/terminalStates\[1\].*known state/);
+});
+
 it("should validate manifest-declared CLI targets and named readiness filters", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "command-declarations" },
+		workflow: { id: "command-declarations", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
@@ -270,7 +350,7 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 it("should reject executable hook fields embedded in workflow semantic declarations", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "semantic-hooks" },
+		workflow: { id: "semantic-hooks", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running", "waiting-human", "done"],
 			actions: ["planning", "work", "none"],
@@ -349,7 +429,7 @@ it("should reject executable hook fields embedded in workflow semantic declarati
 it("should reject payload schemas outside command input declarations", () => {
 	const manifest = {
 		version: "v1",
-		workflow: { id: "payload-boundaries" },
+		workflow: { id: "payload-boundaries", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement", "none"],
@@ -396,7 +476,7 @@ it("should reject payload schemas outside command input declarations", () => {
 it("should reject tracker as a manifest field inside defineManifest data", () => {
 	const manifestWithTracker = {
 		version: "v1",
-		workflow: { id: "tracker-field" },
+		workflow: { id: "tracker-field", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
@@ -426,7 +506,7 @@ it("should reject tracker as a manifest field inside defineManifest data", () =>
 it("should reject non-declarative hooks, wildcards, unknown references, and malformed schemas", () => {
 	const issues = validateManifest({
 		version: "v1",
-		workflow: { id: "bad" },
+		workflow: { id: "bad", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "ready"],
 			actions: ["implement", "review"],

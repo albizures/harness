@@ -1190,7 +1190,7 @@ function genericWorkflowManifest(
 ): WorkflowManifest {
 	return {
 		version: "v1",
-		workflow: { id: "handler-seam" },
+		workflow: { id: "handler-seam", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "done"],
 			actions: ["draft", "review"],

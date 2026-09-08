@@ -21,7 +21,7 @@ import { defineManifest } from "@albizures/awf";
 import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
 
 export const manifest = defineManifest({
-	workflow: { id: "my-workflow" },
+	workflow: { id: "my-workflow", version: "1.0.0" },
 	// kinds, commands, and policies...
 });
 

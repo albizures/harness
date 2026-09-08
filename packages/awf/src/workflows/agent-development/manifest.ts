@@ -47,7 +47,7 @@ const handoffCreateInput = z.strictObject({ handoff: handoffReferenceInput });
 
 export const agentDevelopmentManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "agent-development" },
+	workflow: { id: "agent-development", version: "1.0.0" },
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],
@@ -77,6 +77,8 @@ export const agentDevelopmentManifest = defineManifest({
 		],
 	},
 	lifecycle: {
+		activeStates: ["running"],
+		terminalStates: ["done"],
 		relationshipPolicies: [
 			{
 				relationship: "parent",

@@ -146,7 +146,7 @@ const grillingTransitions = [
 
 export const genericTaskManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "agent-workflow" },
+	workflow: { id: "agent-workflow", version: "1.0.0" },
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],
@@ -176,6 +176,8 @@ export const genericTaskManifest = defineManifest({
 		],
 	},
 	lifecycle: {
+		activeStates: ["running"],
+		terminalStates: ["done"],
 		relationshipPolicies: [
 			{
 				relationship: "parent",

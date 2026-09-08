@@ -71,7 +71,8 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 	const lines = [
 		`# Workflow ${String((data.workflow as Record<string, JsonValue>).id)}`,
 		"",
-		`- Version: ${String(data.version)}`,
+		`- Manifest schema: ${String(data.version)}`,
+		`- Workflow version: ${String(isRecord(data.workflow) ? data.workflow.version : "unknown")}`,
 		"",
 		"## Vocabulary",
 		"",
@@ -231,6 +232,12 @@ function formatLifecycleDescription(
 		lines.push("- No lifecycle policies declared.");
 		return;
 	}
+	if (Array.isArray(lifecycle.activeStates)) {
+		lines.push(`- Active states: ${formatList(lifecycle.activeStates)}`);
+	}
+	if (Array.isArray(lifecycle.terminalStates)) {
+		lines.push(`- Terminal states: ${formatList(lifecycle.terminalStates)}`);
+	}
 	if (isRecord(lifecycle.retry)) {
 		lines.push("- Retry:");
 		formatPolicyTargets(lines, lifecycle.retry.allow);
@@ -330,6 +337,7 @@ function isWorkflowDescription(data: Record<string, JsonValue>): boolean {
 		data.version === "v1" &&
 		isRecord(data.workflow) &&
 		typeof data.workflow.id === "string" &&
+		typeof data.workflow.version === "string" &&
 		isRecord(data.vocabulary) &&
 		isRecord(data.concurrency) &&
 		Array.isArray(data.kinds) &&

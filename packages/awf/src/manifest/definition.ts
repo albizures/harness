@@ -36,6 +36,11 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 	validateIdentifier(value.workflow, "$.workflow", "workflow object", issues);
 	if (isRecord(value.workflow)) {
 		validateId(value.workflow.id, "$.workflow.id", issues);
+		validateSemanticVersion(
+			value.workflow.version,
+			"$.workflow.version",
+			issues,
+		);
 	}
 
 	const vocabulary = isRecord(value.vocabulary) ? value.vocabulary : undefined;
@@ -255,6 +260,25 @@ function validateUniqueId(
 			issue(issues, `${path}.id`, `Duplicate id '${value}'.`);
 		}
 		seen.add(value);
+	}
+}
+
+function validateSemanticVersion(
+	value: unknown,
+	path: string,
+	issues: Array<ValidationIssue>,
+): void {
+	if (value === undefined) {
+		issue(issues, path, "Workflow semantic version is required.");
+		return;
+	}
+	if (
+		typeof value !== "string" ||
+		!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(
+			value,
+		)
+	) {
+		issue(issues, path, "Workflow version must be a semantic version.");
 	}
 }
 
@@ -634,6 +658,18 @@ function validateLifecyclePolicies(
 	if (!isRecord(value)) {
 		return;
 	}
+	validateLifecycleStateList(
+		value.activeStates,
+		"$.lifecycle.activeStates",
+		states,
+		issues,
+	);
+	validateLifecycleStateList(
+		value.terminalStates,
+		"$.lifecycle.terminalStates",
+		states,
+		issues,
+	);
 	for (const [index, policy] of readArray(
 		value.relationshipPolicies ?? [],
 		"$.lifecycle.relationshipPolicies",
@@ -696,6 +732,26 @@ function validateLifecyclePolicies(
 			issues,
 			false,
 		);
+	}
+}
+
+function validateLifecycleStateList(
+	value: unknown,
+	path: string,
+	states: Set<string>,
+	issues: Array<ValidationIssue>,
+): void {
+	if (value === undefined) {
+		return;
+	}
+	for (const [index, state] of readArray(value, path, issues).entries()) {
+		if (typeof state !== "string" || !states.has(state) || state === "*") {
+			issue(
+				issues,
+				`${path}[${index}]`,
+				"Lifecycle state must reference a known state and cannot be a wildcard.",
+			);
+		}
 	}
 }
 

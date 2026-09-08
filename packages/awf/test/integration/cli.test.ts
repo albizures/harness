@@ -166,7 +166,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 	expect(envelope.data).not.toEqual(expect.any(String));
 	expect(envelope.data).toMatchObject({
 		version: "v1",
-		workflow: { id: "agent-development" },
+		workflow: { id: "agent-development", version: "1.0.0" },
 		concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 		vocabulary: {
 			states: ["ready", "running", "done", "need-human", "waiting-human"],
@@ -406,7 +406,7 @@ import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
 
 export const manifest = defineManifest({
 	version: "v1",
-	workflow: { id: "cli-handler" },
+	workflow: { id: "cli-handler", version: "1.0.0" },
 	vocabulary: { states: ["ready"], actions: ["draft"], events: ["saved"] },
 	concurrency: { perIssue: 1 },
 	kinds: [{
@@ -462,7 +462,7 @@ import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)}
 
 export const manifest = defineManifest({
 	version: "v1",
-	workflow: { id: "cli-lifecycle-handler" },
+	workflow: { id: "cli-lifecycle-handler", version: "1.0.0" },
 	vocabulary: { states: ["running", "done"], actions: ["publish", "none"], events: ["succeed"] },
 	concurrency: { perIssue: 1 },
 	kinds: [{

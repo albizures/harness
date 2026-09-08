@@ -86,7 +86,7 @@ export type ManifestLifecycleRelationshipPolicy = {
 
 export type WorkflowManifest = {
 	version: "v1";
-	workflow: { id: Identifier };
+	workflow: { id: Identifier; version: string };
 	vocabulary: {
 		states: Array<Identifier>;
 		actions: Array<Identifier>;
@@ -108,6 +108,8 @@ export type WorkflowManifest = {
 		relationshipPolicies?: Array<ManifestReadinessRelationshipPolicy>;
 	};
 	lifecycle?: {
+		activeStates?: Array<Identifier>;
+		terminalStates?: Array<Identifier>;
 		retry?: { allow?: Array<LifecyclePolicyTarget> };
 		escalation?: {
 			allow?: Array<LifecyclePolicyTarget>;
@@ -175,7 +177,7 @@ const workflowFilterSchema = z.strictObject({
 
 export const workflowManifestStructuralSchema = z.strictObject({
 	version: z.literal("v1"),
-	workflow: z.strictObject({ id: z.string() }),
+	workflow: z.strictObject({ id: z.string(), version: z.string() }),
 	vocabulary: z.strictObject({
 		states: z.array(z.string()),
 		actions: z.array(z.string()),
@@ -224,6 +226,8 @@ export const workflowManifestStructuralSchema = z.strictObject({
 		.optional(),
 	lifecycle: z
 		.strictObject({
+			activeStates: z.array(z.string()).optional(),
+			terminalStates: z.array(z.string()).optional(),
 			retry: z
 				.strictObject({
 					allow: z.array(lifecyclePolicyTargetSchema).optional(),

@@ -139,7 +139,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
 			ok: true,
 			data: {
 				version: "v1",
-				workflow: { id: "synthetic" },
+				workflow: { id: "synthetic", version: "1.2.3" },
 				vocabulary: {
 					states: ["ready", "running", "done"],
 					actions: ["implement", "none"],
@@ -184,6 +184,8 @@ it("should ensure that text output renders workflow descriptions as deterministi
 					filters: [{ kind: "ticket", state: "ready", action: "implement" }],
 				},
 				lifecycle: {
+					activeStates: ["running"],
+					terminalStates: ["done"],
 					retry: { allow: [{ kind: "ticket", action: "implement" }] },
 				},
 				relationships: [
@@ -202,7 +204,8 @@ it("should ensure that text output renders workflow descriptions as deterministi
 
 	expect(output).toBe(`# Workflow synthetic
 
-- Version: v1
+- Manifest schema: v1
+- Workflow version: 1.2.3
 
 ## Vocabulary
 
@@ -239,6 +242,8 @@ it("should ensure that text output renders workflow descriptions as deterministi
 
 ## Lifecycle policies
 
+- Active states: running
+- Terminal states: done
 - Retry:
   - ticket/implement
 

@@ -248,7 +248,7 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 it("should ensure that succeed applies generic relationship-driven lifecycle progression", async () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "generic-parent-progression" },
+		workflow: { id: "generic-parent-progression", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running", "done"],
 			actions: ["wait", "do", "verify", "none"],
@@ -684,7 +684,7 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 it("should ensure that generic lifecycle transition handlers receive JSON input and contribute effects", async () => {
 	const manifest = {
 		version: "v1" as const,
-		workflow: { id: "generic" },
+		workflow: { id: "generic", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running", "done"],
 			actions: ["do", "none"],
@@ -781,7 +781,7 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 it("should ensure that generic lifecycle transition handlers reject invalid contributions before mutation", async () => {
 	const manifest = {
 		version: "v1" as const,
-		workflow: { id: "generic" },
+		workflow: { id: "generic", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running", "done"],
 			actions: ["do", "none"],

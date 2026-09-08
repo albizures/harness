@@ -8,7 +8,7 @@ const stringInput = z.object({ value: z.string() });
 function descriptionManifest() {
 	return defineManifest({
 		version: "v1",
-		workflow: { id: "description-test" },
+		workflow: { id: "description-test", version: "1.2.3" },
 		vocabulary: {
 			states: ["backlog", "ready", "running", "need-human", "done"],
 			actions: ["plan", "implement", "review", "none"],
@@ -39,6 +39,8 @@ function descriptionManifest() {
 			],
 		},
 		lifecycle: {
+			activeStates: ["running"],
+			terminalStates: ["done"],
 			retry: { allow: [{ kind: "ticket", action: "implement" }] },
 			escalation: {
 				allow: [{ kind: "spec", action: "plan" }],
@@ -114,7 +116,10 @@ describe("when building a Workflow description DTO", () => {
 		const description = describeWorkflow(descriptionManifest());
 
 		expect(description.version).toBe("v1");
-		expect(description.workflow).toEqual({ id: "description-test" });
+		expect(description.workflow).toEqual({
+			id: "description-test",
+			version: "1.2.3",
+		});
 		expect(description.vocabulary.states).toEqual([
 			"backlog",
 			"ready",
@@ -138,6 +143,8 @@ describe("when building a Workflow description DTO", () => {
 			{ kind: "spec", state: "ready", action: "plan" },
 			{ kind: "ticket", reason: "answered" },
 		]);
+		expect(description.lifecycle?.activeStates).toEqual(["running"]);
+		expect(description.lifecycle?.terminalStates).toEqual(["done"]);
 		expect(description.lifecycle?.relationshipPolicies?.[0]?.to).toEqual({
 			state: "ready",
 			action: "review",

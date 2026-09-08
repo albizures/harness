@@ -28,7 +28,7 @@ export type WorkflowDescriptionSchemaInputV1 = { required: boolean };
 
 export type WorkflowDescriptionV1 = {
 	version: "v1";
-	workflow: { id: string };
+	workflow: { id: string; version: string };
 	vocabulary: {
 		states: Array<string>;
 		actions: Array<string>;
@@ -79,6 +79,8 @@ export type WorkflowDescriptionV1 = {
 		}>;
 	};
 	lifecycle?: {
+		activeStates?: Array<string>;
+		terminalStates?: Array<string>;
 		retry?: { allow?: Array<{ kind: string; action: string }> };
 		escalation?: {
 			allow?: Array<{ kind: string; action: string }>;
@@ -114,7 +116,7 @@ export function describeWorkflow(
 ): WorkflowDescriptionV1 {
 	return {
 		version: "v1",
-		workflow: { id: manifest.workflow.id },
+		workflow: { id: manifest.workflow.id, version: manifest.workflow.version },
 		vocabulary: describeVocabulary(manifest),
 		concurrency: describeConcurrency(manifest),
 		kinds: manifest.kinds.map((kind) => ({
@@ -245,6 +247,12 @@ function describeLifecycle(manifest: WorkflowManifest) {
 	}
 	return {
 		lifecycle: {
+			...(manifest.lifecycle.activeStates === undefined
+				? {}
+				: { activeStates: [...manifest.lifecycle.activeStates] }),
+			...(manifest.lifecycle.terminalStates === undefined
+				? {}
+				: { terminalStates: [...manifest.lifecycle.terminalStates] }),
 			...(manifest.lifecycle.retry === undefined
 				? {}
 				: {

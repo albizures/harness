@@ -6,7 +6,7 @@ import { createInMemoryTracker } from "../../src/trackers/memory.ts";
 
 const syntheticManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "synthetic" },
+	workflow: { id: "synthetic", version: "1.0.0" },
 	vocabulary: {
 		states: ["draft", "ready", "running", "done"],
 		actions: ["refine", "promote", "none"],

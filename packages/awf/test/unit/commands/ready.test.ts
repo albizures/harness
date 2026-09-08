@@ -9,7 +9,7 @@ import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
 
 const defaultTicketOnlyReadyManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "test-workflow" },
+	workflow: { id: "test-workflow", version: "1.0.0" },
 	vocabulary: {
 		states: ["ready", "running", "done"],
 		actions: ["plan", "implement", "none"],
