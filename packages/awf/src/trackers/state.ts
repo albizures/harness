@@ -314,7 +314,7 @@ export type WorkflowTrackerStateSnapshot = {
 	issues: Array<StoredIssue>;
 };
 
-type StoredIssue = Omit<WorkflowIssue, "workflow" | "artifacts" | "changes"> & {
+type StoredIssue = Omit<WorkflowIssue, "workflow"> & {
 	workflow: WorkflowProjection;
 	logs: Array<unknown>;
 	labels?: Array<string>;

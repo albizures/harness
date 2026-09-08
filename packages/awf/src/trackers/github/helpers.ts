@@ -329,8 +329,6 @@ export function isProjectionMetadata(
 	return (
 		value.schemaVersion === PROJECTION_SCHEMA_VERSION &&
 		isProjection(value.workflow) &&
-		value.artifacts === undefined &&
-		value.changes === undefined &&
 		(value.relationships === undefined ||
 			isMetadataRelationships(value.relationships))
 	);
@@ -450,21 +448,6 @@ export function parseIssueNumber(id: string): number {
 		throw new IssueNotFoundError(id);
 	}
 	return number;
-}
-
-export function validatePullRequestArtifact(
-	kind: string,
-	uri: string | undefined,
-): void {
-	if (
-		kind === "pull-request" &&
-		(uri === undefined ||
-			!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/u.test(uri))
-	) {
-		throw new CorruptWorkflowProjectionError(
-			"Pull request artifact must be a GitHub pull request URL.",
-		);
-	}
 }
 
 export function needsReconciliation(

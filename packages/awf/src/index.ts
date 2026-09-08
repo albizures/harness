@@ -100,8 +100,6 @@ export {
 	type TrackerVerificationHooks,
 } from "./tracker.ts";
 export { WorkflowLog } from "./workflow/log.ts";
-export { WorkflowChange } from "./workflow/change.ts";
-export { WorkflowArtifact } from "./workflow/artifact.ts";
 export {
 	CorruptWorkflowProjectionError,
 	type WorkflowProjection,

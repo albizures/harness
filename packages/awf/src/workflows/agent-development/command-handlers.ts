@@ -23,7 +23,6 @@ import {
 	lifecycleError,
 	parseJsonInput,
 	parseJsonObject,
-	parseStructuredArtifactInput,
 	readOption,
 	validateWorkflowCommandInput,
 	workflowTarget,
@@ -42,7 +41,7 @@ type PlanTicket = {
 
 type Metadata = { ticketCount: number };
 
-type PlanBundleArtifactReference =
+type PlanBundleReference =
 	| {
 			type: "inline";
 			ref: string;
@@ -155,24 +154,11 @@ async function createHandoffCommand(
 			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
 		);
 	}
-	const artifactInput = parseStructuredArtifactInput(
-		parsed.data.handoff,
-		"handoff",
-		"Handoff",
-		"$.handoff",
-	);
-	if (artifactInput.issue !== undefined || artifactInput.value === undefined) {
+	if (parsed.data.handoff === undefined) {
 		return failure(
 			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 			"Workflow command input is invalid.",
-			{
-				issues: [
-					artifactInput.issue ?? {
-						path: "$.handoff",
-						message: "Value is required.",
-					},
-				],
-			},
+			{ issues: [{ path: "$.handoff", message: "Value is required." }] },
 		);
 	}
 	try {
@@ -300,7 +286,7 @@ async function applyPlanCommand(
 				log: {
 					type: "plan_applied",
 					message: stableStringify({
-						input: planBundleArtifactReference(inputPath, plan.tickets.length),
+						input: planBundleReference(inputPath, plan.tickets.length),
 					}),
 				},
 			},
@@ -617,10 +603,10 @@ function validateOrSucceed(
 	return success(data);
 }
 
-function planBundleArtifactReference(
+function planBundleReference(
 	inputPath: string,
 	ticketCount: number,
-): PlanBundleArtifactReference {
+): PlanBundleReference {
 	if (inputPath === "-") {
 		return {
 			type: "inline",
@@ -631,12 +617,12 @@ function planBundleArtifactReference(
 	}
 	return {
 		type: "file",
-		path: workflowArtifactFilePath(inputPath),
+		path: workflowReferenceFilePath(inputPath),
 		title: "Submitted plan bundle",
 		metadata: { ticketCount },
 	};
 }
 
-function workflowArtifactFilePath(path: string): string {
+function workflowReferenceFilePath(path: string): string {
 	return isAbsolute(path) ? relative(process.cwd(), path) : path;
 }

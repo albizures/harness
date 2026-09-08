@@ -177,7 +177,7 @@ it("should ensure that file-backed tracker writes a complete JSON state file wit
 	});
 });
 
-it("should ensure that file-backed tracker rejects legacy artifact fields in stored issue state", async () => {
+it("should ensure that file-backed tracker rejects unsupported stored issue fields", async () => {
 	await withTempDir(async (dir) => {
 		const file = join(dir, "tracker.json");
 		await writeFile(
@@ -195,15 +195,7 @@ it("should ensure that file-backed tracker rejects legacy artifact fields in sto
 							dependencies: [],
 							dependents: [],
 						},
-						artifacts: [
-							{
-								id: "artifact-1",
-								kind: "file",
-								uri: "docs/result.md",
-								metadata: [],
-							},
-						],
-						changes: [],
+						unexpectedRecords: [],
 						logs: [],
 					},
 				],

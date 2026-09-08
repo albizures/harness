@@ -6,7 +6,6 @@ import {
 	validateManifest,
 } from "../../src/manifest/definition.ts";
 import { loadManifest, loadWorkflowModule } from "../../src/workflow-module.ts";
-import { artifacts } from "../../src/workflow/artifact.ts";
 
 const validFixture = new URL("../fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;
@@ -113,7 +112,12 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 			{
 				id: "start",
 				target: { kind: "ticket", action: "implement" },
-				input: artifacts.object({ pullRequest: artifacts.pullRequest() }),
+				input: z.strictObject({
+					pullRequest: z.strictObject({
+						type: z.literal("pull-request"),
+						url: z.string().trim().pipe(z.url()),
+					}),
+				}),
 			},
 		],
 	});
@@ -135,109 +139,6 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 			url: "https://github.com/albizures/harness/pull/52",
 		},
 	});
-});
-
-it("should ensure that public Zod authoring helpers declare and validate command input artifact payload schemas", () => {
-	const zodInput = artifacts.object({
-		url: artifacts.url(),
-		file: artifacts.file(),
-		issue: artifacts.issue(),
-		pullRequest: artifacts.pullRequest(),
-		gitRef: artifacts.gitRef(),
-		inlineMarkdown: artifacts.inlineMarkdown(),
-		handoff: artifacts.handoff(),
-		finding: artifacts.finding(),
-	});
-	const manifest = defineManifest({
-		version: "v1",
-		workflow: { id: "artifact-payloads" },
-		vocabulary: {
-			states: ["ready"],
-			actions: ["implement"],
-			reasons: [],
-			events: ["succeed"],
-		},
-		github: { reservedPrefix: "awf" },
-		concurrency: { perIssue: 1 },
-		kinds: [
-			{
-				id: "ticket",
-				label: "Ticket",
-				initial: { state: "ready", action: "implement" },
-				transitions: [],
-			},
-		],
-		commands: [
-			{
-				id: "complete",
-				target: { kind: "ticket", action: "implement" },
-				input: zodInput,
-			},
-		],
-	});
-
-	expect(validateManifest(manifest)).toEqual([]);
-	expect(manifest.commands[0]?.input).toBe(zodInput);
-
-	const legacyStringValues = {
-		url: "https://example.com/spec",
-		file: "docs/spec.md",
-		issue: "https://github.com/albizures/harness/issues/51",
-		pullRequest: "https://github.com/albizures/harness/pull/52",
-		gitRef: "feature/awf-artifacts",
-		inlineMarkdown: "# Summary\n\nReady.",
-		handoff: "Next agent should run the focused tests.",
-		finding: "Missing coverage for invalid declarations.",
-	};
-	const structuredValues = {
-		url: { type: "url", url: "https://example.com/spec", title: "Spec" },
-		file: { type: "file", path: "docs/spec.md", title: "Spec" },
-		issue: { type: "issue", ref: "#51", id: "51", title: "Spec issue" },
-		pullRequest: {
-			type: "pull-request",
-			url: "https://github.com/albizures/harness/pull/52",
-			id: "52",
-			title: "Implementation",
-			metadata: { repository: "albizures/harness" },
-		},
-		gitRef: { type: "git-ref", ref: "feature/awf-artifacts" },
-		inlineMarkdown: { type: "markdown", ref: "# Summary\n\nReady." },
-		handoff: {
-			type: "handoff",
-			ref: "Next agent should run the focused tests.",
-		},
-		finding: {
-			type: "finding",
-			ref: "Missing coverage for invalid declarations.",
-		},
-	};
-	expect(
-		artifacts
-			.object({ issue: artifacts.issue() })
-			.safeParse({ issue: legacyStringValues.issue }).success,
-	).toBe(false);
-	expect(zodInput.parse(structuredValues)).toEqual(structuredValues);
-
-	const invalid = zodInput.safeParse({
-		...structuredValues,
-		url: { type: "url", url: "ftp://example.com/spec" },
-		file: { type: "file", path: "/tmp/spec.md" },
-		issue: { type: "issue", ref: "not-an-issue" },
-		pullRequest: {
-			type: "pull-request",
-			url: "https://github.com/albizures/harness/issues/51",
-		},
-		gitRef: { type: "git-ref", ref: "bad ref" },
-		inlineMarkdown: { type: "markdown", ref: "" },
-		handoff: { type: "handoff", ref: "" },
-		finding: { type: "finding", ref: "" },
-	});
-	const invalidArtifactReferenceCount = Object.keys(legacyStringValues).length;
-	expect(invalid.success).toBe(false);
-	if (invalid.success) {
-		throw new Error("expected parse failure");
-	}
-	expect(invalid.error.issues.length).toBe(invalidArtifactReferenceCount);
 });
 
 it("should validate per-subkind concurrency against declared kind subkinds", () => {

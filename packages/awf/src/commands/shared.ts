@@ -6,7 +6,7 @@ import {
 	type Envelope,
 	type ErrorEnvelope,
 } from "../envelope.ts";
-import { jsonRecordSchema, jsonValueSchema } from "../json.ts";
+import { jsonValueSchema } from "../json.ts";
 import type {
 	ManifestCommand,
 	PayloadZodSchema,
@@ -15,10 +15,6 @@ import type {
 	ManifestWorkflowFilter,
 	WorkflowManifest,
 } from "../manifest/manifest.ts";
-import {
-	type ArtifactKind,
-	artifacts as artifactSchemas,
-} from "../workflow/artifact.ts";
 import { NeedReconciliationError, type Tracker } from "../tracker.ts";
 import { IssueNotFoundError } from "../workflow/issue.ts";
 import {
@@ -194,102 +190,6 @@ export function formatPayloadPath(
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-export type StructuredArtifactInput = {
-	kind: ArtifactKind;
-	uri: string;
-	name: string;
-} & Record<string, JsonValue>;
-
-export function structuredArtifactInput(
-	value: unknown,
-	kind: ArtifactKind,
-	name: string,
-): StructuredArtifactInput | undefined {
-	return parseStructuredArtifactInput(value, kind, name, "$input").value;
-}
-
-export function parseStructuredArtifactInput(
-	value: unknown,
-	kind: ArtifactKind,
-	name: string,
-	path: string,
-): { value?: StructuredArtifactInput; issue?: RuntimeValidationIssue } {
-	if (value === undefined) {
-		return {};
-	}
-	const schemaResult = artifactSchema(kind).safeParse(value);
-	if (!schemaResult.success) {
-		const issue = schemaResult.error.issues[0];
-		return {
-			issue: {
-				path: issue === undefined ? path : formatPayloadPath(path, issue.path),
-				message: issue?.message ?? "Invalid artifact reference.",
-			},
-		};
-	}
-	const jsonResult = jsonRecordSchema.safeParse(schemaResult.data);
-	if (!jsonResult.success) {
-		const issue = jsonResult.error.issues[0];
-		return {
-			issue: {
-				path: issue === undefined ? path : formatPayloadPath(path, issue.path),
-				message:
-					issue?.message ?? "Artifact reference must be JSON-compatible.",
-			},
-		};
-	}
-	const data = jsonResult.data;
-	const uri = artifactReferenceUri(data);
-	if (uri === undefined) {
-		return {
-			issue: { path, message: "Artifact reference must include a URI field." },
-		};
-	}
-	return {
-		value: {
-			...data,
-			kind,
-			uri,
-			name,
-		},
-	};
-}
-
-function artifactSchema(kind: ArtifactKind): PayloadZodSchema {
-	switch (kind) {
-		case "url":
-			return artifactSchemas.url();
-		case "file":
-			return artifactSchemas.file();
-		case "issue":
-			return artifactSchemas.issue();
-		case "pull-request":
-			return artifactSchemas.pullRequest();
-		case "git-ref":
-			return artifactSchemas.gitRef();
-		case "markdown":
-			return artifactSchemas.markdown();
-		case "inline":
-			return artifactSchemas.inline();
-		case "handoff":
-			return artifactSchemas.handoff();
-		case "finding":
-			return artifactSchemas.finding();
-	}
-}
-
-export function artifactReferenceUri(
-	value: Record<string, unknown>,
-): string | undefined {
-	for (const field of ["url", "path", "ref", "id"] as const) {
-		const candidate = value[field];
-		if (typeof candidate === "string") {
-			return candidate;
-		}
-	}
-	return undefined;
 }
 
 export async function progressRelationshipsAfterLifecycleTransition(

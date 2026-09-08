@@ -230,18 +230,7 @@ it("should ensure that create handoff validates input and records a log on the s
 	]);
 });
 
-it("should ensure that create handoff rejects malformed Handoff artifact data before recording", async () => {
-	const manifest = {
-		...agentDevelopmentManifest,
-		commands: agentDevelopmentManifest.commands.map((command) =>
-			command.id === "handoff-create"
-				? {
-						...command,
-						input: z.strictObject({ handoff: z.unknown() }),
-					}
-				: command,
-		),
-	};
+it("should ensure that create handoff rejects malformed Handoff reference data before recording", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -256,7 +245,7 @@ it("should ensure that create handoff rejects malformed Handoff artifact data be
 		["create", "handoff", "--source", "ticket-1", "--input", "-"],
 		{
 			tracker,
-			manifest,
+			manifest: agentDevelopmentManifest,
 			stdin: JSON.stringify({
 				handoff: { type: "handoff", metadata: { summary: "missing ref" } },
 			}),
@@ -268,7 +257,7 @@ it("should ensure that create handoff rejects malformed Handoff artifact data be
 		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 	);
 	expect(envelope.ok ? undefined : envelope.error.details?.issues).toEqual([
-		{ path: "$.handoff.ref", message: "Artifact reference must include ref." },
+		expect.objectContaining({ path: "$input.handoff" }),
 	]);
 	expect(await tracker.getIssue("ticket-1")).not.toHaveProperty("artifacts");
 	expect(await tracker.readLogs("ticket-1")).toEqual([]);

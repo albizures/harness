@@ -113,14 +113,24 @@ function isStoredIssueLike(value: unknown): boolean {
 	}
 	const issue = value as Record<string, unknown>;
 	return (
+		Object.keys(issue).every((key) =>
+			[
+				"id",
+				"title",
+				"body",
+				"workflow",
+				"relationships",
+				"logs",
+				"labels",
+				"projectionError",
+			].includes(key),
+		) &&
 		typeof issue.id === "string" &&
 		typeof issue.title === "string" &&
 		issue.workflow !== null &&
 		typeof issue.workflow === "object" &&
 		issue.relationships !== null &&
 		typeof issue.relationships === "object" &&
-		issue.artifacts === undefined &&
-		issue.changes === undefined &&
 		Array.isArray(issue.logs) &&
 		issue.logs.every(isStoredLogLike)
 	);

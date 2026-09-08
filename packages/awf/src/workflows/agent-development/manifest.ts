@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { defineManifest } from "../../manifest/definition.ts";
-import { artifacts } from "../../workflow/artifact.ts";
 
 const states = [
 	"ready",
@@ -19,20 +18,32 @@ const actions = [
 	"none",
 ] as const;
 
-const specCreateInput = artifacts.object({ spec: artifacts.markdown() });
+const markdownReferenceInput = z.union([
+	z.string().min(1),
+	z.strictObject({ type: z.literal("markdown"), ref: z.string().min(1) }),
+]);
 
-const planTicketInput = artifacts.object({
+const handoffReferenceInput = z.union([
+	z.string().min(1),
+	z.strictObject({ type: z.literal("handoff"), ref: z.string().min(1) }),
+	z.strictObject({ type: z.literal("handoff"), url: z.url() }),
+	z.strictObject({ type: z.literal("handoff"), path: z.string().min(1) }),
+]);
+
+const specCreateInput = z.strictObject({ spec: markdownReferenceInput });
+
+const planTicketInput = z.strictObject({
 	key: z.string(),
 	title: z.string(),
 	content: z.string(),
 	dependsOn: z.array(z.string()).optional(),
 });
 
-const planApplyInput = artifacts.object({
-	tickets: artifacts.array(planTicketInput),
+const planApplyInput = z.strictObject({
+	tickets: z.array(planTicketInput),
 });
 
-const handoffCreateInput = artifacts.object({ handoff: artifacts.handoff() });
+const handoffCreateInput = z.strictObject({ handoff: handoffReferenceInput });
 
 export const agentDevelopmentManifest = defineManifest({
 	version: "v1",

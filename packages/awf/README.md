@@ -2,6 +2,10 @@
 
 Agent Workflow (AWF) provides a generic workflow runtime and CLI for tracker-backed Workflow issues.
 
+## Runtime boundary
+
+AWF runtime-owned concepts are Workflow issue kinds, current workflow state/action/reason fields, lifecycle events, legal actions, relationships, readiness filters, and append-only text logs. Command inputs are ordinary Zod schemas owned by workflow modules. AWF does not expose or manage runtime artifact records, change records, command output schemas, or artifact-specific schema helpers.
+
 ## Workflow configuration
 
 AWF does not load a workflow implicitly. Run CLI commands from a directory with an `awf.config.ts` file, or pass one explicitly:
