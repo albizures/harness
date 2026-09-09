@@ -17,6 +17,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	},
 	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
+	lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
 	readiness: {
 		filters: [{ kind: "ticket", state: "ready", action: "implement" }],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],

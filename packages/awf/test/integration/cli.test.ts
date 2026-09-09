@@ -874,7 +874,7 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 	).toEqual(["1"]);
 });
 
-it("should ensure that CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
+it("should ensure that CLI smoke path reports active-state drift without repairing missing run ids", () => {
 	const issues = [
 		{
 			id: "42",
@@ -953,7 +953,7 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 	);
 	expect(applied.status).toBe(0);
 	const repairedIssue = JSON.parse(applied.stdout).data.issue;
-	expect(repairedIssue.workflow.activeRunId).toBe("run-42");
+	expect(repairedIssue.workflow.activeRunId).toBeUndefined();
 
 	const after = spawnSync(
 		process.execPath,
@@ -983,8 +983,8 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 			},
 		},
 	);
-	expect(after.status).toBe(0);
-	expect(JSON.parse(after.stdout).ok).toBe(true);
+	expect(after.status).toBe(1);
+	expect(JSON.parse(after.stdout).error.code).toBe("RUN_MISMATCH");
 });
 
 it("should ensure that CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {

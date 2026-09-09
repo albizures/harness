@@ -268,6 +268,55 @@ it("should validate lifecycle active and terminal states against the workflow vo
 	).toMatch(/terminalStates\[1\].*known state/);
 });
 
+it("should reject readiness filters that target terminal states while allowing terminal outgoing transitions", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "terminal-readiness", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["implement", "none"],
+			reasons: [],
+			events: ["reopen"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
+		readiness: {
+			filters: [{ kind: "ticket", state: "done", action: "none" }],
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "done", action: "none" },
+						event: "reopen",
+						to: { state: "ready", action: "implement" },
+					},
+				],
+			},
+		],
+		commands: [],
+	});
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/Readiness filter state must not be terminal/);
+	expect(messages).not.toMatch(/transitions\[0\]/);
+
+	expect(
+		validateManifest({
+			...manifest,
+			readiness: {
+				filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+			},
+		}),
+	).toEqual([]);
+});
+
 it("should validate manifest-declared CLI targets and named readiness filters", () => {
 	const manifest = defineManifest({
 		version: "v1",

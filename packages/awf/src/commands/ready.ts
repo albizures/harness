@@ -5,6 +5,8 @@ import type { ReadyOptions } from "./args.ts";
 import {
 	cleanWorkflowFields,
 	compareReadyIssues,
+	isWorkflowActive,
+	isWorkflowTerminal,
 	matchesNamedReadinessFilters,
 	matchesReadinessFilters,
 	readinessBlocking,
@@ -26,8 +28,8 @@ export async function readyCommand(
 	}
 	const issues = await tracker.listIssues();
 	const byId = new Map(issues.map((issue) => [issue.id, issue]));
-	const activeIssues = issues.filter(
-		(issue) => issue.workflow.activeRunId !== undefined,
+	const activeIssues = issues.filter((issue) =>
+		isWorkflowActive(issue.workflow, manifest),
 	);
 	const filters = readinessFilters(manifest);
 	const namedFilterValidation = validateNamedReadinessFilterValues(
@@ -40,6 +42,7 @@ export async function readyCommand(
 	}
 	const readyLike = issues
 		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
+		.filter((issue) => !isWorkflowTerminal(issue.workflow, manifest))
 		.filter((issue) => issue.workflow.activeRunId === undefined)
 		.filter((issue) =>
 			matchesNamedReadinessFilters(issue, options.filters, manifest),

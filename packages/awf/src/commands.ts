@@ -95,7 +95,7 @@ export async function execute(
 	}
 
 	const tracker = options.tracker ?? createInMemoryTracker();
-	if (args[0] === "get" || args[0] === "logs" || args[0] === "reconcile") {
+	if (args[0] === "get" || args[0] === "logs") {
 		const parseError = validateKnownCommand(args);
 		if (parseError !== undefined) {
 			return parseError;
@@ -103,10 +103,7 @@ export async function execute(
 		if (args[0] === "get") {
 			return getIssueCommand(args[1], tracker);
 		}
-		if (args[0] === "logs") {
-			return logsCommand(args[1], tracker);
-		}
-		return reconcileCommand(args[1], args.includes("--apply"), tracker);
+		return logsCommand(args[1], tracker);
 	}
 
 	if (manifest === undefined) {
@@ -128,6 +125,14 @@ export async function execute(
 	const parseError = validateKnownCommand(args, manifest);
 	if (parseError !== undefined) {
 		return parseError;
+	}
+	if (args[0] === "reconcile") {
+		return reconcileCommand(
+			args[1],
+			args.includes("--apply"),
+			tracker,
+			manifest,
+		);
 	}
 	if (args[0] === "workflow" && args[1] === "describe") {
 		return success(describeWorkflow(manifest));

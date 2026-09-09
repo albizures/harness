@@ -249,6 +249,24 @@ export function readinessFilters(
 	);
 }
 
+export function isWorkflowActive(
+	workflow: WorkflowFields,
+	manifest: WorkflowManifest,
+): boolean {
+	const activeStates = manifest.lifecycle?.activeStates;
+	if (activeStates !== undefined) {
+		return activeStates.includes(workflow.state);
+	}
+	return workflow.activeRunId !== undefined;
+}
+
+export function isWorkflowTerminal(
+	workflow: WorkflowFields,
+	manifest: WorkflowManifest,
+): boolean {
+	return manifest.lifecycle?.terminalStates?.includes(workflow.state) ?? false;
+}
+
 export function matchesReadinessFilters(
 	workflow: WorkflowFields,
 	filters: Array<{

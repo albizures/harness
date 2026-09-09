@@ -17,6 +17,7 @@ import {
 	invalidTransition,
 	isReadyAction,
 	isRecord,
+	isWorkflowActive,
 	isTerminalLog,
 	lifecycleError,
 	parseJsonInput,
@@ -63,6 +64,16 @@ export async function startCommand(
 		const transition = findTransition(manifest, issue.workflow, "start");
 		if (transition === undefined) {
 			return invalidTransition(id, "start");
+		}
+		if (
+			manifest.lifecycle?.activeStates !== undefined &&
+			!manifest.lifecycle.activeStates.includes(transition.to.state)
+		) {
+			return failure(
+				"INVALID_TRANSITION",
+				"Start transition must land in a manifest active state.",
+				{ id, event: "start" },
+			);
 		}
 		const runId = `run-${randomUUID()}`;
 		if (lifecycleHandlers === undefined) {
@@ -199,6 +210,13 @@ export async function terminalCommand(
 		}
 
 		const issue = await tracker.getIssue(id);
+		if (!isWorkflowActive(issue.workflow, manifest)) {
+			return failure(
+				"INVALID_TRANSITION",
+				"Terminal transition must leave a manifest active state.",
+				{ id, event },
+			);
+		}
 		if (issue.workflow.activeRunId !== runId) {
 			return failure(
 				"RUN_MISMATCH",

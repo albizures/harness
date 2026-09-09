@@ -1,6 +1,12 @@
 import { failure, success, type Envelope } from "../envelope.ts";
+import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker } from "../tracker.ts";
-import { deriveRuns, isRecord, isTerminalLog } from "./shared.ts";
+import {
+	deriveRuns,
+	isRecord,
+	isTerminalLog,
+	isWorkflowActive,
+} from "./shared.ts";
 import { IssueNotFoundError } from "../workflow/issue.ts";
 
 export type ReconciliationDiagnostic = {
@@ -16,6 +22,7 @@ export async function reconcileCommand(
 	id: string | undefined,
 	apply: boolean,
 	tracker: Tracker,
+	manifest: WorkflowManifest,
 ): Promise<Envelope> {
 	if (id === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
@@ -25,7 +32,7 @@ export async function reconcileCommand(
 
 	try {
 		const inspection = await inspectWorkflowIssue(tracker, id);
-		const diagnostics = diagnoseReconciliation(inspection);
+		const diagnostics = diagnoseReconciliation(inspection, manifest);
 		const hasCorruption = diagnostics.some(
 			(diagnostic) => diagnostic.severity === "corruption",
 		);
@@ -43,12 +50,6 @@ export async function reconcileCommand(
 				| undefined;
 			if (repair?.repair === "safe") {
 				workflow = safeRepairWorkflow(repair);
-			} else if (repair?.repair === "need-human") {
-				workflow = {
-					state: "need-human",
-					action: "none",
-					activeRunId: undefined,
-				};
 			}
 			if (repair !== undefined && workflow !== undefined) {
 				repairedIssue = await tracker.repairIssue(id, {
@@ -94,12 +95,15 @@ async function inspectWorkflowIssue(
 	};
 }
 
-function diagnoseReconciliation(inspection: {
-	issue?: Awaited<ReturnType<Tracker["getIssue"]>>;
-	logs: Array<unknown>;
-	labels?: Array<string>;
-	projectionError?: string;
-}): Array<ReconciliationDiagnostic> {
+function diagnoseReconciliation(
+	inspection: {
+		issue?: Awaited<ReturnType<Tracker["getIssue"]>>;
+		logs: Array<unknown>;
+		labels?: Array<string>;
+		projectionError?: string;
+	},
+	manifest: WorkflowManifest,
+): Array<ReconciliationDiagnostic> {
 	const diagnostics: Array<ReconciliationDiagnostic> = [];
 	if (inspection.projectionError !== undefined) {
 		diagnostics.push({
@@ -139,30 +143,46 @@ function diagnoseReconciliation(inspection: {
 	const openRuns = runStates.attempts.filter(
 		(attempt) => attempt.status === "running",
 	);
+	const currentIsActive = isWorkflowActive(inspection.issue.workflow, manifest);
 	if (
 		inspection.issue.workflow.activeRunId === undefined &&
-		openRuns.length === 1
+		currentIsActive &&
+		openRuns.length >= 1
+	) {
+		diagnostics.push({
+			code:
+				openRuns.length === 1 ? "MISSING_ACTIVE_RUN" : "AMBIGUOUS_ACTIVE_RUN",
+			severity: "drift",
+			message:
+				openRuns.length === 1
+					? `Active state is missing active run '${openRuns[0]?.runId}'.`
+					: "Active state is missing an active run, and multiple log-derived runs could be active.",
+			repair: "none",
+			...(openRuns.length === 1 ? { runId: openRuns[0]?.runId } : {}),
+		});
+	}
+	if (
+		inspection.issue.workflow.activeRunId === undefined &&
+		currentIsActive &&
+		openRuns.length === 0
 	) {
 		diagnostics.push({
 			code: "MISSING_ACTIVE_RUN",
 			severity: "drift",
-			message: `Current fields are missing active run '${openRuns[0]?.runId}'.`,
-			repair: "safe",
-			runId: openRuns[0]?.runId,
-		});
-	}
-	if (
-		inspection.issue.workflow.activeRunId === undefined &&
-		openRuns.length > 1
-	) {
-		diagnostics.push({
-			code: "AMBIGUOUS_ACTIVE_RUN",
-			severity: "drift",
-			message: "Multiple log-derived runs could be active.",
-			repair: "need-human",
+			message: "Active state is missing an active run id.",
+			repair: "none",
 		});
 	}
 	const active = inspection.issue.workflow.activeRunId;
+	if (active !== undefined && !currentIsActive) {
+		diagnostics.push({
+			code: "IDLE_STATE_HAS_ACTIVE_RUN",
+			severity: "drift",
+			message: `Idle state '${inspection.issue.workflow.state}' records active run '${active}'.`,
+			repair: "safe",
+			runId: active,
+		});
+	}
 	if (active !== undefined) {
 		const terminal = validLogs.find(
 			(log) => log.runId === active && isTerminalLog(log.type),
@@ -217,14 +237,11 @@ function isWorkflowLogShape(
 function safeRepairWorkflow(
 	diagnostic: ReconciliationDiagnostic,
 ): { activeRunId?: string } | undefined {
-	if (diagnostic.code === "TERMINAL_RUN_STILL_ACTIVE") {
-		return { activeRunId: undefined };
-	}
 	if (
-		diagnostic.code === "MISSING_ACTIVE_RUN" &&
-		diagnostic.runId !== undefined
+		diagnostic.code === "TERMINAL_RUN_STILL_ACTIVE" ||
+		diagnostic.code === "IDLE_STATE_HAS_ACTIVE_RUN"
 	) {
-		return { activeRunId: diagnostic.runId };
+		return { activeRunId: undefined };
 	}
 	return undefined;
 }

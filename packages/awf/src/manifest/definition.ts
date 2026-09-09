@@ -128,7 +128,16 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 	}
 
 	validateConcurrency(value.concurrency, kindIds, kindSubkinds, issues);
-	validateReadiness(value.readiness, kindIds, states, actions, reasons, issues);
+	const terminalStates = lifecycleStateSet(value.lifecycle, "terminalStates");
+	validateReadiness(
+		value.readiness,
+		kindIds,
+		states,
+		actions,
+		reasons,
+		terminalStates,
+		issues,
+	);
 	validateLifecyclePolicies(
 		value.lifecycle,
 		kindIds,
@@ -523,6 +532,7 @@ function validateReadiness(
 	states: Set<string>,
 	actions: Set<string>,
 	reasons: Set<string>,
+	terminalStates: Set<string>,
 	issues: Array<ValidationIssue>,
 ): void {
 	if (value === undefined) {
@@ -548,6 +558,16 @@ function validateReadiness(
 		}
 		if (filter.state !== undefined && !states.has(String(filter.state))) {
 			issue(issues, `${path}.state`, "Readiness filter state must be known.");
+		}
+		if (
+			filter.state !== undefined &&
+			terminalStates.has(String(filter.state))
+		) {
+			issue(
+				issues,
+				`${path}.state`,
+				"Readiness filter state must not be terminal.",
+			);
 		}
 		if (filter.action !== undefined && !actions.has(String(filter.action))) {
 			issue(issues, `${path}.action`, "Readiness filter action must be known.");
@@ -648,6 +668,22 @@ function validateReadiness(
 			validateId(policy.gate, `${path}.gate`, issues);
 		}
 	}
+}
+
+function lifecycleStateSet(
+	value: unknown,
+	field: "activeStates" | "terminalStates",
+): Set<string> {
+	if (!isRecord(value)) {
+		return new Set();
+	}
+	const states = value[field];
+	if (!Array.isArray(states)) {
+		return new Set();
+	}
+	return new Set(
+		states.filter((state): state is string => typeof state === "string"),
+	);
 }
 
 function validateLifecyclePolicies(

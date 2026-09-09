@@ -176,7 +176,7 @@ export const genericTaskManifest = defineManifest({
 		],
 	},
 	lifecycle: {
-		activeStates: ["running"],
+		activeStates: ["running", "in-discussion"],
 		terminalStates: ["done"],
 		relationshipPolicies: [
 			{
