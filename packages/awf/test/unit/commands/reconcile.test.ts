@@ -10,12 +10,7 @@ function execute(
 	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
 }
 
-const prArtifact = (n: number) => ({
-	type: "pull-request",
-	url: `https://github.com/albizures/harness/pull/${n}`,
-});
-
-it("should ensure that reconcile reports diagnostics read-only by default", async () => {
+it("should ensure that reconcile does not derive missing active-run diagnostics from logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -35,22 +30,14 @@ it("should ensure that reconcile reports diagnostics read-only by default", asyn
 		{
 			id: "123",
 			mode: "check",
-			status: "diagnosed",
-			diagnostics: [
-				{
-					code: "MISSING_ACTIVE_RUN",
-					severity: "drift",
-					message: "Active state is missing active run 'run-1'.",
-					repair: "none",
-					runId: "run-1",
-				},
-			],
+			status: "clean",
+			diagnostics: [],
 			issue: await tracker.getIssue("123"),
 		},
 	);
 });
 
-it("should ensure that reconcile --apply clears active run ids from idle states", async () => {
+it("should ensure that reconcile --apply does not repair active run ids on idle states", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -70,17 +57,17 @@ it("should ensure that reconcile --apply clears active run ids from idle states"
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBeUndefined();
+	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe("run-1");
 	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
 				diagnostics: Array<{ code: string; applied?: boolean }>;
 			}
-		).diagnostics[0],
-	).toMatchObject({ code: "IDLE_STATE_HAS_ACTIVE_RUN", applied: true });
+		).diagnostics,
+	).toEqual([]);
 });
 
-it("should ensure that reconcile reports ambiguous active-run drift without applying a fallback", async () => {
+it("should ensure that reconcile does not derive ambiguous active-run drift from logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -109,8 +96,8 @@ it("should ensure that reconcile reports ambiguous active-run drift without appl
 			(envelope.ok ? envelope.data : {}) as {
 				diagnostics: Array<{ repair: string; applied?: boolean }>;
 			}
-		).diagnostics[0],
-	).toMatchObject({ repair: "none" });
+		).diagnostics,
+	).toEqual([]);
 });
 
 it("should ensure that reconcile reports malformed logs and corrupt current metadata", async () => {
@@ -173,37 +160,4 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 			).diagnostics[0]?.code,
 		).toBe(code);
 	}
-});
-
-it("should ensure that normal commands do not silently repair drift before reconciliation", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "123",
-				title: "Smoke repair",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
-			},
-		],
-	});
-
-	const before = await execute(
-		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
-		},
-	);
-	expect(before.ok).toBe(false);
-	expect(before.ok ? undefined : before.error.code).toBe("INVALID_ARGUMENTS");
-	await execute(["reconcile", "123", "--apply"], { tracker });
-	const after = await execute(
-		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
-		},
-	);
-	expect(after.ok).toBe(false);
-	expect(after.ok ? undefined : after.error.code).toBe("INVALID_ARGUMENTS");
 });

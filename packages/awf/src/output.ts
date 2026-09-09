@@ -453,7 +453,7 @@ function formatLogs(logs: Array<JsonValue>): string {
 			if (!isRecord(log)) {
 				return formatValue(log);
 			}
-			return `${String(log.sequence ?? "")} ${String(log.type ?? "")}${typeof log.runId === "string" ? ` (${log.runId})` : ""}`.trim();
+			return `${String(log.sequence ?? "")} ${String(log.type ?? "")}`.trim();
 		})
 		.join("\n");
 }

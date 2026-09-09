@@ -893,7 +893,7 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 	).toEqual(["1"]);
 });
 
-it("should ensure that CLI smoke path reports active-state drift without repairing missing run ids", () => {
+it("should ensure that CLI smoke path does not report or repair missing run ids", () => {
 	const issues = [
 		{
 			id: "42",
@@ -951,9 +951,10 @@ it("should ensure that CLI smoke path reports active-state drift without repairi
 		},
 	);
 	expect(diagnosed.status).toBe(0);
-	expect(JSON.parse(diagnosed.stdout).data.diagnostics[0].code).toBe(
-		"MISSING_ACTIVE_RUN",
-	);
+	expect(JSON.parse(diagnosed.stdout).data).toMatchObject({
+		status: "clean",
+		diagnostics: [],
+	});
 
 	const applied = spawnSync(
 		process.execPath,

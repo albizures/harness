@@ -118,7 +118,7 @@ function createNoTouchTracker(): Tracker {
 	};
 }
 
-it("should ensure that unsupported run arguments return a stable parse error envelope", async () => {
+it("should ensure that run arguments are ignored before issue lookup", async () => {
 	for (const command of ["start", "succeed", "resume"]) {
 		const envelope = await execute([
 			"run-command",
@@ -128,13 +128,24 @@ it("should ensure that unsupported run arguments return a stable parse error env
 			"run-1",
 		]);
 
-		expect(envelope).toEqual({
-			ok: false,
-			error: {
-				code: "INVALID_ARGUMENTS",
-				message: "Invalid command arguments.",
-				details: { command, unsupported: "--run" },
-			},
-		});
+		expect(envelope).toEqual(
+			command === "resume"
+				? {
+						ok: false,
+						error: {
+							code: "INVALID_ARGUMENTS",
+							message: "Invalid command arguments.",
+							details: { usage: "awf resume <id> --action <action>" },
+						},
+					}
+				: {
+						ok: false,
+						error: {
+							code: "NOT_FOUND",
+							message: "Workflow issue '123' was not found.",
+							details: { id: "123" },
+						},
+					},
+		);
 	}
 });

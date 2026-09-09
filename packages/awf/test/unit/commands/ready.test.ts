@@ -94,7 +94,7 @@ it("should ensure that runtime commands reject unsupported workflow manifest rel
 	});
 });
 
-it("should ensure that ready returns legal executable work after dependency, concurrency, active-run, and manifest filters", async () => {
+it("should ensure that ready returns legal executable work after dependency, concurrency, and manifest filters", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -129,7 +129,7 @@ it("should ensure that ready returns legal executable work after dependency, con
 			},
 			{
 				id: "60",
-				title: "Ready-looking ticket with an active run",
+				title: "Ready-looking ticket with legacy active run metadata",
 				workflow: {
 					kind: "ticket",
 					state: "ready",
@@ -160,6 +160,15 @@ it("should ensure that ready returns legal executable work after dependency, con
 				suggestedCommand: {
 					argv: ["run-command", "start", "10"],
 					display: "awf run-command start 10",
+				},
+			},
+			{
+				id: "60",
+				title: "Ready-looking ticket with legacy active run metadata",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				suggestedCommand: {
+					argv: ["run-command", "start", "60"],
+					display: "awf run-command start 60",
 				},
 			},
 		],

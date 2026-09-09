@@ -1144,7 +1144,7 @@ it("should ensure that explicit attempt none transition effects apply no run-id 
 	expect(log?.runId).toBeUndefined();
 });
 
-it("should ensure that explicit attempt transition effects reject invalid active-state boundaries and unsupported run ids", async () => {
+it("should ensure that explicit attempt transition effects reject invalid active-state boundaries and ignore run ids", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1170,28 +1170,31 @@ it("should ensure that explicit attempt transition effects reject invalid active
 		tracker,
 		manifest,
 	});
-	const unsupportedRun = await execute(
-		["item", "finish", "running", "--run", "run-1"],
-		{ tracker, manifest },
-	);
 	const completeToActive = await execute(["item", "loop", "running"], {
 		tracker,
 		manifest,
 	});
+	const unsupportedRun = await execute(
+		["item", "finish", "running", "--run", "run-1"],
+		{ tracker, manifest },
+	);
 
 	expect(startToInactive.ok ? undefined : startToInactive.error.code).toBe(
 		"INVALID_TRANSITION",
 	);
-	expect(unsupportedRun.ok ? undefined : unsupportedRun.error).toEqual({
-		code: "INVALID_ARGUMENTS",
-		message: "Invalid command arguments.",
-		details: { command: "item-finish", unsupported: "--run" },
-	});
+	expect(unsupportedRun.ok).toBe(true);
+	expect(
+		unsupportedRun.ok
+			? (unsupportedRun.data as { log: { runId?: string } }).log.runId
+			: undefined,
+	).toBeUndefined();
 	expect(completeToActive.ok ? undefined : completeToActive.error.code).toBe(
 		"INVALID_TRANSITION",
 	);
 	expect(await tracker.readLogs("ready")).toEqual([]);
-	expect(await tracker.readLogs("running")).toEqual([]);
+	const runningLogs = await tracker.readLogs("running");
+	expect(runningLogs).toEqual([expect.objectContaining({ type: "command" })]);
+	expect(runningLogs[0]?.runId).toBeUndefined();
 });
 
 it("should ensure that generic transition commands reject missing matching transitions", async () => {

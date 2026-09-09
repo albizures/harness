@@ -309,7 +309,7 @@ it("should ensure that text output renders issue, run, created issue, log, and m
 			},
 			"text",
 		),
-	).toBe("1 action_started (run-1)\n");
+	).toBe("1 action_started\n");
 
 	expect(
 		serializeCliOutput(

@@ -2,7 +2,6 @@ import { failure, success, type Envelope } from "../envelope.ts";
 import type { Tracker } from "../tracker.ts";
 import { CorruptWorkflowProjectionError } from "../workflow/projection.ts";
 import { IssueNotFoundError } from "../workflow/issue.ts";
-import { deriveRuns } from "./shared.ts";
 
 export async function getIssueCommand(
 	id: string | undefined,
@@ -19,7 +18,7 @@ export async function getIssueCommand(
 		const logs = await tracker.readLogs(id);
 		return success({
 			issue,
-			runs: deriveRuns(issue.workflow.activeRunId, logs),
+			logs,
 		});
 	} catch (error) {
 		if (error instanceof IssueNotFoundError) {

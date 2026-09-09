@@ -263,10 +263,7 @@ export function isWorkflowActive(
 	manifest: WorkflowManifest,
 ): boolean {
 	const activeStates = manifest.lifecycle?.activeStates;
-	if (activeStates !== undefined) {
-		return activeStates.includes(workflow.state);
-	}
-	return workflow.activeRunId !== undefined;
+	return (activeStates ?? ["running"]).includes(workflow.state);
 }
 
 export function isWorkflowTerminal(

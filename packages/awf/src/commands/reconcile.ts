@@ -1,12 +1,7 @@
 import { failure, success, type Envelope } from "../envelope.ts";
 import type { WorkflowManifest } from "../manifest/manifest.ts";
 import type { Tracker } from "../tracker.ts";
-import {
-	deriveRuns,
-	isRecord,
-	isTerminalLog,
-	isWorkflowActive,
-} from "./shared.ts";
+import { isRecord } from "./shared.ts";
 import { IssueNotFoundError } from "../workflow/issue.ts";
 
 export type ReconciliationDiagnostic = {
@@ -126,77 +121,7 @@ function diagnoseReconciliation(
 	if (inspection.issue === undefined) {
 		return diagnostics;
 	}
-	const validLogs = inspection.logs.filter(
-		(
-			log,
-		): log is {
-			sequence: number;
-			issueId: string;
-			type: string;
-			runId?: string;
-		} => isWorkflowLogShape(log),
-	);
-	const runStates = deriveRuns(
-		inspection.issue.workflow.activeRunId,
-		validLogs,
-	);
-	const openRuns = runStates.attempts.filter(
-		(attempt) => attempt.status === "running",
-	);
-	const currentIsActive = isWorkflowActive(inspection.issue.workflow, manifest);
-	if (
-		inspection.issue.workflow.activeRunId === undefined &&
-		currentIsActive &&
-		openRuns.length >= 1
-	) {
-		diagnostics.push({
-			code:
-				openRuns.length === 1 ? "MISSING_ACTIVE_RUN" : "AMBIGUOUS_ACTIVE_RUN",
-			severity: "drift",
-			message:
-				openRuns.length === 1
-					? `Active state is missing active run '${openRuns[0]?.runId}'.`
-					: "Active state is missing an active run, and multiple log-derived runs could be active.",
-			repair: "none",
-			...(openRuns.length === 1 ? { runId: openRuns[0]?.runId } : {}),
-		});
-	}
-	if (
-		inspection.issue.workflow.activeRunId === undefined &&
-		currentIsActive &&
-		openRuns.length === 0
-	) {
-		diagnostics.push({
-			code: "MISSING_ACTIVE_RUN",
-			severity: "drift",
-			message: "Active state is missing an active run id.",
-			repair: "none",
-		});
-	}
-	const active = inspection.issue.workflow.activeRunId;
-	if (active !== undefined && !currentIsActive) {
-		diagnostics.push({
-			code: "IDLE_STATE_HAS_ACTIVE_RUN",
-			severity: "drift",
-			message: `Idle state '${inspection.issue.workflow.state}' records active run '${active}'.`,
-			repair: "safe",
-			runId: active,
-		});
-	}
-	if (active !== undefined) {
-		const terminal = validLogs.find(
-			(log) => log.runId === active && isTerminalLog(log.type),
-		);
-		if (terminal !== undefined) {
-			diagnostics.push({
-				code: "TERMINAL_RUN_STILL_ACTIVE",
-				severity: "drift",
-				message: `Active run '${active}' already has a terminal log.`,
-				repair:
-					inspection.issue.workflow.state === "running" ? "need-human" : "safe",
-			});
-		}
-	}
+	void manifest;
 	return diagnostics;
 }
 
@@ -235,13 +160,7 @@ function isWorkflowLogShape(
 }
 
 function safeRepairWorkflow(
-	diagnostic: ReconciliationDiagnostic,
+	_diagnostic: ReconciliationDiagnostic,
 ): { activeRunId?: string } | undefined {
-	if (
-		diagnostic.code === "TERMINAL_RUN_STILL_ACTIVE" ||
-		diagnostic.code === "IDLE_STATE_HAS_ACTIVE_RUN"
-	) {
-		return { activeRunId: undefined };
-	}
 	return undefined;
 }

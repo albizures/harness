@@ -127,11 +127,18 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 		reason: "Need clarification on the API shape.",
 	});
 	const getEnvelope = await execute(["get", "123"], { tracker });
-	const getData = (getEnvelope as { ok: true; data: { runs: unknown } }).data;
-	expect(getData.runs).toEqual({
-		activeRunId: undefined,
-		attempts: [{ runId: "run-1", status: "paused" }],
-	});
+	const getData = (getEnvelope as { ok: true; data: Record<string, unknown> })
+		.data;
+	expect(getData).not.toHaveProperty("runs");
+	expect(getData.logs).toEqual([
+		{
+			issueId: "123",
+			runId: "run-1",
+			sequence: 1,
+			type: "human_input_needed",
+			message: data.log.message,
+		},
+	]);
 });
 
 it("should ensure that respond resumes a waiting-human issue to a valid ready action from the pause metadata by default", async () => {
@@ -642,7 +649,7 @@ it("should ensure that bundled workflow vocabulary and transitions do not includ
 	).toBeTruthy();
 });
 
-it("should ensure that lifecycle commands reject invalid manifest transitions and unsupported run options", async () => {
+it("should ensure that lifecycle commands reject invalid manifest transitions and ignore run options", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -672,22 +679,19 @@ it("should ensure that lifecycle commands reject invalid manifest transitions an
 			details: { id: "done", event: "start" },
 		},
 	});
-	expect(
-		await execute(
-			["run-command", "succeed", "running", "--run", "other", "--input", "-"],
-			{
-				tracker,
-				stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
-			},
-		),
-	).toEqual({
-		ok: false,
-		error: {
-			code: "INVALID_ARGUMENTS",
-			message: "Invalid command arguments.",
-			details: { command: "succeed", unsupported: "--run" },
+	const succeeded = await execute(
+		["run-command", "succeed", "running", "--run", "other", "--input", "-"],
+		{
+			tracker,
+			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
 		},
-	});
+	);
+	expect(succeeded.ok).toBe(true);
+	expect(
+		succeeded.ok
+			? (succeeded.data as { log: { runId?: string } }).log.runId
+			: undefined,
+	).toBeUndefined();
 });
 
 it("should ensure that terminal commands for inactive issues use invalid-transition behavior", async () => {
