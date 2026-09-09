@@ -11,6 +11,25 @@ function execute(
 ): ReturnType<typeof rawExecute> {
 	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
 }
+
+const manifestWithRuntimeHumanCommands = {
+	...agentDevelopmentManifest,
+	commands: [
+		...agentDevelopmentManifest.commands,
+		{ id: "pause", target: { kind: "ticket", action: "implement" } },
+		{ id: "respond", target: { kind: "ticket", action: "implement" } },
+	],
+};
+
+function executeWithRuntimeHumanCommands(
+	args: Parameters<typeof rawExecute>[0],
+	options: Parameters<typeof rawExecute>[1] = {},
+): ReturnType<typeof rawExecute> {
+	return rawExecute(args, {
+		manifest: manifestWithRuntimeHumanCommands,
+		...options,
+	});
+}
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });
 const findingArtifact = (ref: string) => ({ type: "finding", ref });
@@ -66,7 +85,7 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 		],
 	});
 
-	const envelope = await execute(
+	const envelope = await executeWithRuntimeHumanCommands(
 		["run-command", "pause", "123", "--input", "-"],
 		{
 			tracker,
@@ -137,7 +156,7 @@ it("should ensure that respond resumes a waiting-human issue to a valid ready ac
 		],
 	});
 
-	const envelope = await execute(
+	const envelope = await executeWithRuntimeHumanCommands(
 		["run-command", "respond", "123", "--input", "-"],
 		{
 			tracker,
@@ -178,7 +197,7 @@ it("should ensure that respond keeps an insufficient response waiting for the hu
 		],
 	});
 
-	const envelope = await execute(
+	const envelope = await executeWithRuntimeHumanCommands(
 		["run-command", "respond", "123", "--input", "-"],
 		{
 			tracker,
@@ -226,7 +245,7 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 		],
 	});
 
-	const envelope = await execute(
+	const envelope = await executeWithRuntimeHumanCommands(
 		["run-command", "respond", "123", "--input", "-"],
 		{
 			tracker,

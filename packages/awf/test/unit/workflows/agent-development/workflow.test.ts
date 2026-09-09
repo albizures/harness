@@ -58,10 +58,18 @@ it("should export a valid explicit bundled workflow module", () => {
 		"start",
 		"succeed",
 		"fail",
-		"pause",
-		"respond",
 		"escalate",
 		"resume",
+		"spec-start",
+		"spec-succeed",
+		"spec-fail",
+		"spec-escalate",
+		"spec-recover",
+		"ticket-start",
+		"ticket-succeed",
+		"ticket-fail",
+		"ticket-escalate",
+		"ticket-recover",
 	]);
 });
 

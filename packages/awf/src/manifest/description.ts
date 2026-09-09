@@ -142,7 +142,7 @@ export function describeWorkflow(
 				: {
 						cli: {
 							...command.cli,
-							usage: manifestCommandUsage(command.cli),
+							usage: manifestCommandUsage(command),
 						},
 					}),
 			input: inputMarker(command.input),
@@ -163,16 +163,27 @@ export function describeWorkflow(
 	};
 }
 
-type ManifestCli = NonNullable<WorkflowManifest["commands"][number]["cli"]>;
+type ManifestCommand = WorkflowManifest["commands"][number];
 
-export function manifestCommandUsage(cli: ManifestCli): string {
+export function manifestCommandUsage(command: ManifestCommand): string {
+	const cli = command.cli;
+	if (cli === undefined) {
+		return `awf run-command ${command.id}`;
+	}
 	if (cli.verb === "create") {
 		if (cli.source === true) {
 			return `awf create ${cli.target} --source <issue> --input <file|->`;
 		}
 		return `awf create ${cli.target} --input <file|->`;
 	}
-	return `awf ${cli.verb} ${cli.target} <issue> --input <file|->`;
+	const route = `awf ${cli.verb} ${cli.target}`;
+	if (command.transition?.run === "complete") {
+		return `${route} <issue> --run <run>`;
+	}
+	if (command.transition !== undefined) {
+		return `${route} <issue>`;
+	}
+	return `${route} <issue> --input <file|->`;
 }
 
 function describeVocabulary(manifest: WorkflowManifest) {

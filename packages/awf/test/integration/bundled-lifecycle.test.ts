@@ -11,7 +11,8 @@ const integrationImplementationPrNumber = 6;
 const integrationSpecPrNumber = 3;
 
 async function start(tracker: Tracker, id: string): Promise<string> {
-	const envelope = await execute(["run-command", "start", id], {
+	const issue = await tracker.getIssue(id);
+	const envelope = await execute([issue.workflow.kind, "start", id], {
 		tracker,
 		manifest: agentDevelopmentManifest,
 	});
@@ -24,14 +25,14 @@ async function terminal(
 	event: "succeed" | "fail",
 	id: string,
 	run: string,
-	input: Record<string, unknown>,
+	_input: Record<string, unknown>,
 ) {
+	const issue = await tracker.getIssue(id);
 	const envelope = await execute(
-		["run-command", event, id, "--run", run, "--input", "-"],
+		[issue.workflow.kind, event, id, "--run", run],
 		{
 			tracker,
 			manifest: agentDevelopmentManifest,
-			stdin: JSON.stringify(input),
 		},
 	);
 	expect(envelope.ok).toBe(true);
@@ -156,6 +157,112 @@ it("should ensure that bundled Spec workflow waits for child Tickets before inte
 		state: doneSpec.workflow.state,
 		action: doneSpec.workflow.action,
 	}).toEqual({ state: "done", action: "none" });
+});
+
+it("should ensure that bundled agent-development help exposes manifest lifecycle routing without pause and respond", async () => {
+	const envelope = await execute(["--help"], {
+		manifest: agentDevelopmentManifest,
+	});
+
+	const help = assertSuccess<{
+		commands: Array<{ name: string; usage: string }>;
+	}>(envelope);
+	expect(help.commands).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				name: "ticket start",
+				usage: "awf ticket start <issue>",
+			}),
+			expect.objectContaining({
+				name: "ticket fail",
+				usage: "awf ticket fail <issue> --run <run>",
+			}),
+			expect.objectContaining({
+				name: "ticket recover",
+				usage: "awf ticket recover <issue>",
+			}),
+		]),
+	);
+	expect(help.commands.map((command) => command.name)).not.toContain(
+		"ticket pause",
+	);
+	expect(help.commands.map((command) => command.name)).not.toContain(
+		"ticket respond",
+	);
+});
+
+it("should ensure that bundled Ticket lifecycle commands route through manifest transitions and write plain text logs", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "t",
+				title: "T",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+
+	const started = assertSuccess<{
+		run: { id: string };
+		log: { message: string };
+	}>(
+		await execute(["ticket", "start", "t"], {
+			tracker,
+			manifest: agentDevelopmentManifest,
+		}),
+	);
+	expect(started.log.message).toMatch(/^Applied start; started run run-/);
+
+	const failed = assertSuccess<{ log: { message: string } }>(
+		await execute(["ticket", "fail", "t", "--run", started.run.id], {
+			tracker,
+			manifest: agentDevelopmentManifest,
+		}),
+	);
+	expect(failed.log.message).toBe(
+		`Applied fail; completed run ${started.run.id}.`,
+	);
+	expect((await tracker.getIssue("t")).workflow).toMatchObject({
+		state: "ready",
+		action: "implement",
+	});
+});
+
+it("should ensure that bundled Ticket manual escalation and recovery are explicit manifest transitions", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "t",
+				title: "T",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+
+	const started = assertSuccess<{ run: { id: string } }>(
+		await execute(["ticket", "start", "t"], {
+			tracker,
+			manifest: agentDevelopmentManifest,
+		}),
+	);
+	await execute(["ticket", "escalate", "t", "--run", started.run.id], {
+		tracker,
+		manifest: agentDevelopmentManifest,
+	});
+	expect((await tracker.getIssue("t")).workflow).toMatchObject({
+		state: "need-human",
+		action: "none",
+		reason: "implement",
+	});
+
+	await execute(["ticket", "recover", "t"], {
+		tracker,
+		manifest: agentDevelopmentManifest,
+	});
+	expect((await tracker.getIssue("t")).workflow).toMatchObject({
+		state: "ready",
+		action: "implement",
+	});
 });
 
 it("should ensure that bundled Spec integration changes-needed returns to planning", async () => {

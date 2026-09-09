@@ -17,6 +17,7 @@ const actions = [
 	"integration-test",
 	"none",
 ] as const;
+const events = ["start", "succeed", "fail", "recover", "escalate"] as const;
 
 const markdownReferenceInput = z.union([
 	z.string().min(1),
@@ -45,14 +46,251 @@ const planApplyInput = z.strictObject({
 
 const handoffCreateInput = z.strictObject({ handoff: handoffReferenceInput });
 
+const specTransitions = [
+	{
+		from: { state: "ready", action: "plan" },
+		event: "start",
+		to: { state: "running", action: "plan" },
+	},
+	{
+		from: { state: "ready", action: "plan" },
+		event: "succeed",
+		to: { state: "ready", action: "none" },
+	},
+	{
+		from: { state: "running", action: "plan" },
+		event: "succeed",
+		to: { state: "ready", action: "none" },
+	},
+	{
+		from: { state: "running", action: "plan" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "plan" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "plan" },
+		event: "recover",
+		to: { state: "ready", action: "plan" },
+	},
+	{
+		from: { state: "ready", action: "integration-test" },
+		event: "start",
+		to: { state: "running", action: "integration-test" },
+	},
+	{
+		from: { state: "running", action: "integration-test" },
+		event: "succeed",
+		to: { state: "ready", action: "merge" },
+	},
+	{
+		from: { state: "running", action: "integration-test" },
+		event: "fail",
+		to: { state: "ready", action: "plan" },
+	},
+	{
+		from: { state: "running", action: "integration-test" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "integration-test" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "integration-test" },
+		event: "recover",
+		to: { state: "ready", action: "integration-test" },
+	},
+	{
+		from: { state: "ready", action: "merge" },
+		event: "start",
+		to: { state: "running", action: "merge" },
+	},
+	{
+		from: { state: "running", action: "merge" },
+		event: "succeed",
+		to: { state: "done", action: "none" },
+	},
+	{
+		from: { state: "running", action: "merge" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "merge" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "merge" },
+		event: "recover",
+		to: { state: "ready", action: "merge" },
+	},
+] as const;
+
+const ticketTransitions = [
+	{
+		from: { state: "ready", action: "implement" },
+		event: "start",
+		to: { state: "running", action: "implement" },
+	},
+	{
+		from: { state: "running", action: "implement" },
+		event: "succeed",
+		to: { state: "ready", action: "review" },
+	},
+	{
+		from: { state: "running", action: "implement" },
+		event: "fail",
+		to: { state: "ready", action: "implement" },
+	},
+	{
+		from: { state: "running", action: "implement" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "implement" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "implement" },
+		event: "recover",
+		to: { state: "ready", action: "implement" },
+	},
+	{
+		from: { state: "ready", action: "review" },
+		event: "start",
+		to: { state: "running", action: "review" },
+	},
+	{
+		from: { state: "running", action: "review" },
+		event: "succeed",
+		to: { state: "ready", action: "merge" },
+	},
+	{
+		from: { state: "running", action: "review" },
+		event: "fail",
+		to: { state: "ready", action: "fix" },
+	},
+	{
+		from: { state: "running", action: "review" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "review" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "review" },
+		event: "recover",
+		to: { state: "ready", action: "review" },
+	},
+	{
+		from: { state: "ready", action: "fix" },
+		event: "start",
+		to: { state: "running", action: "fix" },
+	},
+	{
+		from: { state: "running", action: "fix" },
+		event: "succeed",
+		to: { state: "ready", action: "review" },
+	},
+	{
+		from: { state: "running", action: "fix" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "fix" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "fix" },
+		event: "recover",
+		to: { state: "ready", action: "fix" },
+	},
+	{
+		from: { state: "ready", action: "merge" },
+		event: "start",
+		to: { state: "running", action: "merge" },
+	},
+	{
+		from: { state: "running", action: "merge" },
+		event: "succeed",
+		to: { state: "done", action: "none" },
+	},
+	{
+		from: { state: "running", action: "merge" },
+		event: "escalate",
+		to: { state: "need-human", action: "none", reason: "merge" },
+	},
+	{
+		from: { state: "need-human", action: "none", reason: "merge" },
+		event: "recover",
+		to: { state: "ready", action: "merge" },
+	},
+] as const;
+
+const lifecycleCommands = [
+	{
+		id: "spec-start",
+		cli: { verb: "spec", target: "start" },
+		target: { kind: "spec", state: "ready" },
+		transition: { event: "start", run: "start" },
+	},
+	{
+		id: "spec-succeed",
+		cli: { verb: "spec", target: "succeed" },
+		target: { kind: "spec", state: "running" },
+		transition: { event: "succeed", run: "complete" },
+	},
+	{
+		id: "spec-fail",
+		cli: { verb: "spec", target: "fail" },
+		target: { kind: "spec", state: "running" },
+		transition: { event: "fail", run: "complete" },
+	},
+	{
+		id: "spec-escalate",
+		cli: { verb: "spec", target: "escalate" },
+		target: { kind: "spec", state: "running" },
+		transition: { event: "escalate", run: "complete" },
+	},
+	{
+		id: "spec-recover",
+		cli: { verb: "spec", target: "recover" },
+		target: { kind: "spec", state: "need-human", action: "none" },
+		transition: { event: "recover", run: "none" },
+	},
+	{
+		id: "ticket-start",
+		cli: { verb: "ticket", target: "start" },
+		target: { kind: "ticket", state: "ready" },
+		transition: { event: "start", run: "start" },
+	},
+	{
+		id: "ticket-succeed",
+		cli: { verb: "ticket", target: "succeed" },
+		target: { kind: "ticket", state: "running" },
+		transition: { event: "succeed", run: "complete" },
+	},
+	{
+		id: "ticket-fail",
+		cli: { verb: "ticket", target: "fail" },
+		target: { kind: "ticket", state: "running" },
+		transition: { event: "fail", run: "complete" },
+	},
+	{
+		id: "ticket-escalate",
+		cli: { verb: "ticket", target: "escalate" },
+		target: { kind: "ticket", state: "running" },
+		transition: { event: "escalate", run: "complete" },
+	},
+	{
+		id: "ticket-recover",
+		cli: { verb: "ticket", target: "recover" },
+		target: { kind: "ticket", state: "need-human", action: "none" },
+		transition: { event: "recover", run: "none" },
+	},
+] as const;
+
 export const agentDevelopmentManifest = defineManifest({
 	version: "v1",
 	workflow: { id: "agent-development", version: "1.0.0" },
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],
-		reasons: ["dependencies"],
-		events: ["start", "succeed", "fail", "pause", "respond"],
+		reasons: [
+			"dependencies",
+			"plan",
+			"implement",
+			"review",
+			"fix",
+			"merge",
+			"integration-test",
+		],
+		events: [...events],
 	},
 	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
@@ -94,105 +332,13 @@ export const agentDevelopmentManifest = defineManifest({
 			id: "spec",
 			label: "Spec",
 			initial: { state: "ready", action: "plan" },
-			transitions: [
-				{
-					from: { state: "ready", action: "plan" },
-					event: "start",
-					to: { state: "running", action: "plan" },
-				},
-				{
-					from: { state: "ready", action: "plan" },
-					event: "succeed",
-					to: { state: "ready", action: "none" },
-				},
-				{
-					from: { state: "running", action: "plan" },
-					event: "succeed",
-					to: { state: "ready", action: "none" },
-				},
-				{
-					from: { state: "ready", action: "integration-test" },
-					event: "start",
-					to: { state: "running", action: "integration-test" },
-				},
-				{
-					from: { state: "running", action: "integration-test" },
-					event: "succeed",
-					to: { state: "ready", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "integration-test" },
-					event: "fail",
-					to: { state: "ready", action: "plan" },
-				},
-				{
-					from: { state: "ready", action: "merge" },
-					event: "start",
-					to: { state: "running", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "merge" },
-					event: "succeed",
-					to: { state: "done", action: "none" },
-				},
-			],
+			transitions: [...specTransitions],
 		},
 		{
 			id: "ticket",
 			label: "Ticket",
 			initial: { state: "ready", action: "implement" },
-			transitions: [
-				{
-					from: { state: "ready", action: "implement" },
-					event: "start",
-					to: { state: "running", action: "implement" },
-				},
-				{
-					from: { state: "running", action: "implement" },
-					event: "succeed",
-					to: { state: "ready", action: "review" },
-				},
-				{
-					from: { state: "ready", action: "review" },
-					event: "start",
-					to: { state: "running", action: "review" },
-				},
-				{
-					from: { state: "running", action: "review" },
-					event: "succeed",
-					to: { state: "ready", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "review" },
-					event: "fail",
-					to: { state: "ready", action: "fix" },
-				},
-				{
-					from: { state: "ready", action: "fix" },
-					event: "start",
-					to: { state: "running", action: "fix" },
-				},
-				{
-					from: { state: "running", action: "fix" },
-					event: "succeed",
-					to: { state: "ready", action: "review" },
-				},
-				{
-					from: { state: "ready", action: "merge" },
-					event: "start",
-					to: { state: "running", action: "merge" },
-				},
-				{
-					from: { state: "running", action: "merge" },
-					event: "succeed",
-					to: { state: "done", action: "none" },
-				},
-				{
-					from: { state: "running", action: "implement" },
-					event: "fail",
-					to: { state: "ready", action: "implement" },
-				},
-			],
+			transitions: [...ticketTransitions],
 		},
 	],
 	commands: [
@@ -217,10 +363,9 @@ export const agentDevelopmentManifest = defineManifest({
 		{ id: "start", target: { kind: "ticket", action: "implement" } },
 		{ id: "succeed", target: { kind: "ticket", action: "implement" } },
 		{ id: "fail", target: { kind: "ticket", action: "implement" } },
-		{ id: "pause", target: { kind: "ticket", action: "implement" } },
-		{ id: "respond", target: { kind: "ticket", action: "implement" } },
 		{ id: "escalate", target: { kind: "ticket", action: "implement" } },
 		{ id: "resume", target: { kind: "ticket", action: "implement" } },
+		...lifecycleCommands,
 	],
 	relationships: [
 		{

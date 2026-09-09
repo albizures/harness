@@ -121,10 +121,10 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
 			"awf create grilling --input <file|->",
-			"awf task start <issue> --input <file|->",
-			"awf task fail <issue> --input <file|->",
-			"awf task recover <issue> --input <file|->",
-			"awf task escalate <issue> --input <file|->",
+			"awf task start <issue>",
+			"awf task fail <issue> --run <run>",
+			"awf task recover <issue>",
+			"awf task escalate <issue> --run <run>",
 		]),
 	);
 	expect(help.commands.map((command) => command.usage)).not.toEqual(
@@ -175,10 +175,10 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
 		"awf create grilling --input <file|->",
-		"awf task start <issue> --input <file|->",
-		"awf task fail <issue> --input <file|->",
-		"awf task recover <issue> --input <file|->",
-		"awf task escalate <issue> --input <file|->",
+		"awf task start <issue>",
+		"awf task fail <issue> --run <run>",
+		"awf task recover <issue>",
+		"awf task escalate <issue> --run <run>",
 	]);
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });

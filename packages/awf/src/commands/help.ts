@@ -82,7 +82,14 @@ function manifestCommandUsage(command: ManifestCommand): string {
 		}
 		return `awf create ${command.cli.target} --input <file|->`;
 	}
-	return `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id} <issue> --input <file|->`;
+	const route = `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id}`;
+	if (command.transition?.run === "complete") {
+		return `${route} <issue> --run <run>`;
+	}
+	if (command.transition !== undefined) {
+		return `${route} <issue>`;
+	}
+	return `${route} <issue> --input <file|->`;
 }
 
 export function helpReadiness(manifest: WorkflowManifest): {

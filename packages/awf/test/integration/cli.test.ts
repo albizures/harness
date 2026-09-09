@@ -179,8 +179,16 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				"integration-test",
 				"none",
 			],
-			reasons: ["dependencies"],
-			events: ["start", "succeed", "fail", "pause", "respond"],
+			reasons: [
+				"dependencies",
+				"plan",
+				"implement",
+				"review",
+				"fix",
+				"merge",
+				"integration-test",
+			],
+			events: ["start", "succeed", "fail", "recover", "escalate"],
 		},
 		readiness: {
 			filters: [
@@ -243,23 +251,53 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 		envelope.data.commands.filter(
 			(command: { cli?: unknown }) => command.cli !== undefined,
 		),
-	).toMatchObject([
-		{
-			id: "spec-create",
-			cli: { usage: "awf create spec --input <file|->" },
-			input: { required: true },
-		},
-		{
-			id: "plan-apply",
-			cli: { usage: "awf apply plan <issue> --input <file|->" },
-			input: { required: true },
-		},
-		{
-			id: "handoff-create",
-			cli: { usage: "awf create handoff --source <issue> --input <file|->" },
-			input: { required: true },
-		},
-	]);
+	).toEqual(
+		expect.arrayContaining([
+			{
+				id: "spec-create",
+				cli: {
+					verb: "create",
+					target: "spec",
+					usage: "awf create spec --input <file|->",
+				},
+				target: { kind: "spec", action: "plan" },
+				input: { required: true },
+			},
+			{
+				id: "plan-apply",
+				cli: {
+					verb: "apply",
+					target: "plan",
+					usage: "awf apply plan <issue> --input <file|->",
+				},
+				target: { kind: "spec", action: "plan" },
+				input: { required: true },
+			},
+			{
+				id: "handoff-create",
+				cli: {
+					verb: "create",
+					target: "handoff",
+					source: true,
+					usage: "awf create handoff --source <issue> --input <file|->",
+				},
+				target: { kind: "ticket", action: "review" },
+				input: { required: true },
+			},
+			expect.objectContaining({
+				id: "ticket-start",
+				cli: expect.objectContaining({ usage: "awf ticket start <issue>" }),
+				transition: { event: "start", run: "start" },
+			}),
+			expect.objectContaining({
+				id: "ticket-fail",
+				cli: expect.objectContaining({
+					usage: "awf ticket fail <issue> --run <run>",
+				}),
+				transition: { event: "fail", run: "complete" },
+			}),
+		]),
+	);
 	const serialized = JSON.stringify(envelope.data);
 	expect(serialized).not.toContain("_def");
 	expect(serialized).not.toContain("reservedPrefix");

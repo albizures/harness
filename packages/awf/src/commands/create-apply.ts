@@ -32,6 +32,7 @@ import {
 	lifecycleError,
 	parseJsonInput,
 	parseWorkflowCommandInput,
+	progressRelationshipsAfterLifecycleTransition,
 	readInput,
 	workflowCommand,
 	workflowCommandByCli,
@@ -621,8 +622,17 @@ async function transitionGenericWorkflowCommand(
 				},
 			],
 		});
+		const updated = result.issues[issueId] ?? (await tracker.getIssue(issueId));
+		if (runEffect === "complete") {
+			await progressRelationshipsAfterLifecycleTransition(
+				tracker,
+				manifest,
+				issue,
+				updated,
+			);
+		}
 		return success({
-			issue: result.issues[issueId] ?? (await tracker.getIssue(issueId)),
+			issue: updated,
 			...(nextRunId === undefined ? {} : { run: { id: nextRunId } }),
 			log: result.logs[0],
 			outcome: "APPLIED",
