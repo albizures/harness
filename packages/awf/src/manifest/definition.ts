@@ -1053,7 +1053,10 @@ function rejectHookKeys(
 	}
 	for (const [key, item] of Object.entries(value)) {
 		if (
-			["hook", "hooks", "handler", "handlers", "run", "execute"].includes(key)
+			["hook", "hooks", "handler", "handlers", "run", "execute"].includes(
+				key,
+			) &&
+			!(key === "run" && path.endsWith(".transition"))
 		) {
 			issue(
 				issues,

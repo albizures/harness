@@ -587,6 +587,7 @@ async function transitionGenericWorkflowCommand(
 				);
 			}
 		}
+		const logRunId = runEffect === "complete" ? runId : nextRunId;
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
 				{
@@ -607,8 +608,12 @@ async function transitionGenericWorkflowCommand(
 					issue: { id: issueId },
 					log: {
 						type: "command",
-						...(nextRunId === undefined ? {} : { runId: nextRunId }),
-						message: `Applied ${transitionCommand.event}.`,
+						...(logRunId === undefined ? {} : { runId: logRunId }),
+						message: transitionRunLogMessage(
+							transitionCommand.event,
+							runEffect,
+							logRunId,
+						),
 					},
 				},
 			],
@@ -622,6 +627,20 @@ async function transitionGenericWorkflowCommand(
 	} catch (error) {
 		return lifecycleError(issueId, error);
 	}
+}
+
+function transitionRunLogMessage(
+	event: string,
+	runEffect: "none" | "start" | "complete",
+	runId: string | undefined,
+): string {
+	if (runEffect === "start" && runId !== undefined) {
+		return `Applied ${event}; started run ${runId}.`;
+	}
+	if (runEffect === "complete" && runId !== undefined) {
+		return `Applied ${event}; completed run ${runId}.`;
+	}
+	return `Applied ${event}.`;
 }
 
 function commandTargetMatches(
