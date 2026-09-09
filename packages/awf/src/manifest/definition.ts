@@ -149,7 +149,10 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			command,
 			`$.commands[${index}]`,
 			kindIds,
+			states,
 			actions,
+			reasons,
+			events,
 			kindActions,
 			commandIds,
 			commandDeclarations,
@@ -803,7 +806,10 @@ function validateCommand(
 	value: unknown,
 	path: string,
 	kindIds: Set<string>,
+	states: Set<string>,
 	actions: Set<string>,
+	reasons: Set<string>,
+	events: Set<string>,
 	kindActions: Map<string, Set<string>>,
 	commandIds: Set<string>,
 	commandDeclarations: Set<string>,
@@ -854,22 +860,70 @@ function validateCommand(
 			);
 		}
 		if (
-			typeof value.target.action !== "string" ||
-			!actions.has(value.target.action)
+			value.target.state !== undefined &&
+			(typeof value.target.state !== "string" ||
+				!states.has(value.target.state))
 		) {
 			issue(
 				issues,
-				`${path}.target.action`,
-				"Command target action must reference a known action.",
+				`${path}.target.state`,
+				"Command target state must reference a known state.",
 			);
-		} else if (
-			typeof value.target.kind === "string" &&
-			!kindActions.get(value.target.kind)?.has(value.target.action)
+		}
+		if (value.target.action !== undefined) {
+			if (
+				typeof value.target.action !== "string" ||
+				!actions.has(value.target.action)
+			) {
+				issue(
+					issues,
+					`${path}.target.action`,
+					"Command target action must reference a known action.",
+				);
+			} else if (
+				typeof value.target.kind === "string" &&
+				!kindActions.get(value.target.kind)?.has(value.target.action)
+			) {
+				issue(
+					issues,
+					`${path}.target.action`,
+					"Command target action must be declared by the target kind's local states or transitions.",
+				);
+			}
+		}
+		if (
+			value.target.reason !== undefined &&
+			(typeof value.target.reason !== "string" ||
+				!reasons.has(value.target.reason))
 		) {
 			issue(
 				issues,
-				`${path}.target.action`,
-				"Command target action must be declared by the target kind's local states or transitions.",
+				`${path}.target.reason`,
+				"Command target reason must reference a known reason.",
+			);
+		}
+	}
+	if (isRecord(value.transition)) {
+		if (
+			typeof value.transition.event !== "string" ||
+			!events.has(value.transition.event)
+		) {
+			issue(
+				issues,
+				`${path}.transition.event`,
+				"Command transition event must reference a known event.",
+			);
+		}
+		if (
+			value.transition.run !== undefined &&
+			value.transition.run !== "none" &&
+			value.transition.run !== "start" &&
+			value.transition.run !== "complete"
+		) {
+			issue(
+				issues,
+				`${path}.transition.run`,
+				"Command transition run effect must be none, start, or complete.",
 			);
 		}
 	}

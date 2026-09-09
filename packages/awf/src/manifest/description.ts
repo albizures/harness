@@ -54,7 +54,8 @@ export type WorkflowDescriptionV1 = {
 	}>;
 	commands: Array<{
 		id: string;
-		target: { kind: string; action: string };
+		target: { kind: string; state?: string; action?: string; reason?: string };
+		transition?: { event: string; run?: "none" | "start" | "complete" };
 		cli?: {
 			verb: string;
 			target: string;
@@ -133,6 +134,9 @@ export function describeWorkflow(
 		commands: manifest.commands.map((command) => ({
 			id: command.id,
 			target: { ...command.target },
+			...(command.transition === undefined
+				? {}
+				: { transition: { ...command.transition } }),
 			...(command.cli === undefined
 				? {}
 				: {

@@ -39,7 +39,13 @@ export type ManifestCli = {
 export type ManifestCommand = {
 	id: Identifier;
 	cli?: ManifestCli;
-	target: { kind: Identifier; action: Identifier };
+	target: {
+		kind: Identifier;
+		state?: Identifier;
+		action?: Identifier;
+		reason?: Identifier;
+	};
+	transition?: { event: Identifier; run?: "none" | "start" | "complete" };
 	input?: PayloadSchema;
 };
 
@@ -297,7 +303,13 @@ export const workflowManifestStructuralSchema = z.strictObject({
 					source: z.boolean().optional(),
 				})
 				.optional(),
-			target: z.strictObject({ kind: z.string(), action: z.string() }),
+			target: workflowFilterSchema.extend({ kind: z.string() }),
+			transition: z
+				.strictObject({
+					event: z.string(),
+					run: z.enum(["none", "start", "complete"]).optional(),
+				})
+				.optional(),
 			input: payloadZodSchemaSchema.optional(),
 		}),
 	),

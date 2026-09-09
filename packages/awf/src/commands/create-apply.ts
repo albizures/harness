@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { JsonValue } from "type-fest";
 import type { CommandHandlers } from "../command-handlers.ts";
 import { failure, success, type Envelope } from "../envelope.ts";
@@ -36,6 +37,7 @@ import {
 	workflowCommandByCli,
 	readOption,
 	stableStringify,
+	workflowTarget,
 } from "./shared.ts";
 
 export async function manifestCommand(
@@ -75,6 +77,15 @@ export async function manifestCommand(
 		return lifecycle;
 	}
 	const handler = commandHandlers[command.id];
+	if (handler === undefined && command.transition !== undefined) {
+		return transitionGenericWorkflowCommand(
+			args[2],
+			readOption(args, "--run"),
+			versionedTracker,
+			manifest,
+			command,
+		);
+	}
 	if (handler !== undefined) {
 		return handledManifestCommand(
 			args,
@@ -493,6 +504,141 @@ export async function createGenericWorkflowIssueCommand(
 	} catch (error) {
 		return lifecycleError("new", error);
 	}
+}
+
+async function transitionGenericWorkflowCommand(
+	issueId: string | undefined,
+	runId: string | undefined,
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	command: ManifestCommand,
+): Promise<Envelope> {
+	if (issueId === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
+			usage: `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id} <issue>`,
+		});
+	}
+	const transitionCommand = command.transition;
+	if (transitionCommand === undefined) {
+		return failure(
+			"COMMAND_HANDLER_REQUIRED",
+			"Manifest command requires a command handler.",
+			{
+				command: command.id,
+			},
+		);
+	}
+	try {
+		const issue = await tracker.getIssue(issueId);
+		if (!commandTargetMatches(command.target, issue.workflow)) {
+			return failure(
+				"UNAVAILABLE_COMMAND",
+				"Workflow command target does not match the issue's current workflow fields.",
+				{ id: issueId, command: command.id },
+			);
+		}
+		const kind = manifest.kinds.find(
+			(candidate) => candidate.id === issue.workflow.kind,
+		);
+		const transition = kind?.transitions.find(
+			(candidate) =>
+				candidate.event === transitionCommand.event &&
+				candidate.from.state === issue.workflow.state &&
+				candidate.from.action === issue.workflow.action &&
+				candidate.from.reason === issue.workflow.reason,
+		);
+		if (transition === undefined) {
+			return invalidTransition(issueId, transitionCommand.event);
+		}
+		const runEffect = transitionCommand.run ?? "none";
+		const workflow = workflowTarget(transition.to);
+		let nextRunId: string | undefined;
+		if (runEffect === "start") {
+			if (!manifest.lifecycle?.activeStates?.includes(transition.to.state)) {
+				return failure(
+					"INVALID_TRANSITION",
+					"Transition run start must land in a manifest active state.",
+					{ id: issueId, event: transitionCommand.event },
+				);
+			}
+			nextRunId = `run-${randomUUID()}`;
+		} else if (runEffect === "complete") {
+			if (runId === undefined || issue.workflow.activeRunId !== runId) {
+				return failure(
+					"RUN_MISMATCH",
+					"Command run id does not match the active workflow run.",
+					{
+						id: issueId,
+						...(issue.workflow.activeRunId === undefined
+							? {}
+							: { activeRunId: issue.workflow.activeRunId }),
+						...(runId === undefined ? {} : { runId }),
+					},
+				);
+			}
+			if (
+				!manifest.lifecycle?.activeStates?.includes(transition.from.state) ||
+				manifest.lifecycle?.activeStates?.includes(transition.to.state)
+			) {
+				return failure(
+					"INVALID_TRANSITION",
+					"Transition run complete must leave a manifest active state.",
+					{ id: issueId, event: transitionCommand.event },
+				);
+			}
+		}
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: issueId },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: {
+						...workflow,
+						...(runEffect === "start" ? { activeRunId: nextRunId } : {}),
+						...(runEffect === "complete" ? { activeRunId: undefined } : {}),
+					},
+				},
+				{
+					type: "record-command",
+					issue: { id: issueId },
+					log: {
+						type: "command",
+						...(nextRunId === undefined ? {} : { runId: nextRunId }),
+						message: `Applied ${transitionCommand.event}.`,
+					},
+				},
+			],
+		});
+		return success({
+			issue: result.issues[issueId] ?? (await tracker.getIssue(issueId)),
+			...(nextRunId === undefined ? {} : { run: { id: nextRunId } }),
+			log: result.logs[0],
+			outcome: "APPLIED",
+		});
+	} catch (error) {
+		return lifecycleError(issueId, error);
+	}
+}
+
+function commandTargetMatches(
+	target: ManifestCommand["target"],
+	workflow: {
+		kind: string;
+		state: string;
+		action?: string;
+		reason?: string | null;
+	},
+): boolean {
+	return (
+		target.kind === workflow.kind &&
+		(target.state === undefined || target.state === workflow.state) &&
+		(target.action === undefined || target.action === workflow.action) &&
+		(target.reason === undefined || target.reason === workflow.reason)
+	);
 }
 
 export async function applyGenericWorkflowCommand(

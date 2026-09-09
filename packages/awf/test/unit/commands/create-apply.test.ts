@@ -964,6 +964,111 @@ it("should ensure that command handlers reject recorded workflow semantic versio
 	expect(await tracker.readLogs("item-1")).toEqual([]);
 });
 
+it("should ensure that generic transition commands validate target filters before applying effects", async () => {
+	let applyWorkflowEffectsCalls = 0;
+	const tracker = failingTracker(
+		createInMemoryTracker({
+			issues: [
+				{
+					id: "item-1",
+					title: "Item",
+					workflow: { kind: "item", state: "ready", action: "draft" },
+				},
+			],
+		}),
+		{
+			applyWorkflowEffects: async (input) => {
+				applyWorkflowEffectsCalls += 1;
+				return createInMemoryTracker().applyWorkflowEffects(input);
+			},
+		},
+	);
+
+	const envelope = await execute(["item", "finish", "item-1"], {
+		tracker,
+		manifest: genericWorkflowManifest({
+			transitionTarget: { kind: "item", state: "ready", action: "review" },
+			transition: { event: "finished" },
+		}),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"UNAVAILABLE_COMMAND",
+	);
+	expect(applyWorkflowEffectsCalls).toBe(0);
+});
+
+it("should ensure that generic transition commands apply matching manifest transitions with plain text logs", async () => {
+	const base = createInMemoryTracker({
+		issues: [
+			{
+				id: "item-1",
+				title: "Item",
+				workflow: { kind: "item", state: "ready", action: "review" },
+			},
+		],
+	});
+	let seenEffectTypes: Array<string> = [];
+	const tracker = failingTracker(base, {
+		applyWorkflowEffects: async (input) => {
+			seenEffectTypes = input.effects.map((effect) => effect.type);
+			return base.applyWorkflowEffects(input);
+		},
+		recordCommand: async () => {
+			throw new Error("runtime must use generic workflow effects");
+		},
+		advanceWorkflow: async () => {
+			throw new Error("runtime must not advance workflow directly");
+		},
+	});
+
+	const envelope = await execute(["item", "finish", "item-1"], {
+		tracker,
+		manifest: genericWorkflowManifest({
+			transitionTarget: { kind: "item", state: "ready", action: "review" },
+			transition: { event: "finished" },
+		}),
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(seenEffectTypes).toEqual(["update-workflow", "record-command"]);
+	expect((await tracker.getIssue("item-1")).workflow).toMatchObject({
+		kind: "item",
+		state: "done",
+	});
+	expect((await tracker.readLogs("item-1"))[0]).toMatchObject({
+		type: "command",
+		message: "Applied finished.",
+	});
+});
+
+it("should ensure that generic transition commands reject missing matching transitions", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "item-1",
+				title: "Item",
+				workflow: { kind: "item", state: "ready", action: "draft" },
+			},
+		],
+	});
+
+	const envelope = await execute(["item", "finish", "item-1"], {
+		tracker,
+		manifest: genericWorkflowManifest({
+			transitionTarget: { kind: "item", state: "ready", action: "draft" },
+			transition: { event: "finished" },
+		}),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error.code).toBe(
+		"INVALID_TRANSITION",
+	);
+	expect(await tracker.readLogs("item-1")).toEqual([]);
+});
+
 it("should ensure that generic apply logs the manifest-parsed JSON-compatible payload", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -1266,6 +1371,8 @@ function genericWorkflowManifest(
 	options: {
 		createInput?: WorkflowManifest["commands"][number]["input"];
 		applyInput?: WorkflowManifest["commands"][number]["input"];
+		transition?: WorkflowManifest["commands"][number]["transition"];
+		transitionTarget?: WorkflowManifest["commands"][number]["target"];
 	} = {},
 ): WorkflowManifest {
 	return {
@@ -1304,6 +1411,18 @@ function genericWorkflowManifest(
 				cli: { verb: "apply", target: "memo" },
 				target: { kind: "item", action: "review" },
 				input: options.applyInput,
+			},
+			{
+				id: "item-finish",
+				cli: { verb: "item", target: "finish" },
+				target: options.transitionTarget ?? {
+					kind: "item",
+					state: "ready",
+					action: "review",
+				},
+				...(options.transition === undefined
+					? {}
+					: { transition: options.transition }),
 			},
 		],
 	};
