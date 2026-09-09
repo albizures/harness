@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { JsonValue } from "type-fest";
 import type { CommandHandlers } from "../command-handlers.ts";
 import { failure, success, type Envelope } from "../envelope.ts";
@@ -81,7 +80,6 @@ export async function manifestCommand(
 	if (handler === undefined && command.transition !== undefined) {
 		return transitionGenericWorkflowCommand(
 			args[2],
-			readOption(args, "--run"),
 			versionedTracker,
 			manifest,
 			command,
@@ -141,13 +139,12 @@ async function manifestLifecycleCommand(
 	}
 	const shifted = [command.id, ...args.slice(2)];
 	if (command.id === "start") {
-		return startCommand(shifted[1], tracker, manifest);
+		return startCommand(shifted[1], tracker, manifest, lifecycleHandlers);
 	}
 	if (command.id === "succeed" || command.id === "fail") {
 		return terminalCommand(
 			command.id,
 			shifted[1],
-			readOption(shifted, "--run"),
 			readOption(shifted, "--input"),
 			tracker,
 			manifest,
@@ -492,7 +489,6 @@ export async function createGenericWorkflowIssueCommand(
 
 async function transitionGenericWorkflowCommand(
 	issueId: string | undefined,
-	runId: string | undefined,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	command: ManifestCommand,
@@ -536,7 +532,6 @@ async function transitionGenericWorkflowCommand(
 		}
 		const runEffect = transitionCommand.attempt ?? "none";
 		const workflow = workflowTarget(transition.to);
-		let nextRunId: string | undefined;
 		if (runEffect === "start") {
 			if (!manifest.lifecycle?.activeStates?.includes(transition.to.state)) {
 				return failure(
@@ -545,21 +540,7 @@ async function transitionGenericWorkflowCommand(
 					{ id: issueId, event: transitionCommand.event },
 				);
 			}
-			nextRunId = `run-${randomUUID()}`;
 		} else if (runEffect === "complete") {
-			if (runId === undefined || issue.workflow.activeRunId !== runId) {
-				return failure(
-					"RUN_MISMATCH",
-					"Command run id does not match the active workflow run.",
-					{
-						id: issueId,
-						...(issue.workflow.activeRunId === undefined
-							? {}
-							: { activeRunId: issue.workflow.activeRunId }),
-						...(runId === undefined ? {} : { runId }),
-					},
-				);
-			}
 			if (
 				!manifest.lifecycle?.activeStates?.includes(transition.from.state) ||
 				manifest.lifecycle?.activeStates?.includes(transition.to.state)
@@ -571,7 +552,6 @@ async function transitionGenericWorkflowCommand(
 				);
 			}
 		}
-		const logRunId = runEffect === "complete" ? runId : nextRunId;
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
 				{
@@ -583,8 +563,9 @@ async function transitionGenericWorkflowCommand(
 					},
 					workflow: {
 						...workflow,
-						...(runEffect === "start" ? { activeRunId: nextRunId } : {}),
-						...(runEffect === "complete" ? { activeRunId: undefined } : {}),
+						...(runEffect === "start" || runEffect === "complete"
+							? { activeRunId: undefined }
+							: {}),
 					},
 				},
 				{
@@ -592,11 +573,9 @@ async function transitionGenericWorkflowCommand(
 					issue: { id: issueId },
 					log: {
 						type: "command",
-						...(logRunId === undefined ? {} : { runId: logRunId }),
 						message: transitionRunLogMessage(
 							transitionCommand.event,
 							runEffect,
-							logRunId,
 						),
 					},
 				},
@@ -613,7 +592,6 @@ async function transitionGenericWorkflowCommand(
 		}
 		return success({
 			issue: updated,
-			...(nextRunId === undefined ? {} : { run: { id: nextRunId } }),
 			log: result.logs[0],
 			outcome: "APPLIED",
 		});
@@ -624,15 +602,8 @@ async function transitionGenericWorkflowCommand(
 
 function transitionRunLogMessage(
 	event: string,
-	runEffect: "none" | "start" | "complete",
-	runId: string | undefined,
+	_runEffect: "none" | "start" | "complete",
 ): string {
-	if (runEffect === "start" && runId !== undefined) {
-		return `Applied ${event}; started run ${runId}.`;
-	}
-	if (runEffect === "complete" && runId !== undefined) {
-		return `Applied ${event}; completed run ${runId}.`;
-	}
 	return `Applied ${event}.`;
 }
 

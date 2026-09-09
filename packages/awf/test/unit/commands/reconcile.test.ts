@@ -195,7 +195,7 @@ it("should ensure that normal commands do not silently repair drift before recon
 		},
 	);
 	expect(before.ok).toBe(false);
-	expect(before.ok ? undefined : before.error.code).toBe("RUN_MISMATCH");
+	expect(before.ok ? undefined : before.error.code).toBe("INVALID_ARGUMENTS");
 	await execute(["reconcile", "123", "--apply"], { tracker });
 	const after = await execute(
 		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
@@ -205,5 +205,5 @@ it("should ensure that normal commands do not silently repair drift before recon
 		},
 	);
 	expect(after.ok).toBe(false);
-	expect(after.ok ? undefined : after.error.code).toBe("RUN_MISMATCH");
+	expect(after.ok ? undefined : after.error.code).toBe("INVALID_ARGUMENTS");
 });

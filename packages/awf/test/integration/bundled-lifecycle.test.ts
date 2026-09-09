@@ -10,31 +10,26 @@ const findingArtifact = (ref: string) => ({ type: "finding", ref });
 const integrationImplementationPrNumber = 6;
 const integrationSpecPrNumber = 3;
 
-async function start(tracker: Tracker, id: string): Promise<string> {
+async function start(tracker: Tracker, id: string): Promise<void> {
 	const issue = await tracker.getIssue(id);
 	const envelope = await execute([issue.workflow.kind, "start", id], {
 		tracker,
 		manifest: agentDevelopmentManifest,
 	});
 	expect(envelope.ok).toBe(true);
-	return (envelope as { ok: true; data: { run: { id: string } } }).data.run.id;
 }
 
 async function terminal(
 	tracker: Tracker,
 	event: "succeed" | "fail",
 	id: string,
-	run: string,
 	_input: Record<string, unknown>,
 ) {
 	const issue = await tracker.getIssue(id);
-	const envelope = await execute(
-		[issue.workflow.kind, event, id, "--run", run],
-		{
-			tracker,
-			manifest: agentDevelopmentManifest,
-		},
-	);
+	const envelope = await execute([issue.workflow.kind, event, id], {
+		tracker,
+		manifest: agentDevelopmentManifest,
+	});
 	expect(envelope.ok).toBe(true);
 	return envelope;
 }
@@ -55,13 +50,16 @@ it("should ensure that bundled Ticket workflow progresses through implementation
 		],
 	});
 
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
+	await start(tracker, "t");
+	await terminal(tracker, "succeed", "t", {
 		implementationPr: prArtifact(1),
 	});
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
+	await start(tracker, "t");
+	await terminal(tracker, "succeed", "t", {
 		verdict: "approved",
 	});
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
+	await start(tracker, "t");
+	await terminal(tracker, "succeed", "t", {
 		merged: true,
 	});
 
@@ -84,15 +82,18 @@ it("should ensure that bundled Ticket changes-requested review returns to fix an
 		],
 	});
 
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
+	await start(tracker, "t");
+	await terminal(tracker, "succeed", "t", {
 		implementationPr: prArtifact(2),
 	});
-	await terminal(tracker, "fail", "t", await start(tracker, "t"), {
+	await start(tracker, "t");
+	await terminal(tracker, "fail", "t", {
 		verdict: "changes-requested",
 		findings: [findingArtifact("missing test")],
 	});
 	expect((await tracker.getIssue("t")).workflow.action).toBe("fix");
-	await terminal(tracker, "succeed", "t", await start(tracker, "t"), {
+	await start(tracker, "t");
+	await terminal(tracker, "succeed", "t", {
 		summary: "added test",
 	});
 	expect((await tracker.getIssue("t")).workflow.action).toBe("review");
@@ -128,13 +129,16 @@ it("should ensure that bundled Spec workflow waits for child Tickets before inte
 
 	const ticketId = applied.tickets[0]?.id;
 	expect(typeof ticketId).toBe("string");
-	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
+	await start(tracker, ticketId);
+	await terminal(tracker, "succeed", ticketId, {
 		implementationPr: prArtifact(integrationImplementationPrNumber),
 	});
-	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
+	await start(tracker, ticketId);
+	await terminal(tracker, "succeed", ticketId, {
 		verdict: "approved",
 	});
-	await terminal(tracker, "succeed", ticketId, await start(tracker, ticketId), {
+	await start(tracker, ticketId);
+	await terminal(tracker, "succeed", ticketId, {
 		merged: true,
 	});
 
@@ -144,12 +148,14 @@ it("should ensure that bundled Spec workflow waits for child Tickets before inte
 		action: readyForIntegration.workflow.action,
 	}).toEqual({ state: "ready", action: "integration-test" });
 
-	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
+	await start(tracker, "s");
+	await terminal(tracker, "succeed", "s", {
 		verdict: "passed",
 		specPr: prArtifact(integrationSpecPrNumber),
 	});
 	expect((await tracker.getIssue("s")).workflow.action).toBe("merge");
-	await terminal(tracker, "succeed", "s", await start(tracker, "s"), {
+	await start(tracker, "s");
+	await terminal(tracker, "succeed", "s", {
 		merged: true,
 	});
 	const doneSpec = await tracker.getIssue("s");
@@ -175,7 +181,7 @@ it("should ensure that bundled agent-development help exposes manifest lifecycle
 			}),
 			expect.objectContaining({
 				name: "ticket fail",
-				usage: "awf ticket fail <issue> --run <run>",
+				usage: "awf ticket fail <issue>",
 			}),
 			expect.objectContaining({
 				name: "ticket recover",
@@ -203,25 +209,26 @@ it("should ensure that bundled Ticket lifecycle commands route through manifest 
 	});
 
 	const started = assertSuccess<{
-		run: { id: string };
-		log: { message: string };
+		run?: { id: string };
+		log: { message: string; runId?: string };
 	}>(
 		await execute(["ticket", "start", "t"], {
 			tracker,
 			manifest: agentDevelopmentManifest,
 		}),
 	);
-	expect(started.log.message).toMatch(/^Applied start; started run run-/);
+	expect(started.run).toBeUndefined();
+	expect(started.log).toMatchObject({ message: "Applied start." });
+	expect(started.log.runId).toBeUndefined();
 
-	const failed = assertSuccess<{ log: { message: string } }>(
-		await execute(["ticket", "fail", "t", "--run", started.run.id], {
+	const failed = assertSuccess<{ log: { message: string; runId?: string } }>(
+		await execute(["ticket", "fail", "t"], {
 			tracker,
 			manifest: agentDevelopmentManifest,
 		}),
 	);
-	expect(failed.log.message).toBe(
-		`Applied fail; completed run ${started.run.id}.`,
-	);
+	expect(failed.log.message).toBe("Applied fail.");
+	expect(failed.log.runId).toBeUndefined();
 	expect((await tracker.getIssue("t")).workflow).toMatchObject({
 		state: "ready",
 		action: "implement",
@@ -239,13 +246,13 @@ it("should ensure that bundled Ticket manual escalation and recovery are explici
 		],
 	});
 
-	const started = assertSuccess<{ run: { id: string } }>(
+	assertSuccess(
 		await execute(["ticket", "start", "t"], {
 			tracker,
 			manifest: agentDevelopmentManifest,
 		}),
 	);
-	await execute(["ticket", "escalate", "t", "--run", started.run.id], {
+	await execute(["ticket", "escalate", "t"], {
 		tracker,
 		manifest: agentDevelopmentManifest,
 	});
@@ -283,7 +290,8 @@ it("should ensure that bundled Spec integration changes-needed returns to planni
 		],
 	});
 
-	await terminal(tracker, "fail", "s", await start(tracker, "s"), {
+	await start(tracker, "s");
+	await terminal(tracker, "fail", "s", {
 		verdict: "changes-needed",
 		findings: [findingArtifact("split ticket")],
 	});

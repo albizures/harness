@@ -259,45 +259,23 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 	});
 
 	assertFailureCode(
-		await execute(
-			[
-				"run-command",
-				"succeed",
-				"ticket-1",
-				"--run",
-				"run-review",
-				"--input",
-				"-",
-			],
-			{
-				tracker,
-				stdin: JSON.stringify({ verdict: "changes-requested" }),
-			},
-		),
+		await execute(["run-command", "succeed", "ticket-1", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ verdict: "changes-requested" }),
+		}),
 		"INVALID_ACTION_INPUT",
 	);
 
 	const data = assertSuccess<TerminalData>(
-		await execute(
-			[
-				"run-command",
-				"succeed",
-				"ticket-2",
-				"--run",
-				"run-implement",
-				"--input",
-				"-",
-			],
-			{
-				tracker,
-				stdin: JSON.stringify({
-					implementationPr: {
-						type: "pull-request",
-						url: "https://github.com/albizures/harness/pull/1",
-					},
-				}),
-			},
-		),
+		await execute(["run-command", "succeed", "ticket-2", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				implementationPr: {
+					type: "pull-request",
+					url: "https://github.com/albizures/harness/pull/1",
+				},
+			}),
+		}),
 	);
 
 	expect(data.issue.workflow).toMatchObject({

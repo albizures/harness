@@ -39,7 +39,7 @@ function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	return (envelope as { ok: true; data: T }).data;
 }
 
-it("should ensure that start moves a ready issue to running, stores one active run, and appends an action_started log", async () => {
+it("should ensure that start moves a ready issue to running and appends an action_started log without run identity", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -57,16 +57,17 @@ it("should ensure that start moves a ready issue to running, stores one active r
 		envelope as {
 			ok: true;
 			data: {
-				issue: { workflow: { state: string; activeRunId: string } };
-				run: { id: string };
+				issue: { workflow: { state: string; activeRunId?: string } };
+				run?: { id: string };
 			};
 		}
 	).data;
 	expect(data.issue.workflow.state).toBe("running");
-	expect(data.issue.workflow.activeRunId).toBe(data.run.id);
+	expect(data.issue.workflow.activeRunId).toBeUndefined();
+	expect(data.run).toBeUndefined();
 	const logs = await tracker.readLogs("123");
 	expect(logs.map((log) => log.type)).toEqual(["action_started"]);
-	expect(logs[0]?.runId).toBe(data.run.id);
+	expect(logs[0]?.runId).toBeUndefined();
 });
 
 it("should ensure that pause moves a running issue to waiting-human, clears its active run, and logs pause metadata", async () => {
@@ -357,13 +358,10 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 		],
 	});
 
-	const envelope = await execute(
-		["run-command", "succeed", "finishing", "--run", "run-1"],
-		{
-			tracker,
-			manifest,
-		},
-	);
+	const envelope = await execute(["run-command", "succeed", "finishing"], {
+		tracker,
+		manifest,
+	});
 
 	expect(envelope.ok).toBe(true);
 	const goal = await tracker.getIssue("goal");
@@ -391,7 +389,7 @@ it("should ensure that succeed applies the manifest terminal transition for the 
 	});
 
 	const envelope = await execute(
-		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
@@ -434,7 +432,7 @@ it("should ensure that failed running actions retry the same ready action by def
 	});
 
 	const envelope = await execute(
-		["run-command", "fail", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "fail", "123", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({
@@ -521,7 +519,7 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 	});
 
 	const terminal = await execute(
-		["run-command", "succeed", "running", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "running", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ arbitrary: { nested: true } }),
@@ -603,14 +601,11 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 
 	expect(
 		(
-			await execute(
-				["run-command", "fail", "123", "--run", "run-1", "--input", "-"],
-				{
-					tracker,
-					manifest,
-					stdin: "{}",
-				},
-			)
+			await execute(["run-command", "fail", "123", "--input", "-"], {
+				tracker,
+				manifest,
+				stdin: "{}",
+			})
 		).ok,
 	).toBe(false);
 	expect(
@@ -647,7 +642,7 @@ it("should ensure that bundled workflow vocabulary and transitions do not includ
 	).toBeTruthy();
 });
 
-it("should ensure that lifecycle commands reject invalid manifest transitions and run mismatches", async () => {
+it("should ensure that lifecycle commands reject invalid manifest transitions and unsupported run options", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -688,14 +683,14 @@ it("should ensure that lifecycle commands reject invalid manifest transitions an
 	).toEqual({
 		ok: false,
 		error: {
-			code: "RUN_MISMATCH",
-			message: "Command run id does not match the active workflow run.",
-			details: { id: "running", activeRunId: "run-1", runId: "other" },
+			code: "INVALID_ARGUMENTS",
+			message: "Invalid command arguments.",
+			details: { command: "succeed", unsupported: "--run" },
 		},
 	});
 });
 
-it("should ensure that terminal retries are idempotent for identical outcomes and reject conflicts", async () => {
+it("should ensure that terminal commands for inactive issues use invalid-transition behavior", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -707,38 +702,26 @@ it("should ensure that terminal retries are idempotent for identical outcomes an
 	});
 	await tracker.appendLog("123", {
 		type: "action_succeeded",
-		runId: "run-1",
 		message: JSON.stringify({
 			event: "succeed",
 			to: { state: "done", action: "none" },
 		}),
 	});
 
-	const retry = await execute(
-		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
-		{
+	expect(
+		await execute(["run-command", "succeed", "123", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({ merged: true }),
-		},
-	);
-	expect(retry.ok).toBe(true);
-	expect((await tracker.readLogs("123")).length).toBe(1);
-	expect(
-		await execute(
-			["run-command", "fail", "123", "--run", "run-1", "--input", "-"],
-			{
-				tracker,
-				stdin: JSON.stringify({ merged: true }),
-			},
-		),
+		}),
 	).toEqual({
 		ok: false,
 		error: {
-			code: "CONFLICTING_TERMINAL_OUTCOME",
-			message: "Workflow run already has a different terminal outcome.",
-			details: { id: "123", runId: "run-1" },
+			code: "INVALID_TRANSITION",
+			message: "Terminal transition must leave a manifest active state.",
+			details: { id: "123", event: "succeed" },
 		},
 	});
+	expect((await tracker.readLogs("123")).length).toBe(1);
 });
 
 it("should ensure that generic lifecycle transition handlers receive JSON input and contribute effects", async () => {
@@ -797,7 +780,7 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 	});
 
 	const envelope = await execute(
-		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--input", "-"],
 		{
 			tracker,
 			manifest,
@@ -897,7 +880,7 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 	});
 
 	const envelope = await execute(
-		["run-command", "succeed", "123", "--run", "run-1", "--input", "-"],
+		["run-command", "succeed", "123", "--input", "-"],
 		{
 			tracker,
 			manifest,
@@ -945,13 +928,10 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 	const failed = assertSuccess<{
 		issue: { workflow: { state: string; action: string; reason?: string } };
 	}>(
-		await execute(
-			["run-command", "fail", "retry", "--run", "run-retry", "--input", "-"],
-			{
-				tracker,
-				stdin: JSON.stringify({ reason: "temporary CI failure" }),
-			},
-		),
+		await execute(["run-command", "fail", "retry", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({ reason: "temporary CI failure" }),
+		}),
 	);
 	expect({
 		state: failed.issue.workflow.state,

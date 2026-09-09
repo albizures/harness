@@ -1040,7 +1040,7 @@ it("should ensure that generic transition commands apply matching manifest trans
 	});
 });
 
-it("should ensure that explicit attempt start transition effects store an active run id and log plain text attempt metadata", async () => {
+it("should ensure that explicit attempt start transition effects use active states without run identity", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1057,24 +1057,25 @@ it("should ensure that explicit attempt start transition effects store an active
 	});
 
 	expect(envelope.ok).toBe(true);
-	const data = (envelope as { ok: true; data: { run: { id: string } } }).data;
+	const data = (envelope as { ok: true; data: { run?: { id: string } } }).data;
+	expect(data.run).toBeUndefined();
 	const updated = await tracker.getIssue("item-1");
 	expect(updated.workflow).toMatchObject({
 		kind: "item",
 		state: "running",
 		action: "do",
-		activeRunId: data.run.id,
 	});
+	expect(updated.workflow.activeRunId).toBeUndefined();
 	const log = (await tracker.readLogs("item-1"))[0];
 	expect(log).toMatchObject({
 		type: "command",
-		runId: data.run.id,
-		message: `Applied begin; started run ${data.run.id}.`,
+		message: "Applied begin.",
 	});
+	expect(log?.runId).toBeUndefined();
 	expect(log?.message?.startsWith("{")).toBe(false);
 });
 
-it("should ensure that explicit attempt complete transition effects require and clear the active run id", async () => {
+it("should ensure that explicit attempt complete transition effects clear any active run id", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1090,13 +1091,10 @@ it("should ensure that explicit attempt complete transition effects require and 
 		],
 	});
 
-	const envelope = await execute(
-		["item", "finish", "item-1", "--run", "run-1"],
-		{
-			tracker,
-			manifest: transitionRunEffectsManifest(),
-		},
-	);
+	const envelope = await execute(["item", "finish", "item-1"], {
+		tracker,
+		manifest: transitionRunEffectsManifest(),
+	});
 
 	expect(envelope.ok).toBe(true);
 	const updated = await tracker.getIssue("item-1");
@@ -1107,9 +1105,9 @@ it("should ensure that explicit attempt complete transition effects require and 
 	expect(updated.workflow.activeRunId).toBeUndefined();
 	expect((await tracker.readLogs("item-1"))[0]).toMatchObject({
 		type: "command",
-		runId: "run-1",
-		message: "Applied finish; completed run run-1.",
+		message: "Applied finish.",
 	});
+	expect((await tracker.readLogs("item-1"))[0]?.runId).toBeUndefined();
 });
 
 it("should ensure that explicit attempt none transition effects apply no run-id side effects", async () => {
@@ -1146,7 +1144,7 @@ it("should ensure that explicit attempt none transition effects apply no run-id 
 	expect(log?.runId).toBeUndefined();
 });
 
-it("should ensure that explicit attempt transition effects reject invalid active-state boundaries and mismatched run ids", async () => {
+it("should ensure that explicit attempt transition effects reject invalid active-state boundaries and unsupported run ids", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1172,28 +1170,23 @@ it("should ensure that explicit attempt transition effects reject invalid active
 		tracker,
 		manifest,
 	});
-	const missingRun = await execute(["item", "finish", "running"], {
+	const unsupportedRun = await execute(
+		["item", "finish", "running", "--run", "run-1"],
+		{ tracker, manifest },
+	);
+	const completeToActive = await execute(["item", "loop", "running"], {
 		tracker,
 		manifest,
 	});
-	const mismatchedRun = await execute(
-		["item", "finish", "running", "--run", "other"],
-		{ tracker, manifest },
-	);
-	const completeToActive = await execute(
-		["item", "loop", "running", "--run", "run-1"],
-		{ tracker, manifest },
-	);
 
 	expect(startToInactive.ok ? undefined : startToInactive.error.code).toBe(
 		"INVALID_TRANSITION",
 	);
-	expect(missingRun.ok ? undefined : missingRun.error.code).toBe(
-		"RUN_MISMATCH",
-	);
-	expect(mismatchedRun.ok ? undefined : mismatchedRun.error.code).toBe(
-		"RUN_MISMATCH",
-	);
+	expect(unsupportedRun.ok ? undefined : unsupportedRun.error).toEqual({
+		code: "INVALID_ARGUMENTS",
+		message: "Invalid command arguments.",
+		details: { command: "item-finish", unsupported: "--run" },
+	});
 	expect(completeToActive.ok ? undefined : completeToActive.error.code).toBe(
 		"INVALID_TRANSITION",
 	);

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import type { JsonValue } from "type-fest";
 import { z } from "zod";
 import { failure, success, type Envelope } from "../envelope.ts";
 import { parseJsonValue } from "../json.ts";
@@ -18,7 +16,6 @@ import {
 	isReadyAction,
 	isRecord,
 	isWorkflowActive,
-	isTerminalLog,
 	lifecycleError,
 	parseJsonInput,
 	parsePayloadValue,
@@ -75,11 +72,9 @@ export async function startCommand(
 				{ id, event: "start" },
 			);
 		}
-		const runId = `run-${randomUUID()}`;
 		if (lifecycleHandlers === undefined) {
 			const log: TrackerLog = {
 				type: "action_started",
-				runId,
 				message: stableStringify({
 					event: "start",
 					to: cleanTransitionTarget(transition.to),
@@ -94,14 +89,16 @@ export async function startCommand(
 							version: issue.workflow.version,
 							hash: issue.workflow.hash,
 						},
-						workflow: { ...workflowTarget(transition.to), activeRunId: runId },
+						workflow: {
+							...workflowTarget(transition.to),
+							activeRunId: undefined,
+						},
 					},
 					{ type: "record-command", issue: { id }, log },
 				],
 			});
 			return success({
 				issue: result.issues[id] ?? (await tracker.getIssue(id)),
-				run: { id: runId },
 				log: result.logs[0],
 			});
 		}
@@ -112,7 +109,6 @@ export async function startCommand(
 			tracker: lifecycleHandlerTracker(tracker),
 			event: "start",
 			input: {},
-			runId,
 		});
 		if (handler.ok !== true) {
 			return handler;
@@ -120,7 +116,6 @@ export async function startCommand(
 		const target = workflowTarget(transition.to);
 		const log: TrackerLog = {
 			type: "action_started",
-			runId,
 			message: stableStringify({
 				event: "start",
 				to: cleanTransitionTarget(transition.to),
@@ -135,7 +130,7 @@ export async function startCommand(
 						version: issue.workflow.version,
 						hash: issue.workflow.hash,
 					},
-					workflow: { ...target, activeRunId: runId },
+					workflow: { ...target, activeRunId: undefined },
 				},
 				{ type: "record-command", issue: { id }, log },
 				...handler.contribution.effects,
@@ -143,7 +138,6 @@ export async function startCommand(
 		});
 		return success({
 			issue: result.issues[id] ?? (await tracker.getIssue(id)),
-			run: { id: runId },
 			log: result.logs[0],
 		});
 	} catch (error) {
@@ -154,16 +148,15 @@ export async function startCommand(
 export async function terminalCommand(
 	event: "succeed" | "fail",
 	id: string | undefined,
-	runId: string | undefined,
 	inputPath: string | undefined,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
 	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
-	if (id === undefined || runId === undefined) {
+	if (id === undefined) {
 		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf ${event} <id> --run <run> --input <file|->`,
+			usage: `awf ${event} <id> [--input <file|->]`,
 		});
 	}
 
@@ -191,53 +184,13 @@ export async function terminalCommand(
 				},
 			);
 		}
-		const logs = await tracker.readLogs(id);
-		const existing = logs.find(
-			(log) => log.runId === runId && isTerminalLog(log.type),
-		);
 		const logType = terminalLogType(event);
-		if (existing !== undefined) {
-			if (
-				existing.type === logType &&
-				(parsedInputJson === undefined ||
-					terminalLogInputMatchesMessage(
-						existing.message,
-						parseJsonValue(parsedInputJson.value),
-					))
-			) {
-				const issue = await tracker.getIssue(id);
-				return success({
-					issue,
-					run: { id: runId, status: event },
-					log: existing,
-				});
-			}
-			return failure(
-				"CONFLICTING_TERMINAL_OUTCOME",
-				"Workflow run already has a different terminal outcome.",
-				{ id, runId },
-			);
-		}
-
 		const issue = await tracker.getIssue(id);
 		if (!isWorkflowActive(issue.workflow, manifest)) {
 			return failure(
 				"INVALID_TRANSITION",
 				"Terminal transition must leave a manifest active state.",
 				{ id, event },
-			);
-		}
-		if (issue.workflow.activeRunId !== runId) {
-			return failure(
-				"RUN_MISMATCH",
-				"Command run id does not match the active workflow run.",
-				{
-					id,
-					...(issue.workflow.activeRunId === undefined
-						? {}
-						: { activeRunId: issue.workflow.activeRunId }),
-					runId,
-				},
 			);
 		}
 		const transition = findTransition(manifest, issue.workflow, event);
@@ -264,7 +217,6 @@ export async function terminalCommand(
 		if (lifecycleHandlers === undefined) {
 			const log: TrackerLog = {
 				type: logType,
-				runId,
 				message: stableStringify({
 					event,
 					...(parsedInput === undefined ? {} : { input: terminalInput }),
@@ -294,7 +246,6 @@ export async function terminalCommand(
 			);
 			return success({
 				issue: updated,
-				run: { id: runId, status: event },
 				log: result.logs[0],
 			});
 		}
@@ -308,14 +259,12 @@ export async function terminalCommand(
 						tracker: lifecycleHandlerTracker(tracker),
 						event,
 						input: terminalInput,
-						runId,
 					});
 		if (handler.ok !== true) {
 			return handler;
 		}
 		const log: TrackerLog = {
 			type: logType,
-			runId,
 			message: stableStringify({
 				event,
 				...(parsedInput === undefined ? {} : { input: terminalInput }),
@@ -346,7 +295,6 @@ export async function terminalCommand(
 		);
 		return success({
 			issue: updated,
-			run: { id: runId, status: event },
 			log: result.logs[0],
 		});
 	} catch (error) {
@@ -608,25 +556,6 @@ export async function respondCommand(
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
-}
-
-function terminalLogInputMatchesMessage(
-	message: string | undefined,
-	input: JsonValue,
-): boolean {
-	if (message === undefined) {
-		return true;
-	}
-	let data: unknown;
-	try {
-		data = JSON.parse(message);
-	} catch {
-		return true;
-	}
-	if (!isRecord(data) || data.input === undefined) {
-		return true;
-	}
-	return stableStringify(data.input) === stableStringify(input);
 }
 
 function latestHumanPause(

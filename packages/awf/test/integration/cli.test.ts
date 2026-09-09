@@ -292,7 +292,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 			expect.objectContaining({
 				id: "ticket-fail",
 				cli: expect.objectContaining({
-					usage: "awf ticket fail <issue> --run <run>",
+					usage: "awf ticket fail <issue>",
 				}),
 				transition: { event: "fail", attempt: "complete" },
 			}),
@@ -549,8 +549,6 @@ export const lifecycleHandlers = {
 				"run-command",
 				"succeed",
 				"article-1",
-				"--run",
-				"run-1",
 				"--input",
 				"-",
 			],
@@ -644,36 +642,19 @@ export const manifest = agentDevelopmentManifest;
 				runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
 			).toEqual(["spec_created", "plan_applied"]);
 
-			const started = runCli(["run-command", "start", ticketId]);
+			runCli(["run-command", "start", ticketId]);
 			expect(runCli(["ready"]).items).toEqual([]);
-			const failed = runCli(
-				[
-					"run-command",
-					"fail",
-					ticketId,
-					"--run",
-					started.run.id,
-					"--input",
-					"-",
-				],
-				{ reason: "transient" },
-			);
+			const failed = runCli(["run-command", "fail", ticketId, "--input", "-"], {
+				reason: "transient",
+			});
 			expect({
 				state: failed.issue.workflow.state,
 				action: failed.issue.workflow.action,
 			}).toEqual({ state: "ready", action: "implement" });
 
-			const restarted = runCli(["run-command", "start", ticketId]);
+			runCli(["run-command", "start", ticketId]);
 			const implemented = runCli(
-				[
-					"run-command",
-					"succeed",
-					ticketId,
-					"--run",
-					restarted.run.id,
-					"--input",
-					"-",
-				],
+				["run-command", "succeed", ticketId, "--input", "-"],
 				{ implementationPr: prArtifact(durableImplementationPrNumber) },
 			);
 			expect({
@@ -940,8 +921,6 @@ it("should ensure that CLI smoke path reports active-state drift without repairi
 			"run-command",
 			"succeed",
 			"42",
-			"--run",
-			"run-42",
 			"--input",
 			"-",
 		],
@@ -953,8 +932,8 @@ it("should ensure that CLI smoke path reports active-state drift without repairi
 			env,
 		},
 	);
-	expect(before.status).toBe(1);
-	expect(JSON.parse(before.stdout).error.code).toBe("RUN_MISMATCH");
+	expect(before.status).toBe(0);
+	expect(JSON.parse(before.stdout).data.log.runId).toBeUndefined();
 
 	const diagnosed = spawnSync(
 		process.execPath,
@@ -1003,8 +982,6 @@ it("should ensure that CLI smoke path reports active-state drift without repairi
 			"run-command",
 			"succeed",
 			"42",
-			"--run",
-			"run-42",
 			"--input",
 			"-",
 		],
@@ -1021,8 +998,8 @@ it("should ensure that CLI smoke path reports active-state drift without repairi
 			},
 		},
 	);
-	expect(after.status).toBe(1);
-	expect(JSON.parse(after.stdout).error.code).toBe("RUN_MISMATCH");
+	expect(after.status).toBe(0);
+	expect(JSON.parse(after.stdout).data.log.runId).toBeUndefined();
 });
 
 it("should ensure that CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
@@ -1060,7 +1037,8 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 	expect(started.stderr).toBe("");
 	const startEnvelope = JSON.parse(started.stdout);
 	expect(startEnvelope.ok).toBe(true);
-	const runId = startEnvelope.data.run.id;
+	expect(startEnvelope.data.run).toBeUndefined();
+	expect(startEnvelope.data.log.runId).toBeUndefined();
 	const succeeded = spawnSync(
 		process.execPath,
 		[
@@ -1071,8 +1049,6 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 			"run-command",
 			"succeed",
 			"42",
-			"--run",
-			runId,
 			"--input",
 			"-",
 		],
@@ -1091,7 +1067,6 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 							kind: "ticket",
 							state: "running",
 							action: "implement",
-							activeRunId: runId,
 						},
 						logs: [startEnvelope.data.log],
 					},
@@ -1202,15 +1177,7 @@ it(
 			[specAfterPlan, ticket],
 		);
 		let completed = runCli(
-			[
-				"run-command",
-				"succeed",
-				ticket.id,
-				"--run",
-				started.run.id,
-				"--input",
-				"-",
-			],
+			["run-command", "succeed", ticket.id, "--input", "-"],
 			[
 				specAfterPlan,
 				{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
@@ -1225,15 +1192,7 @@ it(
 			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
 		);
 		completed = runCli(
-			[
-				"run-command",
-				"succeed",
-				ticket.id,
-				"--run",
-				started.run.id,
-				"--input",
-				"-",
-			],
+			["run-command", "succeed", ticket.id, "--input", "-"],
 			[
 				specAfterPlan,
 				{
@@ -1252,15 +1211,7 @@ it(
 			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
 		);
 		completed = runCli(
-			[
-				"run-command",
-				"succeed",
-				ticket.id,
-				"--run",
-				started.run.id,
-				"--input",
-				"-",
-			],
+			["run-command", "succeed", ticket.id, "--input", "-"],
 			[
 				specAfterPlan,
 				{
@@ -1283,15 +1234,7 @@ it(
 			[specReadyForIntegration, ticketIssue],
 		);
 		completed = runCli(
-			[
-				"run-command",
-				"succeed",
-				specAfterPlan.id,
-				"--run",
-				started.run.id,
-				"--input",
-				"-",
-			],
+			["run-command", "succeed", specAfterPlan.id, "--input", "-"],
 			[
 				{
 					...specReadyForIntegration,
@@ -1313,15 +1256,7 @@ it(
 			[{ ...specIssue, logs: specLogs }, ticketIssue],
 		);
 		completed = runCli(
-			[
-				"run-command",
-				"succeed",
-				specIssue.id,
-				"--run",
-				started.run.id,
-				"--input",
-				"-",
-			],
+			["run-command", "succeed", specIssue.id, "--input", "-"],
 			[
 				{
 					...specIssue,

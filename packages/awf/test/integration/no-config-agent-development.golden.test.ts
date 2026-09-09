@@ -132,10 +132,7 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 
 	const started = expectSuccess(
 		await runAwf(cwd, ["run-command", "start", "2"]),
-	) as {
-		run: { id: string };
-	};
-	const runId = started.run.id;
+	);
 	expect(normalizeRunIds(started)).toMatchObject({
 		issue: {
 			id: "2",
@@ -143,24 +140,23 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 				kind: "ticket",
 				state: "running",
 				action: "implement",
-				activeRunId: "<run-id>",
 			},
 		},
-		run: { id: "<run-id>" },
 		log: {
 			sequence: 1,
 			issueId: "2",
 			type: "action_started",
-			runId: "<run-id>",
 		},
 	});
+	expect((started as { run?: unknown }).run).toBeUndefined();
+	expect((started as { log: { runId?: string } }).log.runId).toBeUndefined();
 
 	expect(
 		normalizeRunIds(
 			expectSuccess(
 				await runAwf(
 					cwd,
-					["run-command", "succeed", "2", "--run", runId, "--input", "-"],
+					["run-command", "succeed", "2", "--input", "-"],
 					JSON.stringify({
 						implementationPr: {
 							type: "pull-request",
@@ -175,12 +171,10 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			id: "2",
 			workflow: { kind: "ticket", state: "ready", action: "review" },
 		},
-		run: { id: "<run-id>", status: "succeed" },
 		log: {
 			sequence: 2,
 			issueId: "2",
 			type: "action_succeeded",
-			runId: "<run-id>",
 		},
 	});
 
@@ -207,13 +201,11 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 				sequence: 1,
 				issueId: "2",
 				type: "action_started",
-				runId: "<run-id>",
 			}),
 			expect.objectContaining({
 				sequence: 2,
 				issueId: "2",
 				type: "action_succeeded",
-				runId: "<run-id>",
 			}),
 			expect.objectContaining({
 				sequence: 3,

@@ -177,9 +177,6 @@ export function manifestCommandUsage(command: ManifestCommand): string {
 		return `awf create ${cli.target} --input <file|->`;
 	}
 	const route = `awf ${cli.verb} ${cli.target}`;
-	if (command.transition?.attempt === "complete") {
-		return `${route} <issue> --run <run>`;
-	}
 	if (command.transition !== undefined) {
 		return `${route} <issue>`;
 	}
