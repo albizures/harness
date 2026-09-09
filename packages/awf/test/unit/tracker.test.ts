@@ -14,12 +14,11 @@ it("should ensure that conditional updates advance the projection version and re
 
 	const updated = await tracker.updateIssue(issue.id, {
 		expect: { version: issue.workflow.version, hash: issue.workflow.hash },
-		workflow: { state: "running", activeRunId: "run-1" },
+		workflow: { state: "running" },
 	});
 
 	expect(updated.workflow.version).toBe(issue.workflow.version + 1);
 	expect(updated.workflow.state).toBe("running");
-	expect(updated.workflow.activeRunId).toBe("run-1");
 	await expect(
 		tracker.updateIssue(issue.id, {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
@@ -37,12 +36,10 @@ it("should ensure that workflow logs are append-only and read back in append ord
 
 	await tracker.appendLog(issue.id, {
 		type: "started",
-		runId: "run-1",
 		message: "implement",
 	});
 	await tracker.appendLog(issue.id, {
 		type: "succeeded",
-		runId: "run-1",
 		message: "ok",
 	});
 

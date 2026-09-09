@@ -1057,25 +1057,21 @@ it("should ensure that explicit attempt start transition effects use active stat
 	});
 
 	expect(envelope.ok).toBe(true);
-	const data = (envelope as { ok: true; data: { run?: { id: string } } }).data;
-	expect(data.run).toBeUndefined();
 	const updated = await tracker.getIssue("item-1");
 	expect(updated.workflow).toMatchObject({
 		kind: "item",
 		state: "running",
 		action: "do",
 	});
-	expect(updated.workflow.activeRunId).toBeUndefined();
 	const log = (await tracker.readLogs("item-1"))[0];
 	expect(log).toMatchObject({
 		type: "command",
 		message: "Applied begin.",
 	});
-	expect(log?.runId).toBeUndefined();
 	expect(log?.message?.startsWith("{")).toBe(false);
 });
 
-it("should ensure that explicit attempt complete transition effects clear any active run id", async () => {
+it("should ensure that explicit attempt complete transition effects leave active states", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1085,7 +1081,6 @@ it("should ensure that explicit attempt complete transition effects clear any ac
 					kind: "item",
 					state: "running",
 					action: "do",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -1102,15 +1097,13 @@ it("should ensure that explicit attempt complete transition effects clear any ac
 		kind: "item",
 		state: "done",
 	});
-	expect(updated.workflow.activeRunId).toBeUndefined();
 	expect((await tracker.readLogs("item-1"))[0]).toMatchObject({
 		type: "command",
 		message: "Applied finish.",
 	});
-	expect((await tracker.readLogs("item-1"))[0]?.runId).toBeUndefined();
 });
 
-it("should ensure that explicit attempt none transition effects apply no run-id side effects", async () => {
+it("should ensure that explicit attempt none transition effects apply only declared workflow changes", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1127,24 +1120,19 @@ it("should ensure that explicit attempt none transition effects apply no run-id 
 	});
 
 	expect(envelope.ok).toBe(true);
-	expect(
-		(envelope as { ok: true; data: { run?: unknown } }).data.run,
-	).toBeUndefined();
 	const updated = await tracker.getIssue("item-1");
 	expect(updated.workflow).toMatchObject({
 		kind: "item",
 		state: "done",
 	});
-	expect(updated.workflow.activeRunId).toBeUndefined();
 	const log = (await tracker.readLogs("item-1"))[0];
 	expect(log).toMatchObject({
 		type: "command",
 		message: "Applied skip.",
 	});
-	expect(log?.runId).toBeUndefined();
 });
 
-it("should ensure that explicit attempt transition effects reject invalid active-state boundaries and ignore run ids", async () => {
+it("should ensure that explicit attempt transition effects reject invalid active-state boundaries", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1159,7 +1147,6 @@ it("should ensure that explicit attempt transition effects reject invalid active
 					kind: "item",
 					state: "running",
 					action: "do",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -1174,27 +1161,21 @@ it("should ensure that explicit attempt transition effects reject invalid active
 		tracker,
 		manifest,
 	});
-	const unsupportedRun = await execute(
-		["item", "finish", "running", "--run", "run-1"],
-		{ tracker, manifest },
-	);
+	const completed = await execute(["item", "finish", "running"], {
+		tracker,
+		manifest,
+	});
 
 	expect(startToInactive.ok ? undefined : startToInactive.error.code).toBe(
 		"INVALID_TRANSITION",
 	);
-	expect(unsupportedRun.ok).toBe(true);
-	expect(
-		unsupportedRun.ok
-			? (unsupportedRun.data as { log: { runId?: string } }).log.runId
-			: undefined,
-	).toBeUndefined();
+	expect(completed.ok).toBe(true);
 	expect(completeToActive.ok ? undefined : completeToActive.error.code).toBe(
 		"INVALID_TRANSITION",
 	);
 	expect(await tracker.readLogs("ready")).toEqual([]);
 	const runningLogs = await tracker.readLogs("running");
 	expect(runningLogs).toEqual([expect.objectContaining({ type: "command" })]);
-	expect(runningLogs[0]?.runId).toBeUndefined();
 });
 
 it("should ensure that generic transition commands reject missing matching transitions", async () => {

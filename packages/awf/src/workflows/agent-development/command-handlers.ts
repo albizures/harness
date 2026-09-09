@@ -278,7 +278,7 @@ async function applyPlanCommand(
 				type: "update-workflow" as const,
 				issue: { id: specId },
 				expect: { version: spec.workflow.version, hash: spec.workflow.hash },
-				workflow: { ...workflowTarget(target), activeRunId: undefined },
+				workflow: workflowTarget(target),
 			},
 			{
 				type: "record-command" as const,

@@ -145,7 +145,6 @@ function isStoredLogLike(value: unknown): boolean {
 		typeof log.sequence === "number" &&
 		typeof log.issueId === "string" &&
 		typeof log.type === "string" &&
-		(log.runId === undefined || typeof log.runId === "string") &&
 		(log.message === undefined || typeof log.message === "string") &&
 		log.payload === undefined
 	);

@@ -73,7 +73,7 @@ it("should ensure that no config loads the bundled agent-workflow manifest", asy
 	});
 });
 
-it("should ensure that explicit agent-development config creates Specs, applies Plans, records Handoffs, runs lifecycle terminals, reports readiness, logs, and tracker state", async () => {
+it("should ensure that explicit agent-development config creates Specs, applies Plans, records Handoffs, executes lifecycle terminals, reports readiness, logs, and tracker state", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "awf-explicit-agent-development-"));
 	await createAgentDevelopmentConfig(cwd);
 
@@ -148,8 +148,6 @@ it("should ensure that explicit agent-development config creates Specs, applies 
 			type: "action_started",
 		},
 	});
-	expect((started as { run?: unknown }).run).toBeUndefined();
-	expect((started as { log: { runId?: string } }).log.runId).toBeUndefined();
 
 	expect(
 		normalizeRunIds(

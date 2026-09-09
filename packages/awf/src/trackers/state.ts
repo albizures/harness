@@ -111,11 +111,11 @@ export class WorkflowTrackerState {
 			issue.body = input.body;
 		}
 		if (input.workflow !== undefined) {
-			const next = {
+			const next = cleanProjectionFields({
 				...issue.workflow,
 				...input.workflow,
 				version: issue.workflow.version + 1,
-			};
+			});
 			validateWorkflowProjection(id, next);
 			issue.workflow = withHash(next);
 		}
@@ -125,7 +125,7 @@ export class WorkflowTrackerState {
 	appendLog(id: string, input: TrackerLog): WorkflowLog {
 		const issue = this.requireHealthyIssue(id);
 		const log = cloneJson({
-			...input,
+			type: input.type,
 			...(input.message === undefined ? {} : { message: input.message }),
 			issueId: id,
 			sequence: issue.logs.length + 1,
@@ -426,13 +426,16 @@ function normalizeIssue(input: CreateIssueInput & { id: string }): StoredIssue {
 		id: input.id,
 		title: input.title,
 		...(input.body === undefined ? {} : { body: input.body }),
-		workflow: withHash({
-			...input.workflow,
-			version: input.workflow.version ?? 1,
-		}),
+		workflow: withHash(
+			cleanProjectionFields({
+				...input.workflow,
+				version: input.workflow.version ?? 1,
+			}),
+		),
 		relationships: normalizeRelationships(input.relationships),
 		logs: (input.logs ?? []).map((log, index) => ({
-			...log,
+			type: log.type,
+			...(log.message === undefined ? {} : { message: log.message }),
 			issueId: input.id,
 			sequence: log.sequence ?? index + 1,
 		})),
@@ -455,6 +458,22 @@ function normalizeRelationships(
 	};
 }
 
+function cleanProjectionFields(
+	projection: Omit<WorkflowProjection, "hash">,
+): Omit<WorkflowProjection, "hash"> {
+	return {
+		kind: projection.kind,
+		state: projection.state,
+		action: projection.action,
+		...(projection.reason === undefined ? {} : { reason: projection.reason }),
+		...(projection.data === undefined ? {} : { data: projection.data }),
+		...(projection.semanticVersion === undefined
+			? {}
+			: { semanticVersion: projection.semanticVersion }),
+		version: projection.version,
+	};
+}
+
 function validateWorkflowProjection(
 	id: string,
 	projection: CreateIssueInput["workflow"],
@@ -469,11 +488,6 @@ function validateWorkflowProjection(
 	if (projection.reason !== undefined && projection.reason === "") {
 		throw new CorruptWorkflowProjectionError(
 			`Issue '${id}' has malformed reason projection data.`,
-		);
-	}
-	if (projection.activeRunId !== undefined && projection.activeRunId === "") {
-		throw new CorruptWorkflowProjectionError(
-			`Issue '${id}' has malformed active run projection data.`,
 		);
 	}
 	if (

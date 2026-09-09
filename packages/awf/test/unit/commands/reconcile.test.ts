@@ -10,14 +10,13 @@ function execute(
 	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
 }
 
-it("should ensure that reconcile does not derive missing active-run diagnostics from logs", async () => {
+it("should ensure that reconcile leaves active workflow issues clean", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Drifted",
 				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
 			},
 		],
 	});
@@ -25,7 +24,6 @@ it("should ensure that reconcile does not derive missing active-run diagnostics 
 	const envelope = await execute(["reconcile", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe(undefined);
 	expect((envelope.ok ? envelope.data : {}) as Record<string, unknown>).toEqual(
 		{
 			id: "123",
@@ -37,7 +35,7 @@ it("should ensure that reconcile does not derive missing active-run diagnostics 
 	);
 });
 
-it("should ensure that reconcile --apply does not repair active run ids on idle states", async () => {
+it("should ensure that reconcile --apply leaves idle states unchanged", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -47,9 +45,7 @@ it("should ensure that reconcile --apply does not repair active run ids on idle 
 					kind: "ticket",
 					state: "ready",
 					action: "implement",
-					activeRunId: "run-1",
 				},
-				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
 			},
 		],
 	});
@@ -57,7 +53,6 @@ it("should ensure that reconcile --apply does not repair active run ids on idle 
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe("run-1");
 	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
@@ -67,17 +62,14 @@ it("should ensure that reconcile --apply does not repair active run ids on idle 
 	).toEqual([]);
 });
 
-it("should ensure that reconcile does not derive ambiguous active-run drift from logs", async () => {
+it("should ensure that reconcile does not derive lifecycle drift from logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Ambiguous",
 				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [
-					{ sequence: 1, type: "action_started", runId: "run-1" },
-					{ sequence: 2, type: "action_started", runId: "run-2" },
-				],
+				logs: [],
 			},
 		],
 	});
@@ -90,7 +82,6 @@ it("should ensure that reconcile does not derive ambiguous active-run drift from
 		state: "running",
 		action: "implement",
 	});
-	expect(updated.workflow.activeRunId).toBeUndefined();
 	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
@@ -107,7 +98,7 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 				id: "logs",
 				title: "Bad logs",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "" }],
+				logs: [{ sequence: 1, type: "" }],
 			},
 		],
 	});

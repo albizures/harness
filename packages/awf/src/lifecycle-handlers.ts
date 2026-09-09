@@ -17,7 +17,6 @@ export type LifecycleTransitionHandlerContext = {
 	tracker: TrackerAdapterPrimitiveReads;
 	event: string;
 	input: JsonValue;
-	runId?: string;
 };
 
 export type LifecycleTransitionHandlerContribution = {

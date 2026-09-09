@@ -104,7 +104,6 @@ it("should ensure that ready returns legal executable work after dependency, con
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-30",
 				},
 			},
 			{
@@ -134,7 +133,6 @@ it("should ensure that ready returns legal executable work after dependency, con
 					kind: "ticket",
 					state: "ready",
 					action: "implement",
-					activeRunId: "run-60",
 				},
 			},
 		],
@@ -449,7 +447,6 @@ it("should ensure that ready excludes candidates blocked by manifest concurrency
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
 			},
 			{
@@ -500,7 +497,6 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-research",
 					data: { subkind: "research" },
 				},
 			},
@@ -598,7 +594,6 @@ it("should ensure that ready treats a missing subkind as the kind default for co
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-work",
 				},
 			},
 			{

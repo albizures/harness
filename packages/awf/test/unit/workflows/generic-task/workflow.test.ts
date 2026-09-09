@@ -851,7 +851,7 @@ it("should create Grilling as collaborative work without offering it as autonomo
 
 	const started = assertSuccess(
 		await execute(["run-command", "start", standalone.issue.id], { tracker }),
-	) as { issue: { workflow: Record<string, unknown> }; run: { id: string } };
+	) as { issue: { workflow: Record<string, unknown> } };
 	expect(started.issue.workflow).toMatchObject({
 		kind: "grilling",
 		state: "in-discussion",
@@ -1100,20 +1100,17 @@ it("should run generic Task start, succeed, fail, recover, and escalate transiti
 	const started = assertSuccess(
 		await execute(["task", "start", created.issue.id], { tracker }),
 	) as {
-		run?: { id: string };
 		issue: { workflow: Record<string, string> };
-		log: { type: string; message: string; runId?: string };
+		log: { type: string; message: string };
 	};
 	expect(started.issue.workflow).toMatchObject({
 		state: "running",
 		action: "work",
 	});
-	expect(started.run).toBeUndefined();
 	expect(started.log).toMatchObject({
 		type: "command",
 		message: "Applied start.",
 	});
-	expect(started.log.runId).toBeUndefined();
 	expect(started.log.message.startsWith("{")).toBe(false);
 
 	expect(

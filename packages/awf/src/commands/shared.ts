@@ -26,7 +26,6 @@ export type WorkflowFields = {
 	state: string;
 	action?: string;
 	reason?: string;
-	activeRunId?: string;
 	data?: Record<string, JsonValue>;
 };
 
@@ -801,44 +800,6 @@ export function policyViolation(
 		"Lifecycle policy does not allow this transition.",
 		{ id, policy, action },
 	);
-}
-
-export function deriveRuns(
-	activeRunId: string | undefined,
-	logs: Array<{ type: string; runId?: string }>,
-): {
-	activeRunId?: string;
-	attempts: Array<{ runId: string; status: string }>;
-} {
-	const attempts = new Map<string, { runId: string; status: string }>();
-	for (const log of logs) {
-		if (log.runId === undefined) {
-			continue;
-		}
-		if (!attempts.has(log.runId)) {
-			attempts.set(log.runId, { runId: log.runId, status: "unknown" });
-		}
-		const attempt = attempts.get(log.runId);
-		if (attempt === undefined) {
-			continue;
-		}
-		if (log.type === "action_started") {
-			attempt.status = "running";
-		}
-		if (log.type === "action_succeeded") {
-			attempt.status = "succeeded";
-		}
-		if (log.type === "action_failed") {
-			attempt.status = "failed";
-		}
-		if (log.type === "human_input_needed") {
-			attempt.status = "paused";
-		}
-	}
-	if (activeRunId !== undefined && !attempts.has(activeRunId)) {
-		attempts.set(activeRunId, { runId: activeRunId, status: "running" });
-	}
-	return { activeRunId, attempts: [...attempts.values()] };
 }
 
 export function stableStringify(value: unknown): string {

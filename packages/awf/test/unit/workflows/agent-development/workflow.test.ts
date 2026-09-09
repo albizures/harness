@@ -242,7 +242,6 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 					kind: "ticket",
 					state: "running",
 					action: "review",
-					activeRunId: "run-review",
 				},
 			},
 			{
@@ -252,7 +251,6 @@ it("should ensure that bundled lifecycle handlers enforce terminal verdicts and 
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-implement",
 				},
 			},
 		],

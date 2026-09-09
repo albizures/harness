@@ -208,27 +208,21 @@ it("should ensure that bundled Ticket lifecycle commands route through manifest 
 		],
 	});
 
-	const started = assertSuccess<{
-		run?: { id: string };
-		log: { message: string; runId?: string };
-	}>(
+	const started = assertSuccess<{ log: { message: string } }>(
 		await execute(["ticket", "start", "t"], {
 			tracker,
 			manifest: agentDevelopmentManifest,
 		}),
 	);
-	expect(started.run).toBeUndefined();
 	expect(started.log).toMatchObject({ message: "Applied start." });
-	expect(started.log.runId).toBeUndefined();
 
-	const failed = assertSuccess<{ log: { message: string; runId?: string } }>(
+	const failed = assertSuccess<{ log: { message: string } }>(
 		await execute(["ticket", "fail", "t"], {
 			tracker,
 			manifest: agentDevelopmentManifest,
 		}),
 	);
 	expect(failed.log.message).toBe("Applied fail.");
-	expect(failed.log.runId).toBeUndefined();
 	expect((await tracker.getIssue("t")).workflow).toMatchObject({
 		state: "ready",
 		action: "implement",

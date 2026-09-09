@@ -89,10 +89,7 @@ export async function startCommand(
 							version: issue.workflow.version,
 							hash: issue.workflow.hash,
 						},
-						workflow: {
-							...workflowTarget(transition.to),
-							activeRunId: undefined,
-						},
+						workflow: workflowTarget(transition.to),
 					},
 					{ type: "record-command", issue: { id }, log },
 				],
@@ -130,7 +127,7 @@ export async function startCommand(
 						version: issue.workflow.version,
 						hash: issue.workflow.hash,
 					},
-					workflow: { ...target, activeRunId: undefined },
+					workflow: target,
 				},
 				{ type: "record-command", issue: { id }, log },
 				...handler.contribution.effects,
@@ -232,7 +229,7 @@ export async function terminalCommand(
 							version: issue.workflow.version,
 							hash: issue.workflow.hash,
 						},
-						workflow: { ...target, activeRunId: undefined },
+						workflow: target,
 					},
 					{ type: "record-command", issue: { id }, log },
 				],
@@ -280,7 +277,7 @@ export async function terminalCommand(
 						version: issue.workflow.version,
 						hash: issue.workflow.hash,
 					},
-					workflow: { ...target, activeRunId: undefined },
+					workflow: target,
 				},
 				{ type: "record-command", issue: { id }, log },
 				...handler.contribution.effects,
@@ -349,8 +346,7 @@ export async function pauseCommand(
 		const issue = await tracker.getIssue(id);
 		if (
 			issue.workflow.state !== "running" ||
-			issue.workflow.action === "none" ||
-			issue.workflow.activeRunId === undefined
+			issue.workflow.action === "none"
 		) {
 			return invalidTransition(id, "pause");
 		}
@@ -372,7 +368,6 @@ export async function pauseCommand(
 						state: "waiting-human",
 						action: "none",
 						reason: undefined,
-						activeRunId: undefined,
 					},
 				},
 				{
@@ -380,7 +375,6 @@ export async function pauseCommand(
 					issue: { id },
 					log: {
 						type: "human_input_needed",
-						runId: issue.workflow.activeRunId,
 						message: stableStringify({
 							event: "pause",
 							input: parseJsonValue(payload.value),
@@ -436,8 +430,7 @@ export async function respondCommand(
 		const issue = await tracker.getIssue(id);
 		if (
 			issue.workflow.state !== "waiting-human" ||
-			issue.workflow.action !== "none" ||
-			issue.workflow.activeRunId !== undefined
+			issue.workflow.action !== "none"
 		) {
 			return invalidTransition(id, "respond");
 		}
@@ -502,7 +495,6 @@ export async function respondCommand(
 							state: "need-human",
 							action: "none",
 							reason: undefined,
-							activeRunId: undefined,
 						},
 					},
 					{ type: "record-command", issue: { id }, log },
@@ -527,7 +519,6 @@ export async function respondCommand(
 						state: "ready",
 						action: resumeAction,
 						reason: undefined,
-						activeRunId: undefined,
 					},
 				},
 				{
@@ -636,7 +627,6 @@ export async function escalateCommand(
 						state: "need-human",
 						action: "none",
 						reason: undefined,
-						activeRunId: undefined,
 					},
 				},
 				{ type: "record-command", issue: { id }, log },
@@ -696,7 +686,6 @@ export async function resumeCommand(
 						state: "ready",
 						action,
 						reason: undefined,
-						activeRunId: undefined,
 					},
 				},
 				{ type: "record-command", issue: { id }, log },

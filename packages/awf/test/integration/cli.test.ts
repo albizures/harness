@@ -528,7 +528,6 @@ export const tracker = createInMemoryTracker({
 			kind: "article",
 			state: "running",
 			action: "publish",
-			activeRunId: "run-1",
 		},
 	}],
 });
@@ -878,7 +877,6 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 							kind: "ticket",
 							state: "running",
 							action: "implement",
-							activeRunId: "run-3",
 						},
 					},
 				]),
@@ -893,7 +891,7 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 	).toEqual(["1"]);
 });
 
-it("should ensure that CLI smoke path does not report or repair missing run ids", () => {
+it("should ensure that CLI smoke path does not report compatibility run ids", () => {
 	const issues = [
 		{
 			id: "42",
@@ -904,7 +902,6 @@ it("should ensure that CLI smoke path does not report or repair missing run ids"
 					sequence: 1,
 					issueId: "42",
 					type: "action_started",
-					runId: "run-42",
 				},
 			],
 		},
@@ -933,7 +930,6 @@ it("should ensure that CLI smoke path does not report or repair missing run ids"
 		},
 	);
 	expect(before.status).toBe(0);
-	expect(JSON.parse(before.stdout).data.log.runId).toBeUndefined();
 
 	const diagnosed = spawnSync(
 		process.execPath,
@@ -971,7 +967,6 @@ it("should ensure that CLI smoke path does not report or repair missing run ids"
 	);
 	expect(applied.status).toBe(0);
 	const repairedIssue = JSON.parse(applied.stdout).data.issue;
-	expect(repairedIssue.workflow.activeRunId).toBeUndefined();
 
 	const after = spawnSync(
 		process.execPath,
@@ -1000,10 +995,9 @@ it("should ensure that CLI smoke path does not report or repair missing run ids"
 		},
 	);
 	expect(after.status).toBe(0);
-	expect(JSON.parse(after.stdout).data.log.runId).toBeUndefined();
 });
 
-it("should ensure that CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
+it("should ensure that CLI smoke path starts and succeeds a workflow action with logs oldest-first", () => {
 	const started = spawnSync(
 		process.execPath,
 		[
@@ -1038,8 +1032,6 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 	expect(started.stderr).toBe("");
 	const startEnvelope = JSON.parse(started.stdout);
 	expect(startEnvelope.ok).toBe(true);
-	expect(startEnvelope.data.run).toBeUndefined();
-	expect(startEnvelope.data.log.runId).toBeUndefined();
 	const succeeded = spawnSync(
 		process.execPath,
 		[

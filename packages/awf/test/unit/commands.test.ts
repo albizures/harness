@@ -81,8 +81,6 @@ it("should ensure that start records one high-level tracker intent instead of lo
 			}
 			expect(record.issue).toEqual({ id: "123" });
 			expect(record.log.type).toBe("action_started");
-			expect(record.log.runId).toBeUndefined();
-			expect(update.workflow.activeRunId).toBeUndefined();
 			return {
 				issues: {
 					"123": {
@@ -118,15 +116,9 @@ function createNoTouchTracker(): Tracker {
 	};
 }
 
-it("should ensure that run arguments are ignored before issue lookup", async () => {
+it("should ensure that lifecycle commands validate before issue lookup", async () => {
 	for (const command of ["start", "succeed", "resume"]) {
-		const envelope = await execute([
-			"run-command",
-			command,
-			"123",
-			"--run",
-			"run-1",
-		]);
+		const envelope = await execute(["run-command", command, "123"]);
 
 		expect(envelope).toEqual(
 			command === "resume"

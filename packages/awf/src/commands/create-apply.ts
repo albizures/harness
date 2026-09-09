@@ -532,25 +532,26 @@ async function transitionGenericWorkflowCommand(
 		}
 		const runEffect = transitionCommand.attempt ?? "none";
 		const workflow = workflowTarget(transition.to);
-		if (runEffect === "start") {
-			if (!manifest.lifecycle?.activeStates?.includes(transition.to.state)) {
-				return failure(
-					"INVALID_TRANSITION",
-					"Transition run start must land in a manifest active state.",
-					{ id: issueId, event: transitionCommand.event },
-				);
-			}
-		} else if (runEffect === "complete") {
-			if (
-				!manifest.lifecycle?.activeStates?.includes(transition.from.state) ||
-				manifest.lifecycle?.activeStates?.includes(transition.to.state)
-			) {
-				return failure(
-					"INVALID_TRANSITION",
-					"Transition run complete must leave a manifest active state.",
-					{ id: issueId, event: transitionCommand.event },
-				);
-			}
+		if (
+			runEffect === "start" &&
+			!manifest.lifecycle?.activeStates?.includes(transition.to.state)
+		) {
+			return failure(
+				"INVALID_TRANSITION",
+				"Transition start attempt must land in a manifest active state.",
+				{ id: issueId, event: transitionCommand.event },
+			);
+		}
+		if (
+			runEffect === "complete" &&
+			(!manifest.lifecycle?.activeStates?.includes(transition.from.state) ||
+				manifest.lifecycle?.activeStates?.includes(transition.to.state))
+		) {
+			return failure(
+				"INVALID_TRANSITION",
+				"Transition complete attempt must leave a manifest active state.",
+				{ id: issueId, event: transitionCommand.event },
+			);
 		}
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
@@ -561,12 +562,7 @@ async function transitionGenericWorkflowCommand(
 						version: issue.workflow.version,
 						hash: issue.workflow.hash,
 					},
-					workflow: {
-						...workflow,
-						...(runEffect === "start" || runEffect === "complete"
-							? { activeRunId: undefined }
-							: {}),
-					},
+					workflow,
 				},
 				{
 					type: "record-command",

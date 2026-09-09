@@ -9,7 +9,6 @@ export type ReconciliationDiagnostic = {
 	severity: "drift" | "corruption";
 	message: string;
 	repair: "safe" | "need-human" | "none";
-	runId?: string;
 	applied?: boolean;
 };
 
@@ -144,7 +143,7 @@ function projectionErrorCode(
 function isWorkflowLogShape(
 	log: unknown,
 	expectedSequence?: number,
-): log is { sequence: number; issueId: string; type: string; runId?: string } {
+): log is { sequence: number; issueId: string; type: string } {
 	return (
 		isRecord(log) &&
 		typeof log.sequence === "number" &&
@@ -153,14 +152,12 @@ function isWorkflowLogShape(
 		typeof log.issueId === "string" &&
 		log.issueId !== "" &&
 		typeof log.type === "string" &&
-		log.type !== "" &&
-		(log.runId === undefined ||
-			(typeof log.runId === "string" && log.runId !== ""))
+		log.type !== ""
 	);
 }
 
 function safeRepairWorkflow(
 	_diagnostic: ReconciliationDiagnostic,
-): { activeRunId?: string } | undefined {
+): Parameters<Tracker["repairIssue"]>[1]["workflow"] | undefined {
 	return undefined;
 }

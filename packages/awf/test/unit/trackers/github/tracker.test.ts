@@ -10,8 +10,6 @@ import {
 } from "../../../../src/trackers/github/index.ts";
 import { CorruptWorkflowProjectionError } from "../../../../src/workflow/projection.ts";
 
-const PROJECT_COMMENT_AND_TWO_LOGS = 3;
-
 it("should project workflow fields to reserved GitHub labels and singleton metadata", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
@@ -44,7 +42,7 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 
 	await tracker.updateIssue(issue.id, {
 		expect: { hash: issue.workflow.hash },
-		workflow: { state: "running", activeRunId: "run-1" },
+		workflow: { state: "running" },
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
@@ -61,7 +59,6 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 			),
 	).toBeTruthy();
 	const updated = await tracker.getIssue("1");
-	expect(updated.workflow.activeRunId).toBe("run-1");
 	expect(updated.workflow.version).toBe(2);
 });
 
@@ -203,22 +200,18 @@ it("should append logs as strict machine comments", async () => {
 		workflow: { kind: "ticket", state: "ready", action: "implement" },
 	});
 
-	await tracker.appendLog(issue.id, { type: "started", runId: "run-1" });
 	await tracker.appendLog(issue.id, {
 		type: "succeeded",
 		message: "ok",
 	});
 
-	expect(api.issue(1).comments.length).toBe(PROJECT_COMMENT_AND_TWO_LOGS);
+	expect(api.issue(1).comments.length).toBe(2);
 	expect(api.issue(1).comments[1]?.body).toBe(
-		'<!-- awf:log v1 agent-development -->\n{"issueId":"1","runId":"run-1","sequence":1,"type":"started"}',
+		'<!-- awf:log v1 agent-development -->\n{"issueId":"1","message":"ok","sequence":1,"type":"succeeded"}',
 	);
 	expect(
 		(await tracker.readLogs(issue.id)).map((log) => [log.sequence, log.type]),
-	).toEqual([
-		[1, "started"],
-		[2, "succeeded"],
-	]);
+	).toEqual([[1, "succeeded"]]);
 });
 
 it("should use native hierarchy and dependency capabilities", async () => {
@@ -412,18 +405,13 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	if (!started.ok) {
 		throw new Error("expected start success");
 	}
-	const startedData = started.data as { run: { id: string } };
-	const runId = startedData.run.id;
 	expect((await execute(["logs", id], { tracker })).ok).toBe(true);
 	expect(
 		(
-			await execute(
-				["run-command", "succeed", id, "--run", runId, "--input", "-"],
-				{
-					tracker,
-					stdin: JSON.stringify({ tickets: [] }),
-				},
-			)
+			await execute(["run-command", "succeed", id, "--input", "-"], {
+				tracker,
+				stdin: JSON.stringify({ tickets: [] }),
+			})
 		).ok,
 	).toBe(true);
 });

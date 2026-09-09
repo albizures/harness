@@ -337,12 +337,22 @@ export function isProjectionMetadata(
 export function isProjection(value: unknown): value is WorkflowProjection {
 	return (
 		isRecord(value) &&
+		Object.keys(value).every((key) =>
+			[
+				"kind",
+				"state",
+				"action",
+				"reason",
+				"data",
+				"semanticVersion",
+				"version",
+				"hash",
+			].includes(key),
+		) &&
 		typeof value.kind === "string" &&
 		typeof value.state === "string" &&
 		typeof value.action === "string" &&
 		(value.reason === undefined || typeof value.reason === "string") &&
-		(value.activeRunId === undefined ||
-			typeof value.activeRunId === "string") &&
 		(value.data === undefined || isJsonRecord(value.data)) &&
 		(value.semanticVersion === undefined ||
 			typeof value.semanticVersion === "string") &&
@@ -354,10 +364,12 @@ export function isProjection(value: unknown): value is WorkflowProjection {
 export function isWorkflowLog(value: unknown): value is WorkflowLog {
 	return (
 		isRecord(value) &&
+		Object.keys(value).every((key) =>
+			["sequence", "issueId", "type", "message"].includes(key),
+		) &&
 		typeof value.sequence === "number" &&
 		typeof value.issueId === "string" &&
 		typeof value.type === "string" &&
-		(value.runId === undefined || typeof value.runId === "string") &&
 		(value.message === undefined || typeof value.message === "string") &&
 		value.payload === undefined
 	);
@@ -382,7 +394,7 @@ export function validateProjectionShape(
 			throw needsReconciliation(id, `malformed ${field} projection data`);
 		}
 	}
-	if (projection.reason === "" || projection.activeRunId === "") {
+	if (projection.reason === "") {
 		throw needsReconciliation(id, "malformed optional projection data");
 	}
 	if (projection.semanticVersion === "") {

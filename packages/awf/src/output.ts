@@ -403,11 +403,6 @@ function formatReady(data: Record<string, JsonValue>): string {
 
 function formatIssueResult(data: Record<string, JsonValue>): string {
 	const lines = [formatIssue(data.issue as Record<string, JsonValue>)];
-	if (isRecord(data.run) && typeof data.run.id === "string") {
-		lines.push(
-			`Run: ${data.run.id}${typeof data.run.status === "string" ? ` (${data.run.status})` : ""}`,
-		);
-	}
 	for (const items of issueReferenceArrays(data)) {
 		lines.push("Created issues:");
 		for (const item of items) {

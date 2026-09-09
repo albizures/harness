@@ -60,7 +60,18 @@ export class GitHubTracker {
 	async createIssue(input: CreateIssueInput): Promise<WorkflowIssue> {
 		await validateGitHubTrackerCapabilities(this.api);
 		const projection = withHash({
-			...input.workflow,
+			kind: input.workflow.kind,
+			state: input.workflow.state,
+			action: input.workflow.action,
+			...(input.workflow.reason === undefined
+				? {}
+				: { reason: input.workflow.reason }),
+			...(input.workflow.data === undefined
+				? {}
+				: { data: input.workflow.data }),
+			...(input.workflow.semanticVersion === undefined
+				? {}
+				: { semanticVersion: input.workflow.semanticVersion }),
 			version: input.workflow.version ?? 1,
 		});
 		const labels = labelsForProjection(this.manifest, projection);
@@ -133,9 +144,16 @@ export class GitHubTracker {
 			});
 		}
 		if (input.workflow !== undefined) {
+			const merged = { ...current.workflow, ...input.workflow };
 			const next = withHash({
-				...current.workflow,
-				...input.workflow,
+				kind: merged.kind,
+				state: merged.state,
+				action: merged.action,
+				...(merged.reason === undefined ? {} : { reason: merged.reason }),
+				...(merged.data === undefined ? {} : { data: merged.data }),
+				...(merged.semanticVersion === undefined
+					? {}
+					: { semanticVersion: merged.semanticVersion }),
 				version: current.workflow.version + 1,
 			});
 			validateProjectionShape(id, next);
@@ -162,7 +180,7 @@ export class GitHubTracker {
 		const number = parseIssueNumber(id);
 		const logs = await this.readLogs(id);
 		const log = cloneJson({
-			...input,
+			type: input.type,
 			...(input.message === undefined ? {} : { message: input.message }),
 			issueId: id,
 			sequence: logs.length + 1,

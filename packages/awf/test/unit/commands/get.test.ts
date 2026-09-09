@@ -37,7 +37,7 @@ it("should ensure that get reads a workflow issue with a stable envelope shape",
 	});
 });
 
-it("should ensure that get returns issue and logs without run reporting", async () => {
+it("should ensure that get returns issue and logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -47,9 +47,8 @@ it("should ensure that get returns issue and logs without run reporting", async 
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-crash",
 				},
-				logs: [{ sequence: 1, type: "action_started", runId: "run-crash" }],
+				logs: [{ sequence: 1, type: "action_started" }],
 			},
 		],
 	});
@@ -57,14 +56,10 @@ it("should ensure that get returns issue and logs without run reporting", async 
 	const envelope = await execute(["get", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect(
-		(envelope as { ok: true; data: Record<string, unknown> }).data,
-	).not.toHaveProperty("runs");
 	expect((envelope as { ok: true; data: { logs: unknown } }).data.logs).toEqual(
 		[
 			{
 				issueId: "123",
-				runId: "run-crash",
 				sequence: 1,
 				type: "action_started",
 			},

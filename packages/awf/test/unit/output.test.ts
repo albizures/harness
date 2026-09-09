@@ -257,7 +257,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
 `);
 });
 
-it("should ensure that text output renders issue, run, created issue, log, and manifest envelopes", () => {
+it("should ensure that text output renders issue, created issue, log, and manifest envelopes", () => {
 	expect(
 		serializeCliOutput(
 			{
@@ -268,15 +268,12 @@ it("should ensure that text output renders issue, run, created issue, log, and m
 						title: "Spec",
 						workflow: { kind: "spec", state: "running", action: "plan" },
 					},
-					run: { id: "run-1", status: "active" },
 					tickets: [{ id: "2", title: "Ticket" }],
 				},
 			},
 			"text",
 		),
-	).toBe(
-		"1 Spec [spec/running/plan]\nRun: run-1 (active)\nCreated issues:\n  2 Ticket\n",
-	);
+	).toBe("1 Spec [spec/running/plan]\nCreated issues:\n  2 Ticket\n");
 
 	expect(
 		serializeCliOutput(
@@ -304,7 +301,7 @@ it("should ensure that text output renders issue, run, created issue, log, and m
 			{
 				ok: true,
 				data: {
-					logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+					logs: [{ sequence: 1, type: "action_started" }],
 				},
 			},
 			"text",

@@ -93,9 +93,8 @@ for (const family of trackerFamilies) {
 				workflow: {
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
-				log: { type: "action_started", runId: "run-1" },
+				log: { type: "action_started" },
 			});
 			await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
@@ -103,7 +102,7 @@ for (const family of trackerFamilies) {
 					hash: started.issue.workflow.hash,
 				},
 				workflow: { state: "ready", action: "implement" },
-				log: { type: "action_resumed", runId: "run-1" },
+				log: { type: "action_succeeded" },
 			});
 
 			expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject(
@@ -115,7 +114,7 @@ for (const family of trackerFamilies) {
 			);
 			expect(
 				(await tracker.readLogs(created.issue.id)).map((log) => log.type),
-			).toEqual(["workflow_created", "action_started", "action_resumed"]);
+			).toEqual(["workflow_created", "action_started", "action_succeeded"]);
 		});
 	});
 
@@ -256,9 +255,8 @@ for (const family of trackerFamilies) {
 				workflow: {
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
-				log: { type: "action_started", runId: "run-1" },
+				log: { type: "action_started" },
 			});
 
 			const completed = await applyWorkflowAndLog(tracker, created.issue.id, {
@@ -269,16 +267,14 @@ for (const family of trackerFamilies) {
 				workflow: {
 					state: "done",
 					action: "none",
-					activeRunId: undefined,
 				},
-				log: { type: "action_succeeded", runId: "run-1" },
+				log: { type: "action_succeeded" },
 			});
 
 			expect(completed.issue.workflow).toMatchObject({
 				state: "done",
 				action: "none",
 			});
-			expect(completed.issue.workflow).not.toHaveProperty("activeRunId");
 			expect(completed.issue).not.toHaveProperty("artifacts");
 			expect(completed.issue).not.toHaveProperty("changes");
 			expect(
@@ -304,7 +300,7 @@ for (const family of trackerFamilies) {
 								version: ticket.issue.workflow.version,
 								hash: ticket.issue.workflow.hash,
 							},
-							workflow: { state: "running", activeRunId: "run-1" },
+							workflow: { state: "running" },
 						},
 					],
 				});
@@ -324,7 +320,7 @@ for (const family of trackerFamilies) {
 							{
 								type: "record-command",
 								issue: { id: ticket.issue.id },
-								log: { type: "action_started", runId: "run-2" },
+								log: { type: "workflow_applied" },
 							},
 						],
 					}),

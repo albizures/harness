@@ -91,12 +91,12 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 						version: ticket.workflow.version,
 						hash: ticket.workflow.hash,
 					},
-					workflow: { state: "running", activeRunId: "run-1" },
+					workflow: { state: "running" },
 				},
 				{
 					type: "record-command",
 					issue: { id: ticket.id },
-					log: { type: "action_started", runId: "run-1" },
+					log: { type: "action_started" },
 				},
 			],
 		});
@@ -111,12 +111,12 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 						version: startedIssue.workflow.version,
 						hash: startedIssue.workflow.hash,
 					},
-					workflow: { state: "done", action: "none", activeRunId: undefined },
+					workflow: { state: "done", action: "none" },
 				},
 				{
 					type: "record-command",
 					issue: { id: ticket.id },
-					log: { type: "action_succeeded", runId: "run-1" },
+					log: { type: "action_succeeded" },
 				},
 			],
 		});

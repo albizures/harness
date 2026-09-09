@@ -5,7 +5,6 @@ export type WorkflowProjection = {
 	state: string;
 	action: string;
 	reason?: string;
-	activeRunId?: string;
 	data?: Record<string, JsonValue>;
 	semanticVersion?: string;
 	version: number;

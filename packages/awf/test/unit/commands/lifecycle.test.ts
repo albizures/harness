@@ -57,20 +57,16 @@ it("should ensure that start moves a ready issue to running and appends an actio
 		envelope as {
 			ok: true;
 			data: {
-				issue: { workflow: { state: string; activeRunId?: string } };
-				run?: { id: string };
+				issue: { workflow: { state: string } };
 			};
 		}
 	).data;
 	expect(data.issue.workflow.state).toBe("running");
-	expect(data.issue.workflow.activeRunId).toBeUndefined();
-	expect(data.run).toBeUndefined();
 	const logs = await tracker.readLogs("123");
 	expect(logs.map((log) => log.type)).toEqual(["action_started"]);
-	expect(logs[0]?.runId).toBeUndefined();
 });
 
-it("should ensure that pause moves a running issue to waiting-human, clears its active run, and logs pause metadata", async () => {
+it("should ensure that pause moves a running issue to waiting-human and logs pause metadata", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -80,7 +76,6 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -102,12 +97,9 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 		envelope as {
 			ok: true;
 			data: {
-				issue: {
-					workflow: { state: string; action: string; activeRunId?: string };
-				};
+				issue: { workflow: Record<string, unknown> };
 				log: {
 					type: string;
-					runId?: string;
 					message?: string;
 				};
 			};
@@ -117,9 +109,7 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 		state: "waiting-human",
 		action: "none",
 	});
-	expect(data.issue.workflow.activeRunId).toBeUndefined();
 	expect(data.log.type).toBe("human_input_needed");
-	expect(data.log.runId).toBe("run-1");
 	expect(JSON.parse(data.log.message ?? "{}")).toMatchObject({
 		event: "pause",
 		pausedAction: "implement",
@@ -129,11 +119,9 @@ it("should ensure that pause moves a running issue to waiting-human, clears its 
 	const getEnvelope = await execute(["get", "123"], { tracker });
 	const getData = (getEnvelope as { ok: true; data: Record<string, unknown> })
 		.data;
-	expect(getData).not.toHaveProperty("runs");
 	expect(getData.logs).toEqual([
 		{
 			issueId: "123",
-			runId: "run-1",
 			sequence: 1,
 			type: "human_input_needed",
 			message: data.log.message,
@@ -152,7 +140,6 @@ it("should ensure that respond resumes a waiting-human issue to a valid ready ac
 					{
 						sequence: 1,
 						type: "human_input_needed",
-						runId: "run-1",
 						message: JSON.stringify({
 							event: "pause",
 							pausedAction: "implement",
@@ -242,7 +229,6 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 					{
 						sequence: 1,
 						type: "human_input_needed",
-						runId: "run-1",
 						message: JSON.stringify({
 							event: "pause",
 							pausedAction: "not-ready",
@@ -358,7 +344,6 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 					kind: "task",
 					state: "running",
 					action: "do",
-					activeRunId: "run-1",
 				},
 				relationships: { parent: "goal" },
 			},
@@ -379,7 +364,7 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 	}).toEqual({ kind: "goal", state: "ready", action: "verify" });
 });
 
-it("should ensure that succeed applies the manifest terminal transition for the active run", async () => {
+it("should ensure that succeed applies the manifest terminal transition", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -389,7 +374,6 @@ it("should ensure that succeed applies the manifest terminal transition for the 
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -408,15 +392,12 @@ it("should ensure that succeed applies the manifest terminal transition for the 
 		envelope as {
 			ok: true;
 			data: {
-				issue: {
-					workflow: { state: string; action: string; activeRunId?: string };
-				};
+				issue: { workflow: { state: string; action: string } };
 			};
 		}
 	).data;
 	expect(data.issue.workflow.state).toBe("ready");
 	expect(data.issue.workflow.action).toBe("review");
-	expect(data.issue.workflow.activeRunId).toBe(undefined);
 	expect((await tracker.readLogs("123")).map((log) => log.type)).toEqual([
 		"action_succeeded",
 	]);
@@ -432,7 +413,6 @@ it("should ensure that failed running actions retry the same ready action by def
 					kind: "ticket",
 					state: "running",
 					action: "merge",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -514,7 +494,6 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
 			},
 			{
@@ -595,7 +574,6 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 					kind: "ticket",
 					state: "running",
 					action: "merge",
-					activeRunId: "run-1",
 				},
 			},
 			{
@@ -649,7 +627,7 @@ it("should ensure that bundled workflow vocabulary and transitions do not includ
 	).toBeTruthy();
 });
 
-it("should ensure that lifecycle commands reject invalid manifest transitions and ignore run options", async () => {
+it("should ensure that lifecycle commands reject invalid manifest transitions", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -664,7 +642,6 @@ it("should ensure that lifecycle commands reject invalid manifest transitions an
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -680,18 +657,13 @@ it("should ensure that lifecycle commands reject invalid manifest transitions an
 		},
 	});
 	const succeeded = await execute(
-		["run-command", "succeed", "running", "--run", "other", "--input", "-"],
+		["run-command", "succeed", "running", "--input", "-"],
 		{
 			tracker,
 			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
 		},
 	);
 	expect(succeeded.ok).toBe(true);
-	expect(
-		succeeded.ok
-			? (succeeded.data as { log: { runId?: string } }).log.runId
-			: undefined,
-	).toBeUndefined();
 });
 
 it("should ensure that terminal commands for inactive issues use invalid-transition behavior", async () => {
@@ -777,7 +749,6 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 					kind: "work",
 					state: "running",
 					action: "do",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -817,7 +788,6 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 		state: "done",
 		action: "none",
 	});
-	expect(updatedWorkflow.activeRunId).toBeUndefined();
 	expect(await tracker.getIssue("123")).not.toHaveProperty("artifacts");
 	expect(
 		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
@@ -877,7 +847,6 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 					kind: "work",
 					state: "running",
 					action: "do",
-					activeRunId: "run-1",
 				},
 			},
 		],
@@ -904,7 +873,6 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 		kind: "work",
 		state: "running",
 		action: "do",
-		activeRunId: "run-1",
 	});
 });
 
@@ -918,7 +886,6 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-retry",
 				},
 			},
 			{
