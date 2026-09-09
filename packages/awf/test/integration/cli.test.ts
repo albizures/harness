@@ -287,14 +287,14 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 			expect.objectContaining({
 				id: "ticket-start",
 				cli: expect.objectContaining({ usage: "awf ticket start <issue>" }),
-				transition: { event: "start", run: "start" },
+				transition: { event: "start", attempt: "start" },
 			}),
 			expect.objectContaining({
 				id: "ticket-fail",
 				cli: expect.objectContaining({
 					usage: "awf ticket fail <issue> --run <run>",
 				}),
-				transition: { event: "fail", run: "complete" },
+				transition: { event: "fail", attempt: "complete" },
 			}),
 		]),
 	);

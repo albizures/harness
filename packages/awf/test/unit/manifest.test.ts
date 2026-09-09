@@ -83,6 +83,99 @@ it("should reject loaded TypeScript workflow manifests with Zod-owned shape erro
 	);
 });
 
+it("should ensure that defineManifest accepts Workflow attempt transition effects", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "attempt-effects", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["implement", "none"],
+			reasons: [],
+			events: ["start", "succeed"],
+		},
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "ready", action: "implement" },
+						event: "start",
+						to: { state: "running", action: "implement" },
+					},
+					{
+						from: { state: "running", action: "implement" },
+						event: "succeed",
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "start",
+				target: { kind: "ticket", state: "ready", action: "implement" },
+				transition: { event: "start", attempt: "start" },
+			},
+			{
+				id: "succeed",
+				target: { kind: "ticket", state: "running", action: "implement" },
+				transition: { event: "succeed", attempt: "complete" },
+			},
+		],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+	expect(manifest.commands.map((command) => command.transition)).toEqual([
+		{ event: "start", attempt: "start" },
+		{ event: "succeed", attempt: "complete" },
+	]);
+});
+
+it("should reject legacy manifest transition run effects", () => {
+	const issues = validateManifest({
+		version: "v1",
+		workflow: { id: "legacy-run-effects", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["implement"],
+			reasons: [],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "ready", action: "implement" },
+						event: "start",
+						to: { state: "running", action: "implement" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "start",
+				target: { kind: "ticket", state: "ready", action: "implement" },
+				transition: { event: "start", run: "start" },
+			},
+		],
+	});
+
+	const messages = issues
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/transition\.run/);
+	expect(messages).not.toMatch(/Command transition run effect/);
+});
+
 it("should ensure that defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",

@@ -45,7 +45,7 @@ export type ManifestCommand = {
 		action?: Identifier;
 		reason?: Identifier;
 	};
-	transition?: { event: Identifier; run?: "none" | "start" | "complete" };
+	transition?: { event: Identifier; attempt?: "none" | "start" | "complete" };
 	input?: PayloadSchema;
 };
 
@@ -307,7 +307,7 @@ export const workflowManifestStructuralSchema = z.strictObject({
 			transition: z
 				.strictObject({
 					event: z.string(),
-					run: z.enum(["none", "start", "complete"]).optional(),
+					attempt: z.enum(["none", "start", "complete"]).optional(),
 				})
 				.optional(),
 			input: payloadZodSchemaSchema.optional(),

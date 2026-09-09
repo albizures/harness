@@ -1,6 +1,6 @@
 # Manifest-owned AWF lifecycle
 
-AWF lifecycle command entry points, human-intervention states, transition events, run effects, and workflow-specific log text are owned by Workflow definitions rather than by the generic runtime. The runtime keeps generic manifest execution mechanics, tracker effects, creation support, active/terminal state validation, and hidden command-id invocation, while bundled workflows declare their own commands such as start, fail, recovery, and manual escalation.
+AWF lifecycle command entry points, human-intervention states, transition events, attempt effects, and workflow-specific log text are owned by Workflow definitions rather than by the generic runtime. The runtime keeps generic manifest execution mechanics, tracker effects, creation support, active/terminal state validation, and hidden command-id invocation, while bundled workflows declare their own commands such as start, fail, recovery, and manual escalation.
 
 ## Consequences
 

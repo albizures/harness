@@ -21,12 +21,12 @@ A TypeScript module loaded by the AWF CLI that may export both the declarative W
 _Avoid_: executable manifest, manifest hooks
 
 **Manifest command**:
-A Workflow definition declaration for an invokable workflow operation, including its CLI shape, target workflow filter, optional transition event, optional run effect, and input schema. Manifest command CLI verbs are workflow vocabulary rather than a fixed runtime list such as only create or apply; target filters may match kind, state, action, or reason, command input is accepted only when declared, hidden generic command invocation by stable command id is available as an automation escape hatch.
+A Workflow definition declaration for an invokable workflow operation, including its CLI shape, target workflow filter, optional transition event, optional attempt effect, and input schema. Manifest command CLI verbs are workflow vocabulary rather than a fixed runtime list such as only create or apply; target filters may match kind, state, action, or reason, command input is accepted only when declared, hidden generic command invocation by stable command id is available as an automation escape hatch.
 _Avoid_: built-in lifecycle command, hidden command route, generic resume command
 
 **Transition command**:
-A Manifest command that applies a manifest-declared transition, optionally through generic handlerless execution with a plain default log message. Its availability is determined by the command target filter and matching transition existence, and run-completing transition commands require a caller-provided run id matching the active run.
-_Avoid_: built-in start command, built-in fail command, hidden event inference
+A Manifest command that applies a manifest-declared transition, optionally through generic handlerless execution with a plain default log message. Its availability is determined by the command target filter and matching transition existence; completing transitions require the issue to currently be in a manifest active state.
+_Avoid_: built-in start command, built-in fail command, hidden event inference, run-token command
 
 **Command handler**:
 A Workflow module runtime binding keyed by a declarative Workflow command id that implements command-specific behavior when AWF's generic behavior is not enough. A normal Command handler receives AWF-parsed and manifest-validated input plus a constrained facade of AWF primitives; compatibility Command handlers may opt into owning raw CLI/input parsing for legacy command envelopes. It is not part of the Workflow definition.
@@ -37,8 +37,8 @@ A Workflow module runtime binding for semantic work around a manifest-declared l
 _Avoid_: runtime lifecycle command, bundled terminal special case, raw tracker hook
 
 **Transition application helper**:
-A runtime utility that applies a manifest-declared transition by producing ordinary workflow update and log effects. It receives workflow-specific plain log text from the caller and explicit run-effect intent from the manifest command, generates run ids for `start`, requires a matching active run id for `complete`, validates start transitions into active states and complete transitions from active states into idle states, and does not infer lifecycle policy from hard-coded state names.
-_Avoid_: built-in lifecycle command, hidden transition policy
+A runtime utility that applies a manifest-declared transition by producing ordinary workflow update and log effects. It receives workflow-specific plain log text from the caller and explicit attempt-effect intent from the manifest command, validates start transitions into active states and complete transitions from active states into idle states, and does not infer lifecycle policy from hard-coded state names.
+_Avoid_: built-in lifecycle command, hidden transition policy, run-id validator
 
 **Readiness policy**:
 A declarative Workflow definition rule that decides which Workflow issues are executable now, including workflow-field filters, named relationship filters, dependency gates, active-run gates, concurrency gates, and relationship-driven gates such as waiting for children to finish. It is evaluated by the Workflow runtime and should remain explainable without executing workflow-module code.
@@ -89,21 +89,21 @@ A project-specific freeform routing label on a Task that indicates what kind of 
 _Avoid_: hard-coded action, agent implementation config
 
 **Current workflow fields**:
-The explicit tracker-backed fields on a Workflow issue that describe its durable workflow position, such as current kind, state, action, active run id, and workflow semantic version. They are authoritative for workflow commands; logs are used to validate and diagnose drift, not to silently replace these fields during execution. Manifest-declared active-state semantics validate whether an active run id is allowed for the current state before and after workflow updates, and issues whose workflow semantic version does not match the loaded manifest require migration or reconciliation before normal commands proceed.
-_Avoid_: derived state, cached labels, durable dependency-blocked state
+The explicit tracker-backed fields on a Workflow issue that describe its durable workflow position, such as current kind, state, action, and workflow semantic version. They are authoritative for workflow commands; logs are used to validate and diagnose drift, not to silently replace these fields during execution. Manifest-declared active-state semantics validate whether the current state can have active work, and issues whose workflow semantic version does not match the loaded manifest require migration or reconciliation before normal commands proceed.
+_Avoid_: derived state, cached labels, durable dependency-blocked state, active run token
 
 **Workflow log**:
-An append-only text record for a Workflow issue with minimal runtime metadata such as sequence, issue id, and run id. Workflow logs are authoritative for history, audit, attempt derivation, and drift diagnosis, but workflow-specific lifecycle meaning belongs in current workflow fields and manifest transitions rather than special log types.
-_Avoid_: regular comment, mutable history, structured command output
+An append-only text record for a Workflow issue with minimal runtime metadata such as sequence and issue id. Workflow logs are authoritative for history, audit, attempt derivation, and drift diagnosis, but workflow-specific lifecycle meaning belongs in current workflow fields and manifest transitions rather than special log types.
+_Avoid_: regular comment, mutable history, structured command output, run-token record
 
-**Workflow run**:
-One execution attempt for a Workflow issue's current action. A Workflow issue carries at most one active run id in its current workflow fields; workflows that use run effects must declare active-state semantics, and terminal outcome history is plain log text rather than a runtime-enforced immutable record.
-_Avoid_: loose attempt, task session, event-sourced run ledger
+**Workflow attempt**:
+One execution attempt for a Workflow issue's current action, inferred from ordered start and end logs rather than identified by a runtime token. Workflows that use attempt effects must declare active-state semantics, and terminal outcome history is plain log text rather than a runtime-enforced immutable record.
+_Avoid_: workflow run, run id, task session, event-sourced run ledger
 
 **Terminal state**:
 A Workflow manifest-declared state where the workflow regards an issue as complete or no longer progressing through ordinary readiness. Terminal semantics are workflow-owned metadata rather than inferred from state names or absence of outgoing transitions; terminal states are excluded from readiness, but may still have explicit manifest-declared outgoing transitions.
 _Avoid_: hard-coded done state, implicit terminal state
 
 **Workflow reconciliation**:
-A Workflow runtime operation that compares current workflow fields, workflow logs, and tracker projections to detect drift or corruption. It is read-only by default; applying reconciliation performs only deterministic safe repairs, such as clearing an active run id from an idle state, and otherwise reports unresolved drift without choosing a workflow-specific human-intervention state.
+A Workflow runtime operation that compares current workflow fields, workflow logs, and tracker projections to detect drift or corruption. It is read-only by default; applying reconciliation performs only deterministic safe repairs and otherwise reports unresolved drift without choosing a workflow-specific human-intervention state.
 _Avoid_: automatic state rebuild, silent repair, built-in escalation

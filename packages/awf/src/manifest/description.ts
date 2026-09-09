@@ -55,7 +55,7 @@ export type WorkflowDescriptionV1 = {
 	commands: Array<{
 		id: string;
 		target: { kind: string; state?: string; action?: string; reason?: string };
-		transition?: { event: string; run?: "none" | "start" | "complete" };
+		transition?: { event: string; attempt?: "none" | "start" | "complete" };
 		cli?: {
 			verb: string;
 			target: string;
@@ -109,7 +109,7 @@ export type WorkflowDescriptionV1 = {
 
 export const workflowDescriptionScopeNotes = [
 	"Describes the loaded Workflow manifest only.",
-	"Does not inspect Tracker API state, issue counts, active runs, actual dependencies, runtime handlers, config paths, raw Zod schemas, or parsed schema structures.",
+	"Does not inspect Tracker API state, issue counts, active attempts, actual dependencies, runtime handlers, config paths, raw Zod schemas, or parsed schema structures.",
 ] as const;
 
 export function describeWorkflow(
@@ -177,7 +177,7 @@ export function manifestCommandUsage(command: ManifestCommand): string {
 		return `awf create ${cli.target} --input <file|->`;
 	}
 	const route = `awf ${cli.verb} ${cli.target}`;
-	if (command.transition?.run === "complete") {
+	if (command.transition?.attempt === "complete") {
 		return `${route} <issue> --run <run>`;
 	}
 	if (command.transition !== undefined) {

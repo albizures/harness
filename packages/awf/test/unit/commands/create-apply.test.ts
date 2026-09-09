@@ -1040,7 +1040,7 @@ it("should ensure that generic transition commands apply matching manifest trans
 	});
 });
 
-it("should ensure that explicit run start transition effects store an active run id and log plain text run metadata", async () => {
+it("should ensure that explicit attempt start transition effects store an active run id and log plain text attempt metadata", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1074,7 +1074,7 @@ it("should ensure that explicit run start transition effects store an active run
 	expect(log?.message?.startsWith("{")).toBe(false);
 });
 
-it("should ensure that explicit run complete transition effects require and clear the active run id", async () => {
+it("should ensure that explicit attempt complete transition effects require and clear the active run id", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1112,7 +1112,7 @@ it("should ensure that explicit run complete transition effects require and clea
 	});
 });
 
-it("should ensure that explicit run none transition effects apply no run-id side effects", async () => {
+it("should ensure that explicit attempt none transition effects apply no run-id side effects", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1146,7 +1146,7 @@ it("should ensure that explicit run none transition effects apply no run-id side
 	expect(log?.runId).toBeUndefined();
 });
 
-it("should ensure that explicit run transition effects reject invalid active-state boundaries and mismatched run ids", async () => {
+it("should ensure that explicit attempt transition effects reject invalid active-state boundaries and mismatched run ids", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -1632,31 +1632,31 @@ function transitionRunEffectsManifest(): WorkflowManifest {
 				id: "item-begin",
 				cli: { verb: "item", target: "begin" },
 				target: { kind: "item", state: "ready", action: "review" },
-				transition: { event: "begin", run: "start" },
+				transition: { event: "begin", attempt: "start" },
 			},
 			{
 				id: "item-bad-begin",
 				cli: { verb: "item", target: "bad-begin" },
 				target: { kind: "item", state: "ready", action: "review" },
-				transition: { event: "skip", run: "start" },
+				transition: { event: "skip", attempt: "start" },
 			},
 			{
 				id: "item-finish",
 				cli: { verb: "item", target: "finish" },
 				target: { kind: "item", state: "running", action: "do" },
-				transition: { event: "finish", run: "complete" },
+				transition: { event: "finish", attempt: "complete" },
 			},
 			{
 				id: "item-loop",
 				cli: { verb: "item", target: "loop" },
 				target: { kind: "item", state: "running", action: "do" },
-				transition: { event: "loop", run: "complete" },
+				transition: { event: "loop", attempt: "complete" },
 			},
 			{
 				id: "item-skip",
 				cli: { verb: "item", target: "skip" },
 				target: { kind: "item", state: "ready", action: "review" },
-				transition: { event: "skip", run: "none" },
+				transition: { event: "skip", attempt: "none" },
 			},
 		],
 	};

@@ -951,15 +951,15 @@ function validateCommand(
 			);
 		}
 		if (
-			value.transition.run !== undefined &&
-			value.transition.run !== "none" &&
-			value.transition.run !== "start" &&
-			value.transition.run !== "complete"
+			value.transition.attempt !== undefined &&
+			value.transition.attempt !== "none" &&
+			value.transition.attempt !== "start" &&
+			value.transition.attempt !== "complete"
 		) {
 			issue(
 				issues,
-				`${path}.transition.run`,
-				"Command transition run effect must be none, start, or complete.",
+				`${path}.transition.attempt`,
+				"Command transition attempt effect must be none, start, or complete.",
 			);
 		}
 	}
@@ -1089,10 +1089,7 @@ function rejectHookKeys(
 	}
 	for (const [key, item] of Object.entries(value)) {
 		if (
-			["hook", "hooks", "handler", "handlers", "run", "execute"].includes(
-				key,
-			) &&
-			!(key === "run" && path.endsWith(".transition"))
+			["hook", "hooks", "handler", "handlers", "run", "execute"].includes(key)
 		) {
 			issue(
 				issues,

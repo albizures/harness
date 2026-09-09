@@ -534,7 +534,7 @@ async function transitionGenericWorkflowCommand(
 		if (transition === undefined) {
 			return invalidTransition(issueId, transitionCommand.event);
 		}
-		const runEffect = transitionCommand.run ?? "none";
+		const runEffect = transitionCommand.attempt ?? "none";
 		const workflow = workflowTarget(transition.to);
 		let nextRunId: string | undefined;
 		if (runEffect === "start") {

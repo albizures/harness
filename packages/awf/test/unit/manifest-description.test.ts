@@ -201,7 +201,7 @@ describe("when building a Workflow description DTO", () => {
 		expect(serialized).not.toContain("_def");
 		expect(description.scopeNotes).toEqual([
 			"Describes the loaded Workflow manifest only.",
-			"Does not inspect Tracker API state, issue counts, active runs, actual dependencies, runtime handlers, config paths, raw Zod schemas, or parsed schema structures.",
+			"Does not inspect Tracker API state, issue counts, active attempts, actual dependencies, runtime handlers, config paths, raw Zod schemas, or parsed schema structures.",
 		]);
 	});
 });
