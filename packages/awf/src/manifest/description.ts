@@ -166,13 +166,13 @@ export function describeWorkflow(
 type ManifestCli = NonNullable<WorkflowManifest["commands"][number]["cli"]>;
 
 export function manifestCommandUsage(cli: ManifestCli): string {
-	if (cli.verb === "apply") {
-		return `awf apply ${cli.target} <issue> --input <file|->`;
+	if (cli.verb === "create") {
+		if (cli.source === true) {
+			return `awf create ${cli.target} --source <issue> --input <file|->`;
+		}
+		return `awf create ${cli.target} --input <file|->`;
 	}
-	if (cli.source === true) {
-		return `awf create ${cli.target} --source <issue> --input <file|->`;
-	}
-	return `awf create ${cli.target} --input <file|->`;
+	return `awf ${cli.verb} ${cli.target} <issue> --input <file|->`;
 }
 
 function describeVocabulary(manifest: WorkflowManifest) {

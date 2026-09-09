@@ -77,7 +77,7 @@ it("should export a valid explicit bundled workflow module", () => {
 			"none",
 		],
 		reasons: [],
-		events: ["start", "succeed", "fail", "pause", "respond"],
+		events: ["start", "succeed", "fail", "recover", "escalate"],
 	});
 	expect(genericTaskManifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",
@@ -99,10 +99,11 @@ it("should export a valid explicit bundled workflow module", () => {
 		"start",
 		"succeed",
 		"fail",
-		"pause",
-		"respond",
 		"escalate",
-		"resume",
+		"task-start",
+		"task-fail",
+		"task-recover",
+		"task-escalate",
 	]);
 });
 
@@ -120,6 +121,16 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
 			"awf create grilling --input <file|->",
+			"awf task start <issue> --input <file|->",
+			"awf task fail <issue> --input <file|->",
+			"awf task recover <issue> --input <file|->",
+			"awf task escalate <issue> --input <file|->",
+		]),
+	);
+	expect(help.commands.map((command) => command.usage)).not.toEqual(
+		expect.arrayContaining([
+			"awf pause <issue> --input <file|->",
+			"awf respond <issue> --input <file|->",
 		]),
 	);
 	expect(help.readiness.filters).toEqual([
@@ -164,6 +175,10 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
 		"awf create grilling --input <file|->",
+		"awf task start <issue> --input <file|->",
+		"awf task fail <issue> --input <file|->",
+		"awf task recover <issue> --input <file|->",
+		"awf task escalate <issue> --input <file|->",
 	]);
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });
@@ -1175,7 +1190,7 @@ it("should reject missing generic Task create fields before tracker mutation", a
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-it("should run generic Task basic start, succeed, and fail transitions", async () => {
+it("should run generic Task start, succeed, fail, recover, and escalate transitions through manifest commands", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -1202,15 +1217,22 @@ it("should run generic Task basic start, succeed, and fail transitions", async (
 	});
 
 	const started = assertSuccess(
-		await execute(["run-command", "start", created.issue.id], { tracker }),
+		await execute(["task", "start", created.issue.id], { tracker }),
 	) as {
 		run: { id: string };
 		issue: { workflow: Record<string, string> };
+		log: { type: string; message: string; runId?: string };
 	};
 	expect(started.issue.workflow).toMatchObject({
 		state: "running",
 		action: "work",
 	});
+	expect(started.log).toMatchObject({
+		type: "command",
+		runId: started.run.id,
+		message: `Applied start; started run ${started.run.id}.`,
+	});
+	expect(started.log.message.startsWith("{")).toBe(false);
 
 	expect(
 		assertSuccess(
@@ -1241,26 +1263,57 @@ it("should run generic Task basic start, succeed, and fail transitions", async (
 		}),
 	) as { issue: { id: string } };
 	const failedRun = assertSuccess(
-		await execute(["run-command", "start", failedTask.issue.id], { tracker }),
+		await execute(["task", "start", failedTask.issue.id], { tracker }),
 	) as {
 		run: { id: string };
 	};
+	const failed = assertSuccess(
+		await execute(
+			["task", "fail", failedTask.issue.id, "--run", failedRun.run.id],
+			{
+				tracker,
+			},
+		),
+	) as {
+		issue: { workflow: Record<string, string> };
+		log: { message: string };
+	};
+	expect(failed).toMatchObject({
+		issue: { workflow: { state: "need-human", action: "none" } },
+		log: { message: `Applied fail; completed run ${failedRun.run.id}.` },
+	});
+	expect(failed.log.message.startsWith("{")).toBe(false);
+
+	const recovered = assertSuccess(
+		await execute(["task", "recover", failedTask.issue.id], { tracker }),
+	) as { issue: { workflow: Record<string, string> } };
+	expect(recovered).toMatchObject({
+		issue: { workflow: { state: "ready", action: "work" } },
+	});
+
+	const escalationRun = assertSuccess(
+		await execute(["run-command", "start", failedTask.issue.id], { tracker }),
+	) as { run: { id: string } };
 	expect(
 		assertSuccess(
 			await execute(
 				[
-					"run-command",
-					"fail",
+					"task",
+					"escalate",
 					failedTask.issue.id,
 					"--run",
-					failedRun.run.id,
-					"--input",
-					"-",
+					escalationRun.run.id,
 				],
-				{ tracker, stdin: "{}" },
+				{ tracker },
 			),
-		) as { issue: { workflow: Record<string, string> } },
+		) as {
+			issue: { workflow: Record<string, string> };
+			log: { message: string };
+		},
 	).toMatchObject({
 		issue: { workflow: { state: "need-human", action: "none" } },
+		log: {
+			message: `Applied escalate; completed run ${escalationRun.run.id}.`,
+		},
 	});
 });

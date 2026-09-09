@@ -135,6 +135,9 @@ async function manifestLifecycleCommand(
 	if (args[0] !== "run-command") {
 		return undefined;
 	}
+	if (command.transition !== undefined) {
+		return undefined;
+	}
 	const shifted = [command.id, ...args.slice(2)];
 	if (command.id === "start") {
 		return startCommand(shifted[1], tracker, manifest);

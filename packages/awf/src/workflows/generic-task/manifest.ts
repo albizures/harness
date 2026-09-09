@@ -17,7 +17,7 @@ const actions = [
 	"merge",
 	"none",
 ] as const;
-const events = ["start", "succeed", "fail", "pause", "respond"] as const;
+const events = ["start", "succeed", "fail", "recover", "escalate"] as const;
 const taskSubkinds = ["work", "research", "prototype"] as const;
 
 const createInput = z
@@ -109,6 +109,16 @@ const workTransitions = [
 	{
 		from: { state: "running", action: "work" },
 		event: "fail",
+		to: { state: "need-human", action: "none" },
+	},
+	{
+		from: { state: "need-human", action: "none" },
+		event: "recover",
+		to: { state: "ready", action: "work" },
+	},
+	{
+		from: { state: "running", action: "work" },
+		event: "escalate",
 		to: { state: "need-human", action: "none" },
 	},
 ] as const;
@@ -287,9 +297,30 @@ export const genericTaskManifest = defineManifest({
 		{ id: "start", target: { kind: "task", action: "work" } },
 		{ id: "succeed", target: { kind: "task", action: "work" } },
 		{ id: "fail", target: { kind: "task", action: "work" } },
-		{ id: "pause", target: { kind: "task", action: "work" } },
-		{ id: "respond", target: { kind: "task", action: "work" } },
 		{ id: "escalate", target: { kind: "task", action: "work" } },
-		{ id: "resume", target: { kind: "task", action: "work" } },
+		{
+			id: "task-start",
+			cli: { verb: "task", target: "start" },
+			target: { kind: "task", state: "ready", action: "work" },
+			transition: { event: "start", run: "start" },
+		},
+		{
+			id: "task-fail",
+			cli: { verb: "task", target: "fail" },
+			target: { kind: "task", state: "running", action: "work" },
+			transition: { event: "fail", run: "complete" },
+		},
+		{
+			id: "task-recover",
+			cli: { verb: "task", target: "recover" },
+			target: { kind: "task", state: "need-human", action: "none" },
+			transition: { event: "recover", run: "none" },
+		},
+		{
+			id: "task-escalate",
+			cli: { verb: "task", target: "escalate" },
+			target: { kind: "task", state: "running", action: "work" },
+			transition: { event: "escalate", run: "complete" },
+		},
 	],
 });
