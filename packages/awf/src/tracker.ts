@@ -19,38 +19,14 @@ export type TrackerCreateWorkflowIssueIntent = CreateIssueInput & {
 	initialLog?: TrackerLog;
 };
 
-export type TrackerStartRunIntent = {
-	expect: TrackerProjectionExpectation;
-	runId: string;
-	workflow: TrackerWorkflow;
-	log: TrackerLog;
-};
-
-export type TrackerCompleteRunIntent = {
-	expect: TrackerProjectionExpectation;
-	runId: string;
-	workflow: TrackerWorkflow;
-	log: TrackerLog;
-};
-
 export type TrackerRecordCommandIntent = {
 	log: TrackerLog;
 };
 
-export type TrackerAdvanceWorkflowIntent = {
+export type TrackerRepairIssueIntent = {
 	expect: TrackerProjectionExpectation;
 	workflow: TrackerWorkflow;
 };
-
-export type TrackerRepairIssueIntent = TrackerAdvanceWorkflowIntent;
-
-export type TrackerEscalateIntent = {
-	expect: TrackerProjectionExpectation;
-	workflow: TrackerWorkflow;
-	log: TrackerLog;
-};
-
-export type TrackerResumeIntent = TrackerEscalateIntent;
 
 export type TrackerRelationshipIntent =
 	| { type: "add-child"; parentId: string; childId: string }
@@ -115,22 +91,6 @@ export type Tracker = {
 	createWorkflowIssue: (
 		input: TrackerCreateWorkflowIssueIntent,
 	) => Promise<{ issue: WorkflowIssue; log?: WorkflowLog }>;
-	startRun: (
-		id: string,
-		input: TrackerStartRunIntent,
-	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
-	completeRun: (
-		id: string,
-		input: TrackerCompleteRunIntent,
-	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
-	escalateWorkflow: (
-		id: string,
-		input: TrackerEscalateIntent,
-	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
-	resumeWorkflow: (
-		id: string,
-		input: TrackerResumeIntent,
-	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
 	changeRelationship: (input: TrackerRelationshipIntent) => Promise<void>;
 	applyWorkflowEffects: (
 		input: TrackerApplyWorkflowEffectsIntent,
@@ -139,10 +99,6 @@ export type Tracker = {
 		id: string,
 		input: TrackerRecordCommandIntent,
 	) => Promise<{ issue: WorkflowIssue; log: WorkflowLog }>;
-	advanceWorkflow: (
-		id: string,
-		input: TrackerAdvanceWorkflowIntent,
-	) => Promise<WorkflowIssue>;
 	repairIssue: (
 		id: string,
 		input: TrackerRepairIssueIntent,

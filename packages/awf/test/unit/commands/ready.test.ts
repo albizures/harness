@@ -826,14 +826,9 @@ function createNoTouchTracker(): Tracker {
 	};
 	return {
 		createWorkflowIssue: touched,
-		startRun: touched,
-		completeRun: touched,
-		escalateWorkflow: touched,
-		resumeWorkflow: touched,
 		changeRelationship: touched,
 		applyWorkflowEffects: touched,
 		recordCommand: touched,
-		advanceWorkflow: touched,
 		repairIssue: touched,
 		getIssue: touched,
 		listIssues: touched,

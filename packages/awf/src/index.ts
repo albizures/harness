@@ -89,14 +89,10 @@ export {
 	type TrackerAdapterPrimitiveReads,
 	type TrackerApplyWorkflowEffectsIntent,
 	type TrackerApplyWorkflowEffectsResult,
-	type TrackerCompleteRunIntent,
 	type TrackerCreateWorkflowIssueIntent,
-	type TrackerEscalateIntent,
 	type TrackerProjectionExpectation,
 	type TrackerRelationshipIntent,
 	type TrackerWorkflowEffect,
-	type TrackerResumeIntent,
-	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
 } from "./tracker.ts";
 export { WorkflowLog } from "./workflow/log.ts";

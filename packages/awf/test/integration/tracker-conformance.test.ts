@@ -6,6 +6,9 @@ import {
 	NeedReconciliationError,
 	type TrackerAdapter,
 	type TrackerCreateWorkflowIssueIntent,
+	type TrackerLog,
+	type TrackerProjectionExpectation,
+	type TrackerWorkflow,
 } from "../../src/tracker.ts";
 import { createFileSystemTracker } from "../../src/trackers/filesystem.ts";
 import { createInMemoryTracker } from "../../src/trackers/memory.ts";
@@ -22,6 +25,29 @@ type TrackerFamily = {
 		seed?: Array<TrackerCreateWorkflowIssueIntent>,
 	) => Promise<TrackerFixture>;
 };
+
+async function applyWorkflowAndLog(
+	tracker: TrackerAdapter,
+	id: string,
+	input: {
+		expect: TrackerProjectionExpectation;
+		workflow: TrackerWorkflow;
+		log: TrackerLog;
+	},
+): Promise<{ issue: Awaited<ReturnType<TrackerAdapter["getIssue"]>> }> {
+	const result = await tracker.applyWorkflowEffects({
+		effects: [
+			{
+				type: "update-workflow",
+				issue: { id },
+				expect: input.expect,
+				workflow: input.workflow,
+			},
+			{ type: "record-command", issue: { id }, log: input.log },
+		],
+	});
+	return { issue: result.issues[id] ?? (await tracker.getIssue(id)) };
+}
 
 const trackerFamilies: Array<TrackerFamily> = [
 	{
@@ -59,16 +85,19 @@ for (const family of trackerFamilies) {
 				initialLog: { type: "workflow_created", message: "test" },
 			});
 
-			const started = await tracker.startRun(created.issue.id, {
+			const started = await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: created.issue.workflow.version,
 					hash: created.issue.workflow.hash,
 				},
-				runId: "run-1",
-				workflow: { state: "running", action: "implement" },
+				workflow: {
+					state: "running",
+					action: "implement",
+					activeRunId: "run-1",
+				},
 				log: { type: "action_started", runId: "run-1" },
 			});
-			await tracker.resumeWorkflow(created.issue.id, {
+			await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: started.issue.workflow.version,
 					hash: started.issue.workflow.hash,
@@ -219,23 +248,29 @@ for (const family of trackerFamilies) {
 				title: "Conformance ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
 			});
-			const started = await tracker.startRun(created.issue.id, {
+			const started = await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: created.issue.workflow.version,
 					hash: created.issue.workflow.hash,
 				},
-				runId: "run-1",
-				workflow: { state: "running", action: "implement" },
+				workflow: {
+					state: "running",
+					action: "implement",
+					activeRunId: "run-1",
+				},
 				log: { type: "action_started", runId: "run-1" },
 			});
 
-			const completed = await tracker.completeRun(created.issue.id, {
+			const completed = await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: started.issue.workflow.version,
 					hash: started.issue.workflow.hash,
 				},
-				runId: "run-1",
-				workflow: { state: "done", action: "none" },
+				workflow: {
+					state: "done",
+					action: "none",
+					activeRunId: undefined,
+				},
 				log: { type: "action_succeeded", runId: "run-1" },
 			});
 
@@ -260,23 +295,38 @@ for (const family of trackerFamilies) {
 					title: "Conflict ticket",
 					workflow: { kind: "ticket", state: "ready", action: "implement" },
 				});
-				await tracker.advanceWorkflow(ticket.issue.id, {
-					expect: {
-						version: ticket.issue.workflow.version,
-						hash: ticket.issue.workflow.hash,
-					},
-					workflow: { state: "running", activeRunId: "run-1" },
+				await tracker.applyWorkflowEffects({
+					effects: [
+						{
+							type: "update-workflow",
+							issue: { id: ticket.issue.id },
+							expect: {
+								version: ticket.issue.workflow.version,
+								hash: ticket.issue.workflow.hash,
+							},
+							workflow: { state: "running", activeRunId: "run-1" },
+						},
+					],
 				});
 
 				await expect(
-					tracker.startRun(ticket.issue.id, {
-						expect: {
-							version: ticket.issue.workflow.version,
-							hash: ticket.issue.workflow.hash,
-						},
-						runId: "run-2",
-						workflow: { state: "running" },
-						log: { type: "action_started", runId: "run-2" },
+					tracker.applyWorkflowEffects({
+						effects: [
+							{
+								type: "update-workflow",
+								issue: { id: ticket.issue.id },
+								expect: {
+									version: ticket.issue.workflow.version,
+									hash: ticket.issue.workflow.hash,
+								},
+								workflow: { state: "running" },
+							},
+							{
+								type: "record-command",
+								issue: { id: ticket.issue.id },
+								log: { type: "action_started", runId: "run-2" },
+							},
+						],
 					}),
 				).rejects.toThrow(ProjectionConflictError);
 

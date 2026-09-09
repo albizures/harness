@@ -6,16 +6,11 @@ import {
 	type TrackerAdapterPrimitiveOperations,
 	type TrackerApplyWorkflowEffectsIntent,
 	type TrackerApplyWorkflowEffectsResult,
-	type TrackerCompleteRunIntent,
 	type TrackerCreateWorkflowIssueIntent,
-	type TrackerEscalateIntent,
 	type TrackerIssueInspection,
 	type TrackerRecordCommandIntent,
 	type TrackerRelationshipIntent,
-	type TrackerAdvanceWorkflowIntent,
 	type TrackerRepairIssueIntent,
-	type TrackerResumeIntent,
-	type TrackerStartRunIntent,
 	type TrackerVerificationHooks,
 } from "./tracker.ts";
 import {
@@ -80,70 +75,12 @@ class PrimitiveTrackerIntentModule implements Tracker {
 		};
 	}
 
-	async startRun(
-		id: string,
-		input: TrackerStartRunIntent,
-	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const issue = await this.primitives.updateIssue(id, {
-			expect: input.expect,
-			workflow: { ...input.workflow, activeRunId: input.runId },
-		});
-		const log = await this.primitives.appendLog(id, input.log);
-		return { issue, log };
-	}
-
-	async completeRun(
-		id: string,
-		input: TrackerCompleteRunIntent,
-	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		await this.primitives.updateIssue(id, {
-			expect: input.expect,
-			workflow: { ...input.workflow, activeRunId: undefined },
-		});
-		const log = await this.primitives.appendLog(id, input.log);
-		return {
-			issue: await this.primitives.getIssue(id),
-			log,
-		};
-	}
-
-	async escalateWorkflow(
-		id: string,
-		input: TrackerEscalateIntent,
-	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const issue = await this.primitives.updateIssue(id, {
-			expect: input.expect,
-			workflow: input.workflow,
-		});
-		const log = await this.primitives.appendLog(id, input.log);
-		return { issue, log };
-	}
-
-	async resumeWorkflow(
-		id: string,
-		input: TrackerResumeIntent,
-	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
-		const issue = await this.primitives.updateIssue(id, {
-			expect: input.expect,
-			workflow: input.workflow,
-		});
-		const log = await this.primitives.appendLog(id, input.log);
-		return { issue, log };
-	}
-
 	async recordCommand(
 		id: string,
 		input: TrackerRecordCommandIntent,
 	): Promise<{ issue: WorkflowIssue; log: WorkflowLog }> {
 		const log = await this.primitives.appendLog(id, input.log);
 		return { issue: await this.primitives.getIssue(id), log };
-	}
-
-	async advanceWorkflow(
-		id: string,
-		input: TrackerAdvanceWorkflowIntent,
-	): Promise<WorkflowIssue> {
-		return this.primitives.updateIssue(id, input);
 	}
 
 	async repairIssue(

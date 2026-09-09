@@ -1018,9 +1018,6 @@ it("should ensure that generic transition commands apply matching manifest trans
 		recordCommand: async () => {
 			throw new Error("runtime must use generic workflow effects");
 		},
-		advanceWorkflow: async () => {
-			throw new Error("runtime must not advance workflow directly");
-		},
 	});
 
 	const envelope = await execute(["item", "finish", "item-1"], {
@@ -1695,12 +1692,7 @@ function failingTracker(
 ): TrackerAdapter {
 	const tracker: TrackerAdapter = {
 		createWorkflowIssue: base.createWorkflowIssue.bind(base),
-		startRun: base.startRun.bind(base),
-		completeRun: base.completeRun.bind(base),
 		recordCommand: base.recordCommand.bind(base),
-		escalateWorkflow: base.escalateWorkflow.bind(base),
-		resumeWorkflow: base.resumeWorkflow.bind(base),
-		advanceWorkflow: base.advanceWorkflow.bind(base),
 		repairIssue: base.repairIssue.bind(base),
 		changeRelationship: base.changeRelationship.bind(base),
 		applyWorkflowEffects: base.applyWorkflowEffects.bind(base),
@@ -1725,14 +1717,9 @@ function createNoTouchTracker(): Tracker {
 	};
 	return {
 		createWorkflowIssue: touched,
-		startRun: touched,
-		completeRun: touched,
-		escalateWorkflow: touched,
-		resumeWorkflow: touched,
 		changeRelationship: touched,
 		applyWorkflowEffects: touched,
 		recordCommand: touched,
-		advanceWorkflow: touched,
 		repairIssue: touched,
 		getIssue: touched,
 		listIssues: touched,

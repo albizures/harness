@@ -82,23 +82,43 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 			issueId: ticket.id,
 			blockedById: blocker.id,
 		});
-		const started = await tracker.startRun(ticket.id, {
-			expect: {
-				version: ticket.workflow.version,
-				hash: ticket.workflow.hash,
-			},
-			runId: "run-1",
-			workflow: { state: "running", activeRunId: "run-1" },
-			log: { type: "action_started", runId: "run-1" },
+		const started = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: ticket.id },
+					expect: {
+						version: ticket.workflow.version,
+						hash: ticket.workflow.hash,
+					},
+					workflow: { state: "running", activeRunId: "run-1" },
+				},
+				{
+					type: "record-command",
+					issue: { id: ticket.id },
+					log: { type: "action_started", runId: "run-1" },
+				},
+			],
 		});
-		await tracker.completeRun(ticket.id, {
-			expect: {
-				version: started.issue.workflow.version,
-				hash: started.issue.workflow.hash,
-			},
-			runId: "run-1",
-			workflow: { state: "done", action: "none" },
-			log: { type: "action_succeeded", runId: "run-1" },
+		const startedIssue =
+			started.issues[ticket.id] ?? (await tracker.getIssue(ticket.id));
+		await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: ticket.id },
+					expect: {
+						version: startedIssue.workflow.version,
+						hash: startedIssue.workflow.hash,
+					},
+					workflow: { state: "done", action: "none", activeRunId: undefined },
+				},
+				{
+					type: "record-command",
+					issue: { id: ticket.id },
+					log: { type: "action_succeeded", runId: "run-1" },
+				},
+			],
 		});
 
 		const reloaded = createFileSystemTracker({ path: file });

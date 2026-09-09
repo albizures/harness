@@ -298,29 +298,9 @@ function workflowVersionTracker(
 				),
 			});
 		},
-		startRun: async (id, input) => {
-			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
-			return tracker.startRun(id, input);
-		},
-		completeRun: async (id, input) => {
-			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
-			return tracker.completeRun(id, input);
-		},
-		escalateWorkflow: async (id, input) => {
-			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
-			return tracker.escalateWorkflow(id, input);
-		},
-		resumeWorkflow: async (id, input) => {
-			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
-			return tracker.resumeWorkflow(id, input);
-		},
 		recordCommand: async (id, input) => {
 			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
 			return tracker.recordCommand(id, input);
-		},
-		advanceWorkflow: async (id, input) => {
-			await validateIssueWorkflowSemanticVersion(tracker, id, semanticVersion);
-			return tracker.advanceWorkflow(id, input);
 		},
 		changeRelationship: async (input) => {
 			if (input.type === "add-child" || input.type === "remove-child") {
@@ -705,13 +685,23 @@ export async function applyGenericWorkflowCommand(
 		) {
 			return invalidTransition(issueId, command.id);
 		}
-		const result = await tracker.recordCommand(issueId, {
-			log: {
-				type: `${command.id}_applied`,
-				message: stableStringify({ input: payload.data }),
-			},
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "record-command",
+					issue: { id: issueId },
+					log: {
+						type: `${command.id}_applied`,
+						message: stableStringify({ input: payload.data }),
+					},
+				},
+			],
 		});
-		const data = { issue: result.issue, log: result.log, outcome: "APPLIED" };
+		const data = {
+			issue: result.issues[issueId] ?? (await tracker.getIssue(issueId)),
+			log: result.logs[0],
+			outcome: "APPLIED",
+		};
 		return success(data);
 	} catch (error) {
 		return lifecycleError(issueId, error);

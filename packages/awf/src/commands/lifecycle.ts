@@ -77,23 +77,33 @@ export async function startCommand(
 		}
 		const runId = `run-${randomUUID()}`;
 		if (lifecycleHandlers === undefined) {
-			const { issue: updated, log } = await tracker.startRun(id, {
-				expect: {
-					version: issue.workflow.version,
-					hash: issue.workflow.hash,
-				},
+			const log: TrackerLog = {
+				type: "action_started",
 				runId,
-				workflow: workflowTarget(transition.to),
-				log: {
-					type: "action_started",
-					runId,
-					message: stableStringify({
-						event: "start",
-						to: cleanTransitionTarget(transition.to),
-					}),
-				},
+				message: stableStringify({
+					event: "start",
+					to: cleanTransitionTarget(transition.to),
+				}),
+			};
+			const result = await tracker.applyWorkflowEffects({
+				effects: [
+					{
+						type: "update-workflow",
+						issue: { id },
+						expect: {
+							version: issue.workflow.version,
+							hash: issue.workflow.hash,
+						},
+						workflow: { ...workflowTarget(transition.to), activeRunId: runId },
+					},
+					{ type: "record-command", issue: { id }, log },
+				],
 			});
-			return success({ issue: updated, run: { id: runId }, log });
+			return success({
+				issue: result.issues[id] ?? (await tracker.getIssue(id)),
+				run: { id: runId },
+				log: result.logs[0],
+			});
 		}
 		const handler = await runLifecycleTransitionHandler(lifecycleHandlers, {
 			manifest,
@@ -252,33 +262,40 @@ export async function terminalCommand(
 			return invalidTransition(id, event);
 		}
 		if (lifecycleHandlers === undefined) {
-			const result = await tracker.completeRun(id, {
-				expect: {
-					version: issue.workflow.version,
-					hash: issue.workflow.hash,
-				},
+			const log: TrackerLog = {
+				type: logType,
 				runId,
-				workflow: target,
-				log: {
-					type: logType,
-					runId,
-					message: stableStringify({
-						event,
-						...(parsedInput === undefined ? {} : { input: terminalInput }),
-						to: target,
-					}),
-				},
+				message: stableStringify({
+					event,
+					...(parsedInput === undefined ? {} : { input: terminalInput }),
+					to: target,
+				}),
+			};
+			const result = await tracker.applyWorkflowEffects({
+				effects: [
+					{
+						type: "update-workflow",
+						issue: { id },
+						expect: {
+							version: issue.workflow.version,
+							hash: issue.workflow.hash,
+						},
+						workflow: { ...target, activeRunId: undefined },
+					},
+					{ type: "record-command", issue: { id }, log },
+				],
 			});
+			const updated = result.issues[id] ?? (await tracker.getIssue(id));
 			await progressRelationshipsAfterLifecycleTransition(
 				tracker,
 				manifest,
 				issue,
-				result.issue,
+				updated,
 			);
 			return success({
-				issue: result.issue,
+				issue: updated,
 				run: { id: runId, status: event },
-				log: result.log,
+				log: result.logs[0],
 			});
 		}
 		const handler =
@@ -485,21 +502,25 @@ export async function respondCommand(
 		const resumeAction = input.resumeAction ?? pause?.resumeAction;
 		const from = cleanCurrentTarget(issue.workflow);
 		if (!input.sufficient) {
-			const { issue: updated, log } = await tracker.recordCommand(id, {
-				log: {
-					type: "human_response_received",
-					message: stableStringify({
-						event: "respond",
-						input: parseJsonValue(payload.value),
-						from,
-						to: from,
-						response: input.response,
-						sufficient: false,
-						...(resumeAction === undefined ? {} : { resumeAction }),
-					}),
-				},
+			const log: TrackerLog = {
+				type: "human_response_received",
+				message: stableStringify({
+					event: "respond",
+					input: parseJsonValue(payload.value),
+					from,
+					to: from,
+					response: input.response,
+					sufficient: false,
+					...(resumeAction === undefined ? {} : { resumeAction }),
+				}),
+			};
+			const result = await tracker.applyWorkflowEffects({
+				effects: [{ type: "record-command", issue: { id }, log }],
 			});
-			return success({ issue: updated, log });
+			return success({
+				issue: result.issues[id] ?? (await tracker.getIssue(id)),
+				log: result.logs[0],
+			});
 		}
 		if (
 			resumeAction === undefined ||
@@ -507,32 +528,42 @@ export async function respondCommand(
 			!resumePolicyAllows(manifest, issue.workflow.kind, resumeAction)
 		) {
 			const to = { state: "need-human", action: "none" };
-			const { issue: updated, log } = await tracker.escalateWorkflow(id, {
-				expect: {
-					version: issue.workflow.version,
-					hash: issue.workflow.hash,
-				},
-				workflow: {
-					state: "need-human",
-					action: "none",
-					reason: undefined,
-					activeRunId: undefined,
-				},
-				log: {
-					type: "human_intervention_needed",
-					message: stableStringify({
-						event: "respond",
-						input: parseJsonValue(payload.value),
-						from,
-						to,
-						response: input.response,
-						sufficient: true,
-						...(resumeAction === undefined ? {} : { resumeAction }),
-						...(pause?.reason === undefined ? {} : { reason: pause.reason }),
-					}),
-				},
+			const log: TrackerLog = {
+				type: "human_intervention_needed",
+				message: stableStringify({
+					event: "respond",
+					input: parseJsonValue(payload.value),
+					from,
+					to,
+					response: input.response,
+					sufficient: true,
+					...(resumeAction === undefined ? {} : { resumeAction }),
+					...(pause?.reason === undefined ? {} : { reason: pause.reason }),
+				}),
+			};
+			const result = await tracker.applyWorkflowEffects({
+				effects: [
+					{
+						type: "update-workflow",
+						issue: { id },
+						expect: {
+							version: issue.workflow.version,
+							hash: issue.workflow.hash,
+						},
+						workflow: {
+							state: "need-human",
+							action: "none",
+							reason: undefined,
+							activeRunId: undefined,
+						},
+					},
+					{ type: "record-command", issue: { id }, log },
+				],
 			});
-			return success({ issue: updated, log });
+			return success({
+				issue: result.issues[id] ?? (await tracker.getIssue(id)),
+				log: result.logs[0],
+			});
 		}
 		const to = { state: "ready", action: resumeAction };
 		const result = await tracker.applyWorkflowEffects({
@@ -654,25 +685,38 @@ export async function escalateCommand(
 		}
 		const from = cleanCurrentTarget(issue.workflow);
 		const to = { state: "need-human", action: "none" };
-		const { issue: updated, log } = await tracker.escalateWorkflow(id, {
-			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
-			workflow: {
-				state: "need-human",
-				action: "none",
-				reason: undefined,
-				activeRunId: undefined,
-			},
-			log: {
-				type: "human_intervention_needed",
-				message: stableStringify({
-					event: "escalate",
-					input: parseJsonValue(parsedInput.data),
-					from,
-					to,
-				}),
-			},
+		const log: TrackerLog = {
+			type: "human_intervention_needed",
+			message: stableStringify({
+				event: "escalate",
+				input: parseJsonValue(parsedInput.data),
+				from,
+				to,
+			}),
+		};
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: {
+						state: "need-human",
+						action: "none",
+						reason: undefined,
+						activeRunId: undefined,
+					},
+				},
+				{ type: "record-command", issue: { id }, log },
+			],
 		});
-		return success({ issue: updated, log });
+		return success({
+			issue: result.issues[id] ?? (await tracker.getIssue(id)),
+			log: result.logs[0],
+		});
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
@@ -703,23 +747,36 @@ export async function resumeCommand(
 		) {
 			return policyViolation(id, "resume", action);
 		}
-		const { issue: updated, log } = await tracker.resumeWorkflow(id, {
-			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
-			workflow: {
-				state: "ready",
-				action,
-				reason: undefined,
-				activeRunId: undefined,
-			},
-			log: {
-				type: "action_resumed",
-				message: stableStringify({
-					event: "resume",
-					to: { state: "ready", action },
-				}),
-			},
+		const log: TrackerLog = {
+			type: "action_resumed",
+			message: stableStringify({
+				event: "resume",
+				to: { state: "ready", action },
+			}),
+		};
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: {
+						state: "ready",
+						action,
+						reason: undefined,
+						activeRunId: undefined,
+					},
+				},
+				{ type: "record-command", issue: { id }, log },
+			],
 		});
-		return success({ issue: updated, log });
+		return success({
+			issue: result.issues[id] ?? (await tracker.getIssue(id)),
+			log: result.logs[0],
+		});
 	} catch (error) {
 		return lifecycleError(id, error);
 	}

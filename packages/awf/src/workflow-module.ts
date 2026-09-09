@@ -173,13 +173,8 @@ function isTracker(value: unknown): value is Tracker {
 	return [
 		"createWorkflowIssue",
 		"recordCommand",
-		"startRun",
-		"completeRun",
-		"escalateWorkflow",
-		"resumeWorkflow",
 		"changeRelationship",
 		"applyWorkflowEffects",
-		"advanceWorkflow",
 		"repairIssue",
 		"getIssue",
 		"listIssues",

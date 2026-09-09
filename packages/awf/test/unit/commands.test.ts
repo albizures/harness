@@ -59,27 +59,38 @@ it("should ensure that start records one high-level tracker intent instead of lo
 			expect(id).toBe("123");
 			return issue;
 		},
-		startRun: async (id, input) => {
-			intents.push("startRun");
-			expect(id).toBe("123");
-			expect(input.expect).toEqual({
+		applyWorkflowEffects: async ({ effects }) => {
+			intents.push("applyWorkflowEffects");
+			expect(effects).toHaveLength(2);
+			const update = effects[0];
+			const record = effects[1];
+			expect(update.type).toBe("update-workflow");
+			if (update.type !== "update-workflow") {
+				throw new Error("expected workflow update");
+			}
+			expect(update.issue).toEqual({ id: "123" });
+			expect(update.expect).toEqual({
 				version: issue.workflow.version,
 				hash: issue.workflow.hash,
 			});
-			expect(input.workflow.state).toBe("running");
-			expect(input.workflow.action).toBe("implement");
-			expect(input.log.type).toBe("action_started");
-			expect(input.log.runId).toBe(input.runId);
+			expect(update.workflow.state).toBe("running");
+			expect(update.workflow.action).toBe("implement");
+			expect(record.type).toBe("record-command");
+			if (record.type !== "record-command") {
+				throw new Error("expected command record");
+			}
+			expect(record.issue).toEqual({ id: "123" });
+			expect(record.log.type).toBe("action_started");
+			expect(record.log.runId).toBe(update.workflow.activeRunId);
 			return {
-				issue: {
-					...issue,
-					workflow: {
-						...issue.workflow,
-						state: "running",
-						activeRunId: input.runId,
+				issues: {
+					"123": {
+						...issue,
+						workflow: { ...issue.workflow, ...update.workflow },
 					},
 				},
-				log: { ...input.log, issueId: id, sequence: 1 },
+				createdIssues: [],
+				logs: [{ ...record.log, issueId: "123", sequence: 1 }],
 			};
 		},
 	};
@@ -87,7 +98,7 @@ it("should ensure that start records one high-level tracker intent instead of lo
 	const envelope = await execute(["run-command", "start", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect(intents).toEqual(["startRun"]);
+	expect(intents).toEqual(["applyWorkflowEffects"]);
 });
 
 function createNoTouchTracker(): Tracker {
@@ -96,14 +107,9 @@ function createNoTouchTracker(): Tracker {
 	};
 	return {
 		createWorkflowIssue: touched,
-		startRun: touched,
-		completeRun: touched,
-		escalateWorkflow: touched,
-		resumeWorkflow: touched,
 		changeRelationship: touched,
 		applyWorkflowEffects: touched,
 		recordCommand: touched,
-		advanceWorkflow: touched,
 		repairIssue: touched,
 		getIssue: touched,
 		listIssues: touched,

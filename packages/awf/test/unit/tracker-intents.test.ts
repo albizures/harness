@@ -4,7 +4,7 @@ import {
 	createTrackerIntentModule,
 	type TrackerIntentModulePrimitives,
 } from "../../src/tracker-intents.ts";
-import { NeedReconciliationError } from "../../src/tracker.ts";
+import { NeedReconciliationError, type Tracker } from "../../src/tracker.ts";
 import { WorkflowTrackerState } from "../../src/trackers/state.ts";
 import type {
 	CreateIssueInput,
@@ -12,6 +12,18 @@ import type {
 	WorkflowIssue,
 } from "../../src/workflow/issue.ts";
 import type { WorkflowLog } from "../../src/workflow/log.ts";
+
+type RemovedLifecycleIntentKeys = Extract<
+	keyof Tracker,
+	| "startRun"
+	| "completeRun"
+	| "escalateWorkflow"
+	| "resumeWorkflow"
+	| "advanceWorkflow"
+>;
+type AssertPublicTrackerLifecycleIntentsRemoved<T extends never> = T;
+type _PublicTrackerLifecycleIntentContract =
+	AssertPublicTrackerLifecycleIntentsRemoved<RemovedLifecycleIntentKeys>;
 
 it("should ensure that tracker adapter composition exposes public intents without adapter-owned choreography", async () => {
 	const state = new WorkflowTrackerState();
@@ -404,132 +416,15 @@ it("should ensure that tracker intent module composes basic workflow mutation in
 	);
 
 	await tracker.recordCommand("1", { log: { type: "command" } });
-	await tracker.advanceWorkflow("1", {
-		expect: { version: 1 },
-		workflow: { state: "running", action: "implement" },
-	});
 	await tracker.repairIssue("1", {
 		expect: { version: 1 },
 		workflow: { state: "ready", action: "none" },
-	});
-	await tracker.escalateWorkflow("1", {
-		expect: { version: 1 },
-		workflow: { state: "waiting", action: "none" },
-		log: { type: "escalated" },
-	});
-	await tracker.resumeWorkflow("1", {
-		expect: { version: 1 },
-		workflow: { state: "ready", action: "implement" },
-		log: { type: "resumed" },
 	});
 
 	expect(calls).toEqual([
 		"appendLog:1:command",
 		"getIssue:1",
-		"updateIssue:1:running:implement",
 		"updateIssue:1:ready:none",
-		"updateIssue:1:waiting:none",
-		"appendLog:1:escalated",
-		"updateIssue:1:ready:implement",
-		"appendLog:1:resumed",
-	]);
-});
-
-it("should ensure that tracker intent module starts runs by projecting the active run before logging", async () => {
-	const calls: Array<string> = [];
-	const issue = workflowIssue({ id: "1", title: "Ticket" });
-	const tracker = createTrackerIntentModule(
-		primitiveStubs({
-			updateIssue: async (id, input) => {
-				calls.push(
-					`updateIssue:${id}:${input.workflow?.state}:${input.workflow?.action}:${input.workflow?.activeRunId}`,
-				);
-				return {
-					...issue,
-					workflow: { ...issue.workflow, ...input.workflow },
-				};
-			},
-			appendLog: async (id, input) => {
-				calls.push(`appendLog:${id}:${input.type}:${input.runId}`);
-				return { ...input, issueId: id, sequence: 1 };
-			},
-		}),
-	);
-
-	const result = await tracker.startRun("1", {
-		expect: { version: 1, hash: "hash-1" },
-		runId: "run-1",
-		workflow: { state: "running", action: "implement" },
-		log: { type: "run-started", runId: "run-1" },
-	});
-
-	expect(result.issue.workflow).toMatchObject({
-		state: "running",
-		action: "implement",
-		activeRunId: "run-1",
-	});
-	expect(result.log).toMatchObject({
-		type: "run-started",
-		runId: "run-1",
-		issueId: "1",
-	});
-	expect(calls).toEqual([
-		"updateIssue:1:running:implement:run-1",
-		"appendLog:1:run-started:run-1",
-	]);
-});
-
-it("should ensure that tracker intent module completes runs before recording terminal logs", async () => {
-	const calls: Array<string> = [];
-	let storedIssue: WorkflowIssue = {
-		...workflowIssue({ id: "1", title: "Ticket" }),
-		workflow: {
-			...workflowIssue({ id: "1", title: "Ticket" }).workflow,
-			state: "running",
-			action: "implement",
-			activeRunId: "run-1",
-		},
-	};
-	const tracker = createTrackerIntentModule(
-		primitiveStubs({
-			updateIssue: async (id, input) => {
-				calls.push(
-					`updateIssue:${id}:${input.workflow?.state}:${input.workflow?.action}:${String(input.workflow?.activeRunId)}`,
-				);
-				storedIssue = {
-					...storedIssue,
-					workflow: { ...storedIssue.workflow, ...input.workflow },
-				};
-				return storedIssue;
-			},
-			appendLog: async (id, input) => {
-				calls.push(`appendLog:${id}:${input.type}:${input.runId}`);
-				return { ...input, issueId: id, sequence: 1 };
-			},
-			getIssue: async (id) => {
-				calls.push(`getIssue:${id}`);
-				return storedIssue;
-			},
-		}),
-	);
-
-	const result = await tracker.completeRun("1", {
-		expect: { version: 1, hash: "hash-1" },
-		runId: "run-1",
-		workflow: { state: "done", action: "none" },
-		log: { type: "run-completed", runId: "run-1" },
-	});
-
-	expect(result.issue.workflow).toMatchObject({
-		state: "done",
-		action: "none",
-		activeRunId: undefined,
-	});
-	expect(result.log).toMatchObject({ type: "run-completed", runId: "run-1" });
-	expect(calls).toEqual([
-		"updateIssue:1:done:none:undefined",
-		"appendLog:1:run-completed:run-1",
-		"getIssue:1",
 	]);
 });
 

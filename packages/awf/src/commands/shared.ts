@@ -221,9 +221,18 @@ export async function progressRelationshipsAfterLifecycleTransition(
 		) {
 			continue;
 		}
-		await tracker.advanceWorkflow(parent.id, {
-			expect: { version: parent.workflow.version, hash: parent.workflow.hash },
-			workflow: workflowTarget(policy.to),
+		await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: parent.id },
+					expect: {
+						version: parent.workflow.version,
+						hash: parent.workflow.hash,
+					},
+					workflow: workflowTarget(policy.to),
+				},
+			],
 		});
 	}
 }
