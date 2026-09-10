@@ -26,6 +26,8 @@ export {
 	success,
 	type Envelope,
 	type ErrorEnvelope,
+	type FailureDefinition,
+	type FailureDetails,
 	type SuccessEnvelope,
 } from "./runtime/envelope.ts";
 export {

@@ -5,12 +5,20 @@ export type SuccessEnvelope<T extends JsonValue = JsonValue> = {
 	data: T;
 };
 
+export type FailureDetails = { [key: string]: JsonValue };
+
+export type FailureDefinition<TCode extends string = string> = {
+	code: TCode;
+	message: string;
+	details?: FailureDetails;
+};
+
 export type ErrorEnvelope = {
 	ok: false;
 	error: {
 		code: string;
 		message: string;
-		details?: { [key: string]: JsonValue };
+		details?: FailureDetails;
 	};
 };
 
@@ -22,14 +30,42 @@ export function success<T extends JsonValue>(data: T): SuccessEnvelope<T> {
 	return { ok: true, data };
 }
 
+export function failure<TCode extends string>(
+	definition: FailureDefinition<TCode>,
+): ErrorEnvelope;
 export function failure(
 	code: string,
 	message: string,
-	details?: { [key: string]: JsonValue },
+	details?: FailureDetails,
+): ErrorEnvelope;
+export function failure<TCode extends string>(
+	definitionOrCode: FailureDefinition<TCode> | string,
+	message?: string,
+	details?: FailureDetails,
 ): ErrorEnvelope {
+	if (typeof definitionOrCode !== "string") {
+		const definition = definitionOrCode;
+		return definition.details === undefined
+			? {
+					ok: false,
+					error: { code: definition.code, message: definition.message },
+				}
+			: {
+					ok: false,
+					error: {
+						code: definition.code,
+						message: definition.message,
+						details: { ...definition.details },
+					},
+				};
+	}
+
 	return details === undefined
-		? { ok: false, error: { code, message } }
-		: { ok: false, error: { code, message, details } };
+		? { ok: false, error: { code: definitionOrCode, message: message ?? "" } }
+		: {
+				ok: false,
+				error: { code: definitionOrCode, message: message ?? "", details },
+			};
 }
 
 export function serializeEnvelope(envelope: Envelope): string {
