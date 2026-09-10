@@ -20,6 +20,18 @@ _Avoid_: workflow module, manifest file, executable manifest
 A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker` or `commandHandlers`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
 _Avoid_: executable manifest, manifest hooks
 
+**Error envelope**:
+A failed AWF command result with a stable machine-readable code, human-readable message, and optional JSON details. Error envelopes are part of AWF's CLI/API contract rather than incidental exception text.
+_Avoid_: thrown error, failure object, envelop error
+
+**Failure definition**:
+A reusable template or factory for producing an Error envelope with a stable code, message, and contextual details. Runtime-owned Failure definitions belong to the Workflow runtime; bundled workflow-specific definitions belong to the bundled workflow that emits them.
+_Avoid_: error helper, message constant, exception class
+
+**Failure catalog**:
+A module-owned collection of Failure definitions that names AWF's stable failure vocabulary for that module boundary.
+_Avoid_: global error bag, random constants, status enum
+
 **Manifest command**:
 A Workflow definition declaration for an invokable workflow operation, including its CLI shape, target workflow filter, optional transition event, optional attempt effect, and input schema. Manifest command CLI verbs are workflow vocabulary rather than a fixed runtime list such as only create or apply; target filters may match kind, state, action, or reason, command input is accepted only when declared, hidden generic command invocation by stable command id is available as an automation escape hatch.
 _Avoid_: built-in lifecycle command, hidden command route, generic resume command
