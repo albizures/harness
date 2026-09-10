@@ -16,6 +16,7 @@ import {
 	type TrackerWorkflowEffect,
 } from "../../ports/tracker.ts";
 import { startCommand, terminalCommand } from "./lifecycle.ts";
+import { runtimeFailures } from "../failures.ts";
 import {
 	genericIssueBody,
 	genericIssueTitle,
@@ -48,14 +49,13 @@ export async function manifestCommand(
 			? workflowCommand(manifest, target ?? "")
 			: workflowCommandByCli(manifest, verb ?? "", target);
 	if (command === undefined) {
+		if (verb === "run-command") {
+			return failure(
+				runtimeFailures.unknownCommand({ command: args.join(" ") }),
+			);
+		}
 		return failure(
-			verb === "run-command" ? "UNKNOWN_COMMAND" : "UNKNOWN_COMMAND_TARGET",
-			verb === "run-command"
-				? "Unknown command."
-				: "Workflow command target is not declared by the manifest.",
-			{
-				command: verb === "run-command" ? args.join(" ") : `${verb} ${target}`,
-			},
+			runtimeFailures.unknownCommandTarget({ command: `${verb} ${target}` }),
 		);
 	}
 	const versionedTracker = workflowVersionTracker(tracker, manifest);
@@ -109,11 +109,7 @@ export async function manifestCommand(
 		);
 	}
 	return failure(
-		"COMMAND_HANDLER_REQUIRED",
-		"Manifest command requires a command handler.",
-		{
-			command: command.id,
-		},
+		runtimeFailures.commandHandlerRequired({ command: command.id }),
 	);
 }
 
@@ -186,17 +182,19 @@ async function handledManifestCommand(
 		inputPath === undefined ||
 		(commandVerb !== "create" && issueId === undefined)
 	) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage:
-				commandVerb === "create"
-					? `awf ${routeVerb} ${command.cli?.target ?? command.id} --input <file|->`
-					: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage:
+					commandVerb === "create"
+						? `awf ${routeVerb} ${command.cli?.target ?? command.id} --input <file|->`
+						: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
+			}),
+		);
 	}
 	const raw = await readInput(inputPath, stdin);
 	const parsed = parseJsonInput(
 		raw,
-		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
 	);
 	if (!parsed.ok) {
 		return parsed;
@@ -470,27 +468,27 @@ export async function createGenericWorkflowIssueCommand(
 	command: ManifestCommand,
 ): Promise<Envelope> {
 	if (inputPath === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`,
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`,
+			}),
+		);
 	}
 	const kind = manifest.kinds.find(
 		(candidate) => candidate.id === command.target.kind,
 	);
 	if (kind === undefined) {
 		return failure(
-			"MANIFEST_UNSUPPORTED",
-			"Manifest command kind is unknown.",
-			{
+			runtimeFailures.manifestUnsupported({
 				command: command.id,
 				kind: command.target.kind,
-			},
+			}),
 		);
 	}
 	const raw = await readInput(inputPath, stdin);
 	const parsed = parseJsonInput(
 		raw,
-		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
 	);
 	if (!parsed.ok) {
 		return parsed;
@@ -528,27 +526,26 @@ async function transitionGenericWorkflowCommand(
 	command: ManifestCommand,
 ): Promise<Envelope> {
 	if (issueId === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id} <issue>`,
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id} <issue>`,
+			}),
+		);
 	}
 	const transitionCommand = command.transition;
 	if (transitionCommand === undefined) {
 		return failure(
-			"COMMAND_HANDLER_REQUIRED",
-			"Manifest command requires a command handler.",
-			{
-				command: command.id,
-			},
+			runtimeFailures.commandHandlerRequired({ command: command.id }),
 		);
 	}
 	try {
 		const issue = await tracker.getIssue(issueId);
 		if (!commandTargetMatches(command.target, issue.workflow)) {
 			return failure(
-				"UNAVAILABLE_COMMAND",
-				"Workflow command target does not match the issue's current workflow fields.",
-				{ id: issueId, command: command.id },
+				runtimeFailures.unavailableCommand({
+					id: issueId,
+					command: command.id,
+				}),
 			);
 		}
 		const kind = manifest.kinds.find(
@@ -571,9 +568,12 @@ async function transitionGenericWorkflowCommand(
 			!manifest.lifecycle?.activeStates?.includes(transition.to.state)
 		) {
 			return failure(
-				"INVALID_TRANSITION",
-				"Transition start attempt must land in a manifest active state.",
-				{ id: issueId, event: transitionCommand.event },
+				runtimeFailures.invalidTransition({
+					message:
+						"Transition start attempt must land in a manifest active state.",
+					id: issueId,
+					event: transitionCommand.event,
+				}),
 			);
 		}
 		if (
@@ -582,9 +582,12 @@ async function transitionGenericWorkflowCommand(
 				manifest.lifecycle?.activeStates?.includes(transition.to.state))
 		) {
 			return failure(
-				"INVALID_TRANSITION",
-				"Transition complete attempt must leave a manifest active state.",
-				{ id: issueId, event: transitionCommand.event },
+				runtimeFailures.invalidTransition({
+					message:
+						"Transition complete attempt must leave a manifest active state.",
+					id: issueId,
+					event: transitionCommand.event,
+				}),
 			);
 		}
 		const result = await tracker.applyWorkflowEffects({
@@ -662,14 +665,16 @@ export async function applyGenericWorkflowCommand(
 	command: ManifestCommand,
 ): Promise<Envelope> {
 	if (issueId === undefined || inputPath === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf apply ${command.cli?.target ?? command.target.action} <issue> --input <file|->`,
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: `awf apply ${command.cli?.target ?? command.target.action} <issue> --input <file|->`,
+			}),
+		);
 	}
 	const raw = await readInput(inputPath, stdin);
 	const parsed = parseJsonInput(
 		raw,
-		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
+		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
 	);
 	if (!parsed.ok) {
 		return parsed;

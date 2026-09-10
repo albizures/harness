@@ -23,7 +23,8 @@ describe("when publishing the AWF public API", () => {
 		expect(rootExports).not.toHaveProperty("genericTaskLifecycleHandlers");
 	});
 
-	it("should not export CLI-owned Failure catalog internals", () => {
+	it("should not export Failure catalog internals", () => {
 		expect(rootExports).not.toHaveProperty("cliFailures");
+		expect(rootExports).not.toHaveProperty("runtimeFailures");
 	});
 });

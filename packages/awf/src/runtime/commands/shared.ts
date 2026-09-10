@@ -5,6 +5,7 @@ import {
 	success,
 	type Envelope,
 	type ErrorEnvelope,
+	type FailureDefinition,
 } from "../envelope.ts";
 import { jsonValueSchema } from "../../shared/json.ts";
 import type {
@@ -17,6 +18,7 @@ import type {
 } from "../../domain/manifest/schema.ts";
 import { NeedReconciliationError, type Tracker } from "../../ports/tracker.ts";
 import { IssueNotFoundError } from "../../domain/workflow/issue.ts";
+import { runtimeFailures } from "../failures.ts";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
@@ -64,12 +66,10 @@ export function parseWorkflowCommandInput(
 		return success(jsonValue.data);
 	}
 	return failure(
-		"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
-		"Workflow command input is invalid.",
-		{
+		runtimeFailures.workflowCommandInputValidationFailed({
 			...(command === undefined ? {} : { command: command.id }),
 			issues: result.issues,
-		},
+		}),
 	);
 }
 
@@ -127,13 +127,24 @@ export function genericIssueBody(input: JsonValue, raw: string): string {
 
 export type JsonInputEnvelope = { ok: true; data: unknown } | ErrorEnvelope;
 
-export function parseJsonInput(raw: string, code: string): JsonInputEnvelope {
+export function parseJsonInput(
+	raw: string,
+	definition:
+		| FailureDefinition<
+				"INVALID_ACTION_INPUT" | "WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED"
+		  >
+		| string,
+): JsonInputEnvelope {
 	try {
 		return { ok: true, data: JSON.parse(raw) as unknown };
 	} catch (error) {
-		return failure(code, "Input must be valid JSON.", {
-			message: error instanceof Error ? error.message : String(error),
-		});
+		const message = error instanceof Error ? error.message : String(error);
+		if (typeof definition === "string") {
+			return failure(definition, "Input must be valid JSON.", { message });
+		}
+		return failure(
+			runtimeFailures.inputMustBeValidJson(definition, { message }),
+		);
 	}
 }
 
@@ -304,11 +315,10 @@ export function validateNamedReadinessFilterDeclarations(
 	for (const filter of filters) {
 		if (namedReadinessFilter(manifest, filter.name) === undefined) {
 			return failure(
-				"INVALID_READY_FILTER",
-				"Readiness filter is not declared by the manifest.",
-				{
-					filter: filter.name,
-				},
+				runtimeFailures.invalidReadyFilter({
+					message: "Readiness filter is not declared by the manifest.",
+					details: { filter: filter.name },
+				}),
 			);
 		}
 	}
@@ -328,24 +338,24 @@ export function validateNamedReadinessFilterValues(
 		const issue = byId.get(filter.value);
 		if (issue === undefined) {
 			return failure(
-				"INVALID_READY_FILTER",
-				"Readiness filter value does not resolve to a workflow issue.",
-				{
-					filter: filter.name,
-					value: filter.value,
-				},
+				runtimeFailures.invalidReadyFilter({
+					message:
+						"Readiness filter value does not resolve to a workflow issue.",
+					details: { filter: filter.name, value: filter.value },
+				}),
 			);
 		}
 		if (issue.workflow.kind !== declaration.kind) {
 			return failure(
-				"INVALID_READY_FILTER",
-				"Readiness filter value has the wrong workflow kind.",
-				{
-					filter: filter.name,
-					value: filter.value,
-					expectedKind: declaration.kind,
-					actualKind: issue.workflow.kind,
-				},
+				runtimeFailures.invalidReadyFilter({
+					message: "Readiness filter value has the wrong workflow kind.",
+					details: {
+						filter: filter.name,
+						value: filter.value,
+						expectedKind: declaration.kind,
+						actualKind: issue.workflow.kind,
+					},
+				}),
 			);
 		}
 	}
@@ -635,15 +645,18 @@ export function fieldsMatch(
 
 export function invalidTransition(id: string, event: string): Envelope {
 	return failure(
-		"INVALID_TRANSITION",
-		"No manifest transition matches the current workflow fields for this event.",
-		{ id, event },
+		runtimeFailures.invalidTransition({
+			message:
+				"No manifest transition matches the current workflow fields for this event.",
+			id,
+			event,
+		}),
 	);
 }
 
 export function lifecycleError(id: string, error: unknown): Envelope {
 	if (error instanceof IssueNotFoundError) {
-		return failure("NOT_FOUND", error.message, { id });
+		return failure(runtimeFailures.notFound({ message: error.message, id }));
 	}
 	if (
 		error instanceof NeedReconciliationError ||
@@ -651,10 +664,20 @@ export function lifecycleError(id: string, error: unknown): Envelope {
 		(error instanceof CorruptWorkflowProjectionError &&
 			error.message.includes("NEED_RECONCILIATION"))
 	) {
-		return failure("NEED_RECONCILIATION", error.message, { id });
+		return failure(
+			runtimeFailures.needReconciliation({
+				message: error.message,
+				details: { id },
+			}),
+		);
 	}
 	if (error instanceof CorruptWorkflowProjectionError) {
-		return failure("CORRUPT_WORKFLOW_PROJECTION", error.message, { id });
+		return failure(
+			runtimeFailures.corruptWorkflowProjection({
+				message: error.message,
+				details: { id },
+			}),
+		);
 	}
 	throw error;
 }
@@ -796,9 +819,7 @@ export function policyViolation(
 	action: string,
 ): Envelope {
 	return failure(
-		"LIFECYCLE_POLICY_VIOLATION",
-		"Lifecycle policy does not allow this transition.",
-		{ id, policy, action },
+		runtimeFailures.lifecyclePolicyViolation({ id, policy, action }),
 	);
 }
 
@@ -817,7 +838,5 @@ export function stableStringify(value: unknown): string {
 }
 
 export function unknownCommand(args: Array<string>): Envelope {
-	return failure("UNKNOWN_COMMAND", "Unknown command.", {
-		command: args.join(" "),
-	});
+	return failure(runtimeFailures.unknownCommand({ command: args.join(" ") }));
 }

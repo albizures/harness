@@ -5,6 +5,7 @@ import type { TrackerAdapterPrimitiveReads } from "../../ports/tracker.ts";
 import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
 import type { WorkflowManifest } from "../../domain/manifest/schema.ts";
 import type { Tracker, TrackerLog } from "../../ports/tracker.ts";
+import { runtimeFailures } from "../failures.ts";
 import {
 	cleanTransitionTarget,
 	defaultRetryTarget,
@@ -30,9 +31,9 @@ export async function startCommand(
 	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
 	if (id === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: "awf start <id>",
-		});
+		return failure(
+			runtimeFailures.invalidArguments({ usage: "awf start <id>" }),
+		);
 	}
 
 	try {
@@ -46,9 +47,11 @@ export async function startCommand(
 			!manifest.lifecycle.activeStates.includes(transition.to.state)
 		) {
 			return failure(
-				"INVALID_TRANSITION",
-				"Start transition must land in a manifest active state.",
-				{ id, event: "start" },
+				runtimeFailures.invalidTransition({
+					message: "Start transition must land in a manifest active state.",
+					id,
+					event: "start",
+				}),
 			);
 		}
 		if (lifecycleHandlers === undefined) {
@@ -131,9 +134,11 @@ export async function terminalCommand(
 	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
 	if (id === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf ${event} <id> [--input <file|->]`,
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: `awf ${event} <id> [--input <file|->]`,
+			}),
+		);
 	}
 
 	try {
@@ -142,7 +147,7 @@ export async function terminalCommand(
 				? undefined
 				: parseJsonInput(
 						await readInput(inputPath, stdin),
-						"INVALID_ACTION_INPUT",
+						runtimeFailures.INVALID_ACTION_INPUT,
 					);
 		if (parsedInput?.ok === false) {
 			return parsedInput;
@@ -153,20 +158,18 @@ export async function terminalCommand(
 				: parsePayloadValue(parsedInput.data, undefined, "$");
 		if (parsedInputJson?.issues.length) {
 			return failure(
-				"INVALID_ACTION_INPUT",
-				"Action completion input is invalid.",
-				{
-					issues: parsedInputJson.issues,
-				},
+				runtimeFailures.invalidActionInput({ issues: parsedInputJson.issues }),
 			);
 		}
 		const logType = terminalLogType(event);
 		const issue = await tracker.getIssue(id);
 		if (!isWorkflowActive(issue.workflow, manifest)) {
 			return failure(
-				"INVALID_TRANSITION",
-				"Terminal transition must leave a manifest active state.",
-				{ id, event },
+				runtimeFailures.invalidTransition({
+					message: "Terminal transition must leave a manifest active state.",
+					id,
+					event,
+				}),
 			);
 		}
 		const transition = findTransition(manifest, issue.workflow, event);

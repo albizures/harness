@@ -1,6 +1,7 @@
 import { failure, type Envelope } from "../envelope.ts";
 import type { WorkflowManifest } from "../../domain/manifest/schema.ts";
 import { readOption, unknownCommand, workflowCommandByCli } from "./shared.ts";
+import { runtimeFailures } from "../failures.ts";
 
 const maxReconcileArgumentCount = 3;
 const createWithSourceArgumentCount = 6;
@@ -40,9 +41,9 @@ function validateWorkflowArguments(args: Array<string>): Envelope | undefined {
 	if (args.length === 2 && args[1] === "describe") {
 		return undefined;
 	}
-	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-		usage: "awf workflow describe",
-	});
+	return failure(
+		runtimeFailures.invalidArguments({ usage: "awf workflow describe" }),
+	);
 }
 
 function validateManifestCliArguments(
@@ -63,9 +64,11 @@ function validateRunCommandArguments(
 	args: Array<string>,
 ): Envelope | undefined {
 	if (args[1] === undefined || args[1] === "" || args[1].startsWith("-")) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: "awf run-command <command-id> ...",
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: "awf run-command <command-id> ...",
+			}),
+		);
 	}
 	return undefined;
 }
@@ -88,9 +91,9 @@ function validateManifestCommandArguments(
 ): Envelope | undefined {
 	const target = args[1];
 	if (target === undefined || target === "" || target.startsWith("-")) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: `awf ${verb} <target> ...`,
-		});
+		return failure(
+			runtimeFailures.invalidArguments({ usage: `awf ${verb} <target> ...` }),
+		);
 	}
 	if (verb === "create") {
 		if (args.includes("--source")) {
@@ -116,9 +119,7 @@ function validateManifestCommandArguments(
 			) {
 				return undefined;
 			}
-			return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-				usage,
-			});
+			return failure(runtimeFailures.invalidArguments({ usage }));
 		}
 		return requirePositionalAndOption(
 			args,
@@ -138,26 +139,25 @@ function validateManifestCommandArguments(
 function validateReconcile(args: Array<string>): Envelope | undefined {
 	const usage = "awf reconcile <id> [--apply]";
 	if (args[1] === undefined || args[1] === "" || args[1].startsWith("-")) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage,
-		});
+		return failure(runtimeFailures.invalidArguments({ usage }));
 	}
 	const allowed = new Set(["reconcile", args[1], "--apply"]);
 	if (
 		args.length > maxReconcileArgumentCount ||
 		args.some((arg) => !allowed.has(arg))
 	) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage,
-		});
+		return failure(runtimeFailures.invalidArguments({ usage }));
 	}
 	return undefined;
 }
 
 function invalidReadyArguments(): Envelope {
-	return failure("INVALID_ARGUMENTS", "Invalid arguments for ready.", {
-		usage: "awf ready [--filter <name=value>] [--limit <n>]",
-	});
+	return failure(
+		runtimeFailures.invalidArguments({
+			message: "Invalid arguments for ready.",
+			usage: "awf ready [--filter <name=value>] [--limit <n>]",
+		}),
+	);
 }
 
 export type ReadyOptions = {
@@ -213,7 +213,7 @@ function requirePositionalCount(
 		return undefined;
 	}
 
-	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
+	return failure(runtimeFailures.invalidArguments({ usage }));
 }
 
 function requirePositionalAndOption(
@@ -236,5 +236,5 @@ function requirePositionalAndOption(
 		return undefined;
 	}
 
-	return failure("INVALID_ARGUMENTS", "Invalid command arguments.", { usage });
+	return failure(runtimeFailures.invalidArguments({ usage }));
 }

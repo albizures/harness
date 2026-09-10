@@ -9,6 +9,7 @@ import type {
 	TrackerWorkflowEffect,
 } from "../ports/tracker.ts";
 import type { WorkflowIssue } from "../domain/workflow/issue.ts";
+import { runtimeFailures } from "./failures.ts";
 
 export type LifecycleTransitionHandlerContext = {
 	manifest: WorkflowManifest;
@@ -78,16 +79,14 @@ export async function runLifecycleTransitionHandler(
 		raw = await handler(context);
 	} catch (error) {
 		return failure(
-			"LIFECYCLE_HANDLER_FAILED",
-			"Lifecycle transition handler failed.",
-			{
+			runtimeFailures.lifecycleHandlerFailed({
 				key: lifecycleTransitionHandlerKey(
 					context.issue.workflow.kind,
 					context.transition.from,
 					context.transition.event,
 				),
 				message: error instanceof Error ? error.message : String(error),
-			},
+			}),
 		);
 	}
 	if (isErrorEnvelope(raw)) {
@@ -111,9 +110,9 @@ function parseLifecycleHandlerContribution(
 	const issues: Array<{ path: string; message: string }> = [];
 	if (!isPlainObject(contribution)) {
 		return failure(
-			"LIFECYCLE_HANDLER_OUTPUT_VALIDATION_FAILED",
-			"Lifecycle transition handler output is invalid.",
-			{ issues: [{ path: "$", message: "Handler output must be an object." }] },
+			runtimeFailures.lifecycleHandlerOutputValidationFailed({
+				issues: [{ path: "$", message: "Handler output must be an object." }],
+			}),
 		);
 	}
 	if (
@@ -127,9 +126,7 @@ function parseLifecycleHandlerContribution(
 	}
 	if (issues.length > 0) {
 		return failure(
-			"LIFECYCLE_HANDLER_OUTPUT_VALIDATION_FAILED",
-			"Lifecycle transition handler output is invalid.",
-			{ issues },
+			runtimeFailures.lifecycleHandlerOutputValidationFailed({ issues }),
 		);
 	}
 	return {

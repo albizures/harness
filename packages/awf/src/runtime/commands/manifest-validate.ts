@@ -1,14 +1,17 @@
 import { failure, success, type Envelope } from "../envelope.ts";
 import { ManifestValidationError } from "../../domain/manifest/schema.ts";
 import { loadManifest } from "../workflow-module.ts";
+import { runtimeFailures } from "../failures.ts";
 
 export async function validateManifestCommand(
 	path: string | undefined,
 ): Promise<Envelope> {
 	if (path === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: "awf manifest validate <file>",
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: "awf manifest validate <file>",
+			}),
+		);
 	}
 
 	try {
@@ -21,15 +24,13 @@ export async function validateManifestCommand(
 	} catch (error) {
 		if (error instanceof ManifestValidationError) {
 			return failure(
-				"MANIFEST_VALIDATION_FAILED",
-				"Workflow manifest validation failed.",
-				{ issues: error.issues },
+				runtimeFailures.manifestValidationFailed({ issues: error.issues }),
 			);
 		}
 		return failure(
-			"MANIFEST_LOAD_FAILED",
-			"Workflow manifest could not be loaded.",
-			{ message: error instanceof Error ? error.message : String(error) },
+			runtimeFailures.manifestLoadFailed({
+				message: error instanceof Error ? error.message : String(error),
+			}),
 		);
 	}
 }

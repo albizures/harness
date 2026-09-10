@@ -15,6 +15,7 @@ import { validateManifestCommand } from "./commands/manifest-validate.ts";
 import { readyCommand } from "./commands/ready.ts";
 import { reconcileCommand } from "./commands/reconcile.ts";
 import { workflowCommandByCli } from "./commands/shared.ts";
+import { runtimeFailures } from "./failures.ts";
 
 export type { CommandHandlers } from "./command-handlers.ts";
 
@@ -33,10 +34,7 @@ export async function execute(
 	const manifest = options.manifest;
 	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
 		if (manifest === undefined) {
-			return failure(
-				"MANIFEST_REQUIRED",
-				"AWF requires an explicit workflow manifest for this command.",
-			);
+			return failure(runtimeFailures.MANIFEST_REQUIRED);
 		}
 		return success({
 			name: "awf",
@@ -71,18 +69,13 @@ export async function execute(
 	}
 
 	if (manifest === undefined) {
-		return failure(
-			"MANIFEST_REQUIRED",
-			"AWF requires an explicit workflow manifest for this command.",
-		);
+		return failure(runtimeFailures.MANIFEST_REQUIRED);
 	}
 
 	const manifestIssues = validateManifest(manifest);
 	if (manifestIssues.length > 0) {
 		return failure(
-			"MANIFEST_VALIDATION_FAILED",
-			"Workflow manifest validation failed.",
-			{ issues: manifestIssues },
+			runtimeFailures.manifestValidationFailed({ issues: manifestIssues }),
 		);
 	}
 
@@ -120,7 +113,5 @@ export async function execute(
 		);
 	}
 
-	return failure("UNKNOWN_COMMAND", "Unknown command.", {
-		command: args.join(" "),
-	});
+	return failure(runtimeFailures.unknownCommand({ command: args.join(" ") }));
 }

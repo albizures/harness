@@ -3,6 +3,7 @@ import type { WorkflowManifest } from "../../domain/manifest/schema.ts";
 import type { Tracker } from "../../ports/tracker.ts";
 import { isRecord } from "./shared.ts";
 import { IssueNotFoundError } from "../../domain/workflow/issue.ts";
+import { runtimeFailures } from "../failures.ts";
 
 export type ReconciliationDiagnostic = {
 	code: string;
@@ -19,9 +20,11 @@ export async function reconcileCommand(
 	manifest: WorkflowManifest,
 ): Promise<Envelope> {
 	if (id === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: "awf reconcile <id> [--apply]",
-		});
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: "awf reconcile <id> [--apply]",
+			}),
+		);
 	}
 
 	try {
@@ -65,7 +68,7 @@ export async function reconcileCommand(
 		});
 	} catch (error) {
 		if (error instanceof IssueNotFoundError) {
-			return failure("NOT_FOUND", error.message, { id });
+			return failure(runtimeFailures.notFound({ message: error.message, id }));
 		}
 		throw error;
 	}
