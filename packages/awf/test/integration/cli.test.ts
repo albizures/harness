@@ -34,10 +34,6 @@ const agentWorkflowSourcePath = new URL(
 	"../../src/workflows/agent-workflow/index.ts",
 	import.meta.url,
 ).pathname;
-const manifestSourcePath = new URL(
-	"../../src/manifest/index.ts",
-	import.meta.url,
-).pathname;
 const memoryTrackerSourcePath = new URL(
 	"../../src/adapters/trackers/memory.ts",
 	import.meta.url,
@@ -50,6 +46,7 @@ const filesystemTrackerSourcePath = new URL(
 const unreadableMode = 0o000;
 const ownerReadWriteMode = 0o600;
 const bundledGoldenSmokeTimeoutMs = 15_000;
+const configLifecycleHandlerPrNumber = 42;
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",
@@ -396,35 +393,20 @@ it("should ensure that CLI without a workflow config defaults to the bundled age
 	});
 });
 
-it("should ensure that CLI config-exported command handlers are invoked by manifest command id", async () => {
+it("should ensure that CLI config-exported command handlers can customize bundled agent-workflow command ids", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
 			configPath,
-			`import { z } from "zod";
-import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
 
-export const manifest = defineManifest({
-	version: "v1",
-	workflow: { id: "cli-handler", version: "1.0.0" },
-	vocabulary: { states: ["ready"], actions: ["draft"], events: ["saved"] },
-	concurrency: { perIssue: 1 },
-	kinds: [{
-		id: "item",
-		label: "Item",
-		initial: { state: "ready", action: "draft" },
-		transitions: [],
-	}],
-	commands: [{
-		id: "memo-create",
-		cli: { verb: "create", target: "memo" },
-		target: { kind: "item", action: "draft" },
-		input: z.strictObject({ title: z.string() }),
-	}],
-});
-
+export const manifest = agentWorkflowManifest;
 export const commandHandlers = {
-	"memo-create": async ({ input }) => ({ title: input.title, handled: true }),
+	"task-create": async ({ input, command }) => ({
+		command: command.id,
+		title: input.title,
+		handled: true,
+	}),
 };
 `,
 		);
@@ -437,61 +419,53 @@ export const commandHandlers = {
 				"--config",
 				configPath,
 				"create",
-				"memo",
+				"task",
 				"--input",
 				"-",
 			],
-			{ cwd: dir, encoding: "utf8", input: JSON.stringify({ title: "Note" }) },
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({
+					parent: "1",
+					title: "Configured task",
+					description: "Handle through config.",
+					profile: "engineering",
+				}),
+			},
 		);
 
 		expect(result.status).toBe(0);
 		expect(JSON.parse(result.stdout)).toEqual({
 			ok: true,
-			data: { title: "Note", handled: true },
+			data: { command: "task-create", title: "Configured task", handled: true },
 		});
 	});
 });
 
-it("should ensure that CLI config-exported lifecycle handlers are invoked by transition key", async () => {
+it("should ensure that CLI config-exported lifecycle handlers can customize bundled agent-workflow transition keys", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
 			configPath,
-			`import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
 import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
 
-export const manifest = defineManifest({
-	version: "v1",
-	workflow: { id: "cli-lifecycle-handler", version: "1.0.0" },
-	vocabulary: { states: ["running", "done"], actions: ["publish", "none"], events: ["succeed"] },
-	concurrency: { perIssue: 1 },
-	kinds: [{
-		id: "article",
-		label: "Article",
-		initial: { state: "running", action: "publish" },
-		transitions: [{
-			from: { state: "running", action: "publish" },
-			event: "succeed",
-			to: { state: "done", action: "none" },
-		}],
-	}],
-	commands: [{ id: "succeed", target: { kind: "article", action: "publish" } }],
-});
-
+export const manifest = agentWorkflowManifest;
 export const tracker = createInMemoryTracker({
 	issues: [{
-		id: "article-1",
-		title: "Article",
+		id: "task-1",
+		title: "Task",
 		workflow: {
-			kind: "article",
+			kind: "task",
 			state: "running",
-			action: "publish",
+			action: "work",
 		},
 	}],
 });
 
 export const lifecycleHandlers = {
-	"article:running/publish:succeed": () => undefined,
+	"task:running/work:succeed": () => undefined,
 };
 `,
 		);
@@ -505,14 +479,16 @@ export const lifecycleHandlers = {
 				configPath,
 				"run-command",
 				"succeed",
-				"article-1",
+				"task-1",
 				"--input",
 				"-",
 			],
 			{
 				cwd: dir,
 				encoding: "utf8",
-				input: JSON.stringify({ summary: "Published externally" }),
+				input: JSON.stringify({
+					implementationPr: prArtifact(configLifecycleHandlerPrNumber),
+				}),
 			},
 		);
 
@@ -520,7 +496,7 @@ export const lifecycleHandlers = {
 		expect(
 			JSON.parse(JSON.parse(result.stdout).data.log.message),
 		).toMatchObject({
-			input: { summary: "Published externally" },
+			input: { implementationPr: prArtifact(configLifecycleHandlerPrNumber) },
 		});
 	});
 });

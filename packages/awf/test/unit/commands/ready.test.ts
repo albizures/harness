@@ -6,6 +6,7 @@ import {
 } from "../../../src/manifest/index.ts";
 import type { Tracker } from "../../../src/ports/tracker.ts";
 import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
 
 const defaultTicketOnlyReadyManifest = defineManifest({
 	version: "v1",
@@ -574,6 +575,75 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 						gate: "concurrency",
 						scope: "subkind",
 						kind: "ticket",
+						subkind: "research",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that bundled task routing respects perSubkind concurrency", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "running-research",
+				title: "Running research task",
+				workflow: {
+					kind: "task",
+					state: "running",
+					action: "work",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-research",
+				title: "Ready research task",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-work",
+				title: "Ready work task",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { subkind: "work" },
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...agentWorkflowManifest,
+			concurrency: {
+				...agentWorkflowManifest.concurrency,
+				perSubkind: { task: { research: 1 } },
+			},
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toMatchObject({
+		items: [{ id: "ready-work", workflow: { subkind: "work" } }],
+		blocked: [
+			{
+				id: "ready-research",
+				workflow: { subkind: "research" },
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "subkind",
+						kind: "task",
 						subkind: "research",
 						limit: 1,
 						active: 1,
