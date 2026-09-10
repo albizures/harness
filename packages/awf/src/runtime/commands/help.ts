@@ -59,14 +59,18 @@ const runtimeCommands: Array<CommandSpec> = [
 export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 	return [
 		...runtimeCommands,
-		...manifest.commands.map((command) => ({
-			name:
-				command.cli === undefined
-					? `run-command ${command.id}`
-					: `${command.cli.verb} ${command.cli.target}`,
-			usage: manifestCommandUsage(command),
-			description: `Run manifest command '${command.id}'.`,
-		})),
+		...manifest.commands.flatMap((command) => {
+			if (command.cli === undefined) {
+				return [];
+			}
+			return [
+				{
+					name: `${command.cli.verb} ${command.cli.target}`,
+					usage: manifestCommandUsage(command),
+					description: `Run workflow command '${command.id}'.`,
+				},
+			];
+		}),
 	].sort((a, b) => a.name.localeCompare(b.name));
 }
 

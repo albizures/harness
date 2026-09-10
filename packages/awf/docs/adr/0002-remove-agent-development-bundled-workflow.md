@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0003 supersedes only this ADR's decision and consequence to retain generic manifest/runtime capabilities; the `agent-development` removal decision remains accepted.
 
 ## Context
 

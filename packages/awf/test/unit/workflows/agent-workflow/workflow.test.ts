@@ -131,10 +131,13 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf task fail <issue>",
 			"awf task recover <issue>",
 			"awf task escalate <issue>",
-			"awf run-command pause <issue> --input <file|->",
-			"awf run-command resume <issue> --action <action>",
 		]),
 	);
+	expect(
+		help.commands.every(
+			(command) => !command.usage.startsWith("awf run-command"),
+		),
+	).toBe(true);
 	expect(help.readiness.filters).toEqual([
 		{ kind: "spec", state: "ready", action: "planning" },
 		{ kind: "spec", state: "ready", action: "integration-test" },

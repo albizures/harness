@@ -1,24 +1,24 @@
 # AWF
 
-AWF is the Harness package that provides a workflow runtime and CLI for agent workflow issues.
+AWF is the Harness package that provides the runtime and CLI for bundled `agent-workflow` issues.
 
 ## Language
 
 **Workflow runtime**:
-A generic engine that evaluates workflow entity state, legal transitions, commands, relationships, logs, and tracker mutations from a workflow definition. It owns manifest execution mechanics, but not built-in lifecycle commands such as start, succeed, fail, pause, resume, or escalation.
-_Avoid_: agent workflow CLI core, issue workflow script, built-in workflow policy
+The engine that evaluates `agent-workflow` entity state, legal transitions, commands, relationships, logs, and tracker mutations from the bundled workflow definition. It owns execution mechanics for the supported workflow rather than a public generic workflow-authoring platform.
+_Avoid_: generic workflow platform, issue workflow script, arbitrary workflow engine
 
 **Workflow definition**:
-A project- or package-provided declarative definition of entity kinds, labels, states, actions, events, transitions, active-state semantics, required command inputs, relationships, concurrency rules, tracker mappings, and workflow semantic version that the Workflow runtime executes deterministically. In v1 it is authored as a TypeScript module exporting a strict declarative object through a typed `defineManifest` helper, loaded with `jiti`, and validated at runtime; TypeScript is for authoring ergonomics, not executable workflow hooks. The workflow semantic version is required and lives at `workflow.version`, separate from the manifest schema version.
-_Avoid_: hard-coded workflow, loose configuration, workflow code
+The bundled `agent-workflow` declarative definition of entity kinds, labels, states, actions, events, transitions, active-state semantics, required command inputs, relationships, concurrency rules, tracker mappings, and workflow semantic version that AWF executes deterministically. Public consumers should use the supported bundled workflow rather than authoring arbitrary workflow definitions.
+_Avoid_: public generic manifest, loose configuration, executable workflow hooks
 
 **Workflow manifest**:
 The normalized in-memory declarative object that represents a Workflow definition after defaults and validation shape are applied. It contains workflow vocabulary, kinds, transitions, commands, lifecycle state semantics such as `activeStates` and `terminalStates`, policies, and relationships, but not runtime integration bindings such as trackers or handlers.
 _Avoid_: workflow module, manifest file, executable manifest
 
 **Workflow module**:
-A TypeScript module loaded by the AWF CLI that may export both the declarative Workflow definition as `manifest` and runtime integration bindings such as `tracker` or `commandHandlers`. Runtime integration bindings are adjacent to, but not part of, the Workflow definition.
-_Avoid_: executable manifest, manifest hooks
+A TypeScript module loaded by the AWF CLI, usually `awf.config.ts`, that may export a tracker and optionally the supported bundled `agent-workflow` manifest. Handler bindings are internal compatibility details, not public extension points.
+_Avoid_: executable manifest, manifest hooks, command-handler plugin API
 
 **Error envelope**:
 A failed AWF command result with a stable machine-readable code, human-readable message, and optional JSON details. Error envelopes are part of AWF's CLI/API contract rather than incidental exception text.
@@ -33,16 +33,16 @@ A module-owned collection of Failure definitions that names AWF's stable failure
 _Avoid_: global error bag, random constants, status enum
 
 **Manifest command**:
-A Workflow definition declaration for an invokable workflow operation, including its CLI shape, target workflow filter, optional transition event, optional attempt effect, and input schema. Manifest command CLI verbs are workflow vocabulary rather than a fixed runtime list such as only create or apply; target filters may match kind, state, action, or reason, command input is accepted only when declared, hidden generic command invocation by stable command id is available as an automation escape hatch.
-_Avoid_: built-in lifecycle command, hidden command route, generic resume command
+A bundled `agent-workflow` declaration for an invokable workflow operation, including its supported CLI shape, target workflow filter, optional transition event, optional attempt effect, and input schema. Hidden command-id invocation is retained only as an internal/automation escape hatch and is omitted from normal help.
+_Avoid_: arbitrary CLI verb, public command registration, generic run-command UX
 
 **Transition command**:
 A Manifest command that applies a manifest-declared transition, optionally through generic handlerless execution with a plain default log message. Its availability is determined by the command target filter and matching transition existence; completing transitions require the issue to currently be in a manifest active state.
 _Avoid_: built-in start command, built-in fail command, hidden event inference, run-token command
 
 **Command handler**:
-A Workflow module runtime binding keyed by a declarative Workflow command id that implements command-specific behavior when AWF's generic behavior is not enough. A normal Command handler receives AWF-parsed and manifest-validated input plus a constrained facade of AWF primitives; compatibility Command handlers may opt into owning raw CLI/input parsing for legacy command envelopes. It is not part of the Workflow definition.
-_Avoid_: manifest command hook, executable command declaration
+An internal runtime binding keyed by an `agent-workflow` command id that implements bundled workflow behavior. It is not part of the public authoring or extension surface.
+_Avoid_: public command handler registration, raw-input handler convention, executable command declaration
 
 **Lifecycle transition handler**:
 A Workflow module runtime binding for semantic work around a manifest-declared lifecycle transition, such as validating transition input beyond schema shape or requesting generic follow-up workflow operations. Lifecycle command entry points are workflow-module concerns; the handler supplies workflow-specific semantics without direct tracker mutation.
@@ -69,8 +69,8 @@ The Workflow runtime's lowest-common-denominator interface for issue tracker pri
 _Avoid_: GitHub API wrapper, workflow API
 
 **Tracker Intent Module**:
-The Workflow runtime module that executes high-level Tracker API intents, such as creating Workflow issues, recording text logs, changing relationships, or applying ordered workflow effects, by coordinating tracker adapter primitives and verifying Workflow issue invariants. Lifecycle-specific intents such as starting, completing, escalating, or resuming runs are workflow command concerns rather than Tracker API concepts.
-_Avoid_: adapter helper, tracker service, command wrapper, lifecycle command wrapper
+The internal runtime module that executes high-level Tracker API intents, such as creating Workflow issues, recording text logs, changing relationships, or applying ordered workflow effects, by coordinating tracker adapter primitives and verifying Workflow issue invariants. It is not a reusable public tracker-intent API.
+_Avoid_: public tracker intent API, adapter helper, command wrapper, lifecycle command wrapper
 
 **File-backed Tracker Adapter**:
 A Tracker API implementation that stores Workflow issues and their workflow data durably on the local filesystem for local or development use, rather than keeping them only in process memory or delegating to an external tracker.
