@@ -728,53 +728,6 @@ export function defaultRetryTarget(workflow: {
 	return { state: "ready", action: workflow.action };
 }
 
-export function retryPolicyAllows(
-	manifest: WorkflowManifest,
-	workflow: { kind: string; action: string },
-): boolean {
-	return targetPolicyAllows(
-		manifest.lifecycle?.retry?.allow,
-		workflow.kind,
-		workflow.action,
-	);
-}
-
-export function escalationPolicyAllows(
-	manifest: WorkflowManifest,
-	workflow: { kind: string; action: string },
-): boolean {
-	return targetPolicyAllows(
-		manifest.lifecycle?.escalation?.allow,
-		workflow.kind,
-		workflow.action,
-	);
-}
-
-export function targetPolicyAllows(
-	allow: Array<{ kind: string; action: string }> | undefined,
-	kind: string,
-	action: string,
-): boolean {
-	return (
-		allow === undefined ||
-		allow.some((target) => target.kind === kind && target.action === action)
-	);
-}
-
-export function resumePolicyAllows(
-	manifest: WorkflowManifest,
-	kind: string,
-	action: string,
-): boolean {
-	const allow = manifest.lifecycle?.resume?.allow;
-	return (
-		allow === undefined ||
-		allow.some(
-			(target) => target.kind === kind && target.actions.includes(action),
-		)
-	);
-}
-
 export function isReadyAction(
 	manifest: WorkflowManifest,
 	kind: string,

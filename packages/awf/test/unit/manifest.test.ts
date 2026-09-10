@@ -358,6 +358,44 @@ it("should validate lifecycle active and terminal states against the workflow vo
 	).toMatch(/terminalStates\[1\].*known state/);
 });
 
+it("should reject removed lifecycle retry escalation and resume allow-list contracts", () => {
+	const manifest = {
+		version: "v1",
+		workflow: { id: "removed-lifecycle-policy", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "need-human", "done"],
+			actions: ["work", "none"],
+			events: ["start", "succeed", "fail"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: {
+			activeStates: ["running"],
+			terminalStates: ["done"],
+			retry: { allow: [{ kind: "task", action: "work" }] },
+			escalation: { allow: [{ kind: "task", action: "work" }] },
+			resume: { allow: [{ kind: "task", actions: ["work"] }] },
+		},
+		kinds: [
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				transitions: [],
+			},
+		],
+		commands: [],
+	};
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/\$\.lifecycle/);
+	expect(messages).toMatch(/retry/);
+	expect(messages).toMatch(/escalation/);
+	expect(messages).toMatch(/resume/);
+});
+
 it("should reject readiness filters that target terminal states while allowing terminal outgoing transitions", () => {
 	const manifest = defineManifest({
 		version: "v1",
@@ -604,7 +642,7 @@ it("should reject payload schemas outside command input declarations", () => {
 		.join("\n");
 	expect(messages).toMatch(/Command output schemas are not supported/);
 	expect(messages).toMatch(/Transition input schemas are not supported/);
-	expect(messages).toMatch(/lifecycle\.escalation/);
+	expect(messages).toMatch(/\$\.lifecycle.*escalation/);
 	expect(messages).not.toMatch(/commands\[0\]\.input.*not supported/);
 });
 

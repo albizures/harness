@@ -188,7 +188,6 @@ it("should ensure that text output renders workflow descriptions as deterministi
 				lifecycle: {
 					activeStates: ["running"],
 					terminalStates: ["done"],
-					retry: { allow: [{ kind: "ticket", action: "implement" }] },
 				},
 				relationships: [
 					{
@@ -245,8 +244,6 @@ it("should ensure that text output renders workflow descriptions as deterministi
 
 - Active states: running
 - Terminal states: done
-- Retry:
-  - ticket/implement
 
 ## Relationships
 

@@ -18,8 +18,6 @@ import {
 	parsePayloadValue,
 	policyViolation,
 	readOption,
-	resumePolicyAllows,
-	escalationPolicyAllows,
 	stableStringify,
 } from "../runtime/commands/shared.ts";
 
@@ -97,12 +95,7 @@ const escalateCommand = humanHandoffCommand({
 	invalidInputMessage: "Escalation input is invalid.",
 	toState: "need-human",
 	logType: "human_intervention_needed",
-	validate: (context, issue, id) => {
-		if (!escalationPolicyAllows(context.manifest, issue.workflow)) {
-			return policyViolation(id, "escalation", issue.workflow.action);
-		}
-		return undefined;
-	},
+	validate: (_context, _issue, _id) => undefined,
 	message: ({ input, from, to }) => ({
 		event: "escalate",
 		input,
@@ -226,10 +219,7 @@ async function resumeCommand(
 		) {
 			return invalidTransition(id, "resume");
 		}
-		if (
-			!isReadyAction(context.manifest, issue.workflow.kind, action) ||
-			!resumePolicyAllows(context.manifest, issue.workflow.kind, action)
-		) {
+		if (!isReadyAction(context.manifest, issue.workflow.kind, action)) {
 			return policyViolation(id, "resume", action);
 		}
 		const log: TrackerLog = {

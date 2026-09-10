@@ -40,11 +40,6 @@ function descriptionManifest() {
 		lifecycle: {
 			activeStates: ["running"],
 			terminalStates: ["done"],
-			retry: { allow: [{ kind: "ticket", action: "implement" }] },
-			escalation: {
-				allow: [{ kind: "spec", action: "plan" }],
-			},
-			resume: { allow: [{ kind: "spec", actions: ["plan", "review"] }] },
 			relationshipPolicies: [
 				{
 					relationship: "parent",
@@ -144,6 +139,9 @@ describe("when building a Workflow description DTO", () => {
 		]);
 		expect(description.lifecycle?.activeStates).toEqual(["running"]);
 		expect(description.lifecycle?.terminalStates).toEqual(["done"]);
+		expect(description.lifecycle).not.toHaveProperty("retry");
+		expect(description.lifecycle).not.toHaveProperty("escalation");
+		expect(description.lifecycle).not.toHaveProperty("resume");
 		expect(description.lifecycle?.relationshipPolicies?.[0]?.to).toEqual({
 			state: "ready",
 			action: "review",

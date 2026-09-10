@@ -15,10 +15,8 @@ import {
 	lifecycleError,
 	parseJsonInput,
 	parsePayloadValue,
-	policyViolation,
 	progressRelationshipsAfterLifecycleTransition,
 	readInput,
-	retryPolicyAllows,
 	terminalLogType,
 	workflowTarget,
 	stableStringify,
@@ -179,12 +177,6 @@ export async function terminalCommand(
 				: undefined;
 		if (transition === undefined && retryTarget === undefined) {
 			return invalidTransition(id, event);
-		}
-		if (
-			retryTarget !== undefined &&
-			!retryPolicyAllows(manifest, issue.workflow)
-		) {
-			return policyViolation(id, "retry", issue.workflow.action);
 		}
 		const terminalInput = parseJsonValue(parsedInputJson?.value ?? {});
 		const target =

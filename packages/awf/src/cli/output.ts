@@ -235,26 +235,6 @@ function formatLifecycleDescription(
 	if (Array.isArray(lifecycle.terminalStates)) {
 		lines.push(`- Terminal states: ${formatList(lifecycle.terminalStates)}`);
 	}
-	if (isRecord(lifecycle.retry)) {
-		lines.push("- Retry:");
-		formatPolicyTargets(lines, lifecycle.retry.allow);
-	}
-	if (isRecord(lifecycle.escalation)) {
-		lines.push("- Escalation:");
-		formatPolicyTargets(lines, lifecycle.escalation.allow);
-	}
-	if (isRecord(lifecycle.resume)) {
-		lines.push("- Resume:");
-		for (const target of Array.isArray(lifecycle.resume.allow)
-			? lifecycle.resume.allow
-			: []) {
-			if (isRecord(target)) {
-				lines.push(
-					`  - ${String(target.kind)} actions: ${formatList(target.actions)}`,
-				);
-			}
-		}
-	}
 	if (Array.isArray(lifecycle.relationshipPolicies)) {
 		lines.push("- Relationship policies:");
 		for (const policy of lifecycle.relationshipPolicies) {
@@ -282,22 +262,6 @@ function formatRelationshipsDescription(
 		lines.push(
 			`- ${String(relationship.id)}: ${String(relationship.from)} -> ${String(relationship.to)} (${String(relationship.projection.type)})`,
 		);
-	}
-}
-
-function formatPolicyTargets(
-	lines: Array<string>,
-	targets: JsonValue | undefined,
-): void {
-	const items = Array.isArray(targets) ? targets : [];
-	if (items.length === 0) {
-		lines.push("  - Any declared target.");
-		return;
-	}
-	for (const target of items) {
-		if (isRecord(target)) {
-			lines.push(`  - ${formatCommandTarget(target)}`);
-		}
 	}
 }
 

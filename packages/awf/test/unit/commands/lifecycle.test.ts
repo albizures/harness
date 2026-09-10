@@ -514,20 +514,12 @@ it("should ensure that explicit resume chooses a valid next ready action", async
 	expect(issue.workflow.action).toBe("work");
 });
 
-it("should ensure that manifest lifecycle policy constrains retry escalation and resume", async () => {
-	const manifest = {
-		...agentWorkflowManifest,
-		lifecycle: {
-			retry: { allow: [{ kind: "task", action: "work" }] },
-			escalation: { allow: [{ kind: "task", action: "work" }] },
-			resume: { allow: [{ kind: "task", actions: ["work"] }] },
-		},
-	};
+it("should ensure that removed manifest lifecycle policy no longer constrains retry escalation or resume", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
-				id: "123",
-				title: "Constrained",
+				id: "retry",
+				title: "Retry unconstrained",
 				workflow: {
 					kind: "task",
 					state: "running",
@@ -535,39 +527,41 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 				},
 			},
 			{
+				id: "escalate",
+				title: "Escalate unconstrained",
+				workflow: { kind: "task", state: "ready", action: "review" },
+			},
+			{
 				id: "human",
 				title: "Human",
-				workflow: { kind: "task", state: "need-human", action: "none" },
+				workflow: { kind: "spec", state: "need-human", action: "none" },
 			},
 		],
 	});
 
 	expect(
 		(
-			await execute(["run-command", "fail", "123", "--input", "-"], {
+			await execute(["run-command", "fail", "retry", "--input", "-"], {
 				tracker,
-				manifest,
 				stdin: "{}",
 			})
 		).ok,
-	).toBe(false);
+	).toBe(true);
 	expect(
 		(
-			await execute(["run-command", "escalate", "123", "--input", "-"], {
+			await execute(["run-command", "escalate", "escalate", "--input", "-"], {
 				tracker,
-				manifest,
 				stdin: JSON.stringify({ reason: "blocked" }),
 			})
 		).ok,
-	).toBe(false);
+	).toBe(true);
 	expect(
 		(
 			await execute(["run-command", "resume", "human", "--action", "merge"], {
 				tracker,
-				manifest,
 			})
 		).ok,
-	).toBe(false);
+	).toBe(true);
 });
 
 it("should ensure that bundled workflow vocabulary and transitions do not include durable blocked", () => {

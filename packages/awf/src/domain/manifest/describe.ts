@@ -1,5 +1,4 @@
 import type {
-	LifecyclePolicyTarget,
 	ManifestReadinessFilter,
 	ManifestWorkflowFilter,
 	WorkflowManifest,
@@ -77,11 +76,6 @@ export type WorkflowDescriptionV1 = {
 	lifecycle?: {
 		activeStates?: Array<string>;
 		terminalStates?: Array<string>;
-		retry?: { allow?: Array<{ kind: string; action: string }> };
-		escalation?: {
-			allow?: Array<{ kind: string; action: string }>;
-		};
-		resume?: { allow?: Array<{ kind: string; actions: Array<string> }> };
 		relationshipPolicies?: Array<{
 			relationship: "parent";
 			child: WorkflowDescriptionWorkflowFilterV1;
@@ -253,41 +247,6 @@ function describeLifecycle(manifest: WorkflowManifest) {
 			...(manifest.lifecycle.terminalStates === undefined
 				? {}
 				: { terminalStates: [...manifest.lifecycle.terminalStates] }),
-			...(manifest.lifecycle.retry === undefined
-				? {}
-				: {
-						retry: {
-							...(manifest.lifecycle.retry.allow === undefined
-								? {}
-								: { allow: manifest.lifecycle.retry.allow.map(policyTarget) }),
-						},
-					}),
-			...(manifest.lifecycle.escalation === undefined
-				? {}
-				: {
-						escalation: {
-							...(manifest.lifecycle.escalation.allow === undefined
-								? {}
-								: {
-										allow:
-											manifest.lifecycle.escalation.allow.map(policyTarget),
-									}),
-						},
-					}),
-			...(manifest.lifecycle.resume === undefined
-				? {}
-				: {
-						resume: {
-							...(manifest.lifecycle.resume.allow === undefined
-								? {}
-								: {
-										allow: manifest.lifecycle.resume.allow.map((target) => ({
-											kind: target.kind,
-											actions: [...target.actions],
-										})),
-									}),
-						},
-					}),
 			...(manifest.lifecycle.relationshipPolicies === undefined
 				? {}
 				: {
@@ -327,10 +286,6 @@ function workflowFilter(
 		...(filter.state === undefined ? {} : { state: filter.state }),
 		...(filter.action === undefined ? {} : { action: filter.action }),
 	};
-}
-
-function policyTarget(target: LifecyclePolicyTarget) {
-	return { kind: target.kind, action: target.action };
 }
 
 function inputMarker(input: unknown): WorkflowDescriptionSchemaInputV1 {
