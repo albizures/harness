@@ -189,7 +189,6 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 			tracker,
 			stdin: JSON.stringify({
 				reason: "Need clarification on the API shape.",
-				resumeAction: "fix",
 			}),
 		},
 	);
@@ -215,7 +214,6 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 	expect(JSON.parse(data.log.message ?? "{}")).toMatchObject({
 		event: "pause",
 		pausedAction: "implement",
-		resumeAction: "fix",
 		reason: "Need clarification on the API shape.",
 	});
 	const getEnvelope = await execute(["get", "123"], { tracker });
