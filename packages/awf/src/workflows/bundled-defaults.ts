@@ -2,11 +2,6 @@ import type { CommandHandlers } from "../runtime/command-handlers.ts";
 import type { LifecycleTransitionHandlers } from "../runtime/lifecycle-handlers.ts";
 import type { WorkflowManifest } from "../domain/manifest/schema.ts";
 import {
-	agentDevelopmentCommandHandlers,
-	agentDevelopmentLifecycleHandlers,
-	agentDevelopmentManifest,
-} from "./agent-development/index.ts";
-import {
 	agentWorkflowCommandHandlers,
 	agentWorkflowLifecycleHandlers,
 	agentWorkflowManifest,
@@ -56,9 +51,6 @@ export function withBundledWorkflowHandlers(
 }
 
 function bundledCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
-	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
-		return agentDevelopmentCommandHandlers;
-	}
 	if (manifest.workflow.id === agentWorkflowManifest.workflow.id) {
 		return agentWorkflowCommandHandlers;
 	}
@@ -68,9 +60,6 @@ function bundledCommandHandlers(manifest: WorkflowManifest): CommandHandlers {
 function bundledLifecycleHandlers(
 	manifest: WorkflowManifest,
 ): LifecycleTransitionHandlers | undefined {
-	if (manifest.workflow.id === agentDevelopmentManifest.workflow.id) {
-		return agentDevelopmentLifecycleHandlers;
-	}
 	if (manifest.workflow.id === agentWorkflowManifest.workflow.id) {
 		return agentWorkflowLifecycleHandlers;
 	}

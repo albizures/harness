@@ -9,18 +9,22 @@ const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const rootExports = awf as Record<string, unknown>;
 
 describe("when publishing the AWF public API", () => {
-	it("should not expose the removed generic-task workflow subpath", async () => {
+	it("should not expose removed workflow subpaths", async () => {
 		const packageJson = JSON.parse(
 			await readFile(join(packageRoot, "package.json"), "utf8"),
 		) as { exports: Record<string, string> };
 
 		expect(packageJson.exports).not.toHaveProperty("./workflows/generic-task");
+		expect(packageJson.exports).not.toHaveProperty("./workflows/agent-development");
 	});
 
-	it("should not export stale generic-task root aliases", () => {
+	it("should not export stale bundled workflow root aliases", () => {
 		expect(rootExports).not.toHaveProperty("genericTaskManifest");
 		expect(rootExports).not.toHaveProperty("genericTaskCommandHandlers");
 		expect(rootExports).not.toHaveProperty("genericTaskLifecycleHandlers");
+		expect(rootExports).not.toHaveProperty("agentDevelopmentManifest");
+		expect(rootExports).not.toHaveProperty("agentDevelopmentCommandHandlers");
+		expect(rootExports).not.toHaveProperty("agentDevelopmentLifecycleHandlers");
 	});
 
 	it("should not export Failure catalog internals", () => {

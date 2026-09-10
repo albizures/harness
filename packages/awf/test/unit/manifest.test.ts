@@ -28,8 +28,13 @@ const invalidTrackerFixture = new URL(
 it("should load a TypeScript-authored workflow manifest as declarative data", async () => {
 	const manifest = await loadManifest(validFixture);
 
-	expect(manifest.workflow.id).toBe("agent-development");
-	expect(manifest.kinds.map((kind) => kind.id)).toEqual(["spec", "ticket"]);
+	expect(manifest.workflow.id).toBe("agent-workflow");
+	expect(manifest.kinds.map((kind) => kind.id)).toEqual([
+		"spec",
+		"wayfinder",
+		"task",
+		"grilling",
+	]);
 	expect(
 		manifest.commands.every(
 			(command) =>
@@ -41,12 +46,10 @@ it("should load a TypeScript-authored workflow manifest as declarative data", as
 it("should load a Workflow module manifest and optional concrete tracker binding", async () => {
 	const workflowModule = await loadWorkflowModule(moduleFixture);
 
-	expect(workflowModule.manifest.workflow.id).toBe("agent-development");
+	expect(workflowModule.manifest.workflow.id).toBe("agent-workflow");
 	expect(typeof workflowModule.tracker?.getIssue).toBe("function");
 	expect(
-		typeof workflowModule.lifecycleHandlers?.[
-			"ticket:running/implement:succeed"
-		],
+		typeof workflowModule.lifecycleHandlers?.["task:running/work:succeed"],
 	).toBe("function");
 });
 
@@ -65,7 +68,7 @@ it("should ensure that Workflow module loading rejects non-concrete tracker expo
 it("should ensure that manifest loading validates the manifest export without requiring or checking tracker", async () => {
 	const manifest = await loadManifest(invalidTrackerFixture);
 
-	expect(manifest.workflow.id).toBe("agent-development");
+	expect(manifest.workflow.id).toBe("agent-workflow");
 });
 
 it("should reject loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
@@ -77,7 +80,7 @@ it("should reject loaded TypeScript workflow manifests with Zod-owned shape erro
 				issues
 					.map((issue) => issue.path)
 					.filter((path) => path.includes("projection.type")),
-			).toEqual(["$.relationships[2].projection.type"]);
+			).toEqual(["$.relationships[7].projection.type"]);
 			expect(issues.map((issue) => issue.message).join("\n")).toMatch(
 				/parent-child, dependency, or generated-by/,
 			);

@@ -1,4 +1,4 @@
-import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
+import { agentWorkflowManifest } from "../../src/workflows/agent-workflow/index.ts";
 
-export const manifest = agentDevelopmentManifest;
+export const manifest = agentWorkflowManifest;
 export const tracker = () => undefined;

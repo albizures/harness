@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../support/execute.ts";
-import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
 
 import { defineManifest } from "../../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
@@ -9,7 +9,7 @@ function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 
 const neutralManifest = defineManifest({
@@ -120,7 +120,7 @@ it("should ensure that start moves a ready issue to running and appends an actio
 			{
 				id: "123",
 				title: "Implement lifecycle",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				workflow: { kind: "task", state: "ready", action: "work" },
 			},
 		],
 	});
@@ -148,9 +148,9 @@ it("should not route top-level compatibility lifecycle aliases through manifest 
 				id: "123",
 				title: "Need product answer",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
+					action: "work",
 				},
 			},
 		],
@@ -164,7 +164,7 @@ it("should not route top-level compatibility lifecycle aliases through manifest 
 	expect(envelope.ok).toBe(false);
 	expect((await tracker.getIssue("123")).workflow).toMatchObject({
 		state: "running",
-		action: "implement",
+		action: "work",
 	});
 });
 
@@ -175,9 +175,9 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 				id: "123",
 				title: "Need product answer",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
+					action: "work",
 				},
 			},
 		],
@@ -213,7 +213,7 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 	expect(data.log.type).toBe("human_input_needed");
 	expect(JSON.parse(data.log.message ?? "{}")).toMatchObject({
 		event: "pause",
-		pausedAction: "implement",
+		pausedAction: "work",
 		reason: "Need clarification on the API shape.",
 	});
 	const getEnvelope = await execute(["get", "123"], { tracker });
@@ -329,9 +329,9 @@ it("should ensure that succeed applies the manifest terminal transition", async 
 				id: "123",
 				title: "Implement lifecycle",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
+					action: "work",
 				},
 			},
 		],
@@ -354,8 +354,8 @@ it("should ensure that succeed applies the manifest terminal transition", async 
 			};
 		}
 	).data;
-	expect(data.issue.workflow.state).toBe("ready");
-	expect(data.issue.workflow.action).toBe("review");
+	expect(data.issue.workflow.state).toBe("done");
+	expect(data.issue.workflow.action).toBe("none");
 	expect((await tracker.readLogs("123")).map((log) => log.type)).toEqual([
 		"action_succeeded",
 	]);
@@ -368,7 +368,7 @@ it("should ensure that failed running actions retry the same ready action by def
 				id: "123",
 				title: "Merge lifecycle",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
 					action: "merge",
 				},
@@ -416,7 +416,7 @@ it("should ensure that explicit escalation moves work to need-human none and log
 			{
 				id: "123",
 				title: "Escalate lifecycle",
-				workflow: { kind: "ticket", state: "ready", action: "review" },
+				workflow: { kind: "task", state: "ready", action: "work" },
 			},
 		],
 	});
@@ -437,7 +437,7 @@ it("should ensure that explicit escalation moves work to need-human none and log
 	).toEqual({
 		event: "escalate",
 		input: { reason: "review requires product decision" },
-		from: { state: "ready", action: "review" },
+		from: { state: "ready", action: "work" },
 		to: { state: "need-human", action: "none" },
 	});
 });
@@ -449,15 +449,15 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 				id: "running",
 				title: "Terminal payload",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
+					action: "work",
 				},
 			},
 			{
 				id: "escalate",
 				title: "Escalate payload",
-				workflow: { kind: "ticket", state: "ready", action: "review" },
+				workflow: { kind: "task", state: "ready", action: "review" },
 			},
 		],
 	});
@@ -496,13 +496,13 @@ it("should ensure that explicit resume chooses a valid next ready action", async
 			{
 				id: "123",
 				title: "Resume lifecycle",
-				workflow: { kind: "ticket", state: "need-human", action: "none" },
+				workflow: { kind: "task", state: "need-human", action: "none" },
 			},
 		],
 	});
 
 	const envelope = await execute(
-		["run-command", "resume", "123", "--action", "fix"],
+		["run-command", "resume", "123", "--action", "work"],
 		{
 			tracker,
 		},
@@ -511,16 +511,16 @@ it("should ensure that explicit resume chooses a valid next ready action", async
 	expect(envelope.ok).toBe(true);
 	const issue = await tracker.getIssue("123");
 	expect(issue.workflow.state).toBe("ready");
-	expect(issue.workflow.action).toBe("fix");
+	expect(issue.workflow.action).toBe("work");
 });
 
 it("should ensure that manifest lifecycle policy constrains retry escalation and resume", async () => {
 	const manifest = {
-		...agentDevelopmentManifest,
+		...agentWorkflowManifest,
 		lifecycle: {
-			retry: { allow: [{ kind: "ticket", action: "implement" }] },
-			escalation: { allow: [{ kind: "ticket", action: "implement" }] },
-			resume: { allow: [{ kind: "ticket", actions: ["implement"] }] },
+			retry: { allow: [{ kind: "task", action: "work" }] },
+			escalation: { allow: [{ kind: "task", action: "work" }] },
+			resume: { allow: [{ kind: "task", actions: ["work"] }] },
 		},
 	};
 	const tracker = createInMemoryTracker({
@@ -529,7 +529,7 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 				id: "123",
 				title: "Constrained",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
 					action: "merge",
 				},
@@ -537,7 +537,7 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 			{
 				id: "human",
 				title: "Human",
-				workflow: { kind: "ticket", state: "need-human", action: "none" },
+				workflow: { kind: "task", state: "need-human", action: "none" },
 			},
 		],
 	});
@@ -562,7 +562,7 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 	).toBe(false);
 	expect(
 		(
-			await execute(["run-command", "resume", "human", "--action", "fix"], {
+			await execute(["run-command", "resume", "human", "--action", "merge"], {
 				tracker,
 				manifest,
 			})
@@ -572,10 +572,10 @@ it("should ensure that manifest lifecycle policy constrains retry escalation and
 
 it("should ensure that bundled workflow vocabulary and transitions do not include durable blocked", () => {
 	expect(
-		!agentDevelopmentManifest.vocabulary.states.includes("blocked"),
+		!agentWorkflowManifest.vocabulary.states.includes("blocked"),
 	).toBeTruthy();
 	expect(
-		agentDevelopmentManifest.kinds.every((kind) =>
+		agentWorkflowManifest.kinds.every((kind) =>
 			kind.transitions.every(
 				(transition) =>
 					transition.from.state !== "blocked" &&
@@ -591,15 +591,15 @@ it("should ensure that lifecycle commands reject invalid manifest transitions", 
 			{
 				id: "done",
 				title: "Done",
-				workflow: { kind: "ticket", state: "done", action: "none" },
+				workflow: { kind: "task", state: "done", action: "none" },
 			},
 			{
 				id: "running",
 				title: "Running",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
+					action: "work",
 				},
 			},
 		],
@@ -630,7 +630,7 @@ it("should ensure that terminal commands for inactive issues use invalid-transit
 			{
 				id: "123",
 				title: "Terminal",
-				workflow: { kind: "ticket", state: "done", action: "none" },
+				workflow: { kind: "task", state: "done", action: "none" },
 			},
 		],
 	});
@@ -837,17 +837,17 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		issues: [
 			{
 				id: "retry",
-				title: "Retry ticket",
+				title: "Retry task",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
+					action: "merge",
 				},
 			},
 			{
 				id: "human",
 				title: "Needs decision",
-				workflow: { kind: "ticket", state: "ready", action: "review" },
+				workflow: { kind: "task", state: "ready", action: "work" },
 			},
 		],
 	});
@@ -864,13 +864,13 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		state: failed.issue.workflow.state,
 		action: failed.issue.workflow.action,
 		reason: failed.issue.workflow.reason,
-	}).toEqual({ state: "ready", action: "implement", reason: undefined });
+	}).toEqual({ state: "ready", action: "merge", reason: undefined });
 	expect(
 		JSON.parse((await tracker.readLogs("retry"))[0]?.message ?? "{}"),
 	).toEqual({
 		event: "fail",
 		input: { reason: "temporary CI failure" },
-		to: { state: "ready", action: "implement" },
+		to: { state: "ready", action: "merge" },
 	});
 
 	const invalidResume = await execute(
@@ -902,21 +902,21 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 	).toEqual({
 		event: "escalate",
 		input: { reason: "needs product decision" },
-		from: { state: "ready", action: "review" },
+		from: { state: "ready", action: "work" },
 		to: { state: "need-human", action: "none" },
 	});
 
 	const resumed = assertSuccess<{
 		issue: { workflow: { state: string; action: string } };
 	}>(
-		await execute(["run-command", "resume", "human", "--action", "fix"], {
+		await execute(["run-command", "resume", "human", "--action", "work"], {
 			tracker,
 		}),
 	);
 	expect({
 		state: resumed.issue.workflow.state,
 		action: resumed.issue.workflow.action,
-	}).toEqual({ state: "ready", action: "fix" });
+	}).toEqual({ state: "ready", action: "work" });
 	expect((await tracker.readLogs("human")).map((log) => log.type)).toEqual([
 		"human_intervention_needed",
 		"action_resumed",
@@ -925,6 +925,6 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		JSON.parse((await tracker.readLogs("human"))[1]?.message ?? "{}"),
 	).toEqual({
 		event: "resume",
-		to: { state: "ready", action: "fix" },
+		to: { state: "ready", action: "work" },
 	});
 });

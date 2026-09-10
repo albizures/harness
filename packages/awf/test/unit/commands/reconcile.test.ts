@@ -1,13 +1,13 @@
 import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../support/execute.ts";
-import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
 import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 
 it("should ensure that reconcile leaves active workflow issues clean", async () => {
@@ -16,7 +16,7 @@ it("should ensure that reconcile leaves active workflow issues clean", async () 
 			{
 				id: "123",
 				title: "Drifted",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
+				workflow: { kind: "task", state: "running", action: "work" },
 			},
 		],
 	});
@@ -42,9 +42,9 @@ it("should ensure that reconcile --apply leaves idle states unchanged", async ()
 				id: "123",
 				title: "Repairable",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "ready",
-					action: "implement",
+					action: "work",
 				},
 			},
 		],
@@ -68,7 +68,7 @@ it("should ensure that reconcile does not derive lifecycle drift from logs", asy
 			{
 				id: "123",
 				title: "Ambiguous",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
+				workflow: { kind: "task", state: "running", action: "work" },
 				logs: [],
 			},
 		],
@@ -80,7 +80,7 @@ it("should ensure that reconcile does not derive lifecycle drift from logs", asy
 	const updated = await tracker.getIssue("123");
 	expect(updated.workflow).toMatchObject({
 		state: "running",
-		action: "implement",
+		action: "work",
 	});
 	expect(
 		(
@@ -97,7 +97,7 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 			{
 				id: "logs",
 				title: "Bad logs",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				workflow: { kind: "task", state: "ready", action: "work" },
 				logs: [{ sequence: 1, type: "" }],
 			},
 		],
@@ -108,18 +108,18 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 				id: "dupe",
 				title: "Bad labels",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:kind:spec",
-					"awf:agent-development:state:ready",
-					"awf:agent-development:action:implement",
+					"awf:agent-workflow:kind:ticket",
+					"awf:agent-workflow:kind:spec",
+					"awf:agent-workflow:state:ready",
+					"awf:agent-workflow:action:implement",
 				],
 			},
 			{
 				id: "missing",
 				title: "Missing labels",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:state:ready",
+					"awf:agent-workflow:kind:ticket",
+					"awf:agent-workflow:state:ready",
 				],
 			},
 		],

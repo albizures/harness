@@ -9,7 +9,7 @@ it("should ensure that conditional updates advance the projection version and re
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Implement tracker",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	const updated = await tracker.updateIssue(issue.id, {
@@ -31,7 +31,7 @@ it("should ensure that workflow logs are append-only and read back in append ord
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Log me",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	await tracker.appendLog(issue.id, {
@@ -56,11 +56,11 @@ it("should ensure that hierarchy and dependency relationships are projected on r
 	});
 	const ticket = await tracker.createIssue({
 		title: "Ticket",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 	const blocker = await tracker.createIssue({
 		title: "Blocker",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	await tracker.addChild(spec.id, ticket.id);
@@ -109,10 +109,10 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 				id: "1",
 				title: "Bad",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:kind:spec",
-					"awf:agent-development:state:ready",
-					"awf:agent-development:action:implement",
+					"awf:agent-workflow:kind:task",
+					"awf:agent-workflow:kind:spec",
+					"awf:agent-workflow:state:ready",
+					"awf:agent-workflow:action:work",
 				],
 			},
 		],
@@ -126,8 +126,8 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 				id: "2",
 				title: "Bad",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:state:ready",
+					"awf:agent-workflow:kind:task",
+					"awf:agent-workflow:state:ready",
 				],
 			},
 		],
@@ -141,7 +141,7 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 				{
 					id: "3",
 					title: "Bad",
-					labels: "awf:agent-development:kind:ticket",
+					labels: "awf:agent-workflow:kind:task",
 				} as never,
 			],
 		}),

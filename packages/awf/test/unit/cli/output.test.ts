@@ -313,8 +313,8 @@ it("should ensure that text output renders issue, created issue, log, and manife
 
 	expect(
 		serializeCliOutput(
-			{ ok: true, data: { manifest: "agent-development", version: "v1" } },
+			{ ok: true, data: { manifest: "agent-workflow", version: "v1" } },
 			"text",
 		),
-	).toBe("Manifest agent-development v1\n");
+	).toBe("Manifest agent-workflow v1\n");
 });

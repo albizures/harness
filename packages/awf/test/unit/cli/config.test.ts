@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { bindCliExecution } from "../../../src/cli/config.ts";
 
-const agentDevelopmentWorkflowSourcePath = new URL(
-	"../../../src/workflows/agent-development/index.ts",
+const agentWorkflowSourcePath = new URL(
+	"../../../src/workflows/agent-workflow/index.ts",
 	import.meta.url,
 ).pathname;
 const validManifestPath = new URL(
@@ -23,8 +23,8 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 function manifestOnlyConfig(): string {
-	return `import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
-export const manifest = agentDevelopmentManifest;
+	return `import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+export const manifest = agentWorkflowManifest;
 `;
 }
 
@@ -59,7 +59,7 @@ it("should ensure that default config discovery is limited to the current workin
 			throw new Error("expected cli binding");
 		}
 		expect(fromCurrentDirectory.args).toEqual(["ready"]);
-		expect(fromCurrentDirectory.manifest.workflow.id).toBe("agent-development");
+		expect(fromCurrentDirectory.manifest.workflow.id).toBe("agent-workflow");
 
 		const fromChildDirectory = await bindCliExecution(["ready"], child);
 		expect("manifest" in fromChildDirectory).toBe(true);
@@ -82,7 +82,7 @@ it("should ensure that explicit --config is stripped before command dispatch", a
 			throw new Error("expected cli binding");
 		}
 		expect(binding.args).toEqual(["ready"]);
-		expect(binding.manifest.workflow.id).toBe("agent-development");
+		expect(binding.manifest.workflow.id).toBe("agent-workflow");
 	});
 });
 

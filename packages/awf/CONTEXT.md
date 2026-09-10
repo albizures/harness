@@ -61,8 +61,8 @@ The project-local TypeScript file, conventionally `awf.config.ts`, that the AWF 
 _Avoid_: global config, manifest file, workflow definition file
 
 **Bundled workflow**:
-A Workflow definition shipped with the CLI package. The first bundled workflow is `agent-workflow`, the agent-development workflow using Spec, Task, Grilling, and Wayfinder workflow issue kinds.
-_Avoid_: built-in special case, example-only workflow
+A Workflow definition shipped with the CLI package. The supported bundled workflow is `agent-workflow`, which uses Spec, Task, Grilling, and Wayfinder workflow issue kinds.
+_Avoid_: built-in special case, example-only workflow, legacy agent-development workflow
 
 **Tracker API**:
 The Workflow runtime's lowest-common-denominator interface for issue tracker primitives such as issues, labels or fields, comments, children, dependencies, and logs. Workflow-specific mapping details live inside tracker adapters, not in parent-agent commands.

@@ -28,27 +28,9 @@ export const manifest = defineManifest({
 export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
 ```
 
-## Using the bundled agent-development workflow
-
-The bundled `agent-development` workflow remains available, but it must be imported explicitly from the package.
-
-```ts
-import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
-
-export {
-	agentDevelopmentManifest as manifest,
-	agentDevelopmentCommandHandlers as commandHandlers,
-	agentDevelopmentLifecycleHandlers as lifecycleHandlers,
-} from "@albizures/awf/workflows/agent-development";
-
-export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
-```
-
-If neither `./awf.config.ts` nor `--config <path>` is provided, AWF exits with an error instead of falling back to the bundled workflow.
-
 ## Using the bundled agent-workflow workflow
 
-The bundled `agent-workflow` workflow is opt-in. A project chooses it by exporting the agent-workflow manifest and handlers from its own `awf.config.ts` (or another config passed with `--config`).
+The bundled `agent-workflow` workflow is the supported bundled workflow. A project can use it implicitly with no config, or explicitly by exporting the agent-workflow manifest and handlers from its own `awf.config.ts` (or another config passed with `--config`).
 
 ```ts
 import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
@@ -114,6 +96,3 @@ In `agent-workflow`, a Spec starts ready for `planning`. Completing planning lea
 
 `generatedBy` records generated-by provenance only. This means generated-by provenance is not dependency ordering, is not a readiness gate, and is separate from Spec containment. Use `spec`/parent-child relationships to attach Tasks to a Spec, `dependsOn` to block one Task on another, and `generatedBy` to explain why a Task exists.
 
-## Compatibility with agent-development
-
-The bundled `agent-development` workflow remains supported in maintenance mode for existing Spec/Ticket graphs. New generic work can opt into `agent-workflow`, but existing `agent-development` issues are not automatically migrated, rewritten, or mixed with agent-workflow graphs. Do not mix agent-development and agent-workflow issues in one graph; choose one workflow id per issue graph and keep cross-workflow relationships as external references outside AWF readiness semantics.

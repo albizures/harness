@@ -11,11 +11,6 @@ import {
 import { withBundledWorkflowHandlers } from "./workflows/bundled-defaults.ts";
 export type { ExecuteOptions } from "./runtime/execute.ts";
 export {
-	agentDevelopmentCommandHandlers,
-	agentDevelopmentLifecycleHandlers,
-	agentDevelopmentManifest,
-} from "./workflows/agent-development/index.ts";
-export {
 	agentWorkflowCommandHandlers,
 	agentWorkflowLifecycleHandlers,
 	agentWorkflowManifest,

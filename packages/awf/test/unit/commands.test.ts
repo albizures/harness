@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { execute as rawExecute } from "../support/execute.ts";
-import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
+import { agentWorkflowManifest } from "../../src/workflows/agent-workflow/index.ts";
 
 import type { Tracker } from "../../src/ports/tracker.ts";
 import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
@@ -9,7 +9,7 @@ function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 it("should ensure that fixed handoff runtime command is not publicly accepted", async () => {
 	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);
@@ -27,7 +27,7 @@ it("should ensure that fixed handoff runtime command is not publicly accepted", 
 it("should ensure that unknown manifest command targets are rejected before tracker mutation", async () => {
 	const envelope = await execute(["create", "ticket", "--input", "-"], {
 		tracker: createNoTouchTracker(),
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 		stdin: "# Ticket\n",
 	});
 
@@ -46,8 +46,8 @@ it("should ensure that start records one high-level tracker intent instead of lo
 		issues: [
 			{
 				id: "123",
-				title: "Ticket",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				title: "Task",
+				workflow: { kind: "task", state: "ready", action: "work" },
 			},
 		],
 	});
@@ -74,7 +74,7 @@ it("should ensure that start records one high-level tracker intent instead of lo
 				hash: issue.workflow.hash,
 			});
 			expect(update.workflow.state).toBe("running");
-			expect(update.workflow.action).toBe("implement");
+			expect(update.workflow.action).toBe("work");
 			expect(record.type).toBe("record-command");
 			if (record.type !== "record-command") {
 				throw new Error("expected command record");
