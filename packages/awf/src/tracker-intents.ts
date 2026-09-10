@@ -12,15 +12,15 @@ import {
 	type TrackerRelationshipIntent,
 	type TrackerRepairIssueIntent,
 	type TrackerVerificationHooks,
-} from "./tracker.ts";
+} from "./ports/tracker.ts";
 import {
 	IssueNotFoundError,
 	type CreateIssueInput,
 	type UpdateIssueInput,
 	type WorkflowIssue,
-} from "./workflow/issue.ts";
-import type { WorkflowLog } from "./workflow/log.ts";
-import { ProjectionConflictError } from "./workflow/projection.ts";
+} from "./domain/workflow/issue.ts";
+import type { WorkflowLog } from "./domain/workflow/log.ts";
+import { ProjectionConflictError } from "./domain/workflow/projection.ts";
 
 export type TrackerIntentModulePrimitives = TrackerAdapterPrimitiveOperations &
 	TrackerAdapterPrimitiveReads & {

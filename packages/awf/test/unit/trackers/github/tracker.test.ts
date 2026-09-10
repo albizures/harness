@@ -7,8 +7,8 @@ import {
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
-} from "../../../../src/trackers/github/index.ts";
-import { CorruptWorkflowProjectionError } from "../../../../src/workflow/projection.ts";
+} from "../../../../src/adapters/trackers/github/index.ts";
+import { CorruptWorkflowProjectionError } from "../../../../src/domain/workflow/projection.ts";
 
 it("should project workflow fields to reserved GitHub labels and singleton metadata", async () => {
 	const api = createMockGitHubApi();
@@ -379,7 +379,7 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
 	const { createGhCliGitHubTracker } = await import(
-		"../../../../src/trackers/github/index.ts"
+		"../../../../src/adapters/trackers/github/index.ts"
 	);
 	const [owner, name] = repo.split("/");
 	expect(owner).toBeTruthy();

@@ -11,11 +11,11 @@ import {
 	agentWorkflowManifest,
 } from "./workflows/agent-workflow/index.ts";
 import { type Envelope, failure, success } from "./envelope.ts";
-import { describeWorkflow } from "./manifest/description.ts";
-import { validateManifest } from "./manifest/definition.ts";
-import type { WorkflowManifest } from "./manifest/manifest.ts";
-import type { Tracker } from "./tracker.ts";
-import { createInMemoryTracker } from "./trackers/memory.ts";
+import { describeWorkflow } from "./domain/manifest/describe.ts";
+import { validateManifest } from "./domain/manifest/define.ts";
+import type { WorkflowManifest } from "./domain/manifest/schema.ts";
+import type { Tracker } from "./ports/tracker.ts";
+import { createInMemoryTracker } from "./adapters/trackers/memory.ts";
 import { parseReadyOptions, validateKnownCommand } from "./commands/args.ts";
 import { manifestCommand } from "./commands/create-apply.ts";
 import { getIssueCommand } from "./commands/get.ts";

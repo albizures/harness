@@ -3,12 +3,12 @@ import { failure, type ErrorEnvelope } from "./envelope.ts";
 import type {
 	ManifestTransition,
 	WorkflowManifest,
-} from "./manifest/manifest.ts";
+} from "./domain/manifest/schema.ts";
 import type {
 	TrackerAdapterPrimitiveReads,
 	TrackerWorkflowEffect,
-} from "./tracker.ts";
-import type { WorkflowIssue } from "./workflow/issue.ts";
+} from "./ports/tracker.ts";
+import type { WorkflowIssue } from "./domain/workflow/issue.ts";
 
 export type LifecycleTransitionHandlerContext = {
 	manifest: WorkflowManifest;

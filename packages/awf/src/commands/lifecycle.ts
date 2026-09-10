@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { failure, success, type Envelope } from "../envelope.ts";
-import { parseJsonValue } from "../json.ts";
+import { parseJsonValue } from "../shared/json.ts";
 import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
-import type { TrackerAdapterPrimitiveReads } from "../tracker.ts";
+import type { TrackerAdapterPrimitiveReads } from "../ports/tracker.ts";
 import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
-import type { WorkflowManifest } from "../manifest/manifest.ts";
-import type { Tracker, TrackerLog } from "../tracker.ts";
+import type { WorkflowManifest } from "../domain/manifest/schema.ts";
+import type { Tracker, TrackerLog } from "../ports/tracker.ts";
 import {
 	cleanCurrentTarget,
 	cleanTransitionTarget,

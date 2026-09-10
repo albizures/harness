@@ -1,8 +1,8 @@
 import { failure, success, type Envelope } from "../envelope.ts";
-import type { WorkflowManifest } from "../manifest/manifest.ts";
-import type { Tracker } from "../tracker.ts";
+import type { WorkflowManifest } from "../domain/manifest/schema.ts";
+import type { Tracker } from "../ports/tracker.ts";
 import { isRecord } from "./shared.ts";
-import { IssueNotFoundError } from "../workflow/issue.ts";
+import { IssueNotFoundError } from "../domain/workflow/issue.ts";
 
 export type ReconciliationDiagnostic = {
 	code: string;

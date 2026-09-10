@@ -7,7 +7,7 @@ import {
 	lifecycleTransitionHandlerKey,
 	type LifecycleTransitionHandlers,
 } from "../../lifecycle-handlers.ts";
-import type { WorkflowIssue } from "../../workflow/issue.ts";
+import type { WorkflowIssue } from "../../domain/workflow/issue.ts";
 
 export const agentDevelopmentLifecycleHandlers: LifecycleTransitionHandlers = {
 	[lifecycleTransitionHandlerKey(

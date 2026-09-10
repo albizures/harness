@@ -1,6 +1,6 @@
 import { success, type Envelope } from "../envelope.ts";
-import type { WorkflowManifest } from "../manifest/manifest.ts";
-import type { Tracker } from "../tracker.ts";
+import type { WorkflowManifest } from "../domain/manifest/schema.ts";
+import type { Tracker } from "../ports/tracker.ts";
 import type { ReadyOptions } from "./args.ts";
 import {
 	cleanWorkflowFields,

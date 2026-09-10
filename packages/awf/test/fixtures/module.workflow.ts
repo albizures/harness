@@ -1,4 +1,4 @@
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
 import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
 
 export const manifest = agentDevelopmentManifest;

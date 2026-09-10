@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
 
-import type { Tracker } from "../../src/tracker.ts";
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+import type { Tracker } from "../../src/ports/tracker.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],

@@ -17,13 +17,13 @@ import { failure, type Envelope } from "./envelope.ts";
 import {
 	ManifestValidationError,
 	type WorkflowManifest,
-} from "./manifest/manifest.ts";
+} from "./domain/manifest/schema.ts";
 import {
 	WorkflowModuleLoadError,
 	loadWorkflowModule,
 } from "./workflow-module.ts";
-import type { Tracker } from "./tracker.ts";
-import { createFileSystemTracker } from "./trackers/filesystem.ts";
+import type { Tracker } from "./ports/tracker.ts";
+import { createFileSystemTracker } from "./adapters/trackers/filesystem.ts";
 
 export type CliBinding = {
 	args: Array<string>;

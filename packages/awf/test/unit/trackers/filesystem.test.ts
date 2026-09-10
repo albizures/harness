@@ -9,8 +9,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
-import { CorruptWorkflowProjectionError } from "../../../src/workflow/projection.ts";
-import { createFileSystemTracker } from "../../../src/trackers/filesystem.ts";
+import { CorruptWorkflowProjectionError } from "../../../src/domain/workflow/projection.ts";
+import { createFileSystemTracker } from "../../../src/adapters/trackers/filesystem.ts";
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	const dir = await mkdtemp(join(tmpdir(), "awf-file-tracker-"));

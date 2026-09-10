@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineManifest } from "../../manifest/definition.ts";
+import { defineManifest } from "../../domain/manifest/define.ts";
 
 const states = [
 	"ready",

@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../../src/commands.ts";
 import { validateManifest } from "../../../../src/manifest/index.ts";
-import { createInMemoryTracker } from "../../../../src/trackers/memory.ts";
-import type { WorkflowIssue } from "../../../../src/workflow/issue.ts";
+import { createInMemoryTracker } from "../../../../src/adapters/trackers/memory.ts";
+import type { WorkflowIssue } from "../../../../src/domain/workflow/issue.ts";
 import {
 	agentDevelopmentCommandHandlers,
 	agentDevelopmentLifecycleHandlers,

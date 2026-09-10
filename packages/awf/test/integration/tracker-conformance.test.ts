@@ -9,10 +9,10 @@ import {
 	type TrackerLog,
 	type TrackerProjectionExpectation,
 	type TrackerWorkflow,
-} from "../../src/tracker.ts";
-import { createFileSystemTracker } from "../../src/trackers/filesystem.ts";
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
-import { ProjectionConflictError } from "../../src/workflow/projection.ts";
+} from "../../src/ports/tracker.ts";
+import { createFileSystemTracker } from "../../src/adapters/trackers/filesystem.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
+import { ProjectionConflictError } from "../../src/domain/workflow/projection.ts";
 
 type TrackerFixture = {
 	tracker: TrackerAdapter;

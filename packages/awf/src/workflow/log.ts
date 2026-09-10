@@ -1,6 +1,1 @@
-export type WorkflowLog = {
-	sequence: number;
-	issueId: string;
-	type: string;
-	message?: string;
-};
+export * from "../domain/workflow/log.ts";

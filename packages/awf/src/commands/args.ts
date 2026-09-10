@@ -1,5 +1,5 @@
 import { failure, type Envelope } from "../envelope.ts";
-import type { WorkflowManifest } from "../manifest/manifest.ts";
+import type { WorkflowManifest } from "../domain/manifest/schema.ts";
 import { readOption, unknownCommand, workflowCommandByCli } from "./shared.ts";
 
 const maxReconcileArgumentCount = 3;

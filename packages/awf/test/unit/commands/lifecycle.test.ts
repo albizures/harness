@@ -3,7 +3,7 @@ import { execute as rawExecute } from "../../../src/commands.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
 import { defineManifest } from "../../../src/manifest/index.ts";
-import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],

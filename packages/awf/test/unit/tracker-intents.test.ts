@@ -4,14 +4,14 @@ import {
 	createTrackerIntentModule,
 	type TrackerIntentModulePrimitives,
 } from "../../src/tracker-intents.ts";
-import { NeedReconciliationError, type Tracker } from "../../src/tracker.ts";
-import { WorkflowTrackerState } from "../../src/trackers/state.ts";
+import { NeedReconciliationError, type Tracker } from "../../src/ports/tracker.ts";
+import { WorkflowTrackerState } from "../../src/adapters/trackers/state.ts";
 import type {
 	CreateIssueInput,
 	UpdateIssueInput,
 	WorkflowIssue,
-} from "../../src/workflow/issue.ts";
-import type { WorkflowLog } from "../../src/workflow/log.ts";
+} from "../../src/domain/workflow/issue.ts";
+import type { WorkflowLog } from "../../src/domain/workflow/log.ts";
 
 type RemovedLifecycleIntentKeys = Extract<
 	keyof Tracker,

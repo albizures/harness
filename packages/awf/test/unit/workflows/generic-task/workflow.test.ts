@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { execute as rawExecute } from "../../../../src/commands.ts";
 import { validateManifestCommand } from "../../../../src/commands/manifest-validate.ts";
 import { validateManifest } from "../../../../src/manifest/index.ts";
-import { createInMemoryTracker } from "../../../../src/trackers/memory.ts";
+import { createInMemoryTracker } from "../../../../src/adapters/trackers/memory.ts";
 import type { Envelope } from "../../../../src/envelope.ts";
 import {
 	agentWorkflowCommandHandlers,

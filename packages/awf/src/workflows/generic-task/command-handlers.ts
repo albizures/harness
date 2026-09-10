@@ -4,9 +4,9 @@ import type {
 	CommandHandlers,
 } from "../../command-handlers.ts";
 import { type Envelope, failure, success } from "../../envelope.ts";
-import { getKind, type ManifestCommand } from "../../manifest/manifest.ts";
-import { NeedReconciliationError, type Tracker } from "../../tracker.ts";
-import type { WorkflowIssue } from "../../workflow/issue.ts";
+import { getKind, type ManifestCommand } from "../../domain/manifest/schema.ts";
+import { NeedReconciliationError, type Tracker } from "../../ports/tracker.ts";
+import type { WorkflowIssue } from "../../domain/workflow/issue.ts";
 import {
 	genericIssueTitle,
 	initialWorkflowTarget,

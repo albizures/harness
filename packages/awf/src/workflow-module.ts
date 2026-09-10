@@ -7,13 +7,13 @@ import {
 	type LifecycleTransitionHandler,
 	type LifecycleTransitionHandlers,
 } from "./lifecycle-handlers.ts";
-import { normalizeManifest, validateManifest } from "./manifest/definition.ts";
+import { normalizeManifest, validateManifest } from "./domain/manifest/define.ts";
 import {
 	ManifestValidationError,
 	type WorkflowManifest,
 	type WorkflowManifestDefinition,
-} from "./manifest/manifest.ts";
-import type { Tracker } from "./tracker.ts";
+} from "./domain/manifest/schema.ts";
+import type { Tracker } from "./ports/tracker.ts";
 
 export class WorkflowModuleLoadError extends Error {
 	constructor(message: string) {

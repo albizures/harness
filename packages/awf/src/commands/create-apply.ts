@@ -5,15 +5,15 @@ import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
 import type {
 	ManifestCommand,
 	WorkflowManifest,
-} from "../manifest/manifest.ts";
-import type { CreateIssueInput } from "../workflow/issue.ts";
+} from "../domain/manifest/schema.ts";
+import type { CreateIssueInput } from "../domain/workflow/issue.ts";
 import {
 	NeedReconciliationError,
 	type Tracker,
 	type TrackerApplyWorkflowEffectsIntent,
 	type TrackerIssueRef,
 	type TrackerWorkflowEffect,
-} from "../tracker.ts";
+} from "../ports/tracker.ts";
 import {
 	escalateCommand,
 	pauseCommand,

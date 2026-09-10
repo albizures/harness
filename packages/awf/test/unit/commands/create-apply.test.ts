@@ -14,9 +14,9 @@ import {
 	NeedReconciliationError,
 	type Tracker,
 	type TrackerAdapter,
-} from "../../../src/tracker.ts";
-import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
-import type { WorkflowIssue } from "../../../src/workflow/issue.ts";
+} from "../../../src/ports/tracker.ts";
+import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
+import type { WorkflowIssue } from "../../../src/domain/workflow/issue.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],

@@ -6,7 +6,7 @@ import {
 	type Envelope,
 	type ErrorEnvelope,
 } from "../envelope.ts";
-import { jsonValueSchema } from "../json.ts";
+import { jsonValueSchema } from "../shared/json.ts";
 import type {
 	ManifestCommand,
 	PayloadZodSchema,
@@ -14,13 +14,13 @@ import type {
 	ManifestTransition,
 	ManifestWorkflowFilter,
 	WorkflowManifest,
-} from "../manifest/manifest.ts";
-import { NeedReconciliationError, type Tracker } from "../tracker.ts";
-import { IssueNotFoundError } from "../workflow/issue.ts";
+} from "../domain/manifest/schema.ts";
+import { NeedReconciliationError, type Tracker } from "../ports/tracker.ts";
+import { IssueNotFoundError } from "../domain/workflow/issue.ts";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
-} from "../workflow/projection.ts";
+} from "../domain/workflow/projection.ts";
 export type WorkflowFields = {
 	kind: string;
 	state: string;

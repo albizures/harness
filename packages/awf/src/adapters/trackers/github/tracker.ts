@@ -1,17 +1,17 @@
-import type { WorkflowManifest } from "../../manifest/manifest.ts";
-import type { TrackerIssueInspection, TrackerLog } from "../../tracker.ts";
+import type { WorkflowManifest } from "../../../domain/manifest/schema.ts";
+import type { TrackerIssueInspection, TrackerLog } from "../../../ports/tracker.ts";
 import {
 	type CreateIssueInput,
 	IssueNotFoundError,
 	type UpdateIssueInput,
 	type WorkflowIssue,
-} from "../../workflow/issue.ts";
-import type { WorkflowLog } from "../../workflow/log.ts";
+} from "../../../domain/workflow/issue.ts";
+import type { WorkflowLog } from "../../../domain/workflow/log.ts";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
 	type WorkflowProjection,
-} from "../../workflow/projection.ts";
+} from "../../../domain/workflow/projection.ts";
 import type { GitHubTrackerApi, GitHubTrackerIssue } from "./index.ts";
 import {
 	hasWorkflowProjectionLabels,

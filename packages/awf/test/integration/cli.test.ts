@@ -39,11 +39,11 @@ const manifestSourcePath = new URL(
 	import.meta.url,
 ).pathname;
 const memoryTrackerSourcePath = new URL(
-	"../../src/trackers/memory.ts",
+	"../../src/adapters/trackers/memory.ts",
 	import.meta.url,
 ).pathname;
 const filesystemTrackerSourcePath = new URL(
-	"../../src/trackers/filesystem.ts",
+	"../../src/adapters/trackers/filesystem.ts",
 	import.meta.url,
 ).pathname;
 

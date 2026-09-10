@@ -1,3 +1,3 @@
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
 
 export const tracker = createInMemoryTracker();

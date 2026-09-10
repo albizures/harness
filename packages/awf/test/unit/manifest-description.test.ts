@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { describeWorkflow } from "../../src/manifest/description.ts";
+import { describeWorkflow } from "../../src/domain/manifest/describe.ts";
 import { defineManifest } from "../../src/manifest/index.ts";
 
 const stringInput = z.object({ value: z.string() });

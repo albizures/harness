@@ -35,7 +35,7 @@ export {
 	jsonValueSchema,
 	parseJsonRecord,
 	parseJsonValue,
-} from "./json.ts";
+} from "./shared/json.ts";
 export {
 	findLifecycleTransitionHandler,
 	lifecycleTransitionHandlerKey,
@@ -52,8 +52,8 @@ export {
 	type PayloadZodSchema,
 	type ValidationIssue,
 	type WorkflowManifest,
-} from "./manifest/manifest.ts";
-export { defineManifest, validateManifest } from "./manifest/definition.ts";
+} from "./domain/manifest/schema.ts";
+export { defineManifest, validateManifest } from "./domain/manifest/define.ts";
 export {
 	describeWorkflow,
 	manifestCommandUsage,
@@ -62,7 +62,7 @@ export {
 	type WorkflowDescriptionStateRefV1,
 	type WorkflowDescriptionV1,
 	type WorkflowDescriptionWorkflowFilterV1,
-} from "./manifest/description.ts";
+} from "./domain/manifest/describe.ts";
 export {
 	WorkflowModuleLoadError,
 	loadManifest,
@@ -76,7 +76,7 @@ export {
 	type GitHubTrackerApi,
 	type GitHubTrackerCapabilities,
 	type GitHubTrackerIssue,
-} from "./trackers/github/index.ts";
+} from "./adapters/trackers/github/index.ts";
 export {
 	createTrackerAdapter,
 	createTrackerIntentModule,
@@ -94,24 +94,24 @@ export {
 	type TrackerRelationshipIntent,
 	type TrackerWorkflowEffect,
 	type TrackerVerificationHooks,
-} from "./tracker.ts";
-export { WorkflowLog } from "./workflow/log.ts";
+} from "./ports/tracker.ts";
+export { WorkflowLog } from "./domain/workflow/log.ts";
 export {
 	CorruptWorkflowProjectionError,
 	type WorkflowProjection,
-} from "./workflow/projection.ts";
+} from "./domain/workflow/projection.ts";
 export {
 	IssueNotFoundError,
 	IssueRelationships,
 	UpdateIssueInput,
 	WorkflowIssue,
 	CreateIssueInput,
-} from "./workflow/issue.ts";
+} from "./domain/workflow/issue.ts";
 export {
 	createFileSystemTracker,
 	type FileSystemTrackerOptions,
-} from "./trackers/filesystem.ts";
+} from "./adapters/trackers/filesystem.ts";
 export {
 	createInMemoryTracker,
 	createInMemoryTrackerFromEnvironment,
-} from "./trackers/memory.ts";
+} from "./adapters/trackers/memory.ts";

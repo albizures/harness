@@ -10,12 +10,12 @@ import {
 	getKind,
 	type ManifestCommand,
 	type ManifestTransition,
-} from "../../manifest/manifest.ts";
-import { NeedReconciliationError, type Tracker } from "../../tracker.ts";
+} from "../../domain/manifest/schema.ts";
+import { NeedReconciliationError, type Tracker } from "../../ports/tracker.ts";
 import {
 	IssueNotFoundError,
 	type WorkflowIssue,
-} from "../../workflow/issue.ts";
+} from "../../domain/workflow/issue.ts";
 import {
 	initialWorkflowTarget,
 	invalidTransition,

@@ -4,8 +4,8 @@ import {
 	defineManifest,
 	type WorkflowManifest,
 } from "../../../src/manifest/index.ts";
-import type { Tracker } from "../../../src/tracker.ts";
-import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+import type { Tracker } from "../../../src/ports/tracker.ts";
+import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
 
 const defaultTicketOnlyReadyManifest = defineManifest({
 	version: "v1",

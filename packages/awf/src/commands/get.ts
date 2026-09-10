@@ -1,7 +1,7 @@
 import { failure, success, type Envelope } from "../envelope.ts";
-import type { Tracker } from "../tracker.ts";
-import { CorruptWorkflowProjectionError } from "../workflow/projection.ts";
-import { IssueNotFoundError } from "../workflow/issue.ts";
+import type { Tracker } from "../ports/tracker.ts";
+import { CorruptWorkflowProjectionError } from "../domain/workflow/projection.ts";
+import { IssueNotFoundError } from "../domain/workflow/issue.ts";
 
 export async function getIssueCommand(
 	id: string | undefined,
