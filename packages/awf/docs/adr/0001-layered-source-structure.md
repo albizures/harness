@@ -2,6 +2,10 @@
 
 AWF source is organized by architectural role under `packages/awf/src`: `cli`, `runtime`, `domain`, `ports`, `adapters`, `workflows`, and `shared`. This makes the package structure reflect the boundary between process-level CLI composition, Workflow runtime orchestration, pure workflow model concepts, Tracker API ports, concrete tracker adapters, bundled workflows, and cross-cutting utilities.
 
+## Status note
+
+This ADR preserves the historical source-layering decision text below. The formerly separate `generic-task` bundled workflow and public workflow subpath were later removed in favor of the canonical `agent-workflow` bundled workflow module; current consumers should import from `@albizures/awf/workflows/agent-workflow`.
+
 ## Decision
 
 - `cli` owns the `awf` binary entrypoint, AWF config file loading, process I/O, CLI-shaped argument adaptation, and envelope rendering.

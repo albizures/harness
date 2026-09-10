@@ -2,4 +2,4 @@
 "@albizures/awf": major
 ---
 
-Remove the stale generic-task public workflow API and keep agent-workflow as the canonical bundled workflow export.
+Remove the stale `generic-task` workflow exports and `@albizures/awf/workflows/generic-task` subpath in favor of the canonical `agent-workflow` bundled workflow module.
