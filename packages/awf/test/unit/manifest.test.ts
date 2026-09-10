@@ -5,7 +5,7 @@ import {
 	defineManifest,
 	validateManifest,
 } from "../../src/domain/manifest/define.ts";
-import { loadManifest, loadWorkflowModule } from "../../src/workflow-module.ts";
+import { loadManifest, loadWorkflowModule } from "../../src/runtime/workflow-module.ts";
 
 const validFixture = new URL("../fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;

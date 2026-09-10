@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { execute as rawExecute } from "../../src/commands.ts";
+import { execute as rawExecute } from "../support/execute.ts";
 import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
 
 import type { Tracker } from "../../src/ports/tracker.ts";

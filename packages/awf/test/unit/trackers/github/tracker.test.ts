@@ -1,5 +1,5 @@
 import { assert, expect, it } from "vitest";
-import { execute } from "../../../../src/commands.ts";
+import { execute } from "../../../support/execute.ts";
 import { agentDevelopmentManifest } from "../../../../src/workflows/agent-development/index.ts";
 import { genericTaskManifest } from "../../../../src/workflows/generic-task/index.ts";
 import {

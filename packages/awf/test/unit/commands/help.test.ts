@@ -2,8 +2,8 @@ import { expect, it } from "vitest";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
 import { defineManifest } from "../../../src/manifest/index.ts";
-import { execute as rawExecute } from "../../../src/commands.ts";
-import { helpCommands, helpReadiness } from "../../../src/commands/help.ts";
+import { execute as rawExecute } from "../../support/execute.ts";
+import { helpCommands, helpReadiness } from "../../../src/runtime/commands/help.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],

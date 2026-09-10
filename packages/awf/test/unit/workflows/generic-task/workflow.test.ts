@@ -2,11 +2,11 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { execute as rawExecute } from "../../../../src/commands.ts";
-import { validateManifestCommand } from "../../../../src/commands/manifest-validate.ts";
+import { execute as rawExecute } from "../../../support/execute.ts";
+import { validateManifestCommand } from "../../../../src/runtime/commands/manifest-validate.ts";
 import { validateManifest } from "../../../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../../../src/adapters/trackers/memory.ts";
-import type { Envelope } from "../../../../src/envelope.ts";
+import type { Envelope } from "../../../../src/runtime/envelope.ts";
 import {
 	agentWorkflowCommandHandlers,
 	agentWorkflowLifecycleHandlers,

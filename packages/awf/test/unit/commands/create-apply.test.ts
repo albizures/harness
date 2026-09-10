@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
 	execute as rawExecute,
 	type CommandHandlers,
-} from "../../../src/commands.ts";
+} from "../../support/execute.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 
 import type { WorkflowManifest } from "../../../src/manifest/index.ts";

@@ -4,7 +4,12 @@ export type {
 	CommandHandlerResult,
 	CommandHandlers,
 } from "./runtime/command-handlers.ts";
-export { execute, type ExecuteOptions } from "./commands.ts";
+import {
+	execute as executeRuntime,
+	type ExecuteOptions,
+} from "./runtime/execute.ts";
+import { withBundledWorkflowHandlers } from "./workflows/bundled-defaults.ts";
+export type { ExecuteOptions } from "./runtime/execute.ts";
 export {
 	agentDevelopmentCommandHandlers,
 	agentDevelopmentLifecycleHandlers,
@@ -115,3 +120,11 @@ export {
 	createInMemoryTracker,
 	createInMemoryTrackerFromEnvironment,
 } from "./adapters/trackers/memory.ts";
+
+export function execute(
+	args: Array<string>,
+	options: ExecuteOptions = {},
+): ReturnType<typeof executeRuntime> {
+	const handlers = withBundledWorkflowHandlers(options.manifest, options);
+	return executeRuntime(args, { ...options, ...handlers });
+}

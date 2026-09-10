@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { execute as rawExecute } from "../../../src/commands.ts";
+import { execute as rawExecute } from "../../support/execute.ts";
 import type { WorkflowDescriptionV1 } from "../../../src/manifest/index.ts";
 import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
 

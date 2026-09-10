@@ -2,14 +2,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { bindCliExecution } from "../../src/cli-config.ts";
+import { bindCliExecution } from "../../../src/cli/config.ts";
 
 const agentDevelopmentWorkflowSourcePath = new URL(
-	"../../src/workflows/agent-development/index.ts",
+	"../../../src/workflows/agent-development/index.ts",
 	import.meta.url,
 ).pathname;
 const validManifestPath = new URL(
-	"../fixtures/valid.workflow.ts",
+	"../../fixtures/valid.workflow.ts",
 	import.meta.url,
 ).pathname;
 

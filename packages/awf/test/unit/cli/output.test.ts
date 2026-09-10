@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { parseOutputFormat, serializeCliOutput } from "../../src/output.ts";
+import { parseOutputFormat, serializeCliOutput } from "../../../src/cli/output.ts";
 
 it("should ensure that --json is stripped from arguments and selects JSON output", () => {
 	expect(

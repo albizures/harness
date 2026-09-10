@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { execute } from "../../src/commands.ts";
+import { execute } from "../support/execute.ts";
 import { defineManifest } from "../../src/manifest/index.ts";
 import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
 

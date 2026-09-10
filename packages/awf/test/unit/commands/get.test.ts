@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { execute } from "../../../src/commands.ts";
+import { execute } from "../../support/execute.ts";
 import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
 
 it("should ensure that get reads a workflow issue with a stable envelope shape", async () => {

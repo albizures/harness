@@ -2,9 +2,9 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { bindCliExecution } from "../../src/cli-config.ts";
-import { execute } from "../../src/commands.ts";
-import type { Envelope } from "../../src/envelope.ts";
+import { bindCliExecution } from "../../src/cli/config.ts";
+import { execute } from "../support/execute.ts";
+import type { Envelope } from "../../src/runtime/envelope.ts";
 
 type SuccessData = Extract<Envelope, { ok: true }>["data"];
 

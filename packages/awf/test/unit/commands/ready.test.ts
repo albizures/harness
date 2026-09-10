@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { execute } from "../../../src/commands.ts";
+import { execute } from "../../support/execute.ts";
 import {
 	defineManifest,
 	type WorkflowManifest,
