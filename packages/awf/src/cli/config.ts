@@ -1,11 +1,15 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { JsonValue } from "type-fest";
 import type { CommandHandlers } from "../runtime/command-handlers.ts";
 import type { LifecycleTransitionHandlers } from "../runtime/lifecycle-handlers.ts";
 import { agentWorkflowManifest } from "../workflows/agent-workflow/index.ts";
 import { bundledWorkflowHandlers } from "../workflows/bundled-defaults.ts";
-import { failure, type Envelope } from "../runtime/envelope.ts";
+import {
+	failure,
+	type Envelope,
+	type FailureDetails,
+} from "../runtime/envelope.ts";
+import { cliFailures } from "./failures.ts";
 import {
 	ManifestValidationError,
 	type WorkflowManifest,
@@ -50,7 +54,12 @@ export async function bindCliExecution(
 	}
 
 	if (parsed.explicit && !existsSync(configPath)) {
-		return configFailure(configPath, "Config file does not exist.");
+		return failure(
+			cliFailures.configLoadFailed({
+				path: configPath,
+				message: "Config file does not exist.",
+			}),
+		);
 	}
 
 	try {
@@ -73,10 +82,12 @@ export async function bindCliExecution(
 						},
 		};
 	} catch (error) {
-		return configFailure(
-			configPath,
-			formatConfigError(error),
-			errorDetails(error),
+		return failure(
+			cliFailures.configLoadFailed({
+				path: configPath,
+				message: formatConfigError(error),
+				details: errorDetails(error),
+			}),
 		);
 	}
 }
@@ -97,18 +108,22 @@ function parseConfigOption(
 	}
 	if (configIndexes.length > 1) {
 		return {
-			error: failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-				usage: "awf [--config <path>] <command> ...",
-			}),
+			error: failure(
+				cliFailures.invalidArguments({
+					usage: "awf [--config <path>] <command> ...",
+				}),
+			),
 		};
 	}
 	const configIndex = configIndexes[0];
 	const value = args[configIndex + 1];
 	if (value === undefined || value === "" || value.startsWith("-")) {
 		return {
-			error: failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-				usage: "awf [--config <path>] <command> ...",
-			}),
+			error: failure(
+				cliFailures.invalidArguments({
+					usage: "awf [--config <path>] <command> ...",
+				}),
+			),
 		};
 	}
 	return {
@@ -125,14 +140,6 @@ function discoverDefaultConfig(cwd: string): string | undefined {
 	return existsSync(configPath) ? configPath : undefined;
 }
 
-function configFailure(
-	path: string,
-	message: string,
-	details: Record<string, JsonValue> = {},
-): Envelope {
-	return failure("CONFIG_LOAD_FAILED", message, { path, ...details });
-}
-
 function formatConfigError(error: unknown): string {
 	if (
 		error instanceof WorkflowModuleLoadError ||
@@ -143,7 +150,7 @@ function formatConfigError(error: unknown): string {
 	return `Could not load workflow config: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-function errorDetails(error: unknown): Record<string, JsonValue> {
+function errorDetails(error: unknown): FailureDetails {
 	if (error instanceof ManifestValidationError) {
 		return { issues: error.issues };
 	}
