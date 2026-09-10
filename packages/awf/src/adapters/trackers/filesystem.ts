@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { createTrackerAdapter } from "../../tracker-intents.ts";
+import { createTrackerAdapter } from "../../runtime/tracker-intents.ts";
 import type { TrackerAdapter } from "../../ports/tracker.ts";
 import { WorkflowStateTracker } from "./memory.ts";
 import {

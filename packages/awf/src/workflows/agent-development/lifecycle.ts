@@ -1,12 +1,12 @@
 import {
 	isRecord,
 	type RuntimeValidationIssue,
-} from "../../commands/shared.ts";
-import { failure } from "../../envelope.ts";
+} from "../../runtime/commands/shared.ts";
+import { failure } from "../../runtime/envelope.ts";
 import {
 	lifecycleTransitionHandlerKey,
 	type LifecycleTransitionHandlers,
-} from "../../lifecycle-handlers.ts";
+} from "../../runtime/lifecycle-handlers.ts";
 import type { WorkflowIssue } from "../../domain/workflow/issue.ts";
 
 export const agentDevelopmentLifecycleHandlers: LifecycleTransitionHandlers = {

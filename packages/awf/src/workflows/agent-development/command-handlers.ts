@@ -4,8 +4,8 @@ import {
 	type CommandHandler,
 	type CommandHandlerContext,
 	type CommandHandlers,
-} from "../../command-handlers.ts";
-import { type Envelope, failure, success } from "../../envelope.ts";
+} from "../../runtime/command-handlers.ts";
+import { type Envelope, failure, success } from "../../runtime/envelope.ts";
 import {
 	getKind,
 	type ManifestCommand,
@@ -27,7 +27,7 @@ import {
 	validateWorkflowCommandInput,
 	workflowTarget,
 	stableStringify,
-} from "../../commands/shared.ts";
+} from "../../runtime/commands/shared.ts";
 import { agentDevelopmentManifest } from "./manifest.ts";
 
 type SpecInput = { title: string; content: string };

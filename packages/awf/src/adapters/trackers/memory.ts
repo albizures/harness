@@ -1,4 +1,4 @@
-import { createTrackerAdapter } from "../../tracker-intents.ts";
+import { createTrackerAdapter } from "../../runtime/tracker-intents.ts";
 import type {
 	TrackerAdapter,
 	TrackerIssueInspection,

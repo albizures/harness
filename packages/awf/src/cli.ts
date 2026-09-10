@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { bindCliExecution } from "./cli-config.ts";
-import { execute } from "./commands.ts";
-import { parseOutputFormat, serializeCliOutput } from "./output.ts";
+import { bindCliExecution } from "./cli/config.ts";
+import { execute } from "./runtime/execute.ts";
+import { parseOutputFormat, serializeCliOutput } from "./cli/output.ts";
 import { CorruptWorkflowProjectionError } from "./domain/workflow/projection.ts";
 
 declare const process: {

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { failure } from "../../envelope.ts";
-import type { LifecycleTransitionHandlers } from "../../lifecycle-handlers.ts";
+import { failure } from "../../runtime/envelope.ts";
+import type { LifecycleTransitionHandlers } from "../../runtime/lifecycle-handlers.ts";
 import type { TrackerWorkflowEffect } from "../../ports/tracker.ts";
 
 const nonEmptyString = z.string().trim().min(1);

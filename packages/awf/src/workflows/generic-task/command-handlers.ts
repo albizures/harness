@@ -2,8 +2,8 @@ import type { JsonValue } from "type-fest";
 import type {
 	CommandHandler,
 	CommandHandlers,
-} from "../../command-handlers.ts";
-import { type Envelope, failure, success } from "../../envelope.ts";
+} from "../../runtime/command-handlers.ts";
+import { type Envelope, failure, success } from "../../runtime/envelope.ts";
 import { getKind, type ManifestCommand } from "../../domain/manifest/schema.ts";
 import { NeedReconciliationError, type Tracker } from "../../ports/tracker.ts";
 import type { WorkflowIssue } from "../../domain/workflow/issue.ts";
@@ -13,7 +13,7 @@ import {
 	isRecord,
 	lifecycleError,
 	stableStringify,
-} from "../../commands/shared.ts";
+} from "../../runtime/commands/shared.ts";
 
 type CreateInput = {
 	title: string;

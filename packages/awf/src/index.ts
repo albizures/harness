@@ -3,7 +3,7 @@ export type {
 	CommandHandlerContext,
 	CommandHandlerResult,
 	CommandHandlers,
-} from "./command-handlers.ts";
+} from "./runtime/command-handlers.ts";
 export { execute, type ExecuteOptions } from "./commands.ts";
 export {
 	agentDevelopmentCommandHandlers,
@@ -27,7 +27,7 @@ export {
 	type Envelope,
 	type ErrorEnvelope,
 	type SuccessEnvelope,
-} from "./envelope.ts";
+} from "./runtime/envelope.ts";
 export {
 	isJsonRecord,
 	isJsonValue,
@@ -44,7 +44,7 @@ export {
 	type LifecycleTransitionHandlerContext,
 	type LifecycleTransitionHandlerContribution,
 	type LifecycleTransitionHandlers,
-} from "./lifecycle-handlers.ts";
+} from "./runtime/lifecycle-handlers.ts";
 export {
 	ManifestValidationError,
 	getKind,
@@ -68,7 +68,7 @@ export {
 	loadManifest,
 	loadWorkflowModule,
 	type WorkflowModule,
-} from "./workflow-module.ts";
+} from "./runtime/workflow-module.ts";
 export {
 	createGhCliGitHubTracker,
 	createGitHubTracker,
@@ -81,7 +81,7 @@ export {
 	createTrackerAdapter,
 	createTrackerIntentModule,
 	type TrackerIntentModulePrimitives,
-} from "./tracker-intents.ts";
+} from "./runtime/tracker-intents.ts";
 export {
 	NeedReconciliationError,
 	type Tracker,
