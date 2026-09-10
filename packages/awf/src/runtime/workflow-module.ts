@@ -7,7 +7,10 @@ import {
 	type LifecycleTransitionHandler,
 	type LifecycleTransitionHandlers,
 } from "./lifecycle-handlers.ts";
-import { normalizeManifest, validateManifest } from "../domain/manifest/define.ts";
+import {
+	normalizeManifest,
+	validateManifest,
+} from "../domain/manifest/define.ts";
 import {
 	ManifestValidationError,
 	type WorkflowManifest,

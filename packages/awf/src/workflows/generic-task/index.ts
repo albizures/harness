@@ -1,9 +1,15 @@
-export { genericTaskCommandHandlers } from "./command-handlers.ts";
-export { genericTaskLifecycleHandlers } from "./lifecycle.ts";
 export {
-	genericTaskManifest,
-	genericTaskManifest as agentWorkflowManifest,
-} from "./manifest.ts";
-export { genericTaskManifest as manifest } from "./manifest.ts";
-export { genericTaskCommandHandlers as commandHandlers } from "./command-handlers.ts";
-export { genericTaskLifecycleHandlers as lifecycleHandlers } from "./lifecycle.ts";
+	agentWorkflowCommandHandlers as genericTaskCommandHandlers,
+	agentWorkflowCommandHandlers as commandHandlers,
+} from "../agent-workflow/command-handlers.ts";
+export {
+	agentWorkflowLifecycleHandlers as genericTaskLifecycleHandlers,
+	agentWorkflowLifecycleHandlers as lifecycleHandlers,
+} from "../agent-workflow/lifecycle.ts";
+export {
+	agentWorkflowManifest as genericTaskManifest,
+	agentWorkflowManifest,
+	agentWorkflowManifest as manifest,
+} from "../agent-workflow/manifest.ts";
+export { agentWorkflowCommandHandlers } from "../agent-workflow/command-handlers.ts";
+export { agentWorkflowLifecycleHandlers } from "../agent-workflow/lifecycle.ts";

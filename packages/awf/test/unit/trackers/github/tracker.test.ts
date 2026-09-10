@@ -1,7 +1,7 @@
 import { assert, expect, it } from "vitest";
 import { execute } from "../../../support/execute.ts";
 import { agentDevelopmentManifest } from "../../../../src/workflows/agent-development/index.ts";
-import { genericTaskManifest } from "../../../../src/workflows/generic-task/index.ts";
+import { agentWorkflowManifest } from "../../../../src/workflows/agent-workflow/index.ts";
 import {
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
@@ -66,7 +66,7 @@ it("should project Task subkind as metadata without masquerading as GitHub kind 
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: genericTaskManifest,
+		manifest: agentWorkflowManifest,
 	});
 
 	const issue = await tracker.createIssue({
@@ -100,24 +100,24 @@ it("should project agent-workflow Spec create fields to reserved GitHub labels a
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: genericTaskManifest,
+		manifest: agentWorkflowManifest,
 	});
 
 	const created = await execute(["create", "spec", "--input", "-"], {
 		tracker,
-		manifest: genericTaskManifest,
+		manifest: agentWorkflowManifest,
 		stdin: JSON.stringify({
-			title: "Generic Spec",
-			body: "# Generic Spec\n\nWork this through the generic-task workflow.",
+			title: "Agent Workflow Spec",
+			body: "# Agent Workflow Spec\n\nWork this through the agent-workflow workflow.",
 		}),
 	});
 
 	if (!created.ok) {
 		throw new Error(JSON.stringify(created.error));
 	}
-	expect(api.issue(1).title).toBe("Generic Spec");
+	expect(api.issue(1).title).toBe("Agent Workflow Spec");
 	expect(api.issue(1).body).toBe(
-		"# Generic Spec\n\nWork this through the generic-task workflow.",
+		"# Agent Workflow Spec\n\nWork this through the agent-workflow workflow.",
 	);
 	expect(api.issue(1).labels.sort()).toEqual([
 		"awf:agent-workflow:action:planning",

@@ -111,7 +111,9 @@ const escalateCommand = humanHandoffCommand({
 	}),
 });
 
-function humanHandoffCommand(config: HumanHandoffCommandConfig): CommandHandler {
+function humanHandoffCommand(
+	config: HumanHandoffCommandConfig,
+): CommandHandler {
 	return async (context) => {
 		const id = context.args?.[2];
 		if (

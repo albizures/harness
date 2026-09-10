@@ -1,5 +1,8 @@
 import type { WorkflowManifest } from "../../../domain/manifest/schema.ts";
-import type { TrackerIssueInspection, TrackerLog } from "../../../ports/tracker.ts";
+import type {
+	TrackerIssueInspection,
+	TrackerLog,
+} from "../../../ports/tracker.ts";
 import {
 	type CreateIssueInput,
 	IssueNotFoundError,

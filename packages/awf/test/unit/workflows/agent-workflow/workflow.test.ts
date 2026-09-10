@@ -11,21 +11,16 @@ import {
 	agentWorkflowCommandHandlers,
 	agentWorkflowLifecycleHandlers,
 	agentWorkflowManifest,
-} from "../../../../src/workflows/agent-workflow/index.ts";
-import {
 	commandHandlers,
-	genericTaskCommandHandlers,
-	genericTaskLifecycleHandlers,
-	genericTaskManifest,
 	lifecycleHandlers,
 	manifest,
-} from "../../../../src/workflows/generic-task/index.ts";
+} from "../../../../src/workflows/agent-workflow/index.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: genericTaskManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 
 function assertSuccess(
@@ -39,13 +34,10 @@ function assertSuccess(
 }
 
 it("should export a valid explicit bundled workflow module", () => {
-	expect(manifest).toBe(genericTaskManifest);
-	expect(agentWorkflowManifest).toBe(genericTaskManifest);
-	expect(commandHandlers).toBe(genericTaskCommandHandlers);
-	expect(agentWorkflowCommandHandlers).toBe(genericTaskCommandHandlers);
-	expect(lifecycleHandlers).toBe(genericTaskLifecycleHandlers);
-	expect(agentWorkflowLifecycleHandlers).toBe(genericTaskLifecycleHandlers);
-	expect(Object.keys(genericTaskCommandHandlers)).toEqual([
+	expect(manifest).toBe(agentWorkflowManifest);
+	expect(commandHandlers).toBe(agentWorkflowCommandHandlers);
+	expect(lifecycleHandlers).toBe(agentWorkflowLifecycleHandlers);
+	expect(Object.keys(agentWorkflowCommandHandlers)).toEqual([
 		"pause",
 		"escalate",
 		"resume",
@@ -53,16 +45,17 @@ it("should export a valid explicit bundled workflow module", () => {
 		"task-create",
 		"grilling-create",
 	]);
-	expect(Object.keys(genericTaskLifecycleHandlers)).toEqual([
+	expect(Object.keys(agentWorkflowLifecycleHandlers)).toEqual([
 		"wayfinder:ready/planning:succeed",
 		"wayfinder:running/planning:succeed",
 		"task:running/work:succeed",
 		"spec:running/merge:succeed",
 		"grilling:in-discussion/discuss:succeed",
 	]);
-	expect(validateManifest(genericTaskManifest)).toEqual([]);
-	expect(genericTaskManifest.workflow.id).toBe("agent-workflow");
-	expect(genericTaskManifest.vocabulary).toEqual({
+	expect(validateManifest(agentWorkflowManifest)).toEqual([]);
+	expect(agentWorkflowManifest.workflow.id).toBe("agent-workflow");
+	expect(agentWorkflowManifest.workflow.version).toBe("1.0.0");
+	expect(agentWorkflowManifest.vocabulary).toEqual({
 		states: [
 			"ready",
 			"running",
@@ -90,19 +83,20 @@ it("should export a valid explicit bundled workflow module", () => {
 			"resume",
 		],
 	});
-	expect(genericTaskManifest.kinds.map((kind) => kind.id)).toEqual([
+	expect(agentWorkflowManifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",
 		"wayfinder",
 		"task",
 		"grilling",
 	]);
 	expect(
-		genericTaskManifest.kinds.find((kind) => kind.id === "task")?.subkinds,
+		agentWorkflowManifest.kinds.find((kind) => kind.id === "task")?.subkinds,
 	).toEqual(["work", "research", "prototype"]);
 	expect(
-		genericTaskManifest.kinds.find((kind) => kind.id === "grilling")?.subkinds,
+		agentWorkflowManifest.kinds.find((kind) => kind.id === "grilling")
+			?.subkinds,
 	).toBeUndefined();
-	expect(genericTaskManifest.commands.map((command) => command.id)).toEqual([
+	expect(agentWorkflowManifest.commands.map((command) => command.id)).toEqual([
 		"spec-create",
 		"wayfinder-create",
 		"task-create",
@@ -318,7 +312,7 @@ it("should validate the bundled agent-workflow module through the manifest valid
 	const configPath = join(cwd, "awf.config.ts");
 	await writeFile(
 		configPath,
-		`export { genericTaskManifest as manifest } from "${join(process.cwd(), "src/workflows/generic-task/index.ts")}";\n`,
+		`export { agentWorkflowManifest as manifest } from "${join(process.cwd(), "src/workflows/agent-workflow/index.ts")}";\n`,
 	);
 
 	expect(await validateManifestCommand(configPath)).toEqual({
@@ -331,7 +325,7 @@ it("should validate the bundled agent-workflow module through the manifest valid
 	});
 });
 
-it("should create generic Specs from structured JSON ready for planning with creation log", async () => {
+it("should create agent-workflow Specs from structured JSON ready for planning with creation log", async () => {
 	const tracker = createInMemoryTracker();
 
 	const created = assertSuccess(
@@ -373,7 +367,7 @@ it("should create generic Specs from structured JSON ready for planning with cre
 	).toEqual(["spec-create_created"]);
 });
 
-it("should advance generic Specs through planning, integration-test, merge, and done", async () => {
+it("should advance agent-workflow Specs through planning, integration-test, merge, and done", async () => {
 	const tracker = createInMemoryTracker();
 	const created = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -441,7 +435,7 @@ it("should advance generic Specs through planning, integration-test, merge, and 
 	).toMatchObject({ issue: { workflow: { state: "done", action: "none" } } });
 });
 
-it("should reject malformed generic Spec create input before tracker mutation", async () => {
+it("should reject malformed agent-workflow Spec create input before tracker mutation", async () => {
 	const tracker = createInMemoryTracker();
 
 	const envelope = await execute(["create", "spec", "--input", "-"], {
@@ -456,7 +450,7 @@ it("should reject malformed generic Spec create input before tracker mutation", 
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-it("should create generic Tasks under Specs with routing profiles and dependencies", async () => {
+it("should create agent-workflow Tasks under Specs with routing profiles and dependencies", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -914,8 +908,8 @@ it("should reject Grilling parents that are not Spec or Wayfinder issues", async
 	});
 });
 
-it("should declare generated generic Task provenance separately from containment and dependencies", () => {
-	const relationships = genericTaskManifest.relationships?.map(
+it("should declare generated agent-workflow Task provenance separately from containment and dependencies", () => {
+	const relationships = agentWorkflowManifest.relationships?.map(
 		(relationship) => ({
 			id: relationship.id,
 			projection: relationship.projection.type,
@@ -931,7 +925,7 @@ it("should declare generated generic Task provenance separately from containment
 	);
 });
 
-it("should record generated generic Task provenance without blocking readiness", async () => {
+it("should record generated agent-workflow Task provenance without blocking readiness", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -992,7 +986,7 @@ it("should record generated generic Task provenance without blocking readiness",
 	);
 });
 
-it("should reject invalid generic Task create relationships before tracker mutation", async () => {
+it("should reject invalid agent-workflow Task create relationships before tracker mutation", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -1065,7 +1059,7 @@ it("should reject invalid generic Task create relationships before tracker mutat
 	}
 });
 
-it("should reject missing generic Task create fields before tracker mutation", async () => {
+it("should reject missing agent-workflow Task create fields before tracker mutation", async () => {
 	const tracker = createInMemoryTracker();
 
 	const envelope = await execute(["create", "task", "--input", "-"], {
@@ -1080,7 +1074,7 @@ it("should reject missing generic Task create fields before tracker mutation", a
 	expect(await tracker.listIssues()).toEqual([]);
 });
 
-it("should run generic Task start, succeed, fail, recover, and escalate transitions through manifest commands", async () => {
+it("should run agent-workflow Task start, succeed, fail, recover, and escalate transitions through manifest commands", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {

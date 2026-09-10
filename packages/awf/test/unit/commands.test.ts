@@ -127,7 +127,9 @@ it("should ensure that lifecycle commands validate before issue lookup", async (
 						error: {
 							code: "INVALID_ARGUMENTS",
 							message: "Invalid command arguments.",
-							details: { usage: "awf run-command resume <id> --action <action>" },
+							details: {
+								usage: "awf run-command resume <id> --action <action>",
+							},
 						},
 					}
 				: {

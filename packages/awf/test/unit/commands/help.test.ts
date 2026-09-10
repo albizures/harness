@@ -3,7 +3,10 @@ import { agentDevelopmentManifest } from "../../../src/workflows/agent-developme
 
 import { defineManifest } from "../../../src/manifest/index.ts";
 import { execute as rawExecute } from "../../support/execute.ts";
-import { helpCommands, helpReadiness } from "../../../src/runtime/commands/help.ts";
+import {
+	helpCommands,
+	helpReadiness,
+} from "../../../src/runtime/commands/help.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
