@@ -14,4 +14,4 @@ Remove the `agent-development` bundled workflow implementation and public export
 
 ## Consequences
 
-Existing imports from `@albizures/awf/workflows/agent-development` are no longer supported. Projects that need a development workflow should use `agent-workflow` or provide their own workflow module. Generic manifest/runtime capabilities such as reasons, raw command handlers, source CLI declarations, relationship directions, and tracker effects remain available.
+Existing imports from `@albizures/awf/workflows/agent-development` are no longer supported. Projects that need a development workflow should use `agent-workflow` or provide their own workflow module. Generic manifest/runtime capabilities such as reasons, raw command handlers, source CLI declarations, and tracker effects remain available.

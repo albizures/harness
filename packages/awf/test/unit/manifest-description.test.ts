@@ -104,7 +104,7 @@ function descriptionManifest() {
 				id: "spec-tickets",
 				from: "spec",
 				to: "ticket",
-				projection: { type: "parent-child", direction: "outbound" },
+				projection: { type: "parent-child" },
 			},
 		],
 	});
@@ -148,9 +148,14 @@ describe("when building a Workflow description DTO", () => {
 			state: "ready",
 			action: "review",
 		});
-		expect(
-			description.relationships?.map((relationship) => relationship.id),
-		).toEqual(["spec-tickets"]);
+		expect(description.relationships).toEqual([
+			{
+				id: "spec-tickets",
+				from: "spec",
+				to: "ticket",
+				projection: { type: "parent-child" },
+			},
+		]);
 	});
 
 	it("should use command input schema presence markers and generated manifest CLI usage", () => {

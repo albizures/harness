@@ -96,7 +96,6 @@ export type WorkflowDescriptionV1 = {
 		to: string;
 		projection: {
 			type: "parent-child" | "dependency" | "generated-by";
-			direction?: "outbound" | "inbound";
 		};
 	}>;
 	scopeNotes: Array<string>;
@@ -151,7 +150,7 @@ export function describeWorkflow(
 						id: relationship.id,
 						from: relationship.from,
 						to: relationship.to,
-						projection: { ...relationship.projection },
+						projection: { type: relationship.projection.type },
 					})),
 				}),
 		scopeNotes: [...workflowDescriptionScopeNotes],

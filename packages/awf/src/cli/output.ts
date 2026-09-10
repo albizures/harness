@@ -279,12 +279,8 @@ function formatRelationshipsDescription(
 		if (!isRecord(relationship) || !isRecord(relationship.projection)) {
 			continue;
 		}
-		const direction =
-			typeof relationship.projection.direction === "string"
-				? `, ${relationship.projection.direction}`
-				: "";
 		lines.push(
-			`- ${String(relationship.id)}: ${String(relationship.from)} -> ${String(relationship.to)} (${String(relationship.projection.type)}${direction})`,
+			`- ${String(relationship.id)}: ${String(relationship.from)} -> ${String(relationship.to)} (${String(relationship.projection.type)})`,
 		);
 	}
 }

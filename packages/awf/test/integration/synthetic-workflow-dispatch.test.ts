@@ -70,7 +70,7 @@ const syntheticManifest = defineManifest({
 			id: "goal-ideas",
 			from: "goal",
 			to: "idea",
-			projection: { type: "parent-child", direction: "outbound" },
+			projection: { type: "parent-child" },
 		},
 	],
 });

@@ -948,17 +948,6 @@ function validateRelationship(
 			"Relationship projection type must be parent-child, dependency, or generated-by.",
 		);
 	}
-	if (
-		value.projection.direction !== undefined &&
-		value.projection.direction !== "outbound" &&
-		value.projection.direction !== "inbound"
-	) {
-		issue(
-			issues,
-			`${path}.projection.direction`,
-			"Relationship projection direction is invalid.",
-		);
-	}
 }
 
 function validatePayloadZodSchema(

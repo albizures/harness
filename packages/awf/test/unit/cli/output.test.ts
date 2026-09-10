@@ -195,7 +195,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
 						id: "ticket-dependencies",
 						from: "ticket",
 						to: "ticket",
-						projection: { type: "dependency", direction: "outbound" },
+						projection: { type: "dependency" },
 					},
 				],
 				scopeNotes: ["Describes the loaded Workflow manifest only."],
@@ -250,7 +250,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
 
 ## Relationships
 
-- ticket-dependencies: ticket -> ticket (dependency, outbound)
+- ticket-dependencies: ticket -> ticket (dependency)
 
 ## Scope notes
 

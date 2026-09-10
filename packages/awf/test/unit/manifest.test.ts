@@ -89,6 +89,44 @@ it("should reject loaded TypeScript workflow manifests with Zod-owned shape erro
 	);
 });
 
+it("should reject configurable relationship projection direction", () => {
+	const issues = validateManifest({
+		version: "v1",
+		workflow: { id: "projection-direction", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["work"],
+			events: ["noop"],
+		},
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				transitions: [],
+			},
+		],
+		commands: [],
+		relationships: [
+			{
+				id: "task-children",
+				from: "task",
+				to: "task",
+				projection: { type: "parent-child", direction: "outbound" },
+			},
+		],
+	});
+
+	expect(
+		issues.some(
+			(issue) =>
+				issue.path === "$.relationships[0].projection" &&
+				issue.message.includes("direction"),
+		),
+	).toBe(true);
+});
+
 it("should ensure that defineManifest accepts Workflow attempt transition effects", () => {
 	const manifest = defineManifest({
 		version: "v1",

@@ -9,7 +9,7 @@ export const manifest = {
 			id: "generic-link",
 			from: "spec",
 			to: "task",
-			projection: { type: "link", direction: "outbound" },
+			projection: { type: "link" },
 		},
 	],
 } as unknown as WorkflowManifest;
