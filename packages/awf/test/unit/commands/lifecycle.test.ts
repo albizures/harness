@@ -231,148 +231,6 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 	]);
 });
 
-it("should ensure that respond resumes a waiting-human issue to a valid ready action from the pause metadata by default", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "123",
-				title: "Answer received",
-				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
-				logs: [
-					{
-						sequence: 1,
-						type: "human_input_needed",
-						message: JSON.stringify({
-							event: "pause",
-							pausedAction: "implement",
-							reason: "Need API decision.",
-						}),
-					},
-				],
-			},
-		],
-	});
-
-	const envelope = await execute(
-		["run-command", "respond", "123", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({
-				response: "Use the smaller public API.",
-				sufficient: true,
-			}),
-		},
-	);
-
-	expect(envelope.ok).toBe(true);
-	const updated = await tracker.getIssue("123");
-	expect(updated.workflow).toMatchObject({
-		state: "ready",
-		action: "implement",
-	});
-	const logs = await tracker.readLogs("123");
-	expect(logs.map((log) => log.type)).toEqual([
-		"human_input_needed",
-		"human_response_received",
-	]);
-	expect(JSON.parse(logs[1]?.message ?? "{}")).toMatchObject({
-		event: "respond",
-		response: "Use the smaller public API.",
-		sufficient: true,
-		resumeAction: "implement",
-	});
-});
-
-it("should ensure that respond keeps an insufficient response waiting for the human", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "123",
-				title: "Partial answer",
-				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
-			},
-		],
-	});
-
-	const envelope = await execute(
-		["run-command", "respond", "123", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({
-				response: "I only know part of it.",
-				sufficient: false,
-			}),
-		},
-	);
-
-	expect(envelope.ok).toBe(true);
-	const updated = await tracker.getIssue("123");
-	expect(updated.workflow).toMatchObject({
-		state: "waiting-human",
-		action: "none",
-	});
-	const logs = await tracker.readLogs("123");
-	expect(logs[0]?.type).toBe("human_response_received");
-	expect(JSON.parse(logs[0]?.message ?? "{}")).toMatchObject({
-		event: "respond",
-		response: "I only know part of it.",
-		sufficient: false,
-	});
-});
-
-it("should ensure that invalid waiting-human resume targets are reported without choosing a fallback state", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "123",
-				title: "Invalid response target",
-				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
-				logs: [
-					{
-						sequence: 1,
-						type: "human_input_needed",
-						message: JSON.stringify({
-							event: "pause",
-							pausedAction: "not-ready",
-						}),
-					},
-				],
-			},
-		],
-	});
-
-	const envelope = await execute(
-		["run-command", "respond", "123", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({
-				response: "Try the unknown action.",
-				sufficient: true,
-			}),
-		},
-	);
-
-	expect(envelope).toEqual({
-		ok: false,
-		error: {
-			code: "COMMAND_UNAVAILABLE",
-			message:
-				"Workflow response cannot determine a manifest-declared resume action.",
-			details: {
-				id: "123",
-				command: "respond",
-				resumeAction: "not-ready",
-			},
-		},
-	});
-	expect((await tracker.getIssue("123")).workflow).toMatchObject({
-		state: "waiting-human",
-		action: "none",
-	});
-	const logs = await tracker.readLogs("123");
-	expect(logs.map((log) => log.type)).toEqual(["human_input_needed"]);
-});
-
 it("should ensure that succeed applies generic relationship-driven lifecycle progression", async () => {
 	const manifest = defineManifest({
 		version: "v1",
@@ -421,7 +279,6 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 			{ id: "succeed", target: { kind: "task", action: "do" } },
 			{ id: "fail", target: { kind: "task", action: "do" } },
 			{ id: "pause", target: { kind: "task", action: "do" } },
-			{ id: "respond", target: { kind: "task", action: "do" } },
 			{ id: "escalate", target: { kind: "task", action: "do" } },
 			{ id: "resume", target: { kind: "task", action: "do" } },
 		],
@@ -838,7 +695,6 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 			{ id: "succeed", target: { kind: "work", action: "do" } },
 			{ id: "fail", target: { kind: "work", action: "do" } },
 			{ id: "pause", target: { kind: "work", action: "do" } },
-			{ id: "respond", target: { kind: "work", action: "do" } },
 			{ id: "escalate", target: { kind: "work", action: "do" } },
 			{ id: "resume", target: { kind: "work", action: "do" } },
 		],
@@ -936,7 +792,6 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 			{ id: "succeed", target: { kind: "work", action: "do" } },
 			{ id: "fail", target: { kind: "work", action: "do" } },
 			{ id: "pause", target: { kind: "work", action: "do" } },
-			{ id: "respond", target: { kind: "work", action: "do" } },
 			{ id: "escalate", target: { kind: "work", action: "do" } },
 			{ id: "resume", target: { kind: "work", action: "do" } },
 		],

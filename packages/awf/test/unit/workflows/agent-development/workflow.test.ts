@@ -59,7 +59,6 @@ it("should export a valid explicit bundled workflow module", () => {
 		"succeed",
 		"fail",
 		"pause",
-		"respond",
 		"escalate",
 		"resume",
 		"spec-start",

@@ -5,7 +5,7 @@ AWF is the Harness package that provides a workflow runtime and CLI for agent wo
 ## Language
 
 **Workflow runtime**:
-A generic engine that evaluates workflow entity state, legal transitions, commands, relationships, logs, and tracker mutations from a workflow definition. It owns manifest execution mechanics, but not built-in lifecycle commands such as start, succeed, fail, pause, respond, resume, or escalation.
+A generic engine that evaluates workflow entity state, legal transitions, commands, relationships, logs, and tracker mutations from a workflow definition. It owns manifest execution mechanics, but not built-in lifecycle commands such as start, succeed, fail, pause, resume, or escalation.
 _Avoid_: agent workflow CLI core, issue workflow script, built-in workflow policy
 
 **Workflow definition**:

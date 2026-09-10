@@ -195,7 +195,6 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				"recover",
 				"escalate",
 				"pause",
-				"respond",
 				"resume",
 			],
 		},

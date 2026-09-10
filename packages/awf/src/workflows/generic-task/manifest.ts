@@ -24,7 +24,6 @@ const events = [
 	"recover",
 	"escalate",
 	"pause",
-	"respond",
 	"resume",
 ] as const;
 const taskSubkinds = ["work", "research", "prototype"] as const;
@@ -307,7 +306,6 @@ export const genericTaskManifest = defineManifest({
 		{ id: "succeed", target: { kind: "task", action: "work" } },
 		{ id: "fail", target: { kind: "task", action: "work" } },
 		{ id: "pause", target: { kind: "task", action: "work" } },
-		{ id: "respond", target: { kind: "task", action: "none" } },
 		{ id: "escalate", target: { kind: "task", action: "work" } },
 		{ id: "resume", target: { kind: "task", action: "none" } },
 		{

@@ -24,7 +24,6 @@ const events = [
 	"recover",
 	"escalate",
 	"pause",
-	"respond",
 	"resume",
 ] as const;
 
@@ -373,7 +372,6 @@ export const agentDevelopmentManifest = defineManifest({
 		{ id: "succeed", target: { kind: "ticket", action: "implement" } },
 		{ id: "fail", target: { kind: "ticket", action: "implement" } },
 		{ id: "pause", target: { kind: "ticket", action: "implement" } },
-		{ id: "respond", target: { kind: "ticket", action: "none" } },
 		{ id: "escalate", target: { kind: "ticket", action: "implement" } },
 		{ id: "resume", target: { kind: "ticket", action: "none" } },
 		...lifecycleCommands,

@@ -455,7 +455,7 @@ it("should reject executable hook fields embedded in workflow semantic declarati
 			states: ["ready", "running", "waiting-human", "done"],
 			actions: ["planning", "work", "none"],
 			reasons: [],
-			events: ["start", "succeed", "respond"],
+			events: ["start", "succeed", "resume"],
 		},
 		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },

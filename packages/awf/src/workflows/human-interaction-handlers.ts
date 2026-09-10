@@ -11,7 +11,6 @@ import {
 	cleanCurrentTarget,
 	invalidTransition,
 	isReadyAction,
-	isRecord,
 	lifecycleError,
 	parseJsonInput,
 	parsePayloadValue,
@@ -31,16 +30,9 @@ const pauseInputSchema = z.strictObject({
 	resumeAction: nonEmptyString.optional(),
 });
 
-const respondInputSchema = z.strictObject({
-	response: nonEmptyString,
-	sufficient: z.boolean(),
-	resumeAction: nonEmptyString.optional(),
-});
-
 export function humanInteractionCommandHandlers(): CommandHandlers {
 	return {
 		pause: rawCommandHandler(pauseCommand),
-		respond: rawCommandHandler(respondCommand),
 		escalate: rawCommandHandler(escalateCommand),
 		resume: rawCommandHandler(resumeCommand),
 	};
@@ -112,122 +104,6 @@ async function pauseCommand(
 							pausedAction,
 							resumeAction,
 							reason: input.reason,
-						}),
-					},
-				},
-			],
-		});
-		return success({
-			issue: result.issues[id] ?? (await context.tracker.getIssue(id)),
-			log: result.logs[0],
-		});
-	} catch (error) {
-		return lifecycleError(id, error);
-	}
-}
-
-async function respondCommand(
-	context: Parameters<CommandHandler>[0],
-): Promise<Envelope> {
-	const id = context.args?.[2];
-	if (id === undefined) {
-		return failure("INVALID_ARGUMENTS", "Invalid command arguments.", {
-			usage: "awf run-command respond <id> --input <file|->"
-		});
-	}
-	try {
-		const [, raw] = await readInput(context);
-		const parsedInput = parseJsonInput(raw, "INVALID_ACTION_INPUT");
-		if (parsedInput.ok === false) {
-			return parsedInput;
-		}
-		const payload = parsePayloadValue(
-			parsedInput.data,
-			respondInputSchema,
-			"$",
-		);
-		if (payload.issues.length > 0) {
-			return failure("INVALID_ACTION_INPUT", "Response input is invalid.", {
-				issues: payload.issues,
-			});
-		}
-		const issue = await context.tracker.getIssue(id);
-		if (
-			issue.workflow.state !== "waiting-human" ||
-			issue.workflow.action !== "none"
-		) {
-			return invalidTransition(id, "respond");
-		}
-		const input = payload.value as {
-			response: string;
-			sufficient: boolean;
-			resumeAction?: string;
-		};
-		const pause = latestHumanPause(await context.tracker.readLogs(id));
-		const resumeAction = input.resumeAction ?? pause?.resumeAction;
-		const from = cleanCurrentTarget(issue.workflow);
-		if (!input.sufficient) {
-			const log: TrackerLog = {
-				type: "human_response_received",
-				message: stableStringify({
-					event: "respond",
-					input: parseJsonValue(payload.value),
-					from,
-					to: from,
-					response: input.response,
-					sufficient: false,
-					...(resumeAction === undefined ? {} : { resumeAction }),
-				}),
-			};
-			const result = await context.tracker.applyWorkflowEffects({
-				effects: [{ type: "record-command", issue: { id }, log }],
-			});
-			return success({
-				issue: result.issues[id] ?? (await context.tracker.getIssue(id)),
-				log: result.logs[0],
-			});
-		}
-		if (
-			resumeAction === undefined ||
-			!isReadyAction(context.manifest, issue.workflow.kind, resumeAction) ||
-			!resumePolicyAllows(context.manifest, issue.workflow.kind, resumeAction)
-		) {
-			return failure(
-				"COMMAND_UNAVAILABLE",
-				"Workflow response cannot determine a manifest-declared resume action.",
-				{
-					id,
-					command: "respond",
-					...(resumeAction === undefined ? {} : { resumeAction }),
-				},
-			);
-		}
-		const to = { state: "ready", action: resumeAction };
-		const result = await context.tracker.applyWorkflowEffects({
-			effects: [
-				{
-					type: "update-workflow",
-					issue: { id },
-					expect: {
-						version: issue.workflow.version,
-						hash: issue.workflow.hash,
-					},
-					workflow: { state: "ready", action: resumeAction, reason: undefined },
-				},
-				{
-					type: "record-command",
-					issue: { id },
-					log: {
-						type: "human_response_received",
-						message: stableStringify({
-							event: "respond",
-							input: parseJsonValue(payload.value),
-							from,
-							to,
-							response: input.response,
-							sufficient: true,
-							resumeAction,
-							...(pause?.reason === undefined ? {} : { reason: pause.reason }),
 						}),
 					},
 				},
@@ -350,34 +226,4 @@ async function resumeCommand(
 	} catch (error) {
 		return lifecycleError(id, error);
 	}
-}
-
-function latestHumanPause(
-	logs: Array<TrackerLog>,
-): { reason?: string; resumeAction?: string } | undefined {
-	for (const log of [...logs].reverse()) {
-		if (log.type !== "human_input_needed" || log.message === undefined) {
-			continue;
-		}
-		let data: unknown;
-		try {
-			data = JSON.parse(log.message);
-		} catch {
-			continue;
-		}
-		if (!isRecord(data)) {
-			continue;
-		}
-		let resumeAction: string | undefined;
-		if (typeof data.resumeAction === "string") {
-			resumeAction = data.resumeAction;
-		} else if (typeof data.pausedAction === "string") {
-			resumeAction = data.pausedAction;
-		}
-		return {
-			...(typeof data.reason === "string" ? { reason: data.reason } : {}),
-			...(resumeAction === undefined ? {} : { resumeAction }),
-		};
-	}
-	return undefined;
 }
