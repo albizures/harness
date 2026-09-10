@@ -60,33 +60,45 @@ const runtimeCommands: Array<CommandSpec> = [
 export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 	return [
 		...runtimeCommands,
-		...manifest.commands.flatMap((command) => {
-			if (command.cli === undefined) {
-				return [];
-			}
-			return [
-				{
-					name: `${command.cli.verb} ${command.cli.target}`,
-					usage: manifestCommandUsage(command),
-					description: `Run manifest command '${command.id}'.`,
-				},
-			];
-		}),
+		...manifest.commands.map((command) => ({
+			name:
+				command.cli === undefined
+					? `run-command ${command.id}`
+					: `${command.cli.verb} ${command.cli.target}`,
+			usage: manifestCommandUsage(command),
+			description: `Run manifest command '${command.id}'.`,
+		})),
 	].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function manifestCommandUsage(command: ManifestCommand): string {
+	if (command.cli === undefined) {
+		return runCommandUsage(command.id);
+	}
 	if (command.cli?.verb === "create") {
 		if (command.cli.source === true) {
 			return `awf create ${command.cli.target} --source <issue> --input <file|->`;
 		}
 		return `awf create ${command.cli.target} --input <file|->`;
 	}
-	const route = `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id}`;
+	const route = `awf ${command.cli.verb} ${command.cli.target}`;
 	if (command.transition !== undefined) {
 		return `${route} <issue>`;
 	}
 	return `${route} <issue> --input <file|->`;
+}
+
+function runCommandUsage(commandId: string): string {
+	if (commandId === "start") {
+		return "awf run-command start <issue>";
+	}
+	if (commandId === "succeed" || commandId === "fail") {
+		return `awf run-command ${commandId} <issue> --input <file|->`;
+	}
+	if (commandId === "resume") {
+		return "awf run-command resume <issue> --action <action>";
+	}
+	return `awf run-command ${commandId} <issue> --input <file|->`;
 }
 
 export function helpReadiness(manifest: WorkflowManifest): {

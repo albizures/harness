@@ -17,7 +17,16 @@ const actions = [
 	"integration-test",
 	"none",
 ] as const;
-const events = ["start", "succeed", "fail", "recover", "escalate"] as const;
+const events = [
+	"start",
+	"succeed",
+	"fail",
+	"recover",
+	"escalate",
+	"pause",
+	"respond",
+	"resume",
+] as const;
 
 const markdownReferenceInput = z.union([
 	z.string().min(1),
@@ -363,8 +372,10 @@ export const agentDevelopmentManifest = defineManifest({
 		{ id: "start", target: { kind: "ticket", action: "implement" } },
 		{ id: "succeed", target: { kind: "ticket", action: "implement" } },
 		{ id: "fail", target: { kind: "ticket", action: "implement" } },
+		{ id: "pause", target: { kind: "ticket", action: "implement" } },
+		{ id: "respond", target: { kind: "ticket", action: "none" } },
 		{ id: "escalate", target: { kind: "ticket", action: "implement" } },
-		{ id: "resume", target: { kind: "ticket", action: "implement" } },
+		{ id: "resume", target: { kind: "ticket", action: "none" } },
 		...lifecycleCommands,
 	],
 	relationships: [

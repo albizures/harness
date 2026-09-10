@@ -17,7 +17,16 @@ const actions = [
 	"merge",
 	"none",
 ] as const;
-const events = ["start", "succeed", "fail", "recover", "escalate"] as const;
+const events = [
+	"start",
+	"succeed",
+	"fail",
+	"recover",
+	"escalate",
+	"pause",
+	"respond",
+	"resume",
+] as const;
 const taskSubkinds = ["work", "research", "prototype"] as const;
 
 const createInput = z
@@ -297,7 +306,10 @@ export const genericTaskManifest = defineManifest({
 		{ id: "start", target: { kind: "task", action: "work" } },
 		{ id: "succeed", target: { kind: "task", action: "work" } },
 		{ id: "fail", target: { kind: "task", action: "work" } },
+		{ id: "pause", target: { kind: "task", action: "work" } },
+		{ id: "respond", target: { kind: "task", action: "none" } },
 		{ id: "escalate", target: { kind: "task", action: "work" } },
+		{ id: "resume", target: { kind: "task", action: "none" } },
 		{
 			id: "task-start",
 			cli: { verb: "task", target: "start" },

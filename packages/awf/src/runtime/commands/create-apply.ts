@@ -7,6 +7,7 @@ import type {
 	WorkflowManifest,
 } from "../../domain/manifest/schema.ts";
 import type { CreateIssueInput } from "../../domain/workflow/issue.ts";
+import { CorruptWorkflowProjectionError } from "../../domain/workflow/projection.ts";
 import {
 	NeedReconciliationError,
 	type Tracker,
@@ -14,14 +15,7 @@ import {
 	type TrackerIssueRef,
 	type TrackerWorkflowEffect,
 } from "../../ports/tracker.ts";
-import {
-	escalateCommand,
-	pauseCommand,
-	respondCommand,
-	resumeCommand,
-	startCommand,
-	terminalCommand,
-} from "./lifecycle.ts";
+import { startCommand, terminalCommand } from "./lifecycle.ts";
 import {
 	genericIssueBody,
 	genericIssueTitle,
@@ -152,40 +146,6 @@ async function manifestLifecycleCommand(
 			lifecycleHandlers,
 		);
 	}
-	if (command.id === "pause") {
-		return pauseCommand(
-			shifted[1],
-			readOption(shifted, "--input"),
-			tracker,
-			stdin,
-		);
-	}
-	if (command.id === "respond") {
-		return respondCommand(
-			shifted[1],
-			readOption(shifted, "--input"),
-			tracker,
-			manifest,
-			stdin,
-		);
-	}
-	if (command.id === "escalate") {
-		return escalateCommand(
-			shifted[1],
-			readOption(shifted, "--input"),
-			tracker,
-			manifest,
-			stdin,
-		);
-	}
-	if (command.id === "resume") {
-		return resumeCommand(
-			shifted[1],
-			readOption(shifted, "--action"),
-			tracker,
-			manifest,
-		);
-	}
 	return undefined;
 }
 
@@ -282,13 +242,16 @@ function workflowVersionTracker(
 ): Tracker {
 	const semanticVersion = manifest.workflow.version;
 	const overrides: Partial<Tracker> = {
-		createWorkflowIssue: (input) =>
-			tracker.createWorkflowIssue({
+		createWorkflowIssue: (input) => {
+			validateManifestWorkflowTarget(manifest, input.workflow);
+			return tracker.createWorkflowIssue({
 				...input,
 				workflow: withWorkflowSemanticVersion(input.workflow, semanticVersion),
-			}),
+			});
+		},
 		applyWorkflowEffects: async (input) => {
 			await validateWorkflowEffectVersions(tracker, input, semanticVersion);
+			await validateWorkflowEffectTargets(tracker, manifest, input);
 			return tracker.applyWorkflowEffects({
 				effects: input.effects.map((effect) =>
 					withWorkflowEffectSemanticVersion(effect, semanticVersion),
@@ -364,6 +327,77 @@ function withWorkflowEffectSemanticVersion(
 			),
 		},
 	};
+}
+
+async function validateWorkflowEffectTargets(
+	tracker: Tracker,
+	manifest: WorkflowManifest,
+	input: TrackerApplyWorkflowEffectsIntent,
+): Promise<void> {
+	const createdByKey = new Map<string, CreateIssueInput["workflow"]>();
+	for (const effect of input.effects) {
+		if (effect.type === "create-workflow-issue") {
+			validateManifestWorkflowTarget(manifest, effect.input.workflow);
+			if (effect.key !== undefined) {
+				createdByKey.set(effect.key, effect.input.workflow);
+			}
+			continue;
+		}
+		if (effect.type !== "update-workflow") {
+			continue;
+		}
+		const current =
+			"id" in effect.issue
+				? (await tracker.getIssue(effect.issue.id)).workflow
+				: createdByKey.get(effect.issue.key);
+		if (current === undefined) {
+			continue;
+		}
+		validateManifestWorkflowTarget(manifest, {
+			kind: effect.workflow.kind ?? current.kind,
+			state: effect.workflow.state ?? current.state,
+			action: effect.workflow.action ?? current.action,
+			reason: effect.workflow.reason ?? current.reason,
+		});
+	}
+}
+
+function validateManifestWorkflowTarget(
+	manifest: WorkflowManifest,
+	workflow: {
+		kind: string;
+		state: string;
+		action?: string;
+		reason?: string | null;
+	},
+): void {
+	if (!manifest.kinds.some((kind) => kind.id === workflow.kind)) {
+		throw new CorruptWorkflowProjectionError(
+			`Workflow kind '${workflow.kind}' is not declared by the manifest.`,
+		);
+	}
+	if (!manifest.vocabulary.states.includes(workflow.state)) {
+		throw new CorruptWorkflowProjectionError(
+			`Workflow state '${workflow.state}' is not declared by the manifest.`,
+		);
+	}
+	if (
+		workflow.action !== undefined &&
+		!manifest.vocabulary.actions.includes(workflow.action)
+	) {
+		throw new CorruptWorkflowProjectionError(
+			`Workflow action '${workflow.action}' is not declared by the manifest.`,
+		);
+	}
+	if (
+		workflow.reason !== undefined &&
+		workflow.reason !== null &&
+		!(manifest.vocabulary.reasons ?? []).includes(workflow.reason)
+	) {
+		throw new CorruptWorkflowProjectionError(
+			`Workflow reason '${workflow.reason}' is not declared by the manifest.`,
+		);
+	}
 }
 
 async function validateWorkflowEffectVersions(

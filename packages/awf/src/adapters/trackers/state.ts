@@ -338,7 +338,7 @@ function tryFromLabels(
 				body: input.body,
 				workflow: {
 					kind: "corrupt",
-					state: "need-human",
+					state: "corrupt",
 					action: "none",
 					version: input.version,
 				},

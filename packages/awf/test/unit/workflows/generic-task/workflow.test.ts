@@ -46,6 +46,10 @@ it("should export a valid explicit bundled workflow module", () => {
 	expect(lifecycleHandlers).toBe(genericTaskLifecycleHandlers);
 	expect(agentWorkflowLifecycleHandlers).toBe(genericTaskLifecycleHandlers);
 	expect(Object.keys(genericTaskCommandHandlers)).toEqual([
+		"pause",
+		"respond",
+		"escalate",
+		"resume",
 		"spec-create",
 		"task-create",
 		"grilling-create",
@@ -77,7 +81,16 @@ it("should export a valid explicit bundled workflow module", () => {
 			"none",
 		],
 		reasons: [],
-		events: ["start", "succeed", "fail", "recover", "escalate"],
+		events: [
+			"start",
+			"succeed",
+			"fail",
+			"recover",
+			"escalate",
+			"pause",
+			"respond",
+			"resume",
+		],
 	});
 	expect(genericTaskManifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",
@@ -99,7 +112,10 @@ it("should export a valid explicit bundled workflow module", () => {
 		"start",
 		"succeed",
 		"fail",
+		"pause",
+		"respond",
 		"escalate",
+		"resume",
 		"task-start",
 		"task-fail",
 		"task-recover",
@@ -125,12 +141,9 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf task fail <issue>",
 			"awf task recover <issue>",
 			"awf task escalate <issue>",
-		]),
-	);
-	expect(help.commands.map((command) => command.usage)).not.toEqual(
-		expect.arrayContaining([
-			"awf pause <issue> --input <file|->",
-			"awf respond <issue> --input <file|->",
+			"awf run-command pause <issue> --input <file|->",
+			"awf run-command respond <issue> --input <file|->",
+			"awf run-command resume <issue> --action <action>",
 		]),
 	);
 	expect(help.readiness.filters).toEqual([

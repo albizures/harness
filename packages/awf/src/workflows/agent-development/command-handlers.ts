@@ -29,6 +29,7 @@ import {
 	stableStringify,
 } from "../../runtime/commands/shared.ts";
 import { agentDevelopmentManifest } from "./manifest.ts";
+import { humanInteractionCommandHandlers } from "../human-interaction-handlers.ts";
 
 type SpecInput = { title: string; content: string };
 type PlanBundle = { tickets: Array<PlanTicket> };
@@ -56,6 +57,7 @@ type PlanBundleReference =
 	  };
 
 export const agentDevelopmentCommandHandlers: CommandHandlers = {
+	...humanInteractionCommandHandlers(),
 	"spec-create": rawCommandHandler(createSpecCommand),
 	"handoff-create": rawCommandHandler(createHandoffCommand),
 	"plan-apply": rawCommandHandler(applyPlanCommand),

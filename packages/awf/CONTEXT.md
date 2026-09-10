@@ -105,5 +105,9 @@ A Workflow manifest-declared state where the workflow regards an issue as comple
 _Avoid_: hard-coded done state, implicit terminal state
 
 **Workflow reconciliation**:
-A Workflow runtime operation that compares current workflow fields, workflow logs, and tracker projections to detect drift or corruption. It is read-only by default; applying reconciliation performs only deterministic safe repairs and otherwise reports unresolved drift without choosing a workflow-specific human-intervention state.
-_Avoid_: automatic state rebuild, silent repair, built-in escalation
+A Workflow runtime operation that compares current workflow fields, workflow logs, and tracker projections to detect drift or corruption. It is read-only by default; applying reconciliation performs only deterministic safe repairs and otherwise reports unresolved drift as manual repair without choosing a workflow-specific human-intervention state.
+_Avoid_: automatic state rebuild, silent repair, built-in escalation, need-human repair
+
+**Manual repair**:
+A reconciliation outcome where AWF can identify invalid workflow metadata or history but cannot safely choose a deterministic correction. Manual repair is runtime diagnostic language, not a workflow state or transition target.
+_Avoid_: need-human repair, automatic escalation, corrupt workflow state

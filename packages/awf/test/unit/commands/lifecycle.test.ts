@@ -12,24 +12,33 @@ function execute(
 	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
 }
 
-const manifestWithRuntimeHumanCommands = {
-	...agentDevelopmentManifest,
-	commands: [
-		...agentDevelopmentManifest.commands,
-		{ id: "pause", target: { kind: "ticket", action: "implement" } },
-		{ id: "respond", target: { kind: "ticket", action: "implement" } },
+const neutralManifest = defineManifest({
+	version: "v1",
+	workflow: { id: "neutral", version: "1.0.0" },
+	vocabulary: {
+		states: ["ready", "active", "blocked", "done"],
+		actions: ["do", "none"],
+		events: ["start", "finish"],
+	},
+	concurrency: { perIssue: 1 },
+	lifecycle: { activeStates: ["active"], terminalStates: ["done"] },
+	kinds: [
+		{
+			id: "work",
+			label: "Work",
+			initial: { state: "ready", action: "do" },
+			transitions: [
+				{
+					from: { state: "ready", action: "do" },
+					event: "start",
+					to: { state: "active", action: "do" },
+				},
+			],
+		},
 	],
-};
+	commands: [],
+});
 
-function executeWithRuntimeHumanCommands(
-	args: Parameters<typeof rawExecute>[0],
-	options: Parameters<typeof rawExecute>[1] = {},
-): ReturnType<typeof rawExecute> {
-	return rawExecute(args, {
-		manifest: manifestWithRuntimeHumanCommands,
-		...options,
-	});
-}
 const pr = (n: number) => `https://github.com/albizures/harness/pull/${n}`;
 const prArtifact = (n: number) => ({ type: "pull-request", url: pr(n) });
 const findingArtifact = (ref: string) => ({ type: "finding", ref });
@@ -38,6 +47,72 @@ function assertSuccess<T>(envelope: Awaited<ReturnType<typeof execute>>): T {
 	expect(envelope.ok).toBe(true);
 	return (envelope as { ok: true; data: T }).data;
 }
+
+it("should reject removed top-level compatibility lifecycle aliases", async () => {
+	const envelope = await rawExecute(["pause", "123", "--input", "-"], {
+		manifest: neutralManifest,
+		stdin: JSON.stringify({ reason: "Need answer" }),
+	});
+
+	expect(envelope).toEqual({
+		ok: false,
+		error: {
+			code: "UNKNOWN_COMMAND",
+			message: "Unknown command.",
+			details: { command: "pause 123 --input -" },
+		},
+	});
+});
+
+it("should reject handler workflow effects that target states not declared by the manifest", async () => {
+	const manifest = defineManifest({
+		...neutralManifest,
+		commands: [{ id: "block", target: { kind: "work", action: "do" } }],
+	});
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Work",
+				workflow: { kind: "work", state: "active", action: "do" },
+			},
+		],
+	});
+
+	const envelope = await rawExecute(
+		["run-command", "block", "123", "--input", "-"],
+		{
+			manifest,
+			tracker,
+			stdin: "{}",
+			commandHandlers: {
+				block: async ({ tracker }) => {
+					await tracker.applyWorkflowEffects({
+						effects: [
+							{
+								type: "update-workflow",
+								issue: { id: "123" },
+								expect: { version: 1, hash: "" },
+								workflow: { state: "waiting-human", action: "none" },
+							},
+						],
+					});
+					return { updated: true };
+				},
+			},
+		},
+	);
+
+	expect(envelope).toEqual({
+		ok: false,
+		error: {
+			code: "CORRUPT_WORKFLOW_PROJECTION",
+			message:
+				"Workflow state 'waiting-human' is not declared by the manifest.",
+			details: { id: "123" },
+		},
+	});
+});
 
 it("should ensure that start moves a ready issue to running and appends an action_started log without run identity", async () => {
 	const tracker = createInMemoryTracker({
@@ -66,6 +141,33 @@ it("should ensure that start moves a ready issue to running and appends an actio
 	expect(logs.map((log) => log.type)).toEqual(["action_started"]);
 });
 
+it("should not route top-level compatibility lifecycle aliases through manifest command handlers", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Need product answer",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["pause", "123", "--input", "-"], {
+		tracker,
+		stdin: JSON.stringify({ reason: "Need product answer" }),
+	});
+
+	expect(envelope.ok).toBe(false);
+	expect((await tracker.getIssue("123")).workflow).toMatchObject({
+		state: "running",
+		action: "implement",
+	});
+});
+
 it("should ensure that pause moves a running issue to waiting-human and logs pause metadata", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -81,7 +183,7 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 		],
 	});
 
-	const envelope = await executeWithRuntimeHumanCommands(
+	const envelope = await execute(
 		["run-command", "pause", "123", "--input", "-"],
 		{
 			tracker,
@@ -151,7 +253,7 @@ it("should ensure that respond resumes a waiting-human issue to a valid ready ac
 		],
 	});
 
-	const envelope = await executeWithRuntimeHumanCommands(
+	const envelope = await execute(
 		["run-command", "respond", "123", "--input", "-"],
 		{
 			tracker,
@@ -192,7 +294,7 @@ it("should ensure that respond keeps an insufficient response waiting for the hu
 		],
 	});
 
-	const envelope = await executeWithRuntimeHumanCommands(
+	const envelope = await execute(
 		["run-command", "respond", "123", "--input", "-"],
 		{
 			tracker,
@@ -218,7 +320,7 @@ it("should ensure that respond keeps an insufficient response waiting for the hu
 	});
 });
 
-it("should ensure that invalid waiting-human resume targets become exceptional need-human intervention", async () => {
+it("should ensure that invalid waiting-human resume targets are reported without choosing a fallback state", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -239,7 +341,7 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 		],
 	});
 
-	const envelope = await executeWithRuntimeHumanCommands(
+	const envelope = await execute(
 		["run-command", "respond", "123", "--input", "-"],
 		{
 			tracker,
@@ -250,24 +352,25 @@ it("should ensure that invalid waiting-human resume targets become exceptional n
 		},
 	);
 
-	expect(envelope.ok).toBe(true);
+	expect(envelope).toEqual({
+		ok: false,
+		error: {
+			code: "COMMAND_UNAVAILABLE",
+			message:
+				"Workflow response cannot determine a manifest-declared resume action.",
+			details: {
+				id: "123",
+				command: "respond",
+				resumeAction: "not-ready",
+			},
+		},
+	});
 	expect((await tracker.getIssue("123")).workflow).toMatchObject({
-		state: "need-human",
+		state: "waiting-human",
 		action: "none",
 	});
 	const logs = await tracker.readLogs("123");
-	expect(logs.map((log) => log.type)).toEqual([
-		"human_input_needed",
-		"human_intervention_needed",
-	]);
-	expect(JSON.parse(logs[1]?.message ?? "{}")).toMatchObject({
-		event: "respond",
-		from: { state: "waiting-human", action: "none" },
-		to: { state: "need-human", action: "none" },
-		response: "Try the unknown action.",
-		sufficient: true,
-		resumeAction: "not-ready",
-	});
+	expect(logs.map((log) => log.type)).toEqual(["human_input_needed"]);
 });
 
 it("should ensure that succeed applies generic relationship-driven lifecycle progression", async () => {

@@ -8,7 +8,7 @@ export type ReconciliationDiagnostic = {
 	code: string;
 	severity: "drift" | "corruption";
 	message: string;
-	repair: "safe" | "need-human" | "none";
+	repair: "safe" | "manual" | "none";
 	applied?: boolean;
 };
 
@@ -33,12 +33,12 @@ export async function reconcileCommand(
 		const safeRepair = hasCorruption
 			? undefined
 			: diagnostics.find((diagnostic) => diagnostic.repair === "safe");
-		const needHumanRepair = diagnostics.find(
-			(diagnostic) => diagnostic.repair === "need-human",
+		const manualRepair = diagnostics.find(
+			(diagnostic) => diagnostic.repair === "manual",
 		);
 		let repairedIssue = inspection.issue;
 		if (apply && inspection.issue !== undefined) {
-			const repair = safeRepair ?? needHumanRepair;
+			const repair = safeRepair ?? manualRepair;
 			let workflow:
 				| Parameters<Tracker["repairIssue"]>[1]["workflow"]
 				| undefined;
@@ -113,7 +113,7 @@ function diagnoseReconciliation(
 				code: "MALFORMED_WORKFLOW_LOG",
 				severity: "corruption",
 				message: `Workflow log at sequence ${index + 1} is malformed.`,
-				repair: "need-human",
+				repair: "manual",
 			});
 		}
 	}

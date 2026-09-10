@@ -14,6 +14,7 @@ import {
 	lifecycleError,
 	stableStringify,
 } from "../../runtime/commands/shared.ts";
+import { humanInteractionCommandHandlers } from "../human-interaction-handlers.ts";
 
 type CreateInput = {
 	title: string;
@@ -44,6 +45,7 @@ const createTaskCommand: CommandHandler = taskCreateCommand;
 const createGrillingCommand: CommandHandler = grillingCreateCommand;
 
 export const genericTaskCommandHandlers: CommandHandlers = {
+	...humanInteractionCommandHandlers(),
 	"spec-create": createSpecCommand,
 	"task-create": createTaskCommand,
 	"grilling-create": createGrillingCommand,

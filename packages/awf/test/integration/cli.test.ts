@@ -188,7 +188,16 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				"merge",
 				"integration-test",
 			],
-			events: ["start", "succeed", "fail", "recover", "escalate"],
+			events: [
+				"start",
+				"succeed",
+				"fail",
+				"recover",
+				"escalate",
+				"pause",
+				"respond",
+				"resume",
+			],
 		},
 		readiness: {
 			filters: [
