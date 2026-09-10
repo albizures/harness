@@ -364,7 +364,6 @@ function fromLabels(
 		kind: readSingleLabel(input.labels, "kind", input.id),
 		state: readSingleLabel(input.labels, "state", input.id),
 		action: readSingleLabel(input.labels, "action", input.id),
-		reason: readOptionalSingleLabel(input.labels, "reason", input.id),
 	};
 	return {
 		id: input.id,
@@ -382,20 +381,6 @@ function readSingleLabel(
 ): string {
 	const values = workflowLabelValues(labels, prefix);
 	if (values.length !== 1 || values[0] === "") {
-		throw new CorruptWorkflowProjectionError(
-			`Issue '${id}' has corrupt ${prefix} projection data.`,
-		);
-	}
-	return values[0];
-}
-
-function readOptionalSingleLabel(
-	labels: Array<string>,
-	prefix: string,
-	id: string,
-): string | undefined {
-	const values = workflowLabelValues(labels, prefix);
-	if (values.length > 1 || values.some((value) => value === "")) {
 		throw new CorruptWorkflowProjectionError(
 			`Issue '${id}' has corrupt ${prefix} projection data.`,
 		);
@@ -465,7 +450,6 @@ function cleanProjectionFields(
 		kind: projection.kind,
 		state: projection.state,
 		action: projection.action,
-		...(projection.reason === undefined ? {} : { reason: projection.reason }),
 		...(projection.data === undefined ? {} : { data: projection.data }),
 		...(projection.semanticVersion === undefined
 			? {}
@@ -484,11 +468,6 @@ function validateWorkflowProjection(
 				`Issue '${id}' has malformed ${field} projection data.`,
 			);
 		}
-	}
-	if (projection.reason !== undefined && projection.reason === "") {
-		throw new CorruptWorkflowProjectionError(
-			`Issue '${id}' has malformed reason projection data.`,
-		);
 	}
 	if (
 		projection.semanticVersion !== undefined &&

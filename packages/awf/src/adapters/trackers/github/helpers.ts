@@ -15,7 +15,7 @@ import {
 const PROJECTION_SCHEMA_VERSION = 1;
 const MACHINE_COMMENT_VERSION = 1;
 const MACHINE_COMMENT_PREFIX = "awf";
-const WORKFLOW_LABEL_FIELDS = ["kind", "state", "action", "reason"] as const;
+const WORKFLOW_LABEL_FIELDS = ["kind", "state", "action"] as const;
 type WorkflowLabelField = (typeof WORKFLOW_LABEL_FIELDS)[number];
 
 export async function validateGitHubTrackerCapabilities(api: {
@@ -87,9 +87,6 @@ export function labelsForProjection(
 		labelFor(manifest, "kind", kind.id),
 		labelFor(manifest, "state", projection.state),
 		labelFor(manifest, "action", projection.action),
-		...(projection.reason === undefined
-			? []
-			: [labelFor(manifest, "reason", projection.reason)]),
 	];
 }
 
@@ -97,7 +94,7 @@ export function projectionFromLabels(
 	manifest: WorkflowManifest,
 	number: number,
 	labels: Array<string>,
-): Pick<WorkflowProjection, "kind" | "state" | "action" | "reason"> {
+): Pick<WorkflowProjection, "kind" | "state" | "action"> {
 	assertNoMalformedWorkflowProjectionLabels(manifest, number, labels);
 	const kindValues = valuesForReservedLabel(manifest, labels, "kind");
 	if (kindValues.length !== 1 || kindValues[0] === "") {
@@ -119,7 +116,6 @@ export function projectionFromLabels(
 		kind: kind.id,
 		state: readSingleReservedLabel(manifest, labels, "state", number),
 		action: readSingleReservedLabel(manifest, labels, "action", number),
-		reason: readOptionalReservedLabel(manifest, labels, "reason", number),
 	};
 }
 
@@ -137,22 +133,6 @@ function readSingleReservedLabel(
 		);
 	}
 	return values[0] ?? "";
-}
-
-function readOptionalReservedLabel(
-	manifest: WorkflowManifest,
-	labels: Array<string>,
-	field: "reason",
-	number: number,
-): string | undefined {
-	const values = valuesForReservedLabel(manifest, labels, field);
-	if (values.length > 1 || values.some((value) => value === "")) {
-		throw needsReconciliation(
-			String(number),
-			`issue has corrupt ${field} workflow labels`,
-		);
-	}
-	return values[0];
 }
 
 function valuesForReservedLabel(
@@ -342,7 +322,6 @@ export function isProjection(value: unknown): value is WorkflowProjection {
 				"kind",
 				"state",
 				"action",
-				"reason",
 				"data",
 				"semanticVersion",
 				"version",
@@ -352,7 +331,6 @@ export function isProjection(value: unknown): value is WorkflowProjection {
 		typeof value.kind === "string" &&
 		typeof value.state === "string" &&
 		typeof value.action === "string" &&
-		(value.reason === undefined || typeof value.reason === "string") &&
 		(value.data === undefined || isJsonRecord(value.data)) &&
 		(value.semanticVersion === undefined ||
 			typeof value.semanticVersion === "string") &&
@@ -393,9 +371,6 @@ export function validateProjectionShape(
 		if (projection[field] === "") {
 			throw needsReconciliation(id, `malformed ${field} projection data`);
 		}
-	}
-	if (projection.reason === "") {
-		throw needsReconciliation(id, "malformed optional projection data");
 	}
 	if (projection.semanticVersion === "") {
 		throw needsReconciliation(id, "malformed workflow semantic version data");

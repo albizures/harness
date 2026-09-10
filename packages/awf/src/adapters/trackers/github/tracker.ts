@@ -66,9 +66,6 @@ export class GitHubTracker {
 			kind: input.workflow.kind,
 			state: input.workflow.state,
 			action: input.workflow.action,
-			...(input.workflow.reason === undefined
-				? {}
-				: { reason: input.workflow.reason }),
 			...(input.workflow.data === undefined
 				? {}
 				: { data: input.workflow.data }),
@@ -152,7 +149,6 @@ export class GitHubTracker {
 				kind: merged.kind,
 				state: merged.state,
 				action: merged.action,
-				...(merged.reason === undefined ? {} : { reason: merged.reason }),
 				...(merged.data === undefined ? {} : { data: merged.data }),
 				...(merged.semanticVersion === undefined
 					? {}

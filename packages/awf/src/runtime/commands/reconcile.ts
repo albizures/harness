@@ -132,7 +132,7 @@ function projectionErrorCode(
 	labels: Array<string> | undefined,
 ): string {
 	if (labels !== undefined) {
-		for (const field of ["kind", "state", "action", "reason"]) {
+		for (const field of ["kind", "state", "action"]) {
 			const currentField = new RegExp(`^awf:[^:]+:${field}:`, "u");
 			const count = labels.filter((label) => currentField.test(label)).length;
 			if (count > 1) {

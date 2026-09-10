@@ -27,7 +27,6 @@ export type WorkflowFields = {
 	kind: string;
 	state: string;
 	action?: string;
-	reason?: string;
 	data?: Record<string, JsonValue>;
 };
 
@@ -249,7 +248,7 @@ export async function progressRelationshipsAfterLifecycleTransition(
 
 export function readinessFilters(
 	manifest: WorkflowManifest,
-): Array<{ kind?: string; state?: string; action?: string; reason?: string }> {
+): Array<{ kind?: string; state?: string; action?: string }> {
 	if (manifest.readiness !== undefined) {
 		return manifest.readiness.filters;
 	}
@@ -260,10 +259,6 @@ export function readinessFilters(
 				kind: kind.id,
 				state: transition.from.state,
 				action: transition.from.action,
-				...(transition.from.reason === undefined ||
-				transition.from.reason === null
-					? {}
-					: { reason: transition.from.reason }),
 			})),
 	);
 }
@@ -289,15 +284,13 @@ export function matchesReadinessFilters(
 		kind?: string;
 		state?: string;
 		action?: string;
-		reason?: string;
 	}>,
 ): boolean {
 	return filters.some(
 		(filter) =>
 			fieldMatches(filter.kind, workflow.kind) &&
 			fieldMatches(filter.state, workflow.state) &&
-			fieldMatches(filter.action, workflow.action) &&
-			fieldMatches(filter.reason, workflow.reason),
+			fieldMatches(filter.action, workflow.action),
 	);
 }
 
@@ -587,8 +580,7 @@ export function workflowMatchesFilter(
 	return (
 		fieldMatches(filter.kind, workflow.kind) &&
 		fieldMatches(filter.state, workflow.state) &&
-		fieldMatches(filter.action, workflow.action) &&
-		fieldMatches(filter.reason, workflow.reason)
+		fieldMatches(filter.action, workflow.action)
 	);
 }
 
@@ -612,7 +604,6 @@ export function cleanWorkflowFields(
 			kind: workflow.kind,
 			state: workflow.state,
 			action: workflow.action,
-			reason: workflow.reason,
 			subkind: readWorkflowSubkind(workflow, manifest),
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
@@ -636,11 +627,7 @@ export function fieldsMatch(
 	from: ManifestTransition["from"],
 	workflow: WorkflowFields,
 ): boolean {
-	return (
-		from.state === workflow.state &&
-		from.action === workflow.action &&
-		from.reason === workflow.reason
-	);
+	return from.state === workflow.state && from.action === workflow.action;
 }
 
 export function invalidTransition(id: string, event: string): Envelope {
@@ -693,35 +680,28 @@ export function isTerminalLog(type: string): boolean {
 export function initialWorkflowTarget(target: {
 	state: string;
 	action?: string;
-	reason?: string | null;
-}): { state: string; action: string; reason?: string } {
+}): { state: string; action: string } {
 	return { ...workflowTarget(target), action: target.action ?? "none" };
 }
 
-export function workflowTarget(target: {
+export function workflowTarget(target: { state: string; action?: string }): {
 	state: string;
 	action?: string;
-	reason?: string | null;
-}): { state: string; action?: string; reason?: string } {
+} {
 	return {
 		state: target.state,
 		...(target.action === undefined ? {} : { action: target.action }),
-		...(target.reason === undefined || target.reason === null
-			? {}
-			: { reason: target.reason }),
 	};
 }
 
 export function cleanTransitionTarget(target: {
 	state: string;
 	action?: string;
-	reason?: string | null;
 }): Record<string, string | null> {
 	return Object.fromEntries(
 		Object.entries({
 			state: target.state,
 			action: target.action,
-			reason: target.reason,
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string | null>;
 }
@@ -729,13 +709,11 @@ export function cleanTransitionTarget(target: {
 export function cleanCurrentTarget(target: {
 	state: string;
 	action: string;
-	reason?: string;
 }): Record<string, string> {
 	return Object.fromEntries(
 		Object.entries({
 			state: target.state,
 			action: target.action,
-			reason: target.reason,
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
 }

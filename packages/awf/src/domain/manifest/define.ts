@@ -51,11 +51,6 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 		"$.vocabulary.actions",
 		issues,
 	);
-	const reasons = readIdentifierSet(
-		vocabulary?.reasons ?? [],
-		"$.vocabulary.reasons",
-		issues,
-	);
 	const events = readIdentifierSet(
 		vocabulary?.events,
 		"$.vocabulary.events",
@@ -87,7 +82,6 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			`${path}.initial`,
 			states,
 			actions,
-			reasons,
 			issues,
 			true,
 		);
@@ -110,7 +104,6 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 				`${path}.transitions[${transitionIndex}]`,
 				states,
 				actions,
-				reasons,
 				events,
 				issues,
 			);
@@ -128,18 +121,10 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 		kindIds,
 		states,
 		actions,
-		reasons,
 		terminalStates,
 		issues,
 	);
-	validateLifecyclePolicies(
-		value.lifecycle,
-		kindIds,
-		states,
-		actions,
-		reasons,
-		issues,
-	);
+	validateLifecyclePolicies(value.lifecycle, kindIds, states, actions, issues);
 
 	const commandIds = new Set<string>();
 	const commandDeclarations = new Set<string>();
@@ -154,7 +139,6 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			kindIds,
 			states,
 			actions,
-			reasons,
 			events,
 			kindActions,
 			commandIds,
@@ -420,7 +404,6 @@ function validateTransition(
 	path: string,
 	states: Set<string>,
 	actions: Set<string>,
-	reasons: Set<string>,
 	events: Set<string>,
 	issues: Array<ValidationIssue>,
 ): void {
@@ -428,24 +411,8 @@ function validateTransition(
 		issue(issues, path, "Transition must be an object.");
 		return;
 	}
-	validateStateRef(
-		value.from,
-		`${path}.from`,
-		states,
-		actions,
-		reasons,
-		issues,
-		false,
-	);
-	validateStateRef(
-		value.to,
-		`${path}.to`,
-		states,
-		actions,
-		reasons,
-		issues,
-		false,
-	);
+	validateStateRef(value.from, `${path}.from`, states, actions, issues, false);
+	validateStateRef(value.to, `${path}.to`, states, actions, issues, false);
 	if (
 		typeof value.event !== "string" ||
 		!events.has(value.event) ||
@@ -471,7 +438,6 @@ function validateStateRef(
 	path: string,
 	states: Set<string>,
 	actions: Set<string>,
-	reasons: Set<string>,
 	issues: Array<ValidationIssue>,
 	requireAction: boolean,
 ): void {
@@ -505,19 +471,6 @@ function validateStateRef(
 			"Action must reference a known action and cannot be a wildcard.",
 		);
 	}
-	if (
-		value.reason !== undefined &&
-		value.reason !== null &&
-		(typeof value.reason !== "string" ||
-			!reasons.has(value.reason) ||
-			value.reason === "*")
-	) {
-		issue(
-			issues,
-			`${path}.reason`,
-			"Reason must reference a known reason, null, or be omitted.",
-		);
-	}
 }
 
 function validateReadiness(
@@ -525,7 +478,6 @@ function validateReadiness(
 	kindIds: Set<string>,
 	states: Set<string>,
 	actions: Set<string>,
-	reasons: Set<string>,
 	terminalStates: Set<string>,
 	issues: Array<ValidationIssue>,
 ): void {
@@ -566,10 +518,7 @@ function validateReadiness(
 		if (filter.action !== undefined && !actions.has(String(filter.action))) {
 			issue(issues, `${path}.action`, "Readiness filter action must be known.");
 		}
-		if (filter.reason !== undefined && !reasons.has(String(filter.reason))) {
-			issue(issues, `${path}.reason`, "Readiness filter reason must be known.");
-		}
-		const key = [filter.kind, filter.state, filter.action, filter.reason]
+		const key = [filter.kind, filter.state, filter.action]
 			.map((part) => String(part ?? "*"))
 			.join("/");
 		if (filterDeclarations.has(key)) {
@@ -637,7 +586,6 @@ function validateReadiness(
 			kindIds,
 			states,
 			actions,
-			reasons,
 			issues,
 		);
 		if (!isRecord(policy.children)) {
@@ -653,7 +601,6 @@ function validateReadiness(
 				kindIds,
 				states,
 				actions,
-				reasons,
 				issues,
 			);
 			validateMinimum(policy.children.min, `${path}.children.min`, issues);
@@ -685,7 +632,6 @@ function validateLifecyclePolicies(
 	kindIds: Set<string>,
 	states: Set<string>,
 	actions: Set<string>,
-	reasons: Set<string>,
 	issues: Array<ValidationIssue>,
 ): void {
 	if (!isRecord(value)) {
@@ -726,7 +672,6 @@ function validateLifecyclePolicies(
 			kindIds,
 			states,
 			actions,
-			reasons,
 			issues,
 		);
 		validateWorkflowFilter(
@@ -735,7 +680,6 @@ function validateLifecyclePolicies(
 			kindIds,
 			states,
 			actions,
-			reasons,
 			issues,
 		);
 		if (!isRecord(policy.siblings)) {
@@ -751,20 +695,11 @@ function validateLifecyclePolicies(
 				kindIds,
 				states,
 				actions,
-				reasons,
 				issues,
 			);
 			validateMinimum(policy.siblings.min, `${path}.siblings.min`, issues);
 		}
-		validateStateRef(
-			policy.to,
-			`${path}.to`,
-			states,
-			actions,
-			reasons,
-			issues,
-			false,
-		);
+		validateStateRef(policy.to, `${path}.to`, states, actions, issues, false);
 	}
 }
 
@@ -794,7 +729,6 @@ function validateWorkflowFilter(
 	kindIds: Set<string>,
 	states: Set<string>,
 	actions: Set<string>,
-	reasons: Set<string>,
 	issues: Array<ValidationIssue>,
 ): void {
 	if (!isRecord(value)) {
@@ -809,9 +743,6 @@ function validateWorkflowFilter(
 	}
 	if (value.action !== undefined && !actions.has(String(value.action))) {
 		issue(issues, `${path}.action`, "Workflow filter action must be known.");
-	}
-	if (value.reason !== undefined && !reasons.has(String(value.reason))) {
-		issue(issues, `${path}.reason`, "Workflow filter reason must be known.");
 	}
 }
 
@@ -838,7 +769,6 @@ function validateCommand(
 	kindIds: Set<string>,
 	states: Set<string>,
 	actions: Set<string>,
-	reasons: Set<string>,
 	events: Set<string>,
 	kindActions: Map<string, Set<string>>,
 	commandIds: Set<string>,
@@ -860,6 +790,20 @@ function validateCommand(
 		} else {
 			validateId(value.cli.verb, `${path}.cli.verb`, issues);
 			validateId(value.cli.target, `${path}.cli.target`, issues);
+			if (value.cli.verb === "apply") {
+				issue(
+					issues,
+					`${path}.cli.verb`,
+					"Generic apply command declarations are not supported.",
+				);
+			}
+			if (value.cli.source !== undefined) {
+				issue(
+					issues,
+					`${path}.cli.source`,
+					"Generic source command inputs are not supported.",
+				);
+			}
 			if (
 				typeof value.cli.verb === "string" &&
 				typeof value.cli.target === "string"
@@ -920,17 +864,6 @@ function validateCommand(
 					"Command target action must be declared by the target kind's local states or transitions.",
 				);
 			}
-		}
-		if (
-			value.target.reason !== undefined &&
-			(typeof value.target.reason !== "string" ||
-				!reasons.has(value.target.reason))
-		) {
-			issue(
-				issues,
-				`${path}.target.reason`,
-				"Command target reason must reference a known reason.",
-			);
 		}
 	}
 	if (isRecord(value.transition)) {

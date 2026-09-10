@@ -4,7 +4,7 @@ Agent Workflow (AWF) provides a generic workflow runtime and CLI for tracker-bac
 
 ## Runtime boundary
 
-AWF runtime-owned concepts are Workflow issue kinds, current workflow state/action/reason fields, lifecycle events, legal actions, relationships, readiness filters, and append-only text logs. Command inputs are ordinary Zod schemas owned by workflow modules. AWF does not expose or manage runtime artifact records, change records, command output schemas, or artifact-specific schema helpers.
+AWF runtime-owned concepts are Workflow issue kinds, current workflow state/action fields, lifecycle events, legal actions, relationships, readiness filters, and append-only text logs. Command inputs are ordinary Zod schemas owned by workflow modules. AWF does not expose or manage runtime artifact records, change records, command output schemas, generic manifest authoring APIs, or artifact-specific schema helpers.
 
 ## Workflow configuration
 
@@ -14,19 +14,7 @@ AWF does not load a workflow implicitly. Run CLI commands from a directory with 
 awf --config ./awf.config.ts ready
 ```
 
-A workflow module must export at least `manifest`. It may also export runtime bindings such as `tracker`, `commandHandlers`, and `lifecycleHandlers`.
-
-```ts
-import { defineManifest } from "@albizures/awf";
-import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
-
-export const manifest = defineManifest({
-	workflow: { id: "my-workflow", version: "1.0.0" },
-	// kinds, commands, and policies...
-});
-
-export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
-```
+A workflow module must export at least the supported bundled `agent-workflow` manifest. It may also export runtime bindings such as `tracker`, `commandHandlers`, and `lifecycleHandlers`.
 
 ## Using the bundled agent-workflow workflow
 
@@ -90,7 +78,7 @@ Grilling starts at `ready/discuss`, moves to `in-discussion/discuss` when starte
 
 ## Policy boundaries
 
-AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Task subkind is durable workflow data separate from the lifecycle tuple; readiness still matches kind, state, action, and reason. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
+AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Task subkind is durable workflow data separate from the lifecycle tuple; readiness matches kind, state, and action. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
 
 In `agent-workflow`, a Spec starts ready for `planning`. Completing planning leaves the Spec at `ready/none` while its implementation Tasks run. When the required child Tasks are done, generic lifecycle relationship policies advance the Spec to `ready/integration-test`; from there it can run integration-test, merge, and finish at `done/none` through ordinary legal lifecycle transitions. Task generation remains an explicit command or handler outcome recorded through normal tracker mutations.
 

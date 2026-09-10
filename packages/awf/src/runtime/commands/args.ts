@@ -1,10 +1,9 @@
 import { failure, type Envelope } from "../envelope.ts";
 import type { WorkflowManifest } from "../../domain/manifest/schema.ts";
-import { readOption, unknownCommand, workflowCommandByCli } from "./shared.ts";
+import { unknownCommand, workflowCommandByCli } from "./shared.ts";
 import { runtimeFailures } from "../failures.ts";
 
 const maxReconcileArgumentCount = 3;
-const createWithSourceArgumentCount = 6;
 export function validateKnownCommand(
 	args: Array<string>,
 	manifest?: WorkflowManifest,
@@ -21,8 +20,6 @@ export function validateKnownCommand(
 			return validateReady(args);
 		case "create":
 			return validateManifestCommandArguments(args, "create");
-		case "apply":
-			return validateManifestCommandArguments(args, "apply");
 		case "run-command":
 			return validateRunCommandArguments(args);
 		case "manifest":
@@ -87,7 +84,7 @@ function validateReady(args: Array<string>): Envelope | undefined {
 
 function validateManifestCommandArguments(
 	args: Array<string>,
-	verb: "create" | "apply",
+	verb: "create",
 ): Envelope | undefined {
 	const target = args[1];
 	if (target === undefined || target === "" || target.startsWith("-")) {
@@ -95,44 +92,11 @@ function validateManifestCommandArguments(
 			runtimeFailures.invalidArguments({ usage: `awf ${verb} <target> ...` }),
 		);
 	}
-	if (verb === "create") {
-		if (args.includes("--source")) {
-			const usage = `awf create ${target} --source <issue> --input <file|->`;
-			const source = readOption(args, "--source");
-			const input = readOption(args, "--input");
-			const allowed = new Set([
-				"create",
-				target,
-				"--source",
-				"--input",
-				...(source === undefined ? [] : [source]),
-				...(input === undefined ? [] : [input]),
-			]);
-			if (
-				source !== undefined &&
-				source !== "" &&
-				!source.startsWith("-") &&
-				input !== undefined &&
-				input !== "" &&
-				args.length === createWithSourceArgumentCount &&
-				args.every((arg) => allowed.has(arg))
-			) {
-				return undefined;
-			}
-			return failure(runtimeFailures.invalidArguments({ usage }));
-		}
-		return requirePositionalAndOption(
-			args,
-			`awf create ${target} --input <file|->`,
-			"--input",
-			1,
-		);
-	}
 	return requirePositionalAndOption(
 		args,
-		`awf apply ${target} <issue> --input <file|->`,
+		`awf create ${target} --input <file|->`,
 		"--input",
-		2,
+		1,
 	);
 }
 

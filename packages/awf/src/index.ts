@@ -44,28 +44,15 @@ export {
 } from "./runtime/lifecycle-handlers.ts";
 export {
 	ManifestValidationError,
-	getKind,
-	workflowManifestStructuralSchema,
-	type PayloadZodSchema,
 	type ValidationIssue,
-	type WorkflowManifest,
 } from "./domain/manifest/schema.ts";
-export { defineManifest, validateManifest } from "./domain/manifest/define.ts";
 export {
-	describeWorkflow,
-	manifestCommandUsage,
 	workflowDescriptionScopeNotes,
 	type WorkflowDescriptionSchemaInputV1,
 	type WorkflowDescriptionStateRefV1,
 	type WorkflowDescriptionV1,
 	type WorkflowDescriptionWorkflowFilterV1,
 } from "./domain/manifest/describe.ts";
-export {
-	WorkflowModuleLoadError,
-	loadManifest,
-	loadWorkflowModule,
-	type WorkflowModule,
-} from "./runtime/workflow-module.ts";
 export {
 	createGhCliGitHubTracker,
 	createGitHubTracker,
@@ -74,24 +61,7 @@ export {
 	type GitHubTrackerCapabilities,
 	type GitHubTrackerIssue,
 } from "./adapters/trackers/github/index.ts";
-export {
-	createTrackerAdapter,
-	createTrackerIntentModule,
-	type TrackerIntentModulePrimitives,
-} from "./runtime/tracker-intents.ts";
-export {
-	NeedReconciliationError,
-	type Tracker,
-	type TrackerAdapterPrimitiveOperations,
-	type TrackerAdapterPrimitiveReads,
-	type TrackerApplyWorkflowEffectsIntent,
-	type TrackerApplyWorkflowEffectsResult,
-	type TrackerCreateWorkflowIssueIntent,
-	type TrackerProjectionExpectation,
-	type TrackerRelationshipIntent,
-	type TrackerWorkflowEffect,
-	type TrackerVerificationHooks,
-} from "./ports/tracker.ts";
+export { NeedReconciliationError, type Tracker } from "./ports/tracker.ts";
 export { WorkflowLog } from "./domain/workflow/log.ts";
 export {
 	CorruptWorkflowProjectionError,

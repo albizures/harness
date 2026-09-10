@@ -539,7 +539,10 @@ export const manifest = agentWorkflowManifest;
 			{
 				cwd: dir,
 				encoding: "utf8",
-				input: JSON.stringify({ title: "Manifest-only config", body: "# Spec" }),
+				input: JSON.stringify({
+					title: "Manifest-only config",
+					body: "# Spec",
+				}),
 			},
 		);
 
@@ -613,14 +616,25 @@ export const manifest = agentWorkflowManifest;
 				action: failed.issue.workflow.action,
 			}).toEqual({ state: "need-human", action: "none" });
 
-			const recovered = runCli(["run-command", "resume", taskId, "--action", "work"]);
+			const recovered = runCli([
+				"run-command",
+				"resume",
+				taskId,
+				"--action",
+				"work",
+			]);
 			expect({
 				state: recovered.issue.workflow.state,
 				action: recovered.issue.workflow.action,
 			}).toEqual({ state: "ready", action: "work" });
 			expect(
 				runCli(["logs", taskId]).logs.map((log: { type: string }) => log.type),
-			).toEqual(["task-create_created", "action_started", "action_failed", "action_resumed"]);
+			).toEqual([
+				"task-create_created",
+				"action_started",
+				"action_failed",
+				"action_resumed",
+			]);
 		});
 	},
 	bundledGoldenSmokeTimeoutMs,

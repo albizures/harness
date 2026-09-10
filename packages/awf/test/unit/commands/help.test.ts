@@ -34,8 +34,7 @@ it("should ensure that help returns a stable success envelope", async () => {
 	);
 	expect(
 		data.commands.some(
-			(command) =>
-				command.usage === "awf create task --input <file|->",
+			(command) => command.usage === "awf create task --input <file|->",
 		),
 	).toBeTruthy();
 	expect(
@@ -60,8 +59,8 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 				target: { kind: "task", action: "work" },
 			},
 			{
-				id: "plan-apply",
-				cli: { verb: "apply", target: "brief" },
+				id: "plan-score",
+				cli: { verb: "score", target: "brief" },
 				target: { kind: "task", action: "work" },
 			},
 		],
@@ -77,7 +76,7 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 	).toBeTruthy();
 	expect(
 		helpCommands(manifest).some(
-			(command) => command.usage === "awf apply brief <issue> --input <file|->",
+			(command) => command.usage === "awf score brief <issue> --input <file|->",
 		),
 	).toBeTruthy();
 	expect(helpReadiness(manifest).filters).toEqual([

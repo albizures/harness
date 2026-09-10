@@ -99,7 +99,6 @@ export async function execute(
 	}
 	if (
 		args[0] === "create" ||
-		args[0] === "apply" ||
 		args[0] === "run-command" ||
 		workflowCommandByCli(manifest, args[0] ?? "", args[1]) !== undefined
 	) {

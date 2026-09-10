@@ -96,7 +96,6 @@ it("should ensure that defineManifest accepts Workflow attempt transition effect
 		vocabulary: {
 			states: ["ready", "running", "done"],
 			actions: ["implement", "none"],
-			reasons: [],
 			events: ["start", "succeed"],
 		},
 		concurrency: { perIssue: 1 },
@@ -147,7 +146,6 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		concurrency: { perIssue: 1 },
@@ -205,7 +203,6 @@ it("should validate per-subkind concurrency against declared kind subkinds", () 
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -252,7 +249,6 @@ it("should require a workflow semantic version", () => {
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -280,7 +276,6 @@ it("should validate lifecycle active and terminal states against the workflow vo
 		vocabulary: {
 			states: ["ready", "running", "done"],
 			actions: ["implement", "none"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -332,7 +327,6 @@ it("should reject readiness filters that target terminal states while allowing t
 		vocabulary: {
 			states: ["ready", "running", "done"],
 			actions: ["implement", "none"],
-			reasons: [],
 			events: ["reopen"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -381,7 +375,6 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -460,7 +453,6 @@ it("should reject executable hook fields embedded in workflow semantic declarati
 		vocabulary: {
 			states: ["ready", "running", "waiting-human", "done"],
 			actions: ["planning", "work", "none"],
-			reasons: [],
 			events: ["start", "succeed", "resume"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -539,7 +531,6 @@ it("should reject payload schemas outside command input declarations", () => {
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement", "none"],
-			reasons: [],
 			events: ["start", "succeed"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -586,7 +577,6 @@ it("should reject tracker as a manifest field inside defineManifest data", () =>
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -616,7 +606,6 @@ it("should reject non-declarative hooks, wildcards, unknown references, and malf
 		vocabulary: {
 			states: ["ready", "ready"],
 			actions: ["implement", "review"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -672,4 +661,76 @@ it("should reject non-declarative hooks, wildcards, unknown references, and malf
 	expect(messages).toMatch(/Payload schema must be a Zod schema/);
 	expect(messages).toMatch(/Relationship target/);
 	expect(messages).toMatch(/projection type/);
+});
+
+it("should reject removed workflow reason and generic command dimensions", () => {
+	const base = {
+		version: "v1",
+		workflow: { id: "removed-dimensions", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["work"],
+			events: ["noop"],
+		},
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				transitions: [],
+			},
+		],
+		commands: [
+			{
+				id: "create-task",
+				cli: { verb: "create", target: "task" },
+				target: { kind: "task", action: "work" },
+			},
+		],
+	};
+
+	const obsolete = validateManifest({
+		...base,
+		vocabulary: { ...base.vocabulary, reasons: ["blocked"] },
+		readiness: { filters: [{ kind: "task", reason: "blocked" }] },
+		kinds: [
+			{
+				...base.kinds[0],
+				initial: { state: "ready", action: "work", reason: "blocked" },
+				transitions: [
+					{
+						from: { state: "ready", action: "work", reason: "blocked" },
+						event: "noop",
+						to: { state: "ready", action: "work", reason: "blocked" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "create-task",
+				cli: { verb: "create", target: "task", source: true },
+				target: { kind: "task", action: "work", reason: "blocked" },
+			},
+			{
+				id: "apply-task",
+				cli: { verb: "apply", target: "task" },
+				target: { kind: "task", action: "work" },
+			},
+		],
+	});
+
+	expect(obsolete.map((issue) => issue.path)).toEqual(
+		expect.arrayContaining([
+			"$.vocabulary",
+			"$.readiness.filters[0]",
+			"$.kinds[0].initial",
+			"$.kinds[0].transitions[0].from",
+			"$.kinds[0].transitions[0].to",
+			"$.commands[0].cli.source",
+			"$.commands[0].target",
+			"$.commands[1].cli.verb",
+		]),
+	);
 });

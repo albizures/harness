@@ -129,7 +129,7 @@ it("should project agent-workflow Spec create fields to reserved GitHub labels a
 	]);
 });
 
-it("should project optional reasons and removes stale canonical labels on update", async () => {
+it("should project canonical workflow labels on update", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
@@ -142,14 +142,12 @@ it("should project optional reasons and removes stale canonical labels on update
 			kind: "task",
 			state: "need-human",
 			action: "none",
-			reason: "dependencies",
 		},
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
 		"awf:agent-workflow:action:none",
 		"awf:agent-workflow:kind:task",
-		"awf:agent-workflow:reason:dependencies",
 		"awf:agent-workflow:state:need-human",
 	]);
 
@@ -159,7 +157,6 @@ it("should project optional reasons and removes stale canonical labels on update
 			kind: "spec",
 			state: "ready",
 			action: "plan",
-			reason: undefined,
 		},
 	});
 

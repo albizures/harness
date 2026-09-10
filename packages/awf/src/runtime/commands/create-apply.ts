@@ -99,15 +99,6 @@ export async function manifestCommand(
 			command,
 		);
 	}
-	if (effectiveVerb === "apply") {
-		return applyGenericWorkflowCommand(
-			args[2],
-			readOption(args, "--input"),
-			versionedTracker,
-			stdin,
-			command,
-		);
-	}
 	return failure(
 		runtimeFailures.commandHandlerRequired({ command: command.id }),
 	);
@@ -355,7 +346,6 @@ async function validateWorkflowEffectTargets(
 			kind: effect.workflow.kind ?? current.kind,
 			state: effect.workflow.state ?? current.state,
 			action: effect.workflow.action ?? current.action,
-			reason: effect.workflow.reason ?? current.reason,
 		});
 	}
 }
@@ -366,7 +356,6 @@ function validateManifestWorkflowTarget(
 		kind: string;
 		state: string;
 		action?: string;
-		reason?: string | null;
 	},
 ): void {
 	if (!manifest.kinds.some((kind) => kind.id === workflow.kind)) {
@@ -385,15 +374,6 @@ function validateManifestWorkflowTarget(
 	) {
 		throw new CorruptWorkflowProjectionError(
 			`Workflow action '${workflow.action}' is not declared by the manifest.`,
-		);
-	}
-	if (
-		workflow.reason !== undefined &&
-		workflow.reason !== null &&
-		!(manifest.vocabulary.reasons ?? []).includes(workflow.reason)
-	) {
-		throw new CorruptWorkflowProjectionError(
-			`Workflow reason '${workflow.reason}' is not declared by the manifest.`,
 		);
 	}
 }
@@ -555,8 +535,7 @@ async function transitionGenericWorkflowCommand(
 			(candidate) =>
 				candidate.event === transitionCommand.event &&
 				candidate.from.state === issue.workflow.state &&
-				candidate.from.action === issue.workflow.action &&
-				candidate.from.reason === issue.workflow.reason,
+				candidate.from.action === issue.workflow.action,
 		);
 		if (transition === undefined) {
 			return invalidTransition(issueId, transitionCommand.event);
@@ -646,70 +625,11 @@ function commandTargetMatches(
 		kind: string;
 		state: string;
 		action?: string;
-		reason?: string | null;
 	},
 ): boolean {
 	return (
 		target.kind === workflow.kind &&
 		(target.state === undefined || target.state === workflow.state) &&
-		(target.action === undefined || target.action === workflow.action) &&
-		(target.reason === undefined || target.reason === workflow.reason)
+		(target.action === undefined || target.action === workflow.action)
 	);
-}
-
-export async function applyGenericWorkflowCommand(
-	issueId: string | undefined,
-	inputPath: string | undefined,
-	tracker: Tracker,
-	stdin: string | undefined,
-	command: ManifestCommand,
-): Promise<Envelope> {
-	if (issueId === undefined || inputPath === undefined) {
-		return failure(
-			runtimeFailures.invalidArguments({
-				usage: `awf apply ${command.cli?.target ?? command.target.action} <issue> --input <file|->`,
-			}),
-		);
-	}
-	const raw = await readInput(inputPath, stdin);
-	const parsed = parseJsonInput(
-		raw,
-		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
-	);
-	if (!parsed.ok) {
-		return parsed;
-	}
-	const payload = parseWorkflowCommandInput(command, parsed.data);
-	if (!payload.ok) {
-		return payload;
-	}
-	try {
-		const issue = await tracker.getIssue(issueId);
-		if (
-			issue.workflow.kind !== command.target.kind ||
-			issue.workflow.action !== command.target.action
-		) {
-			return invalidTransition(issueId, command.id);
-		}
-		const result = await tracker.applyWorkflowEffects({
-			effects: [
-				{
-					type: "record-command",
-					issue: { id: issueId },
-					log: {
-						type: `${command.id}_applied`,
-						message: stableStringify({ input: payload.data }),
-					},
-				},
-			],
-		});
-		const data = {
-			issue: result.issues[issueId] ?? (await tracker.getIssue(issueId)),
-			log: result.logs[0],
-			outcome: "APPLIED",
-		};
-		return success(data);
-	} catch (error) {
-		return lifecycleError(issueId, error);
-	}
 }

@@ -8,20 +8,17 @@ import type {
 type ManifestStateReference = {
 	state: string;
 	action?: string;
-	reason?: string | null;
 };
 
 export type WorkflowDescriptionStateRefV1 = {
 	state: string;
 	action?: string;
-	reason?: string | null;
 };
 
 export type WorkflowDescriptionWorkflowFilterV1 = {
 	kind?: string;
 	state?: string;
 	action?: string;
-	reason?: string;
 };
 
 export type WorkflowDescriptionSchemaInputV1 = { required: boolean };
@@ -32,7 +29,6 @@ export type WorkflowDescriptionV1 = {
 	vocabulary: {
 		states: Array<string>;
 		actions: Array<string>;
-		reasons?: Array<string>;
 		events: Array<string>;
 	};
 	concurrency: {
@@ -54,12 +50,11 @@ export type WorkflowDescriptionV1 = {
 	}>;
 	commands: Array<{
 		id: string;
-		target: { kind: string; state?: string; action?: string; reason?: string };
+		target: { kind: string; state?: string; action?: string };
 		transition?: { event: string; attempt?: "none" | "start" | "complete" };
 		cli?: {
 			verb: string;
 			target: string;
-			source?: boolean;
 			usage: string;
 		};
 		input: WorkflowDescriptionSchemaInputV1;
@@ -171,9 +166,6 @@ export function manifestCommandUsage(command: ManifestCommand): string {
 		return `awf run-command ${command.id}`;
 	}
 	if (cli.verb === "create") {
-		if (cli.source === true) {
-			return `awf create ${cli.target} --source <issue> --input <file|->`;
-		}
 		return `awf create ${cli.target} --input <file|->`;
 	}
 	const route = `awf ${cli.verb} ${cli.target}`;
@@ -187,9 +179,6 @@ function describeVocabulary(manifest: WorkflowManifest) {
 	return {
 		states: [...manifest.vocabulary.states],
 		actions: [...manifest.vocabulary.actions],
-		...(manifest.vocabulary.reasons === undefined
-			? {}
-			: { reasons: [...manifest.vocabulary.reasons] }),
 		events: [...manifest.vocabulary.events],
 	};
 }
@@ -328,7 +317,6 @@ function stateRef(
 	return {
 		state: reference.state,
 		...(reference.action === undefined ? {} : { action: reference.action }),
-		...(reference.reason === undefined ? {} : { reason: reference.reason }),
 	};
 }
 
@@ -339,7 +327,6 @@ function workflowFilter(
 		...(filter.kind === undefined ? {} : { kind: filter.kind }),
 		...(filter.state === undefined ? {} : { state: filter.state }),
 		...(filter.action === undefined ? {} : { action: filter.action }),
-		...(filter.reason === undefined ? {} : { reason: filter.reason }),
 	};
 }
 

@@ -164,7 +164,6 @@ it("should ensure that text output renders workflow descriptions as deterministi
 								to: {
 									state: "running",
 									action: "implement",
-									reason: "blocked",
 								},
 							},
 						],
@@ -214,7 +213,6 @@ it("should ensure that text output renders workflow descriptions as deterministi
 
 - States: ready, running, done
 - Actions: implement, none
-- Reasons: blocked
 - Events: start, succeed
 
 ## Concurrency
@@ -229,7 +227,7 @@ it("should ensure that text output renders workflow descriptions as deterministi
   - Subkinds: bug, feature
   - Initial: ready/implement
   - Transitions:
-    - ready/implement --start--> running/implement/blocked
+    - ready/implement --start--> running/implement
 
 ## Commands
 

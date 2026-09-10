@@ -168,7 +168,6 @@ export const agentWorkflowManifest = defineManifest({
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],
-		reasons: [],
 		events: [...events],
 	},
 	github: { reservedPrefix: "awf" },

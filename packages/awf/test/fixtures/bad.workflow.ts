@@ -9,7 +9,6 @@ export const manifest = defineManifest({
 	vocabulary: {
 		states: ["ready", "ready"],
 		actions: ["implement"],
-		reasons: [],
 		events: ["start"],
 	},
 	github: { reservedPrefix: "awf" },

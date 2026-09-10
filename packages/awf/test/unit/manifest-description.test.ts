@@ -12,7 +12,6 @@ function descriptionManifest() {
 		vocabulary: {
 			states: ["backlog", "ready", "running", "need-human", "done"],
 			actions: ["plan", "implement", "review", "none"],
-			reasons: ["blocked", "answered"],
 			events: ["schedule", "start", "succeed", "escalate"],
 		},
 		github: { reservedPrefix: "secret-prefix" },
@@ -24,7 +23,7 @@ function descriptionManifest() {
 		readiness: {
 			filters: [
 				{ kind: "spec", state: "ready", action: "plan" },
-				{ kind: "ticket", reason: "answered" },
+				{ kind: "ticket", state: "ready" },
 			],
 			namedFilters: [
 				{ name: "for-spec", kind: "spec", relationship: "parent" },
@@ -89,13 +88,13 @@ function descriptionManifest() {
 				input: stringInput,
 			},
 			{
-				id: "createTicketFromSpec",
-				cli: { verb: "create", target: "ticket", source: true },
+				id: "createTicket",
+				cli: { verb: "create", target: "ticket" },
 				target: { kind: "ticket", action: "implement" },
 			},
 			{
-				id: "applyPlan",
-				cli: { verb: "apply", target: "plan" },
+				id: "scorePlan",
+				cli: { verb: "score", target: "plan" },
 				target: { kind: "spec", action: "review" },
 				input: stringInput,
 			},
@@ -136,12 +135,12 @@ describe("when building a Workflow description DTO", () => {
 		).toEqual(["schedule", "start"]);
 		expect(description.commands.map((command) => command.id)).toEqual([
 			"createSpec",
-			"createTicketFromSpec",
-			"applyPlan",
+			"createTicket",
+			"scorePlan",
 		]);
 		expect(description.readiness?.filters).toEqual([
 			{ kind: "spec", state: "ready", action: "plan" },
-			{ kind: "ticket", reason: "answered" },
+			{ kind: "ticket", state: "ready" },
 		]);
 		expect(description.lifecycle?.activeStates).toEqual(["running"]);
 		expect(description.lifecycle?.terminalStates).toEqual(["done"]);
@@ -168,13 +167,13 @@ describe("when building a Workflow description DTO", () => {
 				input: { required: true },
 			},
 			{
-				id: "createTicketFromSpec",
-				cli: { usage: "awf create ticket --source <issue> --input <file|->" },
+				id: "createTicket",
+				cli: { usage: "awf create ticket --input <file|->" },
 				input: { required: false },
 			},
 			{
-				id: "applyPlan",
-				cli: { usage: "awf apply plan <issue> --input <file|->" },
+				id: "scorePlan",
+				cli: { usage: "awf score plan <issue> --input <file|->" },
 				input: { required: true },
 			},
 		]);

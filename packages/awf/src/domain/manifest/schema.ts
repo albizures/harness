@@ -7,7 +7,6 @@ export type PayloadSchema = PayloadZodSchema;
 type ManifestStateReference = {
 	state: Identifier;
 	action?: Identifier;
-	reason?: Identifier | null;
 };
 
 export type ManifestTransition = {
@@ -33,7 +32,6 @@ export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
 export type ManifestCli = {
 	verb: Identifier;
 	target: Identifier;
-	source?: boolean;
 };
 
 export type ManifestCommand = {
@@ -43,7 +41,6 @@ export type ManifestCommand = {
 		kind: Identifier;
 		state?: Identifier;
 		action?: Identifier;
-		reason?: Identifier;
 	};
 	transition?: { event: Identifier; attempt?: "none" | "start" | "complete" };
 	input?: PayloadSchema;
@@ -53,7 +50,6 @@ export type ManifestReadinessFilter = {
 	kind?: Identifier;
 	state?: Identifier;
 	action?: Identifier;
-	reason?: Identifier;
 };
 
 export type ManifestNamedReadinessFilter = {
@@ -66,7 +62,6 @@ export type ManifestWorkflowFilter = {
 	kind?: Identifier;
 	state?: Identifier;
 	action?: Identifier;
-	reason?: Identifier;
 };
 
 export type ManifestReadinessRelationshipPolicy = {
@@ -102,7 +97,6 @@ export type WorkflowManifest = {
 	vocabulary: {
 		states: Array<Identifier>;
 		actions: Array<Identifier>;
-		reasons?: Array<Identifier>;
 		events: Array<Identifier>;
 	};
 	github: {
@@ -172,7 +166,6 @@ const payloadZodSchemaSchema = z.custom<PayloadZodSchema>(isPayloadZodSchema, {
 const stateReferenceSchema = z.strictObject({
 	state: z.string(),
 	action: z.string().optional(),
-	reason: z.string().nullable().optional(),
 });
 
 const lifecyclePolicyTargetSchema = z.strictObject({
@@ -184,7 +177,6 @@ const workflowFilterSchema = z.strictObject({
 	kind: z.string().optional(),
 	state: z.string().optional(),
 	action: z.string().optional(),
-	reason: z.string().optional(),
 });
 
 export const workflowManifestStructuralSchema = z.strictObject({
@@ -193,7 +185,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 	vocabulary: z.strictObject({
 		states: z.array(z.string()),
 		actions: z.array(z.string()),
-		reasons: z.array(z.string()).optional(),
 		events: z.array(z.string()),
 	}),
 	github: z
@@ -300,7 +291,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 				.strictObject({
 					verb: z.string().min(1),
 					target: z.string(),
-					source: z.boolean().optional(),
 				})
 				.optional(),
 			target: workflowFilterSchema.extend({ kind: z.string() }),

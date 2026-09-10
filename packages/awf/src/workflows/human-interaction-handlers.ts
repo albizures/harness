@@ -151,7 +151,7 @@ function humanHandoffCommand(
 			};
 
 			return applyWorkflowTransition(context, id, issue, {
-				workflow: { state: config.toState, action: "none", reason: undefined },
+				workflow: { state: config.toState, action: "none" },
 				log,
 			});
 		} catch (error) {
@@ -184,7 +184,7 @@ async function applyWorkflowTransition(
 	id: string,
 	issue: Issue,
 	transition: {
-		workflow: { state: string; action: string; reason?: string };
+		workflow: { state: string; action: string };
 		log: TrackerLog;
 	},
 ): Promise<Envelope> {
@@ -240,7 +240,7 @@ async function resumeCommand(
 			}),
 		};
 		return applyWorkflowTransition(context, id, issue, {
-			workflow: { state: "ready", action, reason: undefined },
+			workflow: { state: "ready", action },
 			log,
 		});
 	} catch (error) {

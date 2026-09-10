@@ -72,7 +72,6 @@ it("should export a valid explicit bundled workflow module", () => {
 			"merge",
 			"none",
 		],
-		reasons: [],
 		events: [
 			"start",
 			"succeed",

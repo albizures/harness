@@ -80,9 +80,6 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 	const vocabulary = data.vocabulary as Record<string, JsonValue>;
 	lines.push(`- States: ${formatList(vocabulary.states)}`);
 	lines.push(`- Actions: ${formatList(vocabulary.actions)}`);
-	if (Array.isArray(vocabulary.reasons)) {
-		lines.push(`- Reasons: ${formatList(vocabulary.reasons)}`);
-	}
 	lines.push(`- Events: ${formatList(vocabulary.events)}`);
 
 	lines.push("", "## Concurrency", "");
@@ -317,7 +314,7 @@ function formatStateRef(value: Record<string, JsonValue>): string {
 		typeof value.action === "string"
 			? `${String(value.state)}/${value.action}`
 			: String(value.state);
-	return typeof value.reason === "string" ? `${base}/${value.reason}` : base;
+	return base;
 }
 
 function formatCommandTarget(value: Record<string, JsonValue>): string {
@@ -326,7 +323,7 @@ function formatCommandTarget(value: Record<string, JsonValue>): string {
 
 function formatWorkflowFilter(value: Record<string, JsonValue>): string {
 	return (
-		[value.kind, value.state, value.action, value.reason]
+		[value.kind, value.state, value.action]
 			.filter((part): part is string => typeof part === "string")
 			.join("/") || "any"
 	);
@@ -454,12 +451,7 @@ function formatLogs(logs: Array<JsonValue>): string {
 }
 
 function formatWorkflow(workflow: Record<string, JsonValue>): string {
-	const lifecycle = [
-		workflow.kind,
-		workflow.state,
-		workflow.action,
-		workflow.reason,
-	]
+	const lifecycle = [workflow.kind, workflow.state, workflow.action]
 		.filter((value) => typeof value === "string" && value !== "none")
 		.join("/");
 	const subkind = workflowSubkind(workflow);

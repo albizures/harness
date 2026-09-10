@@ -63,7 +63,6 @@ it("should ensure that tracker intent module composes adapter primitives and ver
 				kind: "spec",
 				state: "running",
 				action: "plan",
-				reason: "test",
 			},
 		},
 	]);

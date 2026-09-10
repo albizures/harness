@@ -14,7 +14,6 @@ type HelpReadinessFilterSpec = {
 	kind?: string;
 	state?: string;
 	action?: string;
-	reason?: string;
 };
 
 type HelpNamedReadinessFilterSpec = {
@@ -76,9 +75,6 @@ function manifestCommandUsage(command: ManifestCommand): string {
 		return runCommandUsage(command.id);
 	}
 	if (command.cli?.verb === "create") {
-		if (command.cli.source === true) {
-			return `awf create ${command.cli.target} --source <issue> --input <file|->`;
-		}
 		return `awf create ${command.cli.target} --input <file|->`;
 	}
 	const route = `awf ${command.cli.verb} ${command.cli.target}`;

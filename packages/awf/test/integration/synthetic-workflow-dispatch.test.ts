@@ -54,12 +54,6 @@ const syntheticManifest = defineManifest({
 			}),
 		},
 		{
-			id: "idea-promote",
-			cli: { verb: "apply", target: "promotion" },
-			target: { kind: "idea", action: "promote" },
-			input: z.strictObject({ note: z.string().min(1) }),
-		},
-		{
 			id: "idea-score",
 			cli: { verb: "score", target: "idea" },
 			target: { kind: "idea", action: "promote" },
@@ -81,7 +75,7 @@ const syntheticManifest = defineManifest({
 	],
 });
 
-it("should ensure that synthetic workflow dispatches manifest-declared create, apply, and ready commands", async () => {
+it("should ensure that synthetic workflow dispatches manifest-declared create and ready commands while rejecting generic apply", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -120,10 +114,14 @@ it("should ensure that synthetic workflow dispatches manifest-declared create, a
 			stdin: JSON.stringify({ note: "Promote this idea." }),
 		},
 	);
-	expect(applied.ok).toBe(true);
-	expect((await tracker.readLogs(issueId)).at(-1)?.type).toBe(
-		"idea-promote_applied",
-	);
+	expect(applied).toEqual({
+		ok: false,
+		error: {
+			code: "UNKNOWN_COMMAND",
+			message: "Unknown command.",
+			details: { command: `apply promotion ${issueId} --input -` },
+		},
+	});
 });
 
 it("should ensure that synthetic workflow dispatches arbitrary manifest CLI verbs to command handlers", async () => {
