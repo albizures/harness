@@ -46,18 +46,18 @@ export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
 
 If neither `./awf.config.ts` nor `--config <path>` is provided, AWF exits with an error instead of falling back to the bundled workflow.
 
-## Using the bundled generic-task workflow
+## Using the bundled agent-workflow workflow
 
-The bundled `generic-task` workflow is opt-in. A project chooses it by exporting the generic-task manifest and handlers from its own `awf.config.ts` (or another config passed with `--config`).
+The bundled `agent-workflow` workflow is opt-in. A project chooses it by exporting the agent-workflow manifest and handlers from its own `awf.config.ts` (or another config passed with `--config`).
 
 ```ts
 import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
 
 export {
-	genericTaskManifest as manifest,
-	genericTaskCommandHandlers as commandHandlers,
-	genericTaskLifecycleHandlers as lifecycleHandlers,
-} from "@albizures/awf/workflows/generic-task";
+	agentWorkflowManifest as manifest,
+	agentWorkflowCommandHandlers as commandHandlers,
+	agentWorkflowLifecycleHandlers as lifecycleHandlers,
+} from "@albizures/awf/workflows/agent-workflow";
 
 export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
 ```
@@ -110,10 +110,10 @@ Grilling starts at `ready/discuss`, moves to `in-discussion/discuss` when starte
 
 AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Generic Task subkind is durable workflow data separate from the lifecycle tuple; readiness still matches kind, state, action, and reason. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
 
-In `generic-task`, a Spec starts ready for `planning`. Completing planning leaves the Spec at `ready/none` while its implementation Tasks run. When the required child Tasks are done, generic lifecycle relationship policies advance the Spec to `ready/integration-test`; from there it can run integration-test, merge, and finish at `done/none` through ordinary legal lifecycle transitions. Task generation remains an explicit command or handler outcome recorded through normal tracker mutations.
+In `agent-workflow`, a Spec starts ready for `planning`. Completing planning leaves the Spec at `ready/none` while its implementation Tasks run. When the required child Tasks are done, generic lifecycle relationship policies advance the Spec to `ready/integration-test`; from there it can run integration-test, merge, and finish at `done/none` through ordinary legal lifecycle transitions. Task generation remains an explicit command or handler outcome recorded through normal tracker mutations.
 
 `generatedBy` records generated-by provenance only. This means generated-by provenance is not dependency ordering, is not a readiness gate, and is separate from Spec containment. Use `spec`/parent-child relationships to attach Tasks to a Spec, `dependsOn` to block one Task on another, and `generatedBy` to explain why a Task exists.
 
 ## Compatibility with agent-development
 
-The bundled `agent-development` workflow remains supported in maintenance mode for existing Spec/Ticket graphs. New generic work can opt into `generic-task`, but existing `agent-development` issues are not automatically migrated, rewritten, or mixed with generic-task graphs. Do not mix agent-development and generic-task issues in one graph; choose one workflow id per issue graph and keep cross-workflow relationships as external references outside AWF readiness semantics.
+The bundled `agent-development` workflow remains supported in maintenance mode for existing Spec/Ticket graphs. New generic work can opt into `agent-workflow`, but existing `agent-development` issues are not automatically migrated, rewritten, or mixed with agent-workflow graphs. Do not mix agent-development and agent-workflow issues in one graph; choose one workflow id per issue graph and keep cross-workflow relationships as external references outside AWF readiness semantics.
