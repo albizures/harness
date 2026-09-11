@@ -8,10 +8,19 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { CorruptWorkflowProjectionError } from "../../../src/domain/workflow/projection.ts";
 import { createFileSystemTracker } from "../../../src/adapters/trackers/filesystem.ts";
+
+const fixturesDir = join(
+	dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"fixtures",
+	"filesystem-tracker",
+);
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	const dir = await mkdtemp(join(tmpdir(), "awf-file-tracker-"));
@@ -234,13 +243,13 @@ it("should ensure that file-backed tracker read-only operations do not rewrite s
 	});
 });
 
-it("should ensure that file-backed tracker writes one numeric markdown issue file with frontmatter, body, and logs", async () => {
+it("should lock the readable filesystem tracker issue markdown format against a golden file", async () => {
 	await withTempDir(async (dir) => {
 		const trackerDir = join(dir, "tracker");
 		const tracker = createFileSystemTracker({ path: trackerDir });
 
 		const issue = await tracker.createIssue({
-			title: "Atomic",
+			title: "Readable issue",
 			body: "Issue **body**\n\nWith markdown.",
 			workflow: {
 				kind: "ticket",
@@ -250,22 +259,19 @@ it("should ensure that file-backed tracker writes one numeric markdown issue fil
 			},
 		});
 		await tracker.appendLog(issue.id, { type: "created", message: "Created" });
+		await tracker.appendLog(issue.id, {
+			type: "commented",
+			message: "First line\n\n  indented second line",
+		});
 
 		const entries = await readdir(trackerDir);
 		expect(entries).toEqual(["1.md"]);
 		const raw = await readFile(join(trackerDir, "1.md"), "utf8");
-		expect(raw).toContain('id: "1"');
-		expect(raw).toContain('title: "Atomic"');
-		expect(raw).toContain(
-			'workflow: {"kind":"ticket","state":"ready","action":"none","data":{"subkind":"work"},"version":1,"hash":"',
+		const golden = await readFile(
+			join(fixturesDir, "readable-issue.md"),
+			"utf8",
 		);
-		expect(raw).toContain(
-			'relationships: {"children":[],"dependencies":[],"dependents":[]}',
-		);
-		expect(raw).toContain(
-			"Issue **body**\n\nWith markdown.\n\n<!-- awf:logs v1 -->",
-		);
-		expect(raw).toContain('1. type: "created"\n   message: "Created"');
+		expect(raw).toBe(golden);
 		expect(raw).not.toContain("labels:");
 		expect(entries.filter((entry) => entry.includes(".tmp-"))).toEqual([]);
 	});
@@ -430,7 +436,7 @@ it("should ensure that file-backed tracker rewrites markdown issue files atomica
 		const raw = await readFile(join(trackerDir, "1.md"), "utf8");
 		expect(raw).not.toBe(before);
 		expect(raw).toContain('title: "After"');
-		expect(raw).toContain("After body\n\n<!-- awf:logs v1 -->");
+		expect(raw).toContain("After body\n\n## Logs\n\n<!-- awf:logs v1 -->");
 		expect(raw).toContain(`"version":${updated.workflow.version}`);
 		expect(raw).toContain(`"hash":"${updated.workflow.hash}"`);
 		expect(

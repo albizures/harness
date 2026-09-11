@@ -22,6 +22,7 @@ const HEX_RADIX = 16;
 const RANDOM_SUFFIX_START = 2;
 const FRONTMATTER_DELIMITER = "---";
 const LOGS_SECTION_MARKER = "<!-- awf:logs v1 -->";
+const LOGS_SECTION = `## Logs\n\n${LOGS_SECTION_MARKER}`;
 const FRONTMATTER_KEYS = ["id", "title", "workflow", "relationships"];
 const LOG_MESSAGE_BLOCK_INDENT = "     ";
 
@@ -99,7 +100,7 @@ function writeMarkdownAtomically(
 		renameSync(tempPath, filePath);
 	} catch (error) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' could not be written atomically: ${error instanceof Error ? error.message : String(error)}`,
+			`Filesystem tracker issue file '${filePath}' could not be written atomically: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
 }
@@ -169,7 +170,7 @@ function formatIssueMarkdown(
 	].join("\n");
 	const body = issue.body ?? "";
 	const logs = formatLogs(issue.logs);
-	return `${frontmatter}\n\n${body}\n\n${LOGS_SECTION_MARKER}\n\n${logs}`;
+	return `${frontmatter}\n\n${body}\n\n${LOGS_SECTION}\n\n${logs}`;
 }
 
 function parseIssueMarkdown(
@@ -178,14 +179,12 @@ function parseIssueMarkdown(
 ): WorkflowTrackerStateSnapshot["issues"][number] {
 	try {
 		const { frontmatter, bodyAndLogs } = splitFrontmatter(content);
-		const logsIndex = bodyAndLogs.indexOf(LOGS_SECTION_MARKER);
-		if (logsIndex === -1) {
+		const section = findLogsSection(bodyAndLogs);
+		if (section === undefined) {
 			throw new Error("missing reserved logs section");
 		}
-		const body = bodyAndLogs.slice(0, logsIndex).replace(/\n{0,2}$/u, "");
-		const logsSection = bodyAndLogs.slice(
-			logsIndex + LOGS_SECTION_MARKER.length,
-		);
+		const body = bodyAndLogs.slice(0, section.index).replace(/\n{0,2}$/u, "");
+		const logsSection = bodyAndLogs.slice(section.index + section.length);
 		const metadata = parseFrontmatter(frontmatter);
 		const id = requireStringMetadata(metadata, "id");
 		const logs = parseLogs(logsSection, id);
@@ -205,9 +204,23 @@ function parseIssueMarkdown(
 		};
 	} catch (error) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' has invalid markdown projection data: ${error instanceof Error ? error.message : String(error)}`,
+			`Filesystem tracker issue file '${filePath}' has invalid markdown projection data: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
+}
+
+function findLogsSection(
+	bodyAndLogs: string,
+): { index: number; length: number } | undefined {
+	const currentIndex = bodyAndLogs.indexOf(LOGS_SECTION);
+	if (currentIndex !== -1) {
+		return { index: currentIndex, length: LOGS_SECTION.length };
+	}
+	const legacyIndex = bodyAndLogs.indexOf(LOGS_SECTION_MARKER);
+	if (legacyIndex !== -1) {
+		return { index: legacyIndex, length: LOGS_SECTION_MARKER.length };
+	}
+	return undefined;
 }
 
 function splitFrontmatter(content: string): {
@@ -376,22 +389,22 @@ function validateLoadedIssue(
 	const fileId = fileName.slice(0, -".md".length);
 	if (issue.id !== fileId) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' filename id '${fileId}' does not match frontmatter id '${issue.id}'.`,
+			`Filesystem tracker issue file '${filePath}' filename id '${fileId}' does not match frontmatter id '${issue.id}'.`,
 		);
 	}
 	if (!isWorkflowLike(issue.workflow)) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' has malformed workflow metadata.`,
+			`Filesystem tracker issue file '${filePath}' has malformed workflow metadata.`,
 		);
 	}
 	if (!isRelationshipsLike(issue.relationships)) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+			`Filesystem tracker issue file '${filePath}' has malformed relationships.`,
 		);
 	}
 	if (!isStoredIssueLike(issue)) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' has an unsupported or malformed schema.`,
+			`Filesystem tracker issue file '${filePath}' has an unsupported or malformed schema.`,
 		);
 	}
 	validateWorkflowHash(filePath, issue.id, issue.workflow);
@@ -406,7 +419,7 @@ function validateWorkflowHash(
 	const expected = hashProjection(withoutHash);
 	if (hash !== expected) {
 		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' has stale workflow hash for issue '${id}'.`,
+			`Filesystem tracker issue file '${filePath}' has stale workflow hash for issue '${id}'.`,
 		);
 	}
 }
@@ -426,7 +439,7 @@ function validateRelationshipGraph(
 				!parent.relationships.children.includes(issue.id)
 			) {
 				throw new CorruptWorkflowProjectionError(
-					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+					`Filesystem tracker issue file '${filePath}' has malformed relationships.`,
 				);
 			}
 		}
@@ -434,7 +447,7 @@ function validateRelationshipGraph(
 			const child = byId.get(childId);
 			if (child === undefined || child.relationships.parent !== issue.id) {
 				throw new CorruptWorkflowProjectionError(
-					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+					`Filesystem tracker issue file '${filePath}' has malformed relationships.`,
 				);
 			}
 		}
@@ -445,7 +458,7 @@ function validateRelationshipGraph(
 				!dependency.relationships.dependents.includes(issue.id)
 			) {
 				throw new CorruptWorkflowProjectionError(
-					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+					`Filesystem tracker issue file '${filePath}' has malformed relationships.`,
 				);
 			}
 		}
@@ -456,7 +469,7 @@ function validateRelationshipGraph(
 				!dependent.relationships.dependencies.includes(issue.id)
 			) {
 				throw new CorruptWorkflowProjectionError(
-					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+					`Filesystem tracker issue file '${filePath}' has malformed relationships.`,
 				);
 			}
 		}
@@ -465,7 +478,7 @@ function validateRelationshipGraph(
 			!byId.has(issue.relationships.generatedBy)
 		) {
 			throw new CorruptWorkflowProjectionError(
-				`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+				`Filesystem tracker issue file '${filePath}' has malformed relationships.`,
 			);
 		}
 	}

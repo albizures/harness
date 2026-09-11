@@ -16,7 +16,56 @@ AWF loads the bundled `agent-workflow` workflow by default. Add an `awf.config.t
 awf --config ./awf.config.ts ready
 ```
 
-A workflow config can export a `tracker`. If it exports the supported bundled `agent-workflow` manifest, AWF wires the bundled handlers for that workflow.
+A workflow config can export a `tracker`. If it exports the supported bundled `agent-workflow` manifest, AWF wires the bundled handlers for that workflow. Without a config-exported tracker, AWF stores issues in the filesystem tracker directory at `.awf/tracker` under the current working directory.
+
+## Filesystem tracker storage
+
+The filesystem tracker stores one readable Markdown file per Workflow issue under the configured tracker directory:
+
+```text
+.awf/
+└── tracker/
+    ├── 1.md
+    ├── 2.md
+    └── notes.md   # ignored because only numeric *.md files are issue files
+```
+
+Numeric issue files (`<id>.md`) are loaded in numeric order, and the next automatic issue id is allocated after the highest numeric file name. Temporary files containing `.tmp-` are ignored while atomic writes complete. Other files can be kept beside issue files for human notes.
+
+Each issue file has:
+
+1. YAML-style frontmatter delimited by `---`.
+2. JSON values inside the `id`, `title`, `workflow`, and `relationships` frontmatter fields.
+3. The human-editable Markdown issue body.
+4. A reserved `## Logs` section containing `<!-- awf:logs v1 -->`.
+5. Append-only log list entries such as `1. type: "workflow_created"` with an optional `message:` line. Multiline messages use an indented Markdown block scalar.
+
+Example:
+
+```md
+---
+id: "1"
+title: "Readable issue"
+workflow: {"kind":"task","state":"ready","action":"work","version":1,"hash":"..."}
+relationships: {"children":[],"dependencies":[],"dependents":[]}
+---
+
+Issue **body**.
+
+## Logs
+
+<!-- awf:logs v1 -->
+
+1. type: "workflow_created"
+   message: "Created from create task."
+2. type: "commented"
+   message: |-
+     First line
+
+       indented second line
+```
+
+For local inspection or repair, keep the filename id and frontmatter `id` equal, preserve the `workflow.hash` for unchanged workflow fields, maintain inverse relationships on both sides (`parent`/`children`, `dependencies`/`dependents`), and leave log sequence numbers contiguous starting at 1. AWF reports corrupt storage as filesystem tracker directory or issue-file projection errors so the affected Markdown file can be repaired directly.
 
 ## Using the bundled agent-workflow workflow
 
