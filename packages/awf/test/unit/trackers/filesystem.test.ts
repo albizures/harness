@@ -191,7 +191,7 @@ it("should ensure that file-backed tracker read-only operations do not rewrite s
 			title: "Read me",
 			workflow: { kind: "ticket", state: "ready", action: "none" },
 		});
-		const issueFile = join(trackerDir, "1");
+		const issueFile = join(trackerDir, "1.md");
 		const before = await stat(issueFile, { bigint: true });
 
 		await tracker.listIssues();
@@ -203,47 +203,99 @@ it("should ensure that file-backed tracker read-only operations do not rewrite s
 	});
 });
 
-it("should ensure that file-backed tracker writes complete JSON issue files without leftover temp files", async () => {
+it("should ensure that file-backed tracker writes one numeric markdown issue file with frontmatter, body, and logs", async () => {
 	await withTempDir(async (dir) => {
 		const trackerDir = join(dir, "tracker");
 		const tracker = createFileSystemTracker({ path: trackerDir });
 
-		await tracker.createIssue({
+		const issue = await tracker.createIssue({
 			title: "Atomic",
+			body: "Issue **body**\n\nWith markdown.",
+			workflow: {
+				kind: "ticket",
+				state: "ready",
+				action: "none",
+				data: { subkind: "work" },
+			},
+		});
+		await tracker.appendLog(issue.id, { type: "created", message: "Created" });
+
+		const entries = await readdir(trackerDir);
+		expect(entries).toEqual(["1.md"]);
+		const raw = await readFile(join(trackerDir, "1.md"), "utf8");
+		expect(raw).toContain('id: "1"');
+		expect(raw).toContain('title: "Atomic"');
+		expect(raw).toContain(
+			'workflow: {"kind":"ticket","state":"ready","action":"none","data":{"subkind":"work"},"version":1,"hash":"',
+		);
+		expect(raw).toContain(
+			'relationships: {"children":[],"dependencies":[],"dependents":[]}',
+		);
+		expect(raw).toContain(
+			"Issue **body**\n\nWith markdown.\n\n<!-- awf:logs v1 -->",
+		);
+		expect(raw).toContain('"type": "created"');
+		expect(raw).not.toContain("labels:");
+		expect(entries.filter((entry) => entry.includes(".tmp-"))).toEqual([]);
+	});
+});
+
+it("should ensure that file-backed tracker rewrites markdown issue files atomically on issue updates", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
+
+		const issue = await tracker.createIssue({
+			title: "Before",
+			body: "Before body",
 			workflow: { kind: "ticket", state: "ready", action: "none" },
 		});
+		const before = await readFile(join(trackerDir, "1.md"), "utf8");
+		const updated = await tracker.updateIssue(issue.id, {
+			title: "After",
+			body: "After body",
+			workflow: { state: "done" },
+			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
+		});
 
-		const raw = await readFile(join(trackerDir, "1"), "utf8");
-		expect(JSON.parse(raw).title).toBe("Atomic");
+		const raw = await readFile(join(trackerDir, "1.md"), "utf8");
+		expect(raw).not.toBe(before);
+		expect(raw).toContain('title: "After"');
+		expect(raw).toContain("After body\n\n<!-- awf:logs v1 -->");
+		expect(raw).toContain(`"version":${updated.workflow.version}`);
+		expect(raw).toContain(`"hash":"${updated.workflow.hash}"`);
 		expect(
 			(await readdir(trackerDir)).filter((entry) => entry.includes(".tmp-")),
 		).toEqual([]);
 	});
 });
 
-it("should ensure that file-backed tracker rejects unsupported stored issue fields", async () => {
+it("should ensure that file-backed tracker rejects unsupported markdown projection schema", async () => {
 	await withTempDir(async (dir) => {
 		const trackerDir = join(dir, "tracker");
 		await mkdir(trackerDir);
 		await writeFile(
-			join(trackerDir, "1"),
-			JSON.stringify({
-				id: "1",
-				title: "Corrupt metadata",
-				workflow: { kind: "ticket", state: "ready", action: "none" },
-				relationships: {
-					children: [],
-					dependencies: [],
-					dependents: [],
-				},
-				unexpectedRecords: [],
-				logs: [],
-			}),
+			join(trackerDir, "1.md"),
+			[
+				"---",
+				'id: "1"',
+				'title: "Corrupt metadata"',
+				'workflow: "not workflow metadata"',
+				'relationships: {"children":[],"dependencies":[],"dependents":[]}',
+				"---",
+				"",
+				"<!-- awf:logs v1 -->",
+				"",
+				"```json",
+				"[]",
+				"```",
+				"",
+			].join("\n"),
 			"utf8",
 		);
 
 		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
-			/unsupported or malformed schema/,
+			/invalid markdown projection data|unsupported or malformed schema/,
 		);
 	});
 });
@@ -252,13 +304,13 @@ it("should ensure that file-backed tracker rejects corrupted JSON clearly", asyn
 	await withTempDir(async (dir) => {
 		const trackerDir = join(dir, "tracker");
 		await mkdir(trackerDir);
-		await writeFile(join(trackerDir, "1"), "{not json", "utf8");
+		await writeFile(join(trackerDir, "1.md"), "{not markdown", "utf8");
 
 		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
 			CorruptWorkflowProjectionError,
 		);
 		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
-			/not valid JSON/,
+			/invalid markdown projection data/,
 		);
 	});
 });

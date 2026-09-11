@@ -523,10 +523,11 @@ export const manifest = agentWorkflowManifest;
 		);
 
 		expect(created.status).toBe(0);
-		const trackerIssue = JSON.parse(
-			await readFile(join(dir, ".awf", "tracker", "1"), "utf8"),
+		const trackerIssue = await readFile(
+			join(dir, ".awf", "tracker", "1.md"),
+			"utf8",
 		);
-		expect(trackerIssue.title).toBe("Manifest-only config");
+		expect(trackerIssue).toContain('title: "Manifest-only config"');
 	});
 });
 
@@ -656,10 +657,11 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker" });
 		);
 		expect(get.status).toBe(0);
 		expect(JSON.parse(get.stdout).data.issue.title).toBe("Config tracker");
-		const trackerIssue = JSON.parse(
-			await readFile(join(dir, "custom-tracker", createdId), "utf8"),
+		const trackerIssue = await readFile(
+			join(dir, "custom-tracker", `${createdId}.md`),
+			"utf8",
 		);
-		expect(trackerIssue.id).toBe(createdId);
+		expect(trackerIssue).toContain(`id: ${JSON.stringify(createdId)}`);
 	});
 });
 
