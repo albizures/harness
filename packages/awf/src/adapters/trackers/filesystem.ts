@@ -23,6 +23,7 @@ const RANDOM_SUFFIX_START = 2;
 const FRONTMATTER_DELIMITER = "---";
 const LOGS_SECTION_MARKER = "<!-- awf:logs v1 -->";
 const FRONTMATTER_KEYS = ["id", "title", "workflow", "relationships"];
+const LOG_MESSAGE_BLOCK_INDENT = "     ";
 
 export type FileSystemTrackerOptions = {
 	path: string;
@@ -167,8 +168,8 @@ function formatIssueMarkdown(
 		FRONTMATTER_DELIMITER,
 	].join("\n");
 	const body = issue.body ?? "";
-	const logs = JSON.stringify(issue.logs, null, 2);
-	return `${frontmatter}\n\n${body}\n\n${LOGS_SECTION_MARKER}\n\n\`\`\`json\n${logs}\n\`\`\`\n`;
+	const logs = formatLogs(issue.logs);
+	return `${frontmatter}\n\n${body}\n\n${LOGS_SECTION_MARKER}\n\n${logs}`;
 }
 
 function parseIssueMarkdown(
@@ -185,10 +186,11 @@ function parseIssueMarkdown(
 		const logsSection = bodyAndLogs.slice(
 			logsIndex + LOGS_SECTION_MARKER.length,
 		);
-		const logs = parseLogs(logsSection);
 		const metadata = parseFrontmatter(frontmatter);
+		const id = requireStringMetadata(metadata, "id");
+		const logs = parseLogs(logsSection, id);
 		return {
-			id: requireStringMetadata(metadata, "id"),
+			id,
 			title: requireStringMetadata(metadata, "title"),
 			...(body === "" ? {} : { body }),
 			workflow: requireObjectMetadata(
@@ -252,16 +254,96 @@ function parseFrontmatter(frontmatter: string): Record<string, unknown> {
 	return result;
 }
 
-function parseLogs(logsSection: string): Array<unknown> {
-	const match = /```json\n([\s\S]*?)\n```/u.exec(logsSection);
-	if (match === null) {
-		throw new Error("missing logs JSON block");
+function formatLogs(logs: Array<unknown>): string {
+	if (logs.length === 0) {
+		return "";
 	}
-	const logs = JSON.parse(match[1]);
-	if (!Array.isArray(logs)) {
-		throw new Error("logs section is not an array");
+	return `${logs.map(formatLog).join("\n")}\n`;
+}
+
+function formatLog(log: unknown): string {
+	if (!isRecord(log)) {
+		throw new Error("workflow log is not an object");
+	}
+	const lines = [`${String(log.sequence)}. type: ${JSON.stringify(log.type)}`];
+	if (log.message !== undefined) {
+		const message = String(log.message);
+		if (message.includes("\n")) {
+			const endsWithNewline = message.endsWith("\n");
+			lines.push(`   message: |${endsWithNewline ? "" : "-"}`);
+			for (const line of (endsWithNewline
+				? message.slice(0, -1)
+				: message
+			).split("\n")) {
+				lines.push(`${LOG_MESSAGE_BLOCK_INDENT}${line}`);
+			}
+		} else {
+			lines.push(`   message: ${JSON.stringify(message)}`);
+		}
+	}
+	return lines.join("\n");
+}
+
+function parseLogs(logsSection: string, issueId: string): Array<unknown> {
+	const lines = logsSection.replace(/^\n/u, "").split("\n");
+	const logs: Array<unknown> = [];
+	let index = 0;
+	while (index < lines.length) {
+		const line = lines[index];
+		if (line === undefined || line.trim() === "") {
+			index += 1;
+			continue;
+		}
+		const match = /^(\d+)\. type: (.+)$/u.exec(line);
+		if (match === null) {
+			throw new Error(`malformed workflow log entry '${line}'`);
+		}
+		const sequence = Number(match[1]);
+		if (!Number.isSafeInteger(sequence) || sequence !== logs.length + 1) {
+			throw new Error(`invalid workflow log sequence '${match[1]}'`);
+		}
+		const parsedType = JSON.parse(match[2]);
+		if (typeof parsedType !== "string" || parsedType === "") {
+			throw new Error(`workflow log ${sequence} has invalid type`);
+		}
+		const log: Record<string, unknown> = {
+			issueId,
+			sequence,
+			type: parsedType,
+		};
+		index += 1;
+		if (lines[index]?.startsWith("   message:") === true) {
+			const messageLine = lines[index];
+			const inline = /^ {3}message: (.*)$/u.exec(messageLine);
+			if (inline === null) {
+				throw new Error(`malformed workflow log ${sequence} message`);
+			}
+			if (inline[1] === "|-" || inline[1] === "|") {
+				const messageLines: Array<string> = [];
+				index += 1;
+				while (lines[index]?.startsWith(LOG_MESSAGE_BLOCK_INDENT) === true) {
+					messageLines.push(
+						lines[index].slice(LOG_MESSAGE_BLOCK_INDENT.length),
+					);
+					index += 1;
+				}
+				log.message = `${messageLines.join("\n")}${inline[1] === "|" ? "\n" : ""}`;
+			} else {
+				const parsedMessage = JSON.parse(inline[1]);
+				if (typeof parsedMessage !== "string") {
+					throw new Error(`workflow log ${sequence} has invalid message`);
+				}
+				log.message = parsedMessage;
+				index += 1;
+			}
+		}
+		logs.push(log);
 	}
 	return logs;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function requireStringMetadata(

@@ -265,9 +265,96 @@ it("should ensure that file-backed tracker writes one numeric markdown issue fil
 		expect(raw).toContain(
 			"Issue **body**\n\nWith markdown.\n\n<!-- awf:logs v1 -->",
 		);
-		expect(raw).toContain('"type": "created"');
+		expect(raw).toContain('1. type: "created"\n   message: "Created"');
 		expect(raw).not.toContain("labels:");
 		expect(entries.filter((entry) => entry.includes(".tmp-"))).toEqual([]);
+	});
+});
+
+it("should ensure that file-backed tracker round-trips readable markdown list logs with multiline messages", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
+
+		const issue = await tracker.createIssue({
+			title: "Log target",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+		await tracker.appendLog(issue.id, { type: "created" });
+		await tracker.appendLog(issue.id, {
+			type: "commented",
+			message: "First line\n\n  indented second line\n",
+		});
+
+		const raw = await readFile(join(trackerDir, "1.md"), "utf8");
+		expect(raw).toContain('1. type: "created"');
+		expect(raw).toContain(
+			[
+				'2. type: "commented"',
+				"   message: |",
+				"     First line",
+				"     ",
+				"       indented second line",
+			].join("\n"),
+		);
+
+		const reloaded = createFileSystemTracker({ path: trackerDir });
+		expect(await reloaded.readLogs(issue.id)).toEqual([
+			{ issueId: "1", sequence: 1, type: "created" },
+			{
+				issueId: "1",
+				sequence: 2,
+				type: "commented",
+				message: "First line\n\n  indented second line\n",
+			},
+		]);
+	});
+});
+
+it("should ensure that file-backed tracker rejects malformed markdown log list entries", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
+		const issue = await tracker.createIssue({
+			title: "Log corruption target",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+		await tracker.appendLog(issue.id, { type: "created" });
+		const original = await readFile(join(trackerDir, "1.md"), "utf8");
+
+		const corruptions = [
+			{
+				name: "invalid sequence",
+				content: original.replace('1. type: "created"', '2. type: "created"'),
+				message: /invalid workflow log sequence '2'/,
+			},
+			{
+				name: "unsupported payload",
+				content: original.replace(
+					'1. type: "created"',
+					'1. type: {"type":"created"}',
+				),
+				message: /workflow log 1 has invalid type/,
+			},
+			{
+				name: "malformed entry",
+				content: original.replace('1. type: "created"', "- bad log"),
+				message: /malformed workflow log entry '- bad log'/,
+			},
+		];
+
+		for (const corruption of corruptions) {
+			const caseDir = join(dir, corruption.name.replaceAll(" ", "-"));
+			await mkdir(caseDir);
+			await writeFile(join(caseDir, "1.md"), corruption.content, "utf8");
+
+			expect(() => createFileSystemTracker({ path: caseDir })).toThrow(
+				CorruptWorkflowProjectionError,
+			);
+			expect(() => createFileSystemTracker({ path: caseDir })).toThrow(
+				corruption.message,
+			);
+		}
 	});
 });
 
@@ -317,9 +404,7 @@ it("should ensure that file-backed tracker rejects unsupported markdown projecti
 				"",
 				"<!-- awf:logs v1 -->",
 				"",
-				"```json",
-				"[]",
-				"```",
+				'1. type: "created"',
 				"",
 			].join("\n"),
 			"utf8",
