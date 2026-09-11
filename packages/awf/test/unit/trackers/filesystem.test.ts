@@ -161,6 +161,37 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 	});
 });
 
+it("should ensure that file-backed tracker loads numeric issue files in numeric order and ignores unrelated markdown files", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
+		await tracker.createIssue({
+			id: "10",
+			title: "Ten",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+		await tracker.createIssue({
+			id: "2",
+			title: "Two",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+		await tracker.createIssue({
+			id: "1",
+			title: "One",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+		await writeFile(join(trackerDir, "notes.md"), "# Not an issue\n", "utf8");
+
+		const reloaded = createFileSystemTracker({ path: trackerDir });
+
+		expect((await reloaded.listIssues()).map((issue) => issue.id)).toEqual([
+			"1",
+			"2",
+			"10",
+		]);
+	});
+});
+
 it("should ensure that file-backed tracker allocates issue ids from existing numeric issue files", async () => {
 	await withTempDir(async (dir) => {
 		const trackerDir = join(dir, "tracker");
@@ -297,6 +328,71 @@ it("should ensure that file-backed tracker rejects unsupported markdown projecti
 		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
 			/invalid markdown projection data|unsupported or malformed schema/,
 		);
+	});
+});
+
+it("should ensure that file-backed tracker rejects corrupt markdown storage during load", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
+		const issue = await tracker.createIssue({
+			title: "Corruption target",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+		const original = await readFile(join(trackerDir, "1.md"), "utf8");
+
+		const corruptions = [
+			{
+				name: "unknown frontmatter field",
+				fileName: "1.md",
+				content: original.replace(
+					'title: "Corruption target"',
+					'title: "Corruption target"\nextra: true',
+				),
+				message: /unknown frontmatter field 'extra'/,
+			},
+			{
+				name: "mismatched filename id",
+				fileName: "2.md",
+				content: original,
+				message: /filename id '2' does not match frontmatter id '1'/,
+			},
+			{
+				name: "malformed relationships",
+				fileName: "1.md",
+				content: original.replace(
+					'relationships: {"children":[],"dependencies":[],"dependents":[]}',
+					'relationships: {"children":"2","dependencies":[],"dependents":[]}',
+				),
+				message: /malformed relationships/,
+			},
+			{
+				name: "stale workflow hash",
+				fileName: "1.md",
+				content: original.replace(
+					`"hash":"${issue.workflow.hash}"`,
+					'"hash":"stale"',
+				),
+				message: /stale workflow hash/,
+			},
+		];
+
+		for (const corruption of corruptions) {
+			const caseDir = join(dir, corruption.name.replaceAll(" ", "-"));
+			await mkdir(caseDir);
+			await writeFile(
+				join(caseDir, corruption.fileName),
+				corruption.content,
+				"utf8",
+			);
+
+			expect(() => createFileSystemTracker({ path: caseDir })).toThrow(
+				CorruptWorkflowProjectionError,
+			);
+			expect(() => createFileSystemTracker({ path: caseDir })).toThrow(
+				corruption.message,
+			);
+		}
 	});
 });
 

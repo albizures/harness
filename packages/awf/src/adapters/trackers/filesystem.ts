@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	mkdirSync,
 	readdirSync,
@@ -21,6 +22,7 @@ const HEX_RADIX = 16;
 const RANDOM_SUFFIX_START = 2;
 const FRONTMATTER_DELIMITER = "---";
 const LOGS_SECTION_MARKER = "<!-- awf:logs v1 -->";
+const FRONTMATTER_KEYS = ["id", "title", "workflow", "relationships"];
 
 export type FileSystemTrackerOptions = {
 	path: string;
@@ -46,6 +48,7 @@ function readState(directoryPath: string): WorkflowTrackerState {
 	const issues = issueFileNames.map((fileName) =>
 		readIssueFile(directoryPath, fileName),
 	);
+	validateRelationshipGraph(directoryPath, issues);
 	return WorkflowTrackerState.fromSnapshot({
 		version: 1,
 		nextIssueNumber: nextIssueNumber(issueFileNames),
@@ -59,11 +62,7 @@ function readIssueFile(
 ): WorkflowTrackerStateSnapshot["issues"][number] {
 	const filePath = join(directoryPath, fileName);
 	const parsed = parseIssueMarkdown(filePath, readFileSync(filePath, "utf8"));
-	if (!isStoredIssueLike(parsed)) {
-		throw new CorruptWorkflowProjectionError(
-			`File-backed tracker issue at '${filePath}' has an unsupported or malformed schema.`,
-		);
-	}
+	validateLoadedIssue(filePath, fileName, parsed);
 	return parsed;
 }
 
@@ -129,7 +128,10 @@ function readStoredIssueFileNames(directoryPath: string): Array<string> {
 				/^\d+\.md$/u.test(entry.name),
 		)
 		.map((entry) => entry.name)
-		.sort((left, right) => left.localeCompare(right));
+		.sort(
+			(left, right) =>
+				(numericIssueId(left) ?? 0) - (numericIssueId(right) ?? 0),
+		);
 }
 
 function nextIssueNumber(issueFileNames: Array<string>): number {
@@ -238,6 +240,12 @@ function parseFrontmatter(frontmatter: string): Record<string, unknown> {
 			throw new Error(`malformed frontmatter line '${line}'`);
 		}
 		const key = line.slice(0, separator).trim();
+		if (!FRONTMATTER_KEYS.includes(key)) {
+			throw new Error(`unknown frontmatter field '${key}'`);
+		}
+		if (Object.hasOwn(result, key)) {
+			throw new Error(`duplicate frontmatter field '${key}'`);
+		}
 		const raw = line.slice(separator + 1).trim();
 		result[key] = JSON.parse(raw);
 	}
@@ -278,6 +286,109 @@ function requireObjectMetadata(
 	return value as Record<string, unknown>;
 }
 
+function validateLoadedIssue(
+	filePath: string,
+	fileName: string,
+	issue: WorkflowTrackerStateSnapshot["issues"][number],
+): void {
+	const fileId = fileName.slice(0, -".md".length);
+	if (issue.id !== fileId) {
+		throw new CorruptWorkflowProjectionError(
+			`File-backed tracker issue at '${filePath}' filename id '${fileId}' does not match frontmatter id '${issue.id}'.`,
+		);
+	}
+	if (!isWorkflowLike(issue.workflow)) {
+		throw new CorruptWorkflowProjectionError(
+			`File-backed tracker issue at '${filePath}' has malformed workflow metadata.`,
+		);
+	}
+	if (!isRelationshipsLike(issue.relationships)) {
+		throw new CorruptWorkflowProjectionError(
+			`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+		);
+	}
+	if (!isStoredIssueLike(issue)) {
+		throw new CorruptWorkflowProjectionError(
+			`File-backed tracker issue at '${filePath}' has an unsupported or malformed schema.`,
+		);
+	}
+	validateWorkflowHash(filePath, issue.id, issue.workflow);
+}
+
+function validateWorkflowHash(
+	filePath: string,
+	id: string,
+	workflow: WorkflowTrackerStateSnapshot["issues"][number]["workflow"],
+): void {
+	const { hash, ...withoutHash } = workflow;
+	const expected = hashProjection(withoutHash);
+	if (hash !== expected) {
+		throw new CorruptWorkflowProjectionError(
+			`File-backed tracker issue at '${filePath}' has stale workflow hash for issue '${id}'.`,
+		);
+	}
+}
+
+function validateRelationshipGraph(
+	directoryPath: string,
+	issues: Array<WorkflowTrackerStateSnapshot["issues"][number]>,
+): void {
+	const byId = new Map(issues.map((issue) => [issue.id, issue]));
+	for (const issue of issues) {
+		const filePath = join(directoryPath, issueFileName(issue.id));
+		const parentId = issue.relationships.parent;
+		if (parentId !== undefined) {
+			const parent = byId.get(parentId);
+			if (
+				parent === undefined ||
+				!parent.relationships.children.includes(issue.id)
+			) {
+				throw new CorruptWorkflowProjectionError(
+					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+				);
+			}
+		}
+		for (const childId of issue.relationships.children) {
+			const child = byId.get(childId);
+			if (child === undefined || child.relationships.parent !== issue.id) {
+				throw new CorruptWorkflowProjectionError(
+					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+				);
+			}
+		}
+		for (const dependencyId of issue.relationships.dependencies) {
+			const dependency = byId.get(dependencyId);
+			if (
+				dependency === undefined ||
+				!dependency.relationships.dependents.includes(issue.id)
+			) {
+				throw new CorruptWorkflowProjectionError(
+					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+				);
+			}
+		}
+		for (const dependentId of issue.relationships.dependents) {
+			const dependent = byId.get(dependentId);
+			if (
+				dependent === undefined ||
+				!dependent.relationships.dependencies.includes(issue.id)
+			) {
+				throw new CorruptWorkflowProjectionError(
+					`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+				);
+			}
+		}
+		if (
+			issue.relationships.generatedBy !== undefined &&
+			!byId.has(issue.relationships.generatedBy)
+		) {
+			throw new CorruptWorkflowProjectionError(
+				`File-backed tracker issue at '${filePath}' has malformed relationships.`,
+			);
+		}
+	}
+}
+
 function isStoredIssueLike(
 	value: unknown,
 ): value is WorkflowTrackerStateSnapshot["issues"][number] {
@@ -285,40 +396,136 @@ function isStoredIssueLike(
 		return false;
 	}
 	const issue = value as Record<string, unknown>;
+	if (typeof issue.id !== "string") {
+		return false;
+	}
+	const issueId = issue.id;
 	return (
 		Object.keys(issue).every((key) =>
-			[
-				"id",
-				"title",
-				"body",
-				"workflow",
-				"relationships",
-				"logs",
-				"labels",
-				"projectionError",
-			].includes(key),
+			["id", "title", "body", "workflow", "relationships", "logs"].includes(
+				key,
+			),
 		) &&
-		typeof issue.id === "string" &&
 		typeof issue.title === "string" &&
-		issue.workflow !== null &&
-		typeof issue.workflow === "object" &&
-		issue.relationships !== null &&
-		typeof issue.relationships === "object" &&
+		(issue.body === undefined || typeof issue.body === "string") &&
+		isWorkflowLike(issue.workflow) &&
+		isRelationshipsLike(issue.relationships) &&
 		Array.isArray(issue.logs) &&
-		issue.logs.every(isStoredLogLike)
+		issue.logs.every((log) => isStoredLogLike(log, issueId))
 	);
 }
 
-function isStoredLogLike(value: unknown): boolean {
+function isWorkflowLike(value: unknown): boolean {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const workflow = value as Record<string, unknown>;
+	return (
+		Object.keys(workflow).every((key) =>
+			[
+				"kind",
+				"state",
+				"action",
+				"data",
+				"semanticVersion",
+				"version",
+				"hash",
+			].includes(key),
+		) &&
+		typeof workflow.kind === "string" &&
+		workflow.kind !== "" &&
+		typeof workflow.state === "string" &&
+		workflow.state !== "" &&
+		typeof workflow.action === "string" &&
+		workflow.action !== "" &&
+		(workflow.data === undefined || isJsonRecordLike(workflow.data)) &&
+		(workflow.semanticVersion === undefined ||
+			(typeof workflow.semanticVersion === "string" &&
+				workflow.semanticVersion !== "")) &&
+		typeof workflow.version === "number" &&
+		Number.isSafeInteger(workflow.version) &&
+		workflow.version >= 1 &&
+		typeof workflow.hash === "string"
+	);
+}
+
+function isRelationshipsLike(value: unknown): boolean {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const relationships = value as Record<string, unknown>;
+	return (
+		Object.keys(relationships).every((key) =>
+			[
+				"parent",
+				"children",
+				"dependencies",
+				"dependents",
+				"generatedBy",
+			].includes(key),
+		) &&
+		(relationships.parent === undefined ||
+			typeof relationships.parent === "string") &&
+		Array.isArray(relationships.children) &&
+		relationships.children.every((id) => typeof id === "string") &&
+		Array.isArray(relationships.dependencies) &&
+		relationships.dependencies.every((id) => typeof id === "string") &&
+		Array.isArray(relationships.dependents) &&
+		relationships.dependents.every((id) => typeof id === "string") &&
+		(relationships.generatedBy === undefined ||
+			typeof relationships.generatedBy === "string")
+	);
+}
+
+function isStoredLogLike(value: unknown, issueId: string): boolean {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
 		return false;
 	}
 	const log = value as Record<string, unknown>;
 	return (
+		Object.keys(log).every((key) =>
+			["sequence", "issueId", "type", "message"].includes(key),
+		) &&
 		typeof log.sequence === "number" &&
-		typeof log.issueId === "string" &&
+		Number.isSafeInteger(log.sequence) &&
+		log.sequence >= 1 &&
+		log.issueId === issueId &&
 		typeof log.type === "string" &&
-		(log.message === undefined || typeof log.message === "string") &&
-		log.payload === undefined
+		(log.message === undefined || typeof log.message === "string")
 	);
+}
+
+function isJsonRecordLike(value: unknown): boolean {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	try {
+		JSON.stringify(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function hashProjection(
+	projection: Omit<
+		WorkflowTrackerStateSnapshot["issues"][number]["workflow"],
+		"hash"
+	>,
+): string {
+	return createHash("sha256").update(stableStringify(projection)).digest("hex");
+}
+
+function stableStringify(value: unknown): string {
+	if (Array.isArray(value)) {
+		return `[${value.map(stableStringify).join(",")}]`;
+	}
+	if (value !== null && typeof value === "object") {
+		return `{${Object.entries(value)
+			.filter(([, child]) => child !== undefined)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`)
+			.join(",")}}`;
+	}
+	return JSON.stringify(value);
 }
