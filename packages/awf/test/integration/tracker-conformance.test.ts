@@ -212,6 +212,47 @@ for (const family of trackerFamilies) {
 		);
 	});
 
+	it(`should remove deleted issues from relationship graphs for ${family.name}`, async () => {
+		await withTracker(family, async (tracker) => {
+			const parent = await tracker.createWorkflowIssue({
+				title: "Parent",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			});
+			const child = await tracker.createWorkflowIssue({
+				title: "Child",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			});
+			const blocker = await tracker.createWorkflowIssue({
+				title: "Blocker",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			});
+
+			await tracker.changeRelationship({
+				type: "add-child",
+				parentId: parent.issue.id,
+				childId: child.issue.id,
+			});
+			await tracker.changeRelationship({
+				type: "add-dependency",
+				issueId: child.issue.id,
+				blockedById: blocker.issue.id,
+			});
+			await tracker.deleteIssue(child.issue.id);
+
+			expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual([
+				parent.issue.id,
+				blocker.issue.id,
+			]);
+			expect(
+				(await tracker.getIssue(parent.issue.id)).relationships.children,
+			).toEqual([]);
+			expect(
+				(await tracker.getIssue(blocker.issue.id)).relationships.dependents,
+			).toEqual([]);
+			await expect(tracker.getIssue(child.issue.id)).rejects.toThrow();
+		});
+	});
+
 	it(`should preserve JSON-compatible log payloads for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({

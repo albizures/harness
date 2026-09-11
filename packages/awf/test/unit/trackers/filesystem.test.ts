@@ -358,6 +358,57 @@ it("should ensure that file-backed tracker rejects malformed markdown log list e
 	});
 });
 
+it("should ensure that file-backed tracker removes deleted numeric markdown files and rewrites related issue files", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
+
+		const parent = await tracker.createIssue({
+			title: "Parent",
+			workflow: { kind: "spec", state: "ready", action: "plan" },
+		});
+		const child = await tracker.createIssue({
+			title: "Child",
+			workflow: { kind: "ticket", state: "ready", action: "implement" },
+		});
+		const blocker = await tracker.createIssue({
+			title: "Blocker",
+			workflow: { kind: "ticket", state: "ready", action: "implement" },
+		});
+		await tracker.addChild(parent.id, child.id);
+		await tracker.addDependency(child.id, blocker.id);
+		const parentBefore = await readFile(join(trackerDir, "1.md"), "utf8");
+		const blockerBefore = await readFile(join(trackerDir, "3.md"), "utf8");
+
+		await tracker.deleteIssue(child.id);
+
+		expect(await readdir(trackerDir)).toEqual(["1.md", "3.md"]);
+		await expect(stat(join(trackerDir, "2.md"))).rejects.toThrow();
+		const parentAfter = await readFile(join(trackerDir, "1.md"), "utf8");
+		const blockerAfter = await readFile(join(trackerDir, "3.md"), "utf8");
+		expect(parentAfter).not.toBe(parentBefore);
+		expect(blockerAfter).not.toBe(blockerBefore);
+		expect(parentAfter).toContain(
+			'relationships: {"children":[],"dependencies":[],"dependents":[]}',
+		);
+		expect(blockerAfter).toContain(
+			'relationships: {"children":[],"dependencies":[],"dependents":[]}',
+		);
+
+		const reloaded = createFileSystemTracker({ path: trackerDir });
+		expect((await reloaded.listIssues()).map((issue) => issue.id)).toEqual([
+			parent.id,
+			blocker.id,
+		]);
+		expect((await reloaded.getIssue(parent.id)).relationships.children).toEqual(
+			[],
+		);
+		expect(
+			(await reloaded.getIssue(blocker.id)).relationships.dependents,
+		).toEqual([]);
+	});
+});
+
 it("should ensure that file-backed tracker rewrites markdown issue files atomically on issue updates", async () => {
 	await withTempDir(async (dir) => {
 		const trackerDir = join(dir, "tracker");
