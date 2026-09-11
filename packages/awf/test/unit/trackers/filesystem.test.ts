@@ -1,4 +1,5 @@
 import {
+	mkdir,
 	mkdtemp,
 	readFile,
 	readdir,
@@ -7,7 +8,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { CorruptWorkflowProjectionError } from "../../../src/domain/workflow/projection.ts";
 import { createFileSystemTracker } from "../../../src/adapters/trackers/filesystem.ts";
@@ -21,13 +22,13 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 	}
 }
 
-it("should ensure that file-backed tracker initializes missing state and persists mutations for later adapters", async () => {
+it("should ensure that file-backed tracker initializes missing directory state and persists mutations for later adapters", async () => {
 	await withTempDir(async (dir) => {
-		const file = join(dir, "nested", "tracker.json");
-		const tracker = createFileSystemTracker({ path: file });
+		const trackerDir = join(dir, "nested", "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
 
 		expect(await tracker.listIssues()).toEqual([]);
-		await expect(stat(file)).rejects.toThrow();
+		await expect(stat(trackerDir)).rejects.toThrow();
 
 		const issue = await tracker.createIssue({
 			title: "Durable ticket",
@@ -35,8 +36,8 @@ it("should ensure that file-backed tracker initializes missing state and persist
 		});
 		await tracker.appendLog(issue.id, { type: "created" });
 
-		expect((await stat(dirname(file))).isDirectory()).toBe(true);
-		const reloaded = createFileSystemTracker({ path: file });
+		expect((await stat(trackerDir)).isDirectory()).toBe(true);
+		const reloaded = createFileSystemTracker({ path: trackerDir });
 		expect((await reloaded.listIssues()).map((stored) => stored.title)).toEqual(
 			["Durable ticket"],
 		);
@@ -49,8 +50,8 @@ it("should ensure that file-backed tracker initializes missing state and persist
 
 it("should ensure that file-backed tracker preserves workflow data and issue allocation across fresh adapters", async () => {
 	await withTempDir(async (dir) => {
-		const file = join(dir, "tracker.json");
-		const tracker = createFileSystemTracker({ path: file });
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
 
 		const { issue: spec } = await tracker.createWorkflowIssue({
 			title: "Durable Spec",
@@ -121,7 +122,7 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 			],
 		});
 
-		const reloaded = createFileSystemTracker({ path: file });
+		const reloaded = createFileSystemTracker({ path: trackerDir });
 		const reloadedTicket = await reloaded.getIssue(ticket.id);
 		const nextIssue = await reloaded.createWorkflowIssue({
 			title: "Created after reload",
@@ -160,70 +161,88 @@ it("should ensure that file-backed tracker preserves workflow data and issue all
 	});
 });
 
+it("should ensure that file-backed tracker allocates issue ids from existing numeric issue files", async () => {
+	await withTempDir(async (dir) => {
+		const trackerDir = join(dir, "tracker");
+		await mkdir(trackerDir);
+		const tracker = createFileSystemTracker({ path: trackerDir });
+		const issue = await tracker.createIssue({
+			id: "7",
+			title: "Existing high id",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+
+		const reloaded = createFileSystemTracker({ path: trackerDir });
+		const nextIssue = await reloaded.createIssue({
+			title: "After high id",
+			workflow: { kind: "ticket", state: "ready", action: "none" },
+		});
+
+		expect(issue.id).toBe("7");
+		expect(nextIssue.id).toBe("8");
+	});
+});
+
 it("should ensure that file-backed tracker read-only operations do not rewrite state", async () => {
 	await withTempDir(async (dir) => {
-		const file = join(dir, "tracker.json");
-		const tracker = createFileSystemTracker({ path: file });
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
 		await tracker.createIssue({
 			title: "Read me",
 			workflow: { kind: "ticket", state: "ready", action: "none" },
 		});
-		const before = await stat(file, { bigint: true });
+		const issueFile = join(trackerDir, "1");
+		const before = await stat(issueFile, { bigint: true });
 
 		await tracker.listIssues();
 		await tracker.getIssue("1");
 		await tracker.readLogs("1");
 
-		const after = await stat(file, { bigint: true });
+		const after = await stat(issueFile, { bigint: true });
 		expect(after.mtimeNs).toBe(before.mtimeNs);
 	});
 });
 
-it("should ensure that file-backed tracker writes a complete JSON state file without leftover temp files", async () => {
+it("should ensure that file-backed tracker writes complete JSON issue files without leftover temp files", async () => {
 	await withTempDir(async (dir) => {
-		const file = join(dir, "tracker.json");
-		const tracker = createFileSystemTracker({ path: file });
+		const trackerDir = join(dir, "tracker");
+		const tracker = createFileSystemTracker({ path: trackerDir });
 
 		await tracker.createIssue({
 			title: "Atomic",
 			workflow: { kind: "ticket", state: "ready", action: "none" },
 		});
 
-		const raw = await readFile(file, "utf8");
-		expect(JSON.parse(raw).issues[0].title).toBe("Atomic");
+		const raw = await readFile(join(trackerDir, "1"), "utf8");
+		expect(JSON.parse(raw).title).toBe("Atomic");
 		expect(
-			(await readdir(dir)).filter((entry) => entry.includes(".tmp-")),
+			(await readdir(trackerDir)).filter((entry) => entry.includes(".tmp-")),
 		).toEqual([]);
 	});
 });
 
 it("should ensure that file-backed tracker rejects unsupported stored issue fields", async () => {
 	await withTempDir(async (dir) => {
-		const file = join(dir, "tracker.json");
+		const trackerDir = join(dir, "tracker");
+		await mkdir(trackerDir);
 		await writeFile(
-			file,
+			join(trackerDir, "1"),
 			JSON.stringify({
-				version: 1,
-				nextIssueNumber: 2,
-				issues: [
-					{
-						id: "1",
-						title: "Corrupt metadata",
-						workflow: { kind: "ticket", state: "ready", action: "none" },
-						relationships: {
-							children: [],
-							dependencies: [],
-							dependents: [],
-						},
-						unexpectedRecords: [],
-						logs: [],
-					},
-				],
+				id: "1",
+				title: "Corrupt metadata",
+				workflow: { kind: "ticket", state: "ready", action: "none" },
+				relationships: {
+					children: [],
+					dependencies: [],
+					dependents: [],
+				},
+				unexpectedRecords: [],
+				logs: [],
 			}),
 			"utf8",
 		);
 
-		expect(() => createFileSystemTracker({ path: file })).toThrow(
+		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
 			/unsupported or malformed schema/,
 		);
 	});
@@ -231,13 +250,14 @@ it("should ensure that file-backed tracker rejects unsupported stored issue fiel
 
 it("should ensure that file-backed tracker rejects corrupted JSON clearly", async () => {
 	await withTempDir(async (dir) => {
-		const file = join(dir, "tracker.json");
-		await writeFile(file, "{not json", "utf8");
+		const trackerDir = join(dir, "tracker");
+		await mkdir(trackerDir);
+		await writeFile(join(trackerDir, "1"), "{not json", "utf8");
 
-		expect(() => createFileSystemTracker({ path: file })).toThrow(
+		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
 			CorruptWorkflowProjectionError,
 		);
-		expect(() => createFileSystemTracker({ path: file })).toThrow(
+		expect(() => createFileSystemTracker({ path: trackerDir })).toThrow(
 			/not valid JSON/,
 		);
 	});

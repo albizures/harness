@@ -61,7 +61,7 @@ const trackerFamilies: Array<TrackerFamily> = [
 		create: async (seed = []) => {
 			const dir = await mkdtemp(join(tmpdir(), "awf-conformance-"));
 			const tracker = createFileSystemTracker({
-				path: join(dir, "tracker.json"),
+				path: join(dir, "tracker"),
 			});
 			for (const issue of seed) {
 				await tracker.createWorkflowIssue(issue);

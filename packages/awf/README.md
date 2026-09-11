@@ -27,7 +27,7 @@ import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
 
 export { agentWorkflowManifest as manifest } from "@albizures/awf/workflows/agent-workflow";
 
-export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
+export const tracker = createFileSystemTracker({ path: "./.awf/tracker" });
 ```
 
 Example commands:

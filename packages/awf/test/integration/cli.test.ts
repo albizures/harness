@@ -523,10 +523,10 @@ export const manifest = agentWorkflowManifest;
 		);
 
 		expect(created.status).toBe(0);
-		const trackerState = JSON.parse(
-			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
+		const trackerIssue = JSON.parse(
+			await readFile(join(dir, ".awf", "tracker", "1"), "utf8"),
 		);
-		expect(trackerState.issues[0].title).toBe("Manifest-only config");
+		expect(trackerIssue.title).toBe("Manifest-only config");
 	});
 });
 
@@ -625,7 +625,7 @@ it("should ensure that CLI uses an explicit config-exported filesystem tracker a
 import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
 
 export const manifest = agentWorkflowManifest;
-export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" });
+export const tracker = createFileSystemTracker({ path: "./custom-tracker" });
 `,
 		);
 		const create = spawnSync(
@@ -656,10 +656,10 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" }
 		);
 		expect(get.status).toBe(0);
 		expect(JSON.parse(get.stdout).data.issue.title).toBe("Config tracker");
-		const trackerState = JSON.parse(
-			await readFile(join(dir, "custom-tracker.json"), "utf8"),
+		const trackerIssue = JSON.parse(
+			await readFile(join(dir, "custom-tracker", createdId), "utf8"),
 		);
-		expect(trackerState.issues[0].id).toBe(createdId);
+		expect(trackerIssue.id).toBe(createdId);
 	});
 });
 

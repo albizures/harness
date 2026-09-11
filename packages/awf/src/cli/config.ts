@@ -39,7 +39,7 @@ export async function bindCliExecution(
 	}
 
 	const defaultTracker = () =>
-		createFileSystemTracker({ path: resolve(cwd, ".awf", "tracker.json") });
+		createFileSystemTracker({ path: resolve(cwd, ".awf", "tracker") });
 
 	const configPath = parsed.configPath ?? discoverDefaultConfig(cwd);
 	if (configPath === undefined) {
