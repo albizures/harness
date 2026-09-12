@@ -1,5 +1,43 @@
 # @albizures/awf
 
+## 1.0.0
+
+### Major Changes
+
+- c87de74: Remove the legacy `agent-development` bundled workflow, including its root exports and the `@albizures/awf/workflows/agent-development` subpath. Use `agent-workflow` or a project-owned workflow module instead.
+- c87de74: Remove unsupported generic workflow-authoring/runtime APIs from the public AWF boundary. AWF is now `agent-workflow`-first: generic manifest authoring, project-defined command surfaces, workflow-module authoring exports, workflow-position reasons, generic source/apply command dimensions, user-facing `awf apply` dispatch, and normal-help `run-command` exposure are no longer public capabilities.
+- c87de74: Remove the stale `generic-task` workflow exports and `@albizures/awf/workflows/generic-task` subpath in favor of the canonical `agent-workflow` bundled workflow module.
+
+### Minor Changes
+
+- c87de74: Change the filesystem tracker path to a tracker directory with one numeric issue file per issue.
+- c87de74: Narrow the public AWF boundary by removing artifact/change exports and documenting runtime-owned concepts as issues, lifecycle state, relationships, readiness, and text logs.
+- c87de74: Add generic waiting-human pause and respond lifecycle commands.
+- c87de74: Persist workflow semantic versions on manifest-created issues and require migration or reconciliation before manifest commands mutate issues recorded with a different workflow version.
+- c87de74: Model integration-test and merge as ready-gated Task profiles, add explicit Spec completion validation, and document integration-test freshness as an agent obligation.
+- c87de74: Replace manifest transition run effects with Workflow attempt effects.
+- c87de74: Require workflow semantic versions and expose lifecycle active/terminal state semantics in manifest validation and workflow descriptions.
+- c87de74: Route manifest-declared CLI verbs beyond create/apply, add hidden `run-command <command-id>` dispatch, and stop exposing runtime lifecycle verbs as top-level built-ins.
+- c87de74: Remove artifact/change recording from tracker APIs, workflow effects, lifecycle handler contributions, and bundled command handling.
+
+### Patch Changes
+
+- c87de74: Move AWF runtime dispatch internals under the runtime layer and CLI composition/output internals under the CLI layer while preserving the public execute compatibility seam.
+- c87de74: Constrain lifecycle transition handlers to read-only tracker access while keeping handler-contributed artifacts and generic effects applied by AWF core.
+- c87de74: Migrate bundled generic task lifecycle controls to manifest-owned task commands.
+- c87de74: Preserve generic Spec execution by starting Specs in planning, advancing them to integration-test after child Tasks complete, and allowing merge-to-done lifecycle transitions.
+- c87de74: Add Grilling as a top-level collaborative agent-workflow kind with in-discussion lifecycle state and optional Spec or Wayfinder parent links.
+- c87de74: Remove manifest lifecycle retry, escalation, and resume allow-list policy from the public contract while keeping bundled agent-workflow lifecycle commands working.
+- c87de74: Document and lock the filesystem tracker Markdown issue-file format, including the readable logs heading.
+- c87de74: Store file-backed workflow logs as readable markdown list entries and restore them with strict corruption checks.
+- c87de74: Narrow workflow issue reads to workflow projections and relationships, and store workflow logs as text-only messages.
+- c87de74: Project and display Task subkind separately from workflow kind/state/action/reason fields.
+- c87de74: Document the Failure definition API and standardize runtime and CLI internals on module-owned Failure catalogs, guarded by convention tests that prevent migrated source from regressing to raw failure string literals.
+- c87de74: Remove manifest payload schema support outside command input declarations.
+- c87de74: Remove configurable relationship projection direction from workflow manifests while preserving supported relationship projection types.
+- c87de74: Declare generated-by Task provenance as a first-class manifest relationship projection distinct from parent-child containment and dependency blocking.
+- c87de74: Add generic Task subkind workflow data with work/research/prototype declarations and work as the default.
+
 ## 0.2.0
 
 ### Minor Changes
