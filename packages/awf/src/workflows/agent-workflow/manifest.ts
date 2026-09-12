@@ -156,7 +156,7 @@ export const agentWorkflowManifest = defineManifest({
 		profileGroups: [
 			{
 				name: "implementation-gate",
-				profiles: ["implement", "implementation", "engineering", "review"],
+				profiles: ["implement", "review"],
 			},
 		],
 		relationshipPolicies: [

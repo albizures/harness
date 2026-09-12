@@ -30,7 +30,7 @@ it("should ensure that bundled agent-workflow dispatches supported create and re
 				parent: spec.issue.id,
 				title: "Implement feature",
 				description: "Build it.",
-				profile: "engineering",
+				profile: "implement",
 			}),
 		}),
 	);

@@ -125,7 +125,7 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 		"- task-create\n  - Usage: awf create task --input <file|->\n  - Target: task/work\n  - Input: required",
 	);
 	expect(result.stdout).toContain(
-		"  - implementation-gate: implement, implementation, engineering, review",
+		"  - implementation-gate: implement, review",
 	);
 	expect(result.stdout).toContain(
 		"  - siblings where task/ready/work/integration-test; siblings all task/done/none/implementation-gate, gate implementation-gate",
@@ -198,7 +198,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 			profileGroups: [
 				{
 					name: "implementation-gate",
-					profiles: ["implement", "implementation", "engineering", "review"],
+					profiles: ["implement", "review"],
 				},
 			],
 		},
@@ -244,7 +244,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				cli: {
 					verb: "spec",
 					target: "complete",
-					usage: "awf spec complete <issue>",
+					usage: "awf spec complete <issue> --input <file|->",
 				},
 				target: { kind: "spec", state: "ready", action: "none" },
 				input: { required: false },
@@ -444,7 +444,7 @@ export const commandHandlers = {
 					parent: "1",
 					title: "Configured task",
 					description: "Handle through config.",
-					profile: "engineering",
+					profile: "implement",
 				}),
 			},
 		);
@@ -587,7 +587,7 @@ export const manifest = agentWorkflowManifest;
 				parent: spec.id,
 				title: "Durable task",
 				description: "Do it.",
-				profile: "engineering",
+				profile: "implement",
 			});
 			const taskId = task.issue.id;
 			expect(

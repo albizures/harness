@@ -128,7 +128,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
 			"awf create grilling --input <file|->",
-			"awf spec complete <issue>",
+			"awf spec complete <issue> --input <file|->",
 			"awf task start <issue>",
 			"awf task fail <issue>",
 			"awf task recover <issue>",
@@ -177,7 +177,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		),
 	).toEqual([
 		"awf create spec --input <file|->",
-		"awf spec complete <issue>",
+		"awf spec complete <issue> --input <file|->",
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
 		"awf create grilling --input <file|->",
