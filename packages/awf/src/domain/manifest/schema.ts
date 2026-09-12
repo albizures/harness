@@ -32,6 +32,7 @@ export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
 export type ManifestCli = {
 	verb: Identifier;
 	target: Identifier;
+	input?: "json" | "none";
 };
 
 export type ManifestCommand = {
@@ -46,11 +47,7 @@ export type ManifestCommand = {
 	input?: PayloadSchema;
 };
 
-export type ManifestReadinessFilter = {
-	kind?: Identifier;
-	state?: Identifier;
-	action?: Identifier;
-};
+export type ManifestReadinessFilter = ManifestWorkflowFilter;
 
 export type ManifestNamedReadinessFilter = {
 	name: Identifier;
@@ -62,12 +59,20 @@ export type ManifestWorkflowFilter = {
 	kind?: Identifier;
 	state?: Identifier;
 	action?: Identifier;
+	profile?: Identifier;
+	profileGroup?: Identifier;
+};
+
+export type ManifestProfileGroup = {
+	name: Identifier;
+	profiles: Array<Identifier>;
 };
 
 export type ManifestReadinessRelationshipPolicy = {
-	relationship: "children";
+	relationship: "children" | "siblings";
 	where: ManifestWorkflowFilter;
-	children: { all: ManifestWorkflowFilter; min?: number };
+	children?: { all: ManifestWorkflowFilter; min?: number };
+	siblings?: { all: ManifestWorkflowFilter; min?: number };
 	gate?: Identifier;
 };
 
@@ -108,6 +113,7 @@ export type WorkflowManifest = {
 	readiness?: {
 		filters: Array<ManifestReadinessFilter>;
 		namedFilters?: Array<ManifestNamedReadinessFilter>;
+		profileGroups?: Array<ManifestProfileGroup>;
 		relationshipPolicies?: Array<ManifestReadinessRelationshipPolicy>;
 	};
 	lifecycle?: {
@@ -162,6 +168,8 @@ const workflowFilterSchema = z.strictObject({
 	kind: z.string().optional(),
 	state: z.string().optional(),
 	action: z.string().optional(),
+	profile: z.string().optional(),
+	profileGroup: z.string().optional(),
 });
 
 export const workflowManifestStructuralSchema = z.strictObject({
@@ -197,15 +205,31 @@ export const workflowManifestStructuralSchema = z.strictObject({
 					}),
 				)
 				.optional(),
+			profileGroups: z
+				.array(
+					z.strictObject({
+						name: z.string(),
+						profiles: z.array(z.string()),
+					}),
+				)
+				.optional(),
 			relationshipPolicies: z
 				.array(
 					z.strictObject({
-						relationship: z.literal("children"),
+						relationship: z.enum(["children", "siblings"]),
 						where: workflowFilterSchema,
-						children: z.strictObject({
-							all: workflowFilterSchema,
-							min: z.number().int().nonnegative().optional(),
-						}),
+						children: z
+							.strictObject({
+								all: workflowFilterSchema,
+								min: z.number().int().nonnegative().optional(),
+							})
+							.optional(),
+						siblings: z
+							.strictObject({
+								all: workflowFilterSchema,
+								min: z.number().int().nonnegative().optional(),
+							})
+							.optional(),
 						gate: z.string().optional(),
 					}),
 				)
@@ -254,6 +278,7 @@ export const workflowManifestStructuralSchema = z.strictObject({
 				.strictObject({
 					verb: z.string().min(1),
 					target: z.string(),
+					input: z.enum(["json", "none"]).optional(),
 				})
 				.optional(),
 			target: workflowFilterSchema.extend({ kind: z.string() }),

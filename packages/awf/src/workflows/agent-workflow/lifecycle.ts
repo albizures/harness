@@ -33,7 +33,6 @@ export const agentWorkflowLifecycleHandlers: LifecycleTransitionHandlers = {
 	"wayfinder:ready/planning:succeed": validateWayfinderChildrenTerminal,
 	"wayfinder:running/planning:succeed": validateWayfinderChildrenTerminal,
 	"task:running/work:succeed": validateWayfinderChildTerminalOutcome,
-	"spec:running/merge:succeed": validateWayfinderChildTerminalOutcome,
 	"grilling:in-discussion/discuss:succeed":
 		validateWayfinderChildTerminalOutcome,
 };

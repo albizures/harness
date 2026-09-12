@@ -18,6 +18,8 @@ export type WorkflowDescriptionWorkflowFilterV1 = {
 	kind?: string;
 	state?: string;
 	action?: string;
+	profile?: string;
+	profileGroup?: string;
 };
 
 export type WorkflowDescriptionSchemaInputV1 = { required: boolean };
@@ -66,10 +68,12 @@ export type WorkflowDescriptionV1 = {
 			relationship: "parent";
 			usage: string;
 		}>;
+		profileGroups?: Array<{ name: string; profiles: Array<string> }>;
 		relationshipPolicies?: Array<{
-			relationship: "children";
+			relationship: "children" | "siblings";
 			where: WorkflowDescriptionWorkflowFilterV1;
-			children: { all: WorkflowDescriptionWorkflowFilterV1; min?: number };
+			children?: { all: WorkflowDescriptionWorkflowFilterV1; min?: number };
+			siblings?: { all: WorkflowDescriptionWorkflowFilterV1; min?: number };
 			gate?: string;
 		}>;
 	};
@@ -162,7 +166,7 @@ export function manifestCommandUsage(command: ManifestCommand): string {
 		return `awf create ${cli.target} --input <file|->`;
 	}
 	const route = `awf ${cli.verb} ${cli.target}`;
-	if (command.transition !== undefined) {
+	if (command.transition !== undefined || cli.input === "none") {
 		return `${route} <issue>`;
 	}
 	return `${route} <issue> --input <file|->`;
@@ -214,6 +218,14 @@ function describeReadiness(manifest: WorkflowManifest) {
 							usage: `awf ready --filter ${filter.name}=<${filter.kind}>`,
 						})),
 					}),
+			...(manifest.readiness.profileGroups === undefined
+				? {}
+				: {
+						profileGroups: manifest.readiness.profileGroups.map((group) => ({
+							name: group.name,
+							profiles: [...group.profiles],
+						})),
+					}),
 			...(manifest.readiness.relationshipPolicies === undefined
 				? {}
 				: {
@@ -221,12 +233,12 @@ function describeReadiness(manifest: WorkflowManifest) {
 							(policy) => ({
 								relationship: policy.relationship,
 								where: workflowFilter(policy.where),
-								children: {
-									all: workflowFilter(policy.children.all),
-									...(policy.children.min === undefined
-										? {}
-										: { min: policy.children.min }),
-								},
+								...(policy.children === undefined
+									? {}
+									: { children: relationshipRule(policy.children) }),
+								...(policy.siblings === undefined
+									? {}
+									: { siblings: relationshipRule(policy.siblings) }),
 								...(policy.gate === undefined ? {} : { gate: policy.gate }),
 							}),
 						),
@@ -285,6 +297,17 @@ function workflowFilter(
 		...(filter.kind === undefined ? {} : { kind: filter.kind }),
 		...(filter.state === undefined ? {} : { state: filter.state }),
 		...(filter.action === undefined ? {} : { action: filter.action }),
+		...(filter.profile === undefined ? {} : { profile: filter.profile }),
+		...(filter.profileGroup === undefined
+			? {}
+			: { profileGroup: filter.profileGroup }),
+	};
+}
+
+function relationshipRule(rule: { all: ManifestWorkflowFilter; min?: number }) {
+	return {
+		all: workflowFilter(rule.all),
+		...(rule.min === undefined ? {} : { min: rule.min }),
 	};
 }
 

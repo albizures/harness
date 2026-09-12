@@ -42,6 +42,7 @@ it("should export a valid explicit bundled workflow module", () => {
 		"escalate",
 		"resume",
 		"spec-create",
+		"spec-complete",
 		"task-create",
 		"grilling-create",
 	]);
@@ -49,7 +50,6 @@ it("should export a valid explicit bundled workflow module", () => {
 		"wayfinder:ready/planning:succeed",
 		"wayfinder:running/planning:succeed",
 		"task:running/work:succeed",
-		"spec:running/merge:succeed",
 		"grilling:in-discussion/discuss:succeed",
 	]);
 	expect(validateManifest(agentWorkflowManifest)).toEqual([]);
@@ -97,6 +97,7 @@ it("should export a valid explicit bundled workflow module", () => {
 	).toBeUndefined();
 	expect(agentWorkflowManifest.commands.map((command) => command.id)).toEqual([
 		"spec-create",
+		"spec-complete",
 		"wayfinder-create",
 		"task-create",
 		"grilling-create",
@@ -127,6 +128,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
 			"awf create grilling --input <file|->",
+			"awf spec complete <issue>",
 			"awf task start <issue>",
 			"awf task fail <issue>",
 			"awf task recover <issue>",
@@ -140,8 +142,6 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 	).toBe(true);
 	expect(help.readiness.filters).toEqual([
 		{ kind: "spec", state: "ready", action: "planning" },
-		{ kind: "spec", state: "ready", action: "integration-test" },
-		{ kind: "spec", state: "ready", action: "merge" },
 		{ kind: "task", state: "ready", action: "work" },
 	]);
 	expect(help.readiness.subkinds).toEqual([
@@ -177,6 +177,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		),
 	).toEqual([
 		"awf create spec --input <file|->",
+		"awf spec complete <issue>",
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
 		"awf create grilling --input <file|->",
@@ -188,37 +189,36 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });
 
-it("should block Spec integration-test readiness until child Tasks are done", async () => {
+it("should block Integration-test Task readiness until implementation-gate child Tasks are done", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
-				id: "empty-spec",
-				title: "Empty Spec",
-				workflow: { kind: "spec", state: "ready", action: "integration-test" },
-			},
-			{
-				id: "blocked-spec",
-				title: "Blocked Spec",
-				workflow: { kind: "spec", state: "ready", action: "integration-test" },
-				relationships: { children: ["open-task"] },
-			},
-			{
-				id: "done-spec",
-				title: "Done Spec",
-				workflow: { kind: "spec", state: "ready", action: "integration-test" },
-				relationships: { children: ["done-task"] },
+				id: "spec",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "none" },
+				relationships: { children: ["open-task", "integration-test"] },
 			},
 			{
 				id: "open-task",
 				title: "Open Task",
-				workflow: { kind: "task", state: "ready", action: "work" },
-				relationships: { parent: "blocked-spec" },
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { profile: "implement" },
+				},
+				relationships: { parent: "spec" },
 			},
 			{
-				id: "done-task",
-				title: "Done Task",
-				workflow: { kind: "task", state: "done", action: "none" },
-				relationships: { parent: "done-spec" },
+				id: "integration-test",
+				title: "Integration Test",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { profile: "integration-test" },
+				},
+				relationships: { parent: "spec" },
 			},
 		],
 	});
@@ -228,46 +228,129 @@ it("should block Spec integration-test readiness until child Tasks are done", as
 		blocked: Array<{ id: string; blocking: Array<Record<string, unknown>> }>;
 	};
 
-	expect(ready.items.map((item) => item.id)).toEqual([
-		"done-spec",
-		"open-task",
-	]);
+	expect(ready.items.map((item) => item.id)).toEqual(["open-task"]);
 	expect(ready.blocked).toEqual([
 		{
-			id: "blocked-spec",
-			title: "Blocked Spec",
-			workflow: { kind: "spec", state: "ready", action: "integration-test" },
+			id: "integration-test",
+			title: "Integration Test",
+			workflow: {
+				kind: "task",
+				state: "ready",
+				action: "work",
+				subkind: "work",
+				profile: "integration-test",
+			},
 			blocking: [
 				{
-					gate: "tasks-done",
-					relationship: "children",
-					minimum: 1,
+					gate: "implementation-gate",
+					relationship: "siblings",
 					blockedBy: [
 						{
 							id: "open-task",
 							title: "Open Task",
-							workflow: { kind: "task", state: "ready", action: "work" },
+							workflow: {
+								kind: "task",
+								state: "ready",
+								action: "work",
+								profile: "implement",
+							},
 						},
 					],
-				},
-			],
-		},
-		{
-			id: "empty-spec",
-			title: "Empty Spec",
-			workflow: { kind: "spec", state: "ready", action: "integration-test" },
-			blocking: [
-				{
-					gate: "tasks-done",
-					relationship: "children",
-					minimum: 1,
 				},
 			],
 		},
 	]);
 });
 
-it("should advance a planned Spec to integration-test readiness after child Tasks complete", async () => {
+it("should block Merge Task readiness until implementation and integration-test Tasks are done", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "none" },
+				relationships: {
+					children: [
+						"open-task",
+						"open-integration",
+						"done-integration",
+						"merge",
+					],
+				},
+			},
+			{
+				id: "open-task",
+				title: "Open Task",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { profile: "review" },
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "open-integration",
+				title: "Open Integration",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { profile: "integration-test" },
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "done-integration",
+				title: "Done Integration",
+				workflow: {
+					kind: "task",
+					state: "done",
+					action: "none",
+					data: { profile: "integration-test" },
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "merge",
+				title: "Merge",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { profile: "merge" },
+				},
+				relationships: { parent: "spec" },
+			},
+		],
+	});
+
+	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
+		items: Array<{ id: string }>;
+		blocked: Array<{ id: string; blocking: Array<Record<string, unknown>> }>;
+	};
+
+	expect(ready.items.map((item) => item.id)).toEqual(["open-task"]);
+	expect(ready.blocked).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: "merge",
+				blocking: expect.arrayContaining([
+					expect.objectContaining({
+						gate: "implementation-gate",
+						blockedBy: [expect.objectContaining({ id: "open-task" })],
+					}),
+					expect.objectContaining({
+						gate: "integration-test-done",
+						blockedBy: [expect.objectContaining({ id: "open-integration" })],
+					}),
+				]),
+			}),
+		]),
+	);
+});
+
+it("should leave planned Specs at ready none after child Tasks complete", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -300,13 +383,13 @@ it("should advance a planned Spec to integration-test readiness after child Task
 	expect((await tracker.getIssue("spec")).workflow).toMatchObject({
 		kind: "spec",
 		state: "ready",
-		action: "integration-test",
+		action: "none",
 	});
 
 	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
 		items: Array<{ id: string }>;
 	};
-	expect(ready.items.map((item) => item.id)).toEqual(["spec"]);
+	expect(ready.items.map((item) => item.id)).toEqual([]);
 });
 
 it("should validate the bundled agent-workflow module through the manifest validate command", async () => {
@@ -369,7 +452,7 @@ it("should create agent-workflow Specs from structured JSON ready for planning w
 	).toEqual(["spec-create_created"]);
 });
 
-it("should advance agent-workflow Specs through planning, integration-test, merge, and done", async () => {
+it("should complete agent-workflow Specs only after merge work is done", async () => {
 	const tracker = createInMemoryTracker();
 	const created = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -411,29 +494,63 @@ it("should advance agent-workflow Specs through planning, integration-test, merg
 	);
 	expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject({
 		state: "ready",
-		action: "integration-test",
+		action: "none",
 	});
+	const blockedComplete = await execute(
+		["spec", "complete", created.issue.id],
+		{
+			tracker,
+		},
+	);
+	expect(blockedComplete.ok).toBe(false);
+
+	const integrationTest = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: created.issue.id,
+				title: "Integration test",
+				description: "Verify it.",
+				profile: "integration-test",
+			}),
+		}),
+	) as { issue: { id: string } };
 	assertSuccess(
-		await execute(["run-command", "start", created.issue.id], { tracker }),
+		await execute(["task", "start", integrationTest.issue.id], { tracker }),
+	);
+	assertSuccess(
+		await execute(
+			["run-command", "succeed", integrationTest.issue.id, "--input", "-"],
+			{
+				tracker,
+				stdin: "{}",
+			},
+		),
+	);
+	const merge = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				spec: created.issue.id,
+				title: "Merge",
+				description: "Merge it.",
+				profile: "merge",
+			}),
+		}),
+	) as { issue: { id: string } };
+	assertSuccess(await execute(["task", "start", merge.issue.id], { tracker }));
+	assertSuccess(
+		await execute(["run-command", "succeed", merge.issue.id, "--input", "-"], {
+			tracker,
+			stdin: "{}",
+		}),
 	);
 	expect(
 		assertSuccess(
-			await execute(
-				["run-command", "succeed", created.issue.id, "--input", "-"],
-				{ tracker, stdin: "{}" },
-			),
-		) as { issue: { workflow: Record<string, string> } },
-	).toMatchObject({ issue: { workflow: { state: "ready", action: "merge" } } });
-	assertSuccess(
-		await execute(["run-command", "start", created.issue.id], { tracker }),
-	);
-	expect(
-		assertSuccess(
-			await execute(
-				["run-command", "succeed", created.issue.id, "--input", "-"],
-				{ tracker, stdin: "{}" },
-			),
-		) as { issue: { workflow: Record<string, string> } },
+			await execute(["spec", "complete", created.issue.id], { tracker }),
+		) as {
+			issue: { workflow: Record<string, string> };
+		},
 	).toMatchObject({ issue: { workflow: { state: "done", action: "none" } } });
 });
 
@@ -498,7 +615,7 @@ it("should create agent-workflow Tasks under Specs with routing profiles and dep
 
 	expect(created.issue.body).toContain("Profile: implement");
 	expect(created.issue.workflow).toMatchObject({
-		data: { subkind: "work" },
+		data: { subkind: "work", profile: "implement" },
 		kind: "task",
 		state: "ready",
 		action: "work",

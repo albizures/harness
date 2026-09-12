@@ -125,10 +125,10 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 		"- task-create\n  - Usage: awf create task --input <file|->\n  - Target: task/work\n  - Input: required",
 	);
 	expect(result.stdout).toContain(
-		"  - children where spec/ready/integration-test; children all task/done/none, min 1, gate tasks-done",
+		"  - implementation-gate: implement, implementation, engineering, review",
 	);
 	expect(result.stdout).toContain(
-		"  - parent child task/done/none; parent spec/ready/none; siblings all task/done; to ready/integration-test",
+		"  - siblings where task/ready/work/integration-test; siblings all task/done/none/implementation-gate, gate implementation-gate",
 	);
 	expect(result.stdout).toContain(
 		"- task-generated-by-task: task -> task (generated-by)",
@@ -193,9 +193,13 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 		readiness: {
 			filters: [
 				{ kind: "spec", state: "ready", action: "planning" },
-				{ kind: "spec", state: "ready", action: "integration-test" },
-				{ kind: "spec", state: "ready", action: "merge" },
 				{ kind: "task", state: "ready", action: "work" },
+			],
+			profileGroups: [
+				{
+					name: "implementation-gate",
+					profiles: ["implement", "implementation", "engineering", "review"],
+				},
 			],
 		},
 		relationships: expect.arrayContaining([
@@ -234,6 +238,16 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				},
 				target: { kind: "spec", action: "planning" },
 				input: { required: true },
+			},
+			{
+				id: "spec-complete",
+				cli: {
+					verb: "spec",
+					target: "complete",
+					usage: "awf spec complete <issue>",
+				},
+				target: { kind: "spec", state: "ready", action: "none" },
+				input: { required: false },
 			},
 			{
 				id: "task-create",

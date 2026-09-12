@@ -76,31 +76,6 @@ const specTransitions = [
 		event: "succeed",
 		to: { state: "ready", action: "none" },
 	},
-	{
-		from: { state: "ready", action: "integration-test" },
-		event: "start",
-		to: { state: "running", action: "integration-test" },
-	},
-	{
-		from: { state: "running", action: "integration-test" },
-		event: "succeed",
-		to: { state: "ready", action: "merge" },
-	},
-	{
-		from: { state: "running", action: "integration-test" },
-		event: "fail",
-		to: { state: "ready", action: "planning" },
-	},
-	{
-		from: { state: "ready", action: "merge" },
-		event: "start",
-		to: { state: "running", action: "merge" },
-	},
-	{
-		from: { state: "running", action: "merge" },
-		event: "succeed",
-		to: { state: "done", action: "none" },
-	},
 ] as const;
 
 const workTransitions = [
@@ -175,35 +150,76 @@ export const agentWorkflowManifest = defineManifest({
 	readiness: {
 		filters: [
 			{ kind: "spec", state: "ready", action: "planning" },
-			{ kind: "spec", state: "ready", action: "integration-test" },
-			{ kind: "spec", state: "ready", action: "merge" },
 			{ kind: "task", state: "ready", action: "work" },
 		],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
+		profileGroups: [
+			{
+				name: "implementation-gate",
+				profiles: ["implement", "implementation", "engineering", "review"],
+			},
+		],
 		relationshipPolicies: [
 			{
-				relationship: "children",
-				where: { kind: "spec", state: "ready", action: "integration-test" },
-				children: {
-					all: { kind: "task", state: "done", action: "none" },
+				relationship: "siblings",
+				where: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					profile: "integration-test",
+				},
+				siblings: {
+					all: {
+						kind: "task",
+						state: "done",
+						action: "none",
+						profileGroup: "implementation-gate",
+					},
+				},
+				gate: "implementation-gate",
+			},
+			{
+				relationship: "siblings",
+				where: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					profile: "merge",
+				},
+				siblings: {
+					all: {
+						kind: "task",
+						state: "done",
+						action: "none",
+						profileGroup: "implementation-gate",
+					},
+				},
+				gate: "implementation-gate",
+			},
+			{
+				relationship: "siblings",
+				where: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					profile: "merge",
+				},
+				siblings: {
+					all: {
+						kind: "task",
+						state: "done",
+						action: "none",
+						profile: "integration-test",
+					},
 					min: 1,
 				},
-				gate: "tasks-done",
+				gate: "integration-test-done",
 			},
 		],
 	},
 	lifecycle: {
 		activeStates: ["running", "in-discussion"],
 		terminalStates: ["done"],
-		relationshipPolicies: [
-			{
-				relationship: "parent",
-				child: { kind: "task", state: "done", action: "none" },
-				parent: { kind: "spec", state: "ready", action: "none" },
-				siblings: { all: { kind: "task", state: "done" }, min: 1 },
-				to: { state: "ready", action: "integration-test" },
-			},
-		],
 	},
 	kinds: [
 		{
@@ -282,6 +298,11 @@ export const agentWorkflowManifest = defineManifest({
 			cli: { verb: "create", target: "spec" },
 			target: { kind: "spec", action: "planning" },
 			input: createInput,
+		},
+		{
+			id: "spec-complete",
+			cli: { verb: "spec", target: "complete", input: "none" },
+			target: { kind: "spec", state: "ready", action: "none" },
 		},
 		{
 			id: "wayfinder-create",

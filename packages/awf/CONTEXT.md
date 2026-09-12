@@ -80,13 +80,37 @@ _Avoid_: filesystem memory tracker, local GitHub replacement
 The core domain object managed by the Workflow runtime. A Workflow issue is a tracker issue with one manifest-defined kind attached to it, plus explicit current workflow fields and append-only logs.
 _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 
+**Spec**:
+A workflow issue that describes an implementation outcome and contains the child Tasks and Grilling needed to deliver it. Its executable lifecycle is limited to planning and explicit validated completion; integration testing and merging are modeled as Tasks instead of Spec actions.
+_Avoid_: execution phase container, integration-test action, merge action
+
 **Task**:
 A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, durable subkind (`work`, `research`, or `prototype`; default `work`), and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
 _Avoid_: ticket, implementation action
 
+**Integration-test Task**:
+A ready-gated Task that verifies completed implementation and review work against its parent Spec before merge work can proceed. It is ordinary work routed by profile rather than a separate Task subkind or Spec lifecycle phase, and each Integration-test Task represents one verification pass.
+_Avoid_: Spec integration-test action, test phase
+
+**Merge Task**:
+A ready-gated Task that performs the final integration of completed, verified work for a Spec. It is ordinary work routed by profile rather than a separate Task subkind or Spec lifecycle phase; AWF may enforce coarse readiness such as no open implementation, review, or integration-test Tasks, while integration-test freshness is an agent obligation.
+_Avoid_: Spec merge action, terminal Spec phase
+
+**Ready-gated Task**:
+A Task whose readiness depends on declarative bundled-workflow conditions beyond its own lifecycle state, such as no open implementation or review Tasks under the same Spec. Ready-gated Tasks remain ordinary Tasks; the gate controls when they appear ready, not what kind of work they are, and does not necessarily prove every agent-planning invariant.
+_Avoid_: Spec phase gate, hard-coded runtime special case
+
+**Implementation gate**:
+A declarative profile group that identifies Tasks whose non-terminal state blocks Integration-test readiness. Merge readiness also requires no open Integration-test Tasks and at least one completed Integration-test Task.
+_Avoid_: hard-coded implementation task list, dependency rewiring
+
+**Integration-test freshness**:
+An agent-planning obligation that follow-up implementation or review work after an Integration-test Task schedules another Integration-test Task before merge work proceeds. Freshness is not proved by AWF readiness gates unless a workflow explicitly models it.
+_Avoid_: runtime freshness proof, implicit merge validation
+
 **Grilling**:
-A collaborative conversation Workflow issue for reaching shared understanding or pressure-testing a decision with a human. A Grilling issue is a top-level kind in `agent-workflow`, may stand alone or support a Wayfinder or Spec, and is not agent-executable merely because it is ready.
-_Avoid_: task subkind, autonomous agent work, ordinary waiting-human pause
+A collaborative conversation Workflow issue for reaching shared understanding or pressure-testing a decision with a human. A Grilling issue is a top-level kind in `agent-workflow`, may stand alone or support a Wayfinder or Spec, and is not agent-executable merely because it is ready; when it is waiting on the human's turn, it may use waiting-human state.
+_Avoid_: task subkind, autonomous agent work
 
 **Generated-by relationship**:
 A directional Task-to-Task provenance relationship from a generated Task back to the source Task that caused it to exist. It explains task origin separately from Spec containment and dependency blocking.

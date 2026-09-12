@@ -401,9 +401,21 @@ export function readyItem(
 export function readinessBlocking(
 	issue: {
 		workflow: WorkflowFields;
-		relationships: { dependencies: Array<string>; children: Array<string> };
+		relationships: {
+			parent?: string;
+			dependencies: Array<string>;
+			children: Array<string>;
+		};
 	},
-	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+	byId: Map<
+		string,
+		{
+			id: string;
+			title: string;
+			workflow: WorkflowFields;
+			relationships: { children: Array<string> };
+		}
+	>,
 	manifest: WorkflowManifest,
 	activeIssues: Array<{ workflow: WorkflowFields }>,
 ): Array<Record<string, JsonValue>> {
@@ -511,46 +523,67 @@ export function isDone(
 export function relationshipReadinessBlocking(
 	issue: {
 		workflow: WorkflowFields;
-		relationships: { children: Array<string> };
+		relationships: { parent?: string; children: Array<string> };
 	},
-	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+	byId: Map<
+		string,
+		{
+			id: string;
+			title: string;
+			workflow: WorkflowFields;
+			relationships: { children: Array<string> };
+		}
+	>,
 	manifest: WorkflowManifest,
 ): Array<Record<string, JsonValue>> {
 	const blocking: Array<Record<string, JsonValue>> = [];
 	for (const policy of manifest.readiness?.relationshipPolicies ?? []) {
-		if (
-			policy.relationship !== "children" ||
-			!workflowMatchesFilter(issue.workflow, policy.where)
-		) {
+		if (!workflowMatchesFilter(issue.workflow, policy.where, manifest)) {
 			continue;
 		}
-		const children = issue.relationships.children.map((id) => byId.get(id));
-		const minimum = policy.children.min ?? 0;
-		const missing = issue.relationships.children.filter(
-			(_id, index) => children[index] === undefined,
+		const rule =
+			policy.relationship === "siblings" ? policy.siblings : policy.children;
+		if (rule === undefined) {
+			continue;
+		}
+		const relatedIds =
+			policy.relationship === "siblings"
+				? siblingIds(issue, byId)
+				: issue.relationships.children;
+		const related = relatedIds.map((id) => byId.get(id));
+		const matching = related.flatMap((relatedIssue) =>
+			relatedIssue !== undefined &&
+			workflowMatchesFilter(relatedIssue.workflow, rule.all, manifest)
+				? [relatedIssue]
+				: [],
 		);
-		const unmatched = children.flatMap((child) =>
-			child !== undefined &&
-			!workflowMatchesFilter(child.workflow, policy.children.all)
-				? [child]
+		const minimum = rule.min ?? 0;
+		const missing = relatedIds.filter(
+			(_id, index) => related[index] === undefined,
+		);
+		const blockedBy = related.flatMap((relatedIssue) =>
+			relatedIssue !== undefined &&
+			workflowSelectsProfileFilter(relatedIssue.workflow, rule.all, manifest) &&
+			!workflowMatchesFilter(relatedIssue.workflow, rule.all, manifest)
+				? [relatedIssue]
 				: [],
 		);
 		if (
-			children.length >= minimum &&
+			matching.length >= minimum &&
 			missing.length === 0 &&
-			unmatched.length === 0
+			blockedBy.length === 0
 		) {
 			continue;
 		}
 		blocking.push({
 			gate: policy.gate ?? "relationship",
-			relationship: "children",
+			relationship: policy.relationship,
 			...(minimum === 0 ? {} : { minimum }),
 			...(missing.length === 0 ? {} : { missing }),
-			...(unmatched.length === 0
+			...(blockedBy.length === 0
 				? {}
 				: {
-						blockedBy: unmatched.map((child) => ({
+						blockedBy: blockedBy.map((child) => ({
 							id: child.id,
 							title: child.title,
 							workflow: cleanWorkflowFields(child.workflow),
@@ -576,12 +609,48 @@ function childrenSatisfyPolicy(
 export function workflowMatchesFilter(
 	workflow: WorkflowFields,
 	filter: ManifestWorkflowFilter,
+	manifest?: WorkflowManifest,
 ): boolean {
 	return (
 		fieldMatches(filter.kind, workflow.kind) &&
 		fieldMatches(filter.state, workflow.state) &&
-		fieldMatches(filter.action, workflow.action)
+		fieldMatches(filter.action, workflow.action) &&
+		workflowSelectsProfileFilter(workflow, filter, manifest)
 	);
+}
+
+function workflowSelectsProfileFilter(
+	workflow: WorkflowFields,
+	filter: ManifestWorkflowFilter,
+	manifest?: WorkflowManifest,
+): boolean {
+	if (filter.profile !== undefined) {
+		return filter.profile === workflowProfile(workflow);
+	}
+	if (filter.profileGroup !== undefined) {
+		return (
+			manifest?.readiness?.profileGroups
+				?.find((group) => group.name === filter.profileGroup)
+				?.profiles.includes(workflowProfile(workflow) ?? "") ?? false
+		);
+	}
+	return true;
+}
+
+function workflowProfile(workflow: WorkflowFields): string | undefined {
+	return typeof workflow.data?.profile === "string"
+		? workflow.data.profile
+		: undefined;
+}
+
+function siblingIds(
+	issue: { relationships: { parent?: string } },
+	byId: Map<string, { relationships: { children: Array<string> } }>,
+): Array<string> {
+	if (issue.relationships.parent === undefined) {
+		return [];
+	}
+	return byId.get(issue.relationships.parent)?.relationships.children ?? [];
 }
 
 export function compareReadyIssues(
@@ -605,6 +674,7 @@ export function cleanWorkflowFields(
 			state: workflow.state,
 			action: workflow.action,
 			subkind: readWorkflowSubkind(workflow, manifest),
+			profile: workflowProfile(workflow),
 		}).filter(([, value]) => value !== undefined),
 	) as Record<string, string>;
 }

@@ -14,6 +14,7 @@ import {
 	isRecord,
 	lifecycleError,
 	stableStringify,
+	workflowTarget,
 } from "../../runtime/commands/shared.ts";
 import { humanInteractionCommandHandlers } from "../human-interaction-handlers.ts";
 
@@ -42,12 +43,15 @@ type GrillingCreateInput = {
 };
 
 const createSpecCommand: CommandHandler = specCreateCommand;
+const completeSpecCommand: CommandHandler = specCompleteCommand;
+completeSpecCommand.rawInput = true;
 const createTaskCommand: CommandHandler = taskCreateCommand;
 const createGrillingCommand: CommandHandler = grillingCreateCommand;
 
 export const agentWorkflowCommandHandlers: CommandHandlers = {
 	...humanInteractionCommandHandlers(),
 	"spec-create": createSpecCommand,
+	"spec-complete": completeSpecCommand,
 	"task-create": createTaskCommand,
 	"grilling-create": createGrillingCommand,
 };
@@ -134,6 +138,110 @@ async function specCreateCommand(
 	}
 }
 
+async function specCompleteCommand({
+	args = [],
+	tracker,
+}: Parameters<CommandHandler>[0]): Promise<Envelope> {
+	const issueId = args[2];
+	if (issueId === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid arguments.", {
+			usage: "awf spec complete <issue>",
+		});
+	}
+	try {
+		const issue = await tracker.getIssue(issueId);
+		if (
+			issue.workflow.kind !== "spec" ||
+			issue.workflow.state !== "ready" ||
+			issue.workflow.action !== "none"
+		) {
+			return failure(
+				"UNAVAILABLE_COMMAND",
+				"Workflow command is not available for the issue's current workflow state.",
+				{ id: issue.id, command: "spec-complete" },
+			);
+		}
+		const blockers = await specCompletionBlockers(issue, tracker);
+		if (blockers.length > 0) {
+			return failure(
+				"SPEC_COMPLETION_INVALID",
+				"Spec completion requires all child Tasks terminal, at least one Merge Task done, and no open child Grilling issues.",
+				{ id: issue.id, blockedBy: blockers },
+			);
+		}
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: issue.id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: workflowTarget({ state: "done", action: "none" }),
+				},
+				{
+					type: "record-command",
+					issue: { id: issue.id },
+					log: {
+						type: "command",
+						message: stableStringify({
+							event: "complete",
+							to: { state: "done", action: "none" },
+						}),
+					},
+				},
+			],
+		});
+		return success({
+			issue: result.issues[issue.id] ?? (await tracker.getIssue(issue.id)),
+			log: result.logs[0],
+		});
+	} catch (error) {
+		return lifecycleError(issueId, error);
+	}
+}
+
+async function specCompletionBlockers(
+	issue: WorkflowIssue,
+	tracker: Tracker,
+): Promise<Array<Record<string, JsonValue>>> {
+	if (issue.workflow.kind !== "spec") {
+		return [{ id: issue.id, reason: "not-spec", workflow: issue.workflow }];
+	}
+	const blockers: Array<Record<string, JsonValue>> = [];
+	let doneMergeTasks = 0;
+	for (const childId of issue.relationships.children) {
+		const child = await tracker.getIssue(childId);
+		if (child.workflow.kind === "task") {
+			if (
+				child.workflow.data?.profile === "merge" &&
+				child.workflow.state === "done"
+			) {
+				doneMergeTasks += 1;
+			}
+			if (child.workflow.state !== "done") {
+				blockers.push({
+					id: child.id,
+					title: child.title,
+					workflow: child.workflow,
+				});
+			}
+		}
+		if (child.workflow.kind === "grilling" && child.workflow.state !== "done") {
+			blockers.push({
+				id: child.id,
+				title: child.title,
+				workflow: child.workflow,
+			});
+		}
+	}
+	if (doneMergeTasks === 0) {
+		blockers.push({ gate: "merge-done", minimum: 1 });
+	}
+	return blockers;
+}
+
 async function taskCreateCommand({
 	command,
 	manifest,
@@ -208,7 +316,7 @@ async function taskCreateCommand({
 						workflow: {
 							kind: "task",
 							...initialWorkflowTarget(taskKind.initial),
-							data: { subkind: taskInput.subkind },
+							data: { subkind: taskInput.subkind, profile: taskInput.profile },
 						},
 						relationships:
 							taskInput.generatedBy === undefined

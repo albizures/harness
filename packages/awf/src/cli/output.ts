@@ -196,6 +196,14 @@ function formatReadinessDescription(
 			}
 		}
 	}
+	if (Array.isArray(readiness.profileGroups)) {
+		lines.push("- Profile groups:");
+		for (const group of readiness.profileGroups) {
+			if (isRecord(group)) {
+				lines.push(`  - ${String(group.name)}: ${formatList(group.profiles)}`);
+			}
+		}
+	}
 	if (Array.isArray(readiness.relationshipPolicies)) {
 		lines.push("- Relationship policies:");
 		for (const policy of readiness.relationshipPolicies) {
@@ -203,18 +211,22 @@ function formatReadinessDescription(
 				const where = isRecord(policy.where)
 					? formatWorkflowFilter(policy.where)
 					: "any";
-				const children =
-					isRecord(policy.children) && isRecord(policy.children.all)
-						? formatWorkflowFilter(policy.children.all)
+				const rule = isRecord(policy.siblings)
+					? policy.siblings
+					: policy.children;
+				const ruleName = isRecord(policy.siblings) ? "siblings" : "children";
+				const related =
+					isRecord(rule) && isRecord(rule.all)
+						? formatWorkflowFilter(rule.all)
 						: "any";
 				const minimum =
-					isRecord(policy.children) && typeof policy.children.min === "number"
-						? `, min ${policy.children.min}`
+					isRecord(rule) && typeof rule.min === "number"
+						? `, min ${rule.min}`
 						: "";
 				const gate =
 					typeof policy.gate === "string" ? `, gate ${policy.gate}` : "";
 				lines.push(
-					`  - ${String(policy.relationship)} where ${where}; children all ${children}${minimum}${gate}`,
+					`  - ${String(policy.relationship)} where ${where}; ${ruleName} all ${related}${minimum}${gate}`,
 				);
 			}
 		}
@@ -283,7 +295,7 @@ function formatCommandTarget(value: Record<string, JsonValue>): string {
 
 function formatWorkflowFilter(value: Record<string, JsonValue>): string {
 	return (
-		[value.kind, value.state, value.action]
+		[value.kind, value.state, value.action, value.profile, value.profileGroup]
 			.filter((part): part is string => typeof part === "string")
 			.join("/") || "any"
 	);

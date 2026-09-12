@@ -563,6 +563,46 @@ function validateReadiness(
 			);
 		}
 	}
+	const profileGroups = new Map<string, Set<string>>();
+	for (const [index, group] of readArray(
+		value.profileGroups ?? [],
+		"$.readiness.profileGroups",
+		issues,
+	).entries()) {
+		const path = `$.readiness.profileGroups[${index}]`;
+		if (!isRecord(group)) {
+			issue(issues, path, "Readiness profile group must be an object.");
+			continue;
+		}
+		validateId(group.name, `${path}.name`, issues);
+		if (typeof group.name === "string") {
+			if (profileGroups.has(group.name)) {
+				issue(
+					issues,
+					`${path}.name`,
+					`Duplicate readiness profile group '${group.name}'.`,
+				);
+			}
+			profileGroups.set(
+				group.name,
+				new Set(
+					readArray(group.profiles, `${path}.profiles`, issues).flatMap(
+						(profile, profileIndex) => {
+							if (typeof profile !== "string" || profile.trim() === "") {
+								issue(
+									issues,
+									`${path}.profiles[${profileIndex}]`,
+									"Readiness profile group profiles must be non-empty strings.",
+								);
+								return [];
+							}
+							return [profile];
+						},
+					),
+				),
+			);
+		}
+	}
 	for (const [index, policy] of readArray(
 		value.relationshipPolicies ?? [],
 		"$.readiness.relationshipPolicies",
@@ -573,11 +613,14 @@ function validateReadiness(
 			issue(issues, path, "Readiness relationship policy must be an object.");
 			continue;
 		}
-		if (policy.relationship !== "children") {
+		if (
+			policy.relationship !== "children" &&
+			policy.relationship !== "siblings"
+		) {
 			issue(
 				issues,
 				`${path}.relationship`,
-				"Readiness relationship policy relationship must be children.",
+				"Readiness relationship policy relationship must be children or siblings.",
 			);
 		}
 		validateWorkflowFilter(
@@ -587,23 +630,31 @@ function validateReadiness(
 			states,
 			actions,
 			issues,
+			profileGroups,
 		);
-		if (!isRecord(policy.children)) {
+		const rule =
+			policy.relationship === "siblings" ? policy.siblings : policy.children;
+		const rulePath =
+			policy.relationship === "siblings"
+				? `${path}.siblings`
+				: `${path}.children`;
+		if (!isRecord(rule)) {
 			issue(
 				issues,
-				`${path}.children`,
-				"Readiness relationship policy children rule must be an object.",
+				rulePath,
+				`Readiness relationship policy ${policy.relationship === "siblings" ? "siblings" : "children"} rule must be an object.`,
 			);
 		} else {
 			validateWorkflowFilter(
-				policy.children.all,
-				`${path}.children.all`,
+				rule.all,
+				`${rulePath}.all`,
 				kindIds,
 				states,
 				actions,
 				issues,
+				profileGroups,
 			);
-			validateMinimum(policy.children.min, `${path}.children.min`, issues);
+			validateMinimum(rule.min, `${rulePath}.min`, issues);
 		}
 		if (policy.gate !== undefined) {
 			validateId(policy.gate, `${path}.gate`, issues);
@@ -730,6 +781,7 @@ function validateWorkflowFilter(
 	states: Set<string>,
 	actions: Set<string>,
 	issues: Array<ValidationIssue>,
+	profileGroups?: Map<string, Set<string>>,
 ): void {
 	if (!isRecord(value)) {
 		issue(issues, path, "Workflow filter must be an object.");
@@ -743,6 +795,24 @@ function validateWorkflowFilter(
 	}
 	if (value.action !== undefined && !actions.has(String(value.action))) {
 		issue(issues, `${path}.action`, "Workflow filter action must be known.");
+	}
+	if (value.profile !== undefined && typeof value.profile !== "string") {
+		issue(
+			issues,
+			`${path}.profile`,
+			"Workflow filter profile must be a string.",
+		);
+	}
+	if (
+		value.profileGroup !== undefined &&
+		(typeof value.profileGroup !== "string" ||
+			profileGroups?.has(value.profileGroup) === false)
+	) {
+		issue(
+			issues,
+			`${path}.profileGroup`,
+			"Workflow filter profile group must be declared.",
+		);
 	}
 }
 

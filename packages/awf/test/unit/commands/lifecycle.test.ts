@@ -557,9 +557,12 @@ it("should ensure that removed manifest lifecycle policy no longer constrains re
 	).toBe(true);
 	expect(
 		(
-			await execute(["run-command", "resume", "human", "--action", "merge"], {
-				tracker,
-			})
+			await execute(
+				["run-command", "resume", "human", "--action", "planning"],
+				{
+					tracker,
+				},
+			)
 		).ok,
 	).toBe(true);
 });
