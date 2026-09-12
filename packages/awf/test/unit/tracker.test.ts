@@ -2,24 +2,23 @@ import { expect, it } from "vitest";
 import {
 	CorruptWorkflowProjectionError,
 	ProjectionConflictError,
-} from "../../src/workflow/projection.ts";
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+} from "../../src/domain/workflow/projection.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
 
 it("should ensure that conditional updates advance the projection version and reject stale expectations", async () => {
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Implement tracker",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	const updated = await tracker.updateIssue(issue.id, {
 		expect: { version: issue.workflow.version, hash: issue.workflow.hash },
-		workflow: { state: "running", activeRunId: "run-1" },
+		workflow: { state: "running" },
 	});
 
 	expect(updated.workflow.version).toBe(issue.workflow.version + 1);
 	expect(updated.workflow.state).toBe("running");
-	expect(updated.workflow.activeRunId).toBe("run-1");
 	await expect(
 		tracker.updateIssue(issue.id, {
 			expect: { version: issue.workflow.version, hash: issue.workflow.hash },
@@ -32,18 +31,16 @@ it("should ensure that workflow logs are append-only and read back in append ord
 	const tracker = createInMemoryTracker();
 	const issue = await tracker.createIssue({
 		title: "Log me",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	await tracker.appendLog(issue.id, {
 		type: "started",
-		runId: "run-1",
-		payload: { action: "implement" },
+		message: "implement",
 	});
 	await tracker.appendLog(issue.id, {
 		type: "succeeded",
-		runId: "run-1",
-		payload: { result: "ok" },
+		message: "ok",
 	});
 
 	const logs = await tracker.readLogs(issue.id);
@@ -59,11 +56,11 @@ it("should ensure that hierarchy and dependency relationships are projected on r
 	});
 	const ticket = await tracker.createIssue({
 		title: "Ticket",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 	const blocker = await tracker.createIssue({
 		title: "Blocker",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	await tracker.addChild(spec.id, ticket.id);
@@ -105,45 +102,6 @@ it("should ensure that generated-by provenance is normalized separately from blo
 	);
 });
 
-it("should ensure that artifact and change registrations are returned with the normalized issue", async () => {
-	const tracker = createInMemoryTracker();
-	const issue = await tracker.createIssue({
-		title: "Artifacts",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
-	});
-
-	await tracker.registerArtifact(issue.id, {
-		kind: "file",
-		uri: "docs/plan.md",
-		name: "Plan",
-	});
-	await tracker.registerChange(issue.id, {
-		kind: "git-ref",
-		uri: "abc123",
-		summary: "Implementation commit",
-	});
-
-	const read = await tracker.getIssue(issue.id);
-	expect(read.artifacts).toEqual([
-		{
-			id: "artifact-1",
-			kind: "file",
-			uri: "docs/plan.md",
-			name: "Plan",
-			type: "file",
-			path: "docs/plan.md",
-		},
-	]);
-	expect(read.changes).toEqual([
-		{
-			id: "change-1",
-			kind: "git-ref",
-			uri: "abc123",
-			summary: "Implementation commit",
-		},
-	]);
-});
-
 it("should ensure that duplicate or malformed workflow projection fields are corruption", async () => {
 	const duplicate = createInMemoryTracker({
 		issues: [
@@ -151,10 +109,10 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 				id: "1",
 				title: "Bad",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:kind:spec",
-					"awf:agent-development:state:ready",
-					"awf:agent-development:action:implement",
+					"awf:agent-workflow:kind:task",
+					"awf:agent-workflow:kind:spec",
+					"awf:agent-workflow:state:ready",
+					"awf:agent-workflow:action:work",
 				],
 			},
 		],
@@ -168,8 +126,8 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 				id: "2",
 				title: "Bad",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:state:ready",
+					"awf:agent-workflow:kind:task",
+					"awf:agent-workflow:state:ready",
 				],
 			},
 		],
@@ -183,7 +141,7 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 				{
 					id: "3",
 					title: "Bad",
-					labels: "awf:agent-development:kind:ticket",
+					labels: "awf:agent-workflow:kind:task",
 				} as never,
 			],
 		}),

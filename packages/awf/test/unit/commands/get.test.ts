@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { execute } from "../../../src/commands.ts";
-import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+import { execute } from "../../support/execute.ts";
+import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
 
 it("should ensure that get reads a workflow issue with a stable envelope shape", async () => {
 	const tracker = createInMemoryTracker({
@@ -9,9 +9,9 @@ it("should ensure that get reads a workflow issue with a stable envelope shape",
 				id: "42",
 				title: "Implement tracker",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:state:ready",
-					"awf:agent-development:action:implement",
+					"awf:agent-workflow:kind:task",
+					"awf:agent-workflow:state:ready",
+					"awf:agent-workflow:action:work",
 				],
 			},
 		],
@@ -25,32 +25,30 @@ it("should ensure that get reads a workflow issue with a stable envelope shape",
 			id: "42",
 			title: "Implement tracker",
 			workflow: {
-				kind: "ticket",
+				kind: "task",
 				state: "ready",
-				action: "implement",
+				action: "work",
 				version: 1,
-				hash: "e9812f9a37bab3fda6fab06bf276533986787191c9d806cb01aff52b3d0c0e07",
+				hash: "8c35dbf3fa9a0cb50a4e571bf63aa8a364aaf4fb3928594087ddffd1cce69f9f",
 			},
 			relationships: { children: [], dependencies: [], dependents: [] },
-			artifacts: [],
-			changes: [],
 		},
-		runs: { activeRunId: undefined, attempts: [] },
+		logs: [],
 	});
 });
 
-it("should ensure that get returns derived run attempts even for crash-like running state", async () => {
+it("should ensure that get returns issue and logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Crash-like",
 				workflow: {
-					kind: "ticket",
+					kind: "task",
 					state: "running",
-					action: "implement",
-					activeRunId: "run-crash",
+					action: "work",
 				},
+				logs: [{ sequence: 1, type: "action_started" }],
 			},
 		],
 	});
@@ -58,10 +56,13 @@ it("should ensure that get returns derived run attempts even for crash-like runn
 	const envelope = await execute(["get", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((envelope as { ok: true; data: { runs: unknown } }).data.runs).toEqual(
-		{
-			activeRunId: "run-crash",
-			attempts: [{ runId: "run-crash", status: "running" }],
-		},
+	expect((envelope as { ok: true; data: { logs: unknown } }).data.logs).toEqual(
+		[
+			{
+				issueId: "123",
+				sequence: 1,
+				type: "action_started",
+			},
+		],
 	);
 });

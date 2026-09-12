@@ -1,124 +1,154 @@
 import { assert, expect, it } from "vitest";
-import { execute } from "../../../../src/commands.ts";
-import { agentDevelopmentManifest } from "../../../../src/workflows/agent-development/index.ts";
-import { genericTaskManifest } from "../../../../src/workflows/generic-task/index.ts";
+import { execute } from "../../../support/execute.ts";
+import { agentWorkflowManifest } from "../../../../src/workflows/agent-workflow/index.ts";
 import {
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
 	type GitHubTrackerIssue,
-} from "../../../../src/trackers/github/index.ts";
-import { CorruptWorkflowProjectionError } from "../../../../src/workflow/projection.ts";
-
-const PROJECT_COMMENT_AND_TWO_LOGS = 3;
+} from "../../../../src/adapters/trackers/github/index.ts";
+import { CorruptWorkflowProjectionError } from "../../../../src/domain/workflow/projection.ts";
 
 it("should project workflow fields to reserved GitHub labels and singleton metadata", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 
 	const issue = await tracker.createIssue({
 		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-development:action:implement",
-		"awf:agent-development:kind:ticket",
-		"awf:agent-development:state:ready",
+		"awf:agent-workflow:action:work",
+		"awf:agent-workflow:kind:task",
+		"awf:agent-workflow:state:ready",
 	]);
 	expect(api.issue(1).comments.length).toBe(1);
 	expect(
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
-				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
+				'<!-- awf:current v1 agent-workflow -->\n{"schemaVersion":1,',
 			),
 	).toBeTruthy();
-	expect(issue.workflow.kind).toBe("ticket");
+	expect(issue).not.toHaveProperty("artifacts");
+	expect(issue).not.toHaveProperty("changes");
+	expect(issue.workflow.kind).toBe("task");
 	expect(issue.workflow.version).toBe(1);
 
 	await tracker.updateIssue(issue.id, {
 		expect: { hash: issue.workflow.hash },
-		workflow: { state: "running", activeRunId: "run-1" },
+		workflow: { state: "running" },
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-development:action:implement",
-		"awf:agent-development:kind:ticket",
-		"awf:agent-development:state:running",
+		"awf:agent-workflow:action:work",
+		"awf:agent-workflow:kind:task",
+		"awf:agent-workflow:state:running",
 	]);
 	expect(api.issue(1).comments.length).toBe(1);
 	expect(
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
-				'<!-- awf:current v1 agent-development -->\n{"artifacts":[],',
+				'<!-- awf:current v1 agent-workflow -->\n{"schemaVersion":1,',
 			),
 	).toBeTruthy();
 	const updated = await tracker.getIssue("1");
-	expect(updated.workflow.activeRunId).toBe("run-1");
 	expect(updated.workflow.version).toBe(2);
 });
 
-it("should project generic-task Spec create fields to reserved GitHub labels and log comments", async () => {
+it("should project Task subkind as metadata without masquerading as GitHub kind label", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: genericTaskManifest,
+		manifest: agentWorkflowManifest,
+	});
+
+	const issue = await tracker.createIssue({
+		title: "Research task",
+		workflow: {
+			kind: "task",
+			state: "ready",
+			action: "work",
+			data: { subkind: "research" },
+		},
+	});
+
+	expect(api.issue(1).labels.sort()).toEqual([
+		"awf:agent-workflow:action:work",
+		"awf:agent-workflow:kind:task",
+		"awf:agent-workflow:state:ready",
+	]);
+	expect(api.issue(1).labels).not.toContain("awf:agent-workflow:kind:research");
+	expect(issue.workflow).toMatchObject({
+		kind: "task",
+		state: "ready",
+		action: "work",
+		data: { subkind: "research" },
+	});
+	expect((await tracker.getIssue(issue.id)).workflow.data).toEqual({
+		subkind: "research",
+	});
+});
+
+it("should project agent-workflow Spec create fields to reserved GitHub labels and log comments", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentWorkflowManifest,
 	});
 
 	const created = await execute(["create", "spec", "--input", "-"], {
 		tracker,
-		manifest: genericTaskManifest,
+		manifest: agentWorkflowManifest,
 		stdin: JSON.stringify({
-			title: "Generic Spec",
-			body: "# Generic Spec\n\nWork this through the generic-task workflow.",
+			title: "Agent Workflow Spec",
+			body: "# Agent Workflow Spec\n\nWork this through the agent-workflow workflow.",
 		}),
 	});
 
 	if (!created.ok) {
 		throw new Error(JSON.stringify(created.error));
 	}
-	expect(api.issue(1).title).toBe("Generic Spec");
+	expect(api.issue(1).title).toBe("Agent Workflow Spec");
 	expect(api.issue(1).body).toBe(
-		"# Generic Spec\n\nWork this through the generic-task workflow.",
+		"# Agent Workflow Spec\n\nWork this through the agent-workflow workflow.",
 	);
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:generic-task:action:work",
-		"awf:generic-task:kind:spec",
-		"awf:generic-task:state:ready",
+		"awf:agent-workflow:action:planning",
+		"awf:agent-workflow:kind:spec",
+		"awf:agent-workflow:state:ready",
 	]);
 	expect(api.issue(1).comments.map((comment) => comment.body)).toEqual([
-		expect.stringContaining("<!-- awf:current v1 generic-task -->"),
-		expect.stringContaining("<!-- awf:log v1 generic-task -->"),
+		expect.stringContaining("<!-- awf:current v1 agent-workflow -->"),
+		expect.stringContaining("<!-- awf:log v1 agent-workflow -->"),
 	]);
 });
 
-it("should project optional reasons and removes stale canonical labels on update", async () => {
+it("should project canonical workflow labels on update", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 
 	const issue = await tracker.createIssue({
 		title: "Blocked ticket",
 		workflow: {
-			kind: "ticket",
+			kind: "task",
 			state: "need-human",
 			action: "none",
-			reason: "dependencies",
 		},
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-development:action:none",
-		"awf:agent-development:kind:ticket",
-		"awf:agent-development:reason:dependencies",
-		"awf:agent-development:state:need-human",
+		"awf:agent-workflow:action:none",
+		"awf:agent-workflow:kind:task",
+		"awf:agent-workflow:state:need-human",
 	]);
 
 	await tracker.updateIssue(issue.id, {
@@ -127,14 +157,13 @@ it("should project optional reasons and removes stale canonical labels on update
 			kind: "spec",
 			state: "ready",
 			action: "plan",
-			reason: undefined,
 		},
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-development:action:plan",
-		"awf:agent-development:kind:spec",
-		"awf:agent-development:state:ready",
+		"awf:agent-workflow:action:plan",
+		"awf:agent-workflow:kind:spec",
+		"awf:agent-workflow:state:ready",
 	]);
 });
 
@@ -142,15 +171,15 @@ it("should ensure that listIssues requires reconciliation for malformed reserved
 	const api = createMockGitHubApi();
 	await api.createIssue({
 		title: "Reserved but malformed workflow label",
-		labels: ["awf:agent-development"],
+		labels: ["awf:agent-workflow"],
 	});
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Workflow issue",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	await expect(tracker.listIssues()).rejects.toThrow(/NEED_RECONCILIATION/);
@@ -160,36 +189,32 @@ it("should append logs as strict machine comments", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	const issue = await tracker.createIssue({
 		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
-	await tracker.appendLog(issue.id, { type: "started", runId: "run-1" });
 	await tracker.appendLog(issue.id, {
 		type: "succeeded",
-		payload: { ok: true },
+		message: "ok",
 	});
 
-	expect(api.issue(1).comments.length).toBe(PROJECT_COMMENT_AND_TWO_LOGS);
+	expect(api.issue(1).comments.length).toBe(2);
 	expect(api.issue(1).comments[1]?.body).toBe(
-		'<!-- awf:log v1 agent-development -->\n{"issueId":"1","runId":"run-1","sequence":1,"type":"started"}',
+		'<!-- awf:log v1 agent-workflow -->\n{"issueId":"1","message":"ok","sequence":1,"type":"succeeded"}',
 	);
 	expect(
 		(await tracker.readLogs(issue.id)).map((log) => [log.sequence, log.type]),
-	).toEqual([
-		[1, "started"],
-		[2, "succeeded"],
-	]);
+	).toEqual([[1, "succeeded"]]);
 });
 
 it("should use native hierarchy and dependency capabilities", async () => {
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Spec",
@@ -197,11 +222,11 @@ it("should use native hierarchy and dependency capabilities", async () => {
 	});
 	await tracker.createIssue({
 		title: "Ticket",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 	await tracker.createIssue({
 		title: "Blocker",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	await tracker.addChild("1", "2");
@@ -220,11 +245,11 @@ it("should ensure that listIssues ignores unrelated GitHub issues without workfl
 	await api.createIssue({ title: "Regular issue", labels: ["project:awf"] });
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Workflow issue",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	api.issue(1).comments.push({ id: 99, body: "Human note about awf labels" });
@@ -245,13 +270,13 @@ it("should ensure that manual reserved-label corruption requires reconciliation"
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
-	api.issue(1).labels.push("awf:agent-development:state:running");
+	api.issue(1).labels.push("awf:agent-workflow:state:running");
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(
 		CorruptWorkflowProjectionError,
@@ -263,14 +288,14 @@ it("should ensure that machine-comment corruption requires reconciliation", asyn
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 	api.issue(1).comments[0].body =
-		"<!-- awf:current v1 agent-development -->\nnot-json";
+		"<!-- awf:current v1 agent-workflow -->\nnot-json";
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
@@ -279,23 +304,23 @@ it("should ensure that malformed canonical and legacy workflow-owned machine com
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 
 	api.issue(1).comments.push({
 		id: 100,
-		body: "<!-- awf:log v2 agent-development -->\n{}",
+		body: "<!-- awf:log v2 agent-workflow -->\n{}",
 	});
 	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
-	api.issue(1).comments[1].body = "<!-- awf:agent-development:log -->\n{}";
+	api.issue(1).comments[1].body = "<!-- awf:agent-workflow:log -->\n{}";
 	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
-	api.issue(1).comments[1].body = "<!-- awf:current v1 agent-development -->";
+	api.issue(1).comments[1].body = "<!-- awf:current v1 agent-workflow -->";
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
@@ -303,18 +328,18 @@ it("should ensure that machine-comment markers validate type version and workflo
 	const api = createMockGitHubApi();
 	const tracker = createGitHubTracker({
 		api,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	await tracker.createIssue({
 		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "ready", action: "implement" },
+		workflow: { kind: "task", state: "ready", action: "work" },
 	});
 	api.issue(1).comments[0].body =
 		api
 			.issue(1)
 			.comments[0]?.body.replace(
-				"<!-- awf:current v1 agent-development -->",
-				"<!-- awf:log v1 agent-development -->",
+				"<!-- awf:current v1 agent-workflow -->",
+				"<!-- awf:log v1 agent-workflow -->",
 			) ?? "";
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
@@ -323,8 +348,8 @@ it("should ensure that machine-comment markers validate type version and workflo
 		api
 			.issue(1)
 			.comments[0]?.body.replace(
-				"<!-- awf:log v1 agent-development -->",
-				"<!-- awf:current v2 agent-development -->",
+				"<!-- awf:log v1 agent-workflow -->",
+				"<!-- awf:current v2 agent-workflow -->",
 			) ?? "";
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
@@ -333,93 +358,9 @@ it("should ensure that machine-comment markers validate type version and workflo
 		api
 			.issue(1)
 			.comments[0]?.body.replace(
-				"<!-- awf:current v2 agent-development -->",
+				"<!-- awf:current v2 agent-workflow -->",
 				"<!-- awf:current v1 other-workflow -->",
 			) ?? "";
-
-	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
-});
-
-it("should register and validates pull-request artifacts", async () => {
-	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({
-		api,
-		manifest: agentDevelopmentManifest,
-	});
-	await tracker.createIssue({
-		title: "Implement adapter",
-		workflow: { kind: "ticket", state: "running", action: "implement" },
-	});
-
-	await expect(
-		tracker.registerArtifact("1", { kind: "pull-request", uri: "not a pr" }),
-	).rejects.toThrow(/Pull request artifact/);
-	await tracker.registerArtifact("1", {
-		kind: "pull-request",
-		uri: "https://github.com/albizures/harness/pull/1",
-	});
-
-	expect((await tracker.getIssue("1")).artifacts[0]?.kind).toBe("pull-request");
-});
-
-it("should preserve structured artifact fields through GitHub projection reads and logs", async () => {
-	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({
-		api,
-		manifest: agentDevelopmentManifest,
-	});
-	await tracker.createIssue({
-		title: "Structured artifact issue",
-		workflow: { kind: "ticket", state: "running", action: "implement" },
-	});
-
-	const artifact = await tracker.registerArtifact("1", {
-		kind: "file",
-		type: "file",
-		uri: "docs/plan.md",
-		path: "docs/plan.md",
-		url: "https://example.test/plan",
-		id: "external-artifact-id",
-		title: "Plan",
-		name: "Plan file",
-		metadata: { ticketCount: 2, nested: { ok: true } },
-	});
-	await tracker.appendLog("1", {
-		type: "artifact_recorded",
-		payload: { artifacts: [artifact] },
-	});
-
-	expect((await tracker.getIssue("1")).artifacts).toEqual([artifact]);
-	expect((await tracker.readLogs("1"))[0]?.payload).toEqual({
-		artifacts: [artifact],
-	});
-	expect(api.issue(1).comments[0]?.body ?? "").toMatch(/external-artifact-id/u);
-	expect(api.issue(1).comments[1]?.body ?? "").toMatch(/"artifacts":\[/u);
-});
-
-it("should ensure that malformed machine-owned artifact data requires reconciliation", async () => {
-	const api = createMockGitHubApi();
-	const tracker = createGitHubTracker({
-		api,
-		manifest: agentDevelopmentManifest,
-	});
-	await tracker.createIssue({
-		title: "Corrupt artifact issue",
-		workflow: { kind: "ticket", state: "running", action: "implement" },
-	});
-	const [marker, json] = api.issue(1).comments[0]?.body.split("\n") ?? [];
-	expect(marker).toBeTruthy();
-	expect(json).toBeTruthy();
-	const metadata = JSON.parse(json) as Record<string, unknown>;
-	metadata.artifacts = [
-		{
-			id: "external-artifact-id",
-			kind: "file",
-			uri: "docs/plan.md",
-			extra: true,
-		},
-	];
-	api.issue(1).comments[0].body = `${marker}\n${JSON.stringify(metadata)}`;
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
@@ -434,7 +375,7 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	// This path exercises the tracker through command semantics and verifies
 	// machine labels/comments, not prose parsing. The default CI run skips it.
 	const { createGhCliGitHubTracker } = await import(
-		"../../../../src/trackers/github/index.ts"
+		"../../../../src/adapters/trackers/github/index.ts"
 	);
 	const [owner, name] = repo.split("/");
 	expect(owner).toBeTruthy();
@@ -442,7 +383,7 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	const tracker = createGhCliGitHubTracker({
 		owner,
 		repo: name,
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 	});
 	const created = await execute(["create", "spec", "--input", "-"], {
 		tracker,
@@ -455,17 +396,15 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 	const createdData = created.data as { issue: { id: string } };
 	const id = createdData.issue.id;
 	expect((await execute(["get", id], { tracker })).ok).toBe(true);
-	const started = await execute(["start", id], { tracker });
+	const started = await execute(["run-command", "start", id], { tracker });
 	expect(started.ok).toBe(true);
 	if (!started.ok) {
 		throw new Error("expected start success");
 	}
-	const startedData = started.data as { run: { id: string } };
-	const runId = startedData.run.id;
 	expect((await execute(["logs", id], { tracker })).ok).toBe(true);
 	expect(
 		(
-			await execute(["succeed", id, "--run", runId, "--input", "-"], {
+			await execute(["run-command", "succeed", id, "--input", "-"], {
 				tracker,
 				stdin: JSON.stringify({ tickets: [] }),
 			})

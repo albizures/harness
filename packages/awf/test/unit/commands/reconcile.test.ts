@@ -1,28 +1,22 @@
 import { expect, it } from "vitest";
-import { execute as rawExecute } from "../../../src/commands.ts";
-import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
-import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+import { execute as rawExecute } from "../../support/execute.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
+import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 
-const prArtifact = (n: number) => ({
-	type: "pull-request",
-	url: `https://github.com/albizures/harness/pull/${n}`,
-});
-
-it("should ensure that reconcile reports diagnostics read-only by default", async () => {
+it("should ensure that reconcile leaves active workflow issues clean", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Drifted",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+				workflow: { kind: "task", state: "running", action: "work" },
 			},
 		],
 	});
@@ -30,34 +24,28 @@ it("should ensure that reconcile reports diagnostics read-only by default", asyn
 	const envelope = await execute(["reconcile", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe(undefined);
 	expect((envelope.ok ? envelope.data : {}) as Record<string, unknown>).toEqual(
 		{
 			id: "123",
 			mode: "check",
-			status: "diagnosed",
-			diagnostics: [
-				{
-					code: "MISSING_ACTIVE_RUN",
-					severity: "drift",
-					message: "Current fields are missing active run 'run-1'.",
-					repair: "safe",
-					runId: "run-1",
-				},
-			],
+			status: "clean",
+			diagnostics: [],
 			issue: await tracker.getIssue("123"),
 		},
 	);
 });
 
-it("should ensure that reconcile --apply performs deterministic safe active-run repair", async () => {
+it("should ensure that reconcile --apply leaves idle states unchanged", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Repairable",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+				},
 			},
 		],
 	});
@@ -65,27 +53,23 @@ it("should ensure that reconcile --apply performs deterministic safe active-run 
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe("run-1");
 	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
-				diagnostics: Array<{ applied?: boolean }>;
+				diagnostics: Array<{ code: string; applied?: boolean }>;
 			}
-		).diagnostics[0]?.applied,
-	).toBe(true);
+		).diagnostics,
+	).toEqual([]);
 });
 
-it("should ensure that reconcile leaves ambiguous active-run drift for humans", async () => {
+it("should ensure that reconcile does not derive lifecycle drift from logs", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Ambiguous",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [
-					{ sequence: 1, type: "action_started", runId: "run-1" },
-					{ sequence: 2, type: "action_started", runId: "run-2" },
-				],
+				workflow: { kind: "task", state: "running", action: "work" },
+				logs: [],
 			},
 		],
 	});
@@ -93,14 +77,18 @@ it("should ensure that reconcile leaves ambiguous active-run drift for humans", 
 	const envelope = await execute(["reconcile", "123", "--apply"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect((await tracker.getIssue("123")).workflow.activeRunId).toBe(undefined);
+	const updated = await tracker.getIssue("123");
+	expect(updated.workflow).toMatchObject({
+		state: "running",
+		action: "work",
+	});
 	expect(
 		(
 			(envelope.ok ? envelope.data : {}) as {
-				diagnostics: Array<{ repair: string }>;
+				diagnostics: Array<{ repair: string; applied?: boolean }>;
 			}
-		).diagnostics[0]?.repair,
-	).toBe("need-human");
+		).diagnostics,
+	).toEqual([]);
 });
 
 it("should ensure that reconcile reports malformed logs and corrupt current metadata", async () => {
@@ -109,8 +97,8 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 			{
 				id: "logs",
 				title: "Bad logs",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "" }],
+				workflow: { kind: "task", state: "ready", action: "work" },
+				logs: [{ sequence: 1, type: "" }],
 			},
 		],
 	});
@@ -120,18 +108,18 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 				id: "dupe",
 				title: "Bad labels",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:kind:spec",
-					"awf:agent-development:state:ready",
-					"awf:agent-development:action:implement",
+					"awf:agent-workflow:kind:ticket",
+					"awf:agent-workflow:kind:spec",
+					"awf:agent-workflow:state:ready",
+					"awf:agent-workflow:action:implement",
 				],
 			},
 			{
 				id: "missing",
 				title: "Missing labels",
 				labels: [
-					"awf:agent-development:kind:ticket",
-					"awf:agent-development:state:ready",
+					"awf:agent-workflow:kind:ticket",
+					"awf:agent-workflow:state:ready",
 				],
 			},
 		],
@@ -163,36 +151,4 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 			).diagnostics[0]?.code,
 		).toBe(code);
 	}
-});
-
-it("should ensure that normal commands do not silently repair drift before reconciliation", async () => {
-	const tracker = createInMemoryTracker({
-		issues: [
-			{
-				id: "123",
-				title: "Smoke repair",
-				workflow: { kind: "ticket", state: "running", action: "implement" },
-				logs: [{ sequence: 1, type: "action_started", runId: "run-1" }],
-			},
-		],
-	});
-
-	const before = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
-		},
-	);
-	expect(before.ok).toBe(false);
-	expect(before.ok ? undefined : before.error.code).toBe("RUN_MISMATCH");
-	await execute(["reconcile", "123", "--apply"], { tracker });
-	const after = await execute(
-		["succeed", "123", "--run", "run-1", "--input", "-"],
-		{
-			tracker,
-			stdin: JSON.stringify({ implementationPr: prArtifact(1) }),
-		},
-	);
-	expect(after.ok).toBe(true);
 });

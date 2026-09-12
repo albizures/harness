@@ -1,15 +1,16 @@
 import { expect, it } from "vitest";
-import { execute } from "../../../src/commands.ts";
+import { execute } from "../../support/execute.ts";
 import {
 	defineManifest,
 	type WorkflowManifest,
 } from "../../../src/manifest/index.ts";
-import type { Tracker } from "../../../src/tracker.ts";
-import { createInMemoryTracker } from "../../../src/trackers/memory.ts";
+import type { Tracker } from "../../../src/ports/tracker.ts";
+import { createInMemoryTracker } from "../../../src/adapters/trackers/memory.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
 
 const defaultTicketOnlyReadyManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "test-workflow" },
+	workflow: { id: "test-workflow", version: "1.0.0" },
 	vocabulary: {
 		states: ["ready", "running", "done"],
 		actions: ["plan", "implement", "none"],
@@ -17,6 +18,7 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 	},
 	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
+	lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
 	readiness: {
 		filters: [{ kind: "ticket", state: "ready", action: "implement" }],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
@@ -85,7 +87,7 @@ it("should ensure that runtime commands reject unsupported workflow manifest rel
 					{
 						path: "$.relationships[0].projection.type",
 						message:
-							"Relationship projection type must be parent-child or dependency.",
+							"Relationship projection type must be parent-child, dependency, or generated-by.",
 					},
 				],
 			},
@@ -93,7 +95,7 @@ it("should ensure that runtime commands reject unsupported workflow manifest rel
 	});
 });
 
-it("should ensure that ready returns legal executable work after dependency, concurrency, active-run, and manifest filters", async () => {
+it("should ensure that ready returns legal executable work after dependency, concurrency, and manifest filters", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
@@ -103,7 +105,6 @@ it("should ensure that ready returns legal executable work after dependency, con
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-30",
 				},
 			},
 			{
@@ -128,12 +129,11 @@ it("should ensure that ready returns legal executable work after dependency, con
 			},
 			{
 				id: "60",
-				title: "Ready-looking ticket with an active run",
+				title: "Ready-looking ticket with legacy active run metadata",
 				workflow: {
 					kind: "ticket",
 					state: "ready",
 					action: "implement",
-					activeRunId: "run-60",
 				},
 			},
 		],
@@ -156,7 +156,19 @@ it("should ensure that ready returns legal executable work after dependency, con
 				id: "10",
 				title: "Ready ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				suggestedCommand: { argv: ["start", "10"], display: "awf start 10" },
+				suggestedCommand: {
+					argv: ["run-command", "start", "10"],
+					display: "awf run-command start 10",
+				},
+			},
+			{
+				id: "60",
+				title: "Ready-looking ticket with legacy active run metadata",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				suggestedCommand: {
+					argv: ["run-command", "start", "60"],
+					display: "awf run-command start 60",
+				},
 			},
 		],
 		blocked: [
@@ -231,8 +243,8 @@ it("should ensure that ready reports dependency-gated Tickets as blocked context
 					title: "Open blocker",
 					workflow: { kind: "ticket", state: "ready", action: "review" },
 					suggestedCommand: {
-						argv: ["start", "blocker"],
-						display: "awf start blocker",
+						argv: ["run-command", "start", "blocker"],
+						display: "awf run-command start blocker",
 					},
 				},
 			],
@@ -286,6 +298,12 @@ it("should ensure that ready applies generic manifest relationship policies with
 				relationships: { children: ["open-task"] },
 			},
 			{
+				id: "goal-waiting",
+				title: "Goal waiting",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				relationships: { children: ["waiting-task"] },
+			},
+			{
 				id: "done-task",
 				title: "Done task",
 				workflow: { kind: "ticket", state: "done", action: "none" },
@@ -296,6 +314,12 @@ it("should ensure that ready applies generic manifest relationship policies with
 				title: "Open task",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
 				relationships: { parent: "goal-blocked" },
+			},
+			{
+				id: "waiting-task",
+				title: "Waiting task",
+				workflow: { kind: "ticket", state: "waiting-human", action: "none" },
+				relationships: { parent: "goal-waiting" },
 			},
 		],
 	});
@@ -326,8 +350,8 @@ it("should ensure that ready applies generic manifest relationship policies with
 				title: "Goal ready",
 				workflow: { kind: "spec", state: "ready", action: "plan" },
 				suggestedCommand: {
-					argv: ["start", "goal-ready"],
-					display: "awf start goal-ready",
+					argv: ["run-command", "start", "goal-ready"],
+					display: "awf run-command start goal-ready",
 				},
 			},
 		],
@@ -349,6 +373,29 @@ it("should ensure that ready applies generic manifest relationship policies with
 									kind: "ticket",
 									state: "ready",
 									action: "implement",
+								},
+							},
+						],
+					},
+				],
+			},
+			{
+				id: "goal-waiting",
+				title: "Goal waiting",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+				blocking: [
+					{
+						gate: "children-done",
+						relationship: "children",
+						minimum: 1,
+						blockedBy: [
+							{
+								id: "waiting-task",
+								title: "Waiting task",
+								workflow: {
+									kind: "ticket",
+									state: "waiting-human",
+									action: "none",
 								},
 							},
 						],
@@ -401,7 +448,6 @@ it("should ensure that ready excludes candidates blocked by manifest concurrency
 					kind: "ticket",
 					state: "running",
 					action: "implement",
-					activeRunId: "run-1",
 				},
 			},
 			{
@@ -433,6 +479,236 @@ it("should ensure that ready excludes candidates blocked by manifest concurrency
 						gate: "concurrency",
 						scope: "kind",
 						kind: "ticket",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that ready blocks tasks when applicable subkind concurrency is saturated", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "running-research",
+				title: "Running research ticket",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-research",
+				title: "Ready research ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-work",
+				title: "Ready work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					data: { subkind: "work" },
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			concurrency: {
+				perIssue: 1,
+				perWorkflow: 3,
+				perKind: { ticket: 3 },
+				perSubkind: { ticket: { research: 1 } },
+			},
+			kinds: defaultTicketOnlyReadyManifest.kinds.map((kind) =>
+				kind.id === "ticket"
+					? { ...kind, subkinds: ["research", "work"] }
+					: kind,
+			),
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		items: [
+			{
+				id: "ready-work",
+				title: "Ready work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					subkind: "work",
+				},
+				suggestedCommand: {
+					argv: ["run-command", "start", "ready-work"],
+					display: "awf run-command start ready-work",
+				},
+			},
+		],
+		blocked: [
+			{
+				id: "ready-research",
+				title: "Ready research ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					subkind: "research",
+				},
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "subkind",
+						kind: "ticket",
+						subkind: "research",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that bundled task routing respects perSubkind concurrency", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "running-research",
+				title: "Running research task",
+				workflow: {
+					kind: "task",
+					state: "running",
+					action: "work",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-research",
+				title: "Ready research task",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { subkind: "research" },
+				},
+			},
+			{
+				id: "ready-work",
+				title: "Ready work task",
+				workflow: {
+					kind: "task",
+					state: "ready",
+					action: "work",
+					data: { subkind: "work" },
+				},
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...agentWorkflowManifest,
+			concurrency: {
+				...agentWorkflowManifest.concurrency,
+				perSubkind: { task: { research: 1 } },
+			},
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toMatchObject({
+		items: [{ id: "ready-work", workflow: { subkind: "work" } }],
+		blocked: [
+			{
+				id: "ready-research",
+				workflow: { subkind: "research" },
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "subkind",
+						kind: "task",
+						subkind: "research",
+						limit: 1,
+						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that ready treats a missing subkind as the kind default for concurrency", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "running-work",
+				title: "Running default work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "running",
+					action: "implement",
+				},
+			},
+			{
+				id: "ready-work",
+				title: "Ready default work ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: {
+			...defaultTicketOnlyReadyManifest,
+			concurrency: {
+				perIssue: 1,
+				perWorkflow: 3,
+				perKind: { ticket: 3 },
+				perSubkind: { ticket: { work: 1 } },
+			},
+			kinds: defaultTicketOnlyReadyManifest.kinds.map((kind) =>
+				kind.id === "ticket" ? { ...kind, subkinds: ["work"] } : kind,
+			),
+		},
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		items: [],
+		blocked: [
+			{
+				id: "ready-work",
+				title: "Ready default work ticket",
+				workflow: {
+					kind: "ticket",
+					state: "ready",
+					action: "implement",
+					subkind: "work",
+				},
+				blocking: [
+					{
+						gate: "concurrency",
+						scope: "subkind",
+						kind: "ticket",
+						subkind: "work",
 						limit: 1,
 						active: 1,
 					},
@@ -624,15 +900,9 @@ function createNoTouchTracker(): Tracker {
 	};
 	return {
 		createWorkflowIssue: touched,
-		startRun: touched,
-		completeRun: touched,
-		recordArtifacts: touched,
-		escalateWorkflow: touched,
-		resumeWorkflow: touched,
 		changeRelationship: touched,
 		applyWorkflowEffects: touched,
 		recordCommand: touched,
-		advanceWorkflow: touched,
 		repairIssue: touched,
 		getIssue: touched,
 		listIssues: touched,

@@ -1,42 +1,8 @@
-export {
-	defineManifest,
-	normalizeManifest,
-	validateManifest,
-} from "./definition.ts";
-export {
-	describeWorkflow,
-	manifestCommandUsage,
-	workflowDescriptionScopeNotes,
-} from "./description.ts";
+export * from "../domain/manifest/schema.ts";
+export * from "../domain/manifest/define.ts";
+export * from "../domain/manifest/describe.ts";
 export type {
-	WorkflowDescriptionSchemaInputV1,
-	WorkflowDescriptionSchemaOutputV1,
-	WorkflowDescriptionStateRefV1,
-	WorkflowDescriptionV1,
-	WorkflowDescriptionWorkflowFilterV1,
-} from "./description.ts";
-export {
-	ManifestValidationError,
-	getKind,
-	workflowManifestStructuralSchema,
-} from "./manifest.ts";
-export type {
-	Identifier,
-	LifecyclePolicyTarget,
-	ManifestCommand,
-	ManifestKind,
-	ManifestKindDefinition,
-	ManifestLifecycleRelationshipPolicy,
-	ManifestNamedReadinessFilter,
-	ManifestReadinessFilter,
-	ManifestReadinessRelationshipPolicy,
-	ManifestRelationship,
-	ManifestTransition,
-	ManifestTransitionDefinition,
-	ManifestWorkflowFilter,
-	PayloadSchema,
-	PayloadZodSchema,
-	ValidationIssue,
-	WorkflowManifest,
-	WorkflowManifestDefinition,
-} from "./manifest.ts";
+	CommandHandler,
+	CommandHandlers,
+} from "../runtime/command-handlers.ts";
+export type { LifecycleTransitionHandlers } from "../runtime/lifecycle-handlers.ts";

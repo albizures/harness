@@ -3,26 +3,28 @@ export type {
 	CommandHandlerContext,
 	CommandHandlerResult,
 	CommandHandlers,
-} from "./command-handlers.ts";
-export { execute, type ExecuteOptions } from "./commands.ts";
+} from "./runtime/command-handlers.ts";
+import {
+	execute as executeRuntime,
+	type ExecuteOptions,
+} from "./runtime/execute.ts";
+import { withBundledWorkflowHandlers } from "./workflows/bundled-defaults.ts";
+export type { ExecuteOptions } from "./runtime/execute.ts";
 export {
-	agentDevelopmentCommandHandlers,
-	agentDevelopmentLifecycleHandlers,
-	agentDevelopmentManifest,
-} from "./workflows/agent-development/index.ts";
-export {
-	genericTaskCommandHandlers,
-	genericTaskLifecycleHandlers,
-	genericTaskManifest,
-} from "./workflows/generic-task/index.ts";
+	agentWorkflowCommandHandlers,
+	agentWorkflowLifecycleHandlers,
+	agentWorkflowManifest,
+} from "./workflows/agent-workflow/index.ts";
 export {
 	failure,
 	serializeEnvelope,
 	success,
 	type Envelope,
 	type ErrorEnvelope,
+	type FailureDefinition,
+	type FailureDetails,
 	type SuccessEnvelope,
-} from "./envelope.ts";
+} from "./runtime/envelope.ts";
 export {
 	isJsonRecord,
 	isJsonValue,
@@ -30,7 +32,7 @@ export {
 	jsonValueSchema,
 	parseJsonRecord,
 	parseJsonValue,
-} from "./json.ts";
+} from "./shared/json.ts";
 export {
 	findLifecycleTransitionHandler,
 	lifecycleTransitionHandlerKey,
@@ -39,32 +41,18 @@ export {
 	type LifecycleTransitionHandlerContext,
 	type LifecycleTransitionHandlerContribution,
 	type LifecycleTransitionHandlers,
-} from "./lifecycle-handlers.ts";
+} from "./runtime/lifecycle-handlers.ts";
 export {
 	ManifestValidationError,
-	getKind,
-	workflowManifestStructuralSchema,
-	type PayloadZodSchema,
 	type ValidationIssue,
-	type WorkflowManifest,
-} from "./manifest/manifest.ts";
-export { defineManifest, validateManifest } from "./manifest/definition.ts";
+} from "./domain/manifest/schema.ts";
 export {
-	describeWorkflow,
-	manifestCommandUsage,
 	workflowDescriptionScopeNotes,
 	type WorkflowDescriptionSchemaInputV1,
-	type WorkflowDescriptionSchemaOutputV1,
 	type WorkflowDescriptionStateRefV1,
 	type WorkflowDescriptionV1,
 	type WorkflowDescriptionWorkflowFilterV1,
-} from "./manifest/description.ts";
-export {
-	WorkflowModuleLoadError,
-	loadManifest,
-	loadWorkflowModule,
-	type WorkflowModule,
-} from "./workflow-module.ts";
+} from "./domain/manifest/describe.ts";
 export {
 	createGhCliGitHubTracker,
 	createGitHubTracker,
@@ -72,50 +60,33 @@ export {
 	type GitHubTrackerApi,
 	type GitHubTrackerCapabilities,
 	type GitHubTrackerIssue,
-} from "./trackers/github/index.ts";
-export {
-	createTrackerAdapter,
-	createTrackerIntentModule,
-	type TrackerIntentModulePrimitives,
-} from "./tracker-intents.ts";
-export {
-	NeedReconciliationError,
-	type Tracker,
-	type TrackerAdapterPrimitiveOperations,
-	type TrackerAdapterPrimitiveReads,
-	type TrackerApplyWorkflowEffectsIntent,
-	type TrackerApplyWorkflowEffectsResult,
-	type TrackerCompleteRunIntent,
-	type TrackerCreateWorkflowIssueIntent,
-	type TrackerEscalateIntent,
-	type TrackerProjectionExpectation,
-	type TrackerRecordArtifactsIntent,
-	type TrackerRecordArtifactsResult,
-	type TrackerRelationshipIntent,
-	type TrackerWorkflowEffect,
-	type TrackerResumeIntent,
-	type TrackerStartRunIntent,
-	type TrackerVerificationHooks,
-} from "./tracker.ts";
-export { WorkflowLog } from "./workflow/log.ts";
-export { WorkflowChange } from "./workflow/change.ts";
-export { WorkflowArtifact } from "./workflow/artifact.ts";
+} from "./adapters/trackers/github/index.ts";
+export { NeedReconciliationError, type Tracker } from "./ports/tracker.ts";
+export { WorkflowLog } from "./domain/workflow/log.ts";
 export {
 	CorruptWorkflowProjectionError,
 	type WorkflowProjection,
-} from "./workflow/projection.ts";
+} from "./domain/workflow/projection.ts";
 export {
 	IssueNotFoundError,
 	IssueRelationships,
 	UpdateIssueInput,
 	WorkflowIssue,
 	CreateIssueInput,
-} from "./workflow/issue.ts";
+} from "./domain/workflow/issue.ts";
 export {
 	createFileSystemTracker,
 	type FileSystemTrackerOptions,
-} from "./trackers/filesystem.ts";
+} from "./adapters/trackers/filesystem.ts";
 export {
 	createInMemoryTracker,
 	createInMemoryTrackerFromEnvironment,
-} from "./trackers/memory.ts";
+} from "./adapters/trackers/memory.ts";
+
+export function execute(
+	args: Array<string>,
+	options: ExecuteOptions = {},
+): ReturnType<typeof executeRuntime> {
+	const handlers = withBundledWorkflowHandlers(options.manifest, options);
+	return executeRuntime(args, { ...options, ...handlers });
+}

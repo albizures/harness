@@ -5,11 +5,10 @@ import {
 
 export const manifest = defineManifest({
 	version: "v1",
-	workflow: { id: "bad-workflow" },
+	workflow: { id: "bad-workflow", version: "1.0.0" },
 	vocabulary: {
 		states: ["ready", "ready"],
 		actions: ["implement"],
-		reasons: [],
 		events: ["start"],
 	},
 	github: { reservedPrefix: "awf" },

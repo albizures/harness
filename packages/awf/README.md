@@ -1,61 +1,82 @@
 # @albizures/awf
 
-Agent Workflow (AWF) provides a generic workflow runtime and CLI for tracker-backed Workflow issues.
+Agent Workflow (AWF) provides the runtime and CLI for the bundled `agent-workflow` workflow.
+
+## Runtime boundary
+
+AWF is `agent-workflow`-first, not a generic workflow authoring platform. The public product boundary is the supported `agent-workflow` issue model, CLI commands, tracker adapters, envelopes, JSON helpers, and documented workflow data types needed to operate bundled Spec, Wayfinder, Task, and Grilling work.
+
+AWF runtime-owned concepts are Workflow issue kinds, current workflow state/action fields, lifecycle events, legal actions, relationships, readiness filters, and append-only text logs. AWF does not publish generic manifest authoring, arbitrary project-defined CLI verbs, command-handler registration, raw-input handler conventions, reusable tracker intent APIs, runtime artifact records, change records, command output schemas, or artifact-specific schema helpers as public capabilities.
 
 ## Workflow configuration
 
-AWF does not load a workflow implicitly. Run CLI commands from a directory with an `awf.config.ts` file, or pass one explicitly:
+AWF loads the bundled `agent-workflow` workflow by default. Add an `awf.config.ts` file, or pass one explicitly, when a project needs to configure a tracker:
 
 ```sh
 awf --config ./awf.config.ts ready
 ```
 
-A workflow module must export at least `manifest`. It may also export runtime bindings such as `tracker`, `commandHandlers`, and `lifecycleHandlers`.
+A workflow config can export a `tracker`. If it exports the supported bundled `agent-workflow` manifest, AWF wires the bundled handlers for that workflow. Without a config-exported tracker, AWF stores issues in the filesystem tracker directory at `.awf/tracker` under the current working directory.
 
-```ts
-import { defineManifest } from "@albizures/awf";
-import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
+## Filesystem tracker storage
 
-export const manifest = defineManifest({
-	workflow: { id: "my-workflow" },
-	// kinds, commands, and policies...
-});
+The filesystem tracker stores one readable Markdown file per Workflow issue under the configured tracker directory:
 
-export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
+```text
+.awf/
+└── tracker/
+    ├── 1.md
+    ├── 2.md
+    └── notes.md   # ignored because only numeric *.md files are issue files
 ```
 
-## Using the bundled agent-development workflow
+Numeric issue files (`<id>.md`) are loaded in numeric order, and the next automatic issue id is allocated after the highest numeric file name. Temporary files containing `.tmp-` are ignored while atomic writes complete. Other files can be kept beside issue files for human notes.
 
-The bundled `agent-development` workflow remains available, but it must be imported explicitly from the package.
+Each issue file has:
 
-```ts
-import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
+1. YAML-style frontmatter delimited by `---`.
+2. JSON values inside the `id`, `title`, `workflow`, and `relationships` frontmatter fields.
+3. The human-editable Markdown issue body.
+4. A reserved `## Logs` section containing `<!-- awf:logs v1 -->`.
+5. Append-only log list entries such as `1. type: "workflow_created"` with an optional `message:` line. Multiline messages use an indented Markdown block scalar.
 
-export {
-	agentDevelopmentManifest as manifest,
-	agentDevelopmentCommandHandlers as commandHandlers,
-	agentDevelopmentLifecycleHandlers as lifecycleHandlers,
-} from "@albizures/awf/workflows/agent-development";
+Example:
 
-export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
+```md
+---
+id: "1"
+title: "Readable issue"
+workflow: {"kind":"task","state":"ready","action":"work","version":1,"hash":"..."}
+relationships: {"children":[],"dependencies":[],"dependents":[]}
+---
+
+Issue **body**.
+
+## Logs
+
+<!-- awf:logs v1 -->
+
+1. type: "workflow_created"
+   message: "Created from create task."
+2. type: "commented"
+   message: |-
+     First line
+
+       indented second line
 ```
 
-If neither `./awf.config.ts` nor `--config <path>` is provided, AWF exits with an error instead of falling back to the bundled workflow.
+For local inspection or repair, keep the filename id and frontmatter `id` equal, preserve the `workflow.hash` for unchanged workflow fields, maintain inverse relationships on both sides (`parent`/`children`, `dependencies`/`dependents`), and leave log sequence numbers contiguous starting at 1. AWF reports corrupt storage as filesystem tracker directory or issue-file projection errors so the affected Markdown file can be repaired directly.
 
-## Using the bundled generic-task workflow
+## Using the bundled agent-workflow workflow
 
-The bundled `generic-task` workflow is opt-in. A project chooses it by exporting the generic-task manifest and handlers from its own `awf.config.ts` (or another config passed with `--config`).
+The bundled `agent-workflow` workflow is the supported workflow. A project can use it implicitly with no config, or explicitly by exporting the agent-workflow manifest from its own `awf.config.ts` (or another config passed with `--config`).
 
 ```ts
 import { createFileSystemTracker } from "@albizures/awf/trackers/filesystem";
 
-export {
-	genericTaskManifest as manifest,
-	genericTaskCommandHandlers as commandHandlers,
-	genericTaskLifecycleHandlers as lifecycleHandlers,
-} from "@albizures/awf/workflows/generic-task";
+export { agentWorkflowManifest as manifest } from "@albizures/awf/workflows/agent-workflow";
 
-export const tracker = createFileSystemTracker({ path: "./.awf/tracker.json" });
+export const tracker = createFileSystemTracker({ path: "./.awf/tracker" });
 ```
 
 Example commands:
@@ -63,10 +84,11 @@ Example commands:
 ```sh
 awf --config ./awf.config.ts create spec --input ./spec.json
 awf --config ./awf.config.ts create task --input ./task.json
+awf --config ./awf.config.ts create grilling --input ./grilling.json
 awf --config ./awf.config.ts ready
 ```
 
-A generic Spec create input provides `title` plus `body` or `content`:
+A Spec create input provides `title` plus `body` or `content`:
 
 ```json
 {
@@ -75,7 +97,7 @@ A generic Spec create input provides `title` plus `body` or `content`:
 }
 ```
 
-A generic Task create input belongs to a Spec, carries a project-owned profile, and may record provenance or dependency ordering explicitly:
+A Task create input belongs to a Spec, carries a project-owned profile, may declare a durable subkind (`work`, `research`, or `prototype`; defaults to `work`), and may record provenance or dependency ordering explicitly. Grilling is a separate top-level collaborative kind, not a Task subkind:
 
 ```json
 {
@@ -83,19 +105,31 @@ A generic Task create input belongs to a Spec, carries a project-owned profile, 
 	"title": "Add importer retry tests",
 	"description": "Cover retry and permanent-failure behavior.",
 	"profile": "test-engineering",
+	"subkind": "work",
 	"generatedBy": "42",
 	"dependsOn": ["43"]
 }
 ```
 
+A Grilling create input provides a title and description, plus an optional parent Spec or Wayfinder id. Without a parent, the Grilling stands alone:
+
+```json
+{
+	"title": "Pressure-test importer scope",
+	"description": "Discuss whether retry policy belongs in this Spec.",
+	"parent": "42"
+}
+```
+
+Grilling starts at `ready/discuss`, moves to `in-discussion/discuss` when started, and finishes at `done/none`. It is not included in the default ready-work filters, so ordinary autonomous agent-ready work does not pick it up as a Task.
+
 ## Policy boundaries
 
-AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
+AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Task subkind is durable workflow data separate from the lifecycle tuple; readiness matches kind, state, and action. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
 
-In `generic-task`, a Spec is ready at a phase boundary: it is ready when it has no child Tasks or when all child Tasks are done. Use those ready Spec boundaries to review the previous phase and, when needed, generate the next batch of child Tasks. Do not treat every child Task completion as an automatic Spec migration or hidden planning hook; Task generation remains an explicit command or handler outcome recorded through normal tracker mutations.
+In `agent-workflow`, a Spec starts ready for `planning`. Completing planning leaves the Spec at `ready/none` while child Tasks run. Integration testing and merging are ordinary `work` Tasks routed by profile (`integration-test` and `merge`), not Spec lifecycle actions. Readiness gates block Integration-test Tasks while implementation-gate sibling Tasks are open, and block Merge Tasks until implementation-gate Tasks are closed, no Integration-test Task is open, and at least one Integration-test Task is done. A Spec becomes `done` only through `awf spec complete <issue>`, which validates child Tasks are terminal, at least one Merge Task is done, and child Grilling issues are not open.
+
+AWF does not prove integration-test freshness after later follow-up work. Agents that create follow-up implementation or review Tasks after an Integration-test Task must also schedule another Integration-test Task before merge work proceeds. If the integration-test pass finds ambiguous scope, use Grilling and/or Task `need-human` rather than silently expanding executable work.
 
 `generatedBy` records generated-by provenance only. This means generated-by provenance is not dependency ordering, is not a readiness gate, and is separate from Spec containment. Use `spec`/parent-child relationships to attach Tasks to a Spec, `dependsOn` to block one Task on another, and `generatedBy` to explain why a Task exists.
 
-## Compatibility with agent-development
-
-The bundled `agent-development` workflow remains supported in maintenance mode for existing Spec/Ticket graphs. New generic work can opt into `generic-task`, but existing `agent-development` issues are not automatically migrated, rewritten, or mixed with generic-task graphs. Do not mix agent-development and generic-task issues in one graph; choose one workflow id per issue graph and keep cross-workflow relationships as external references outside AWF readiness semantics.

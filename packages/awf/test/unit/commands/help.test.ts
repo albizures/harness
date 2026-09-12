@@ -1,15 +1,18 @@
 import { expect, it } from "vitest";
-import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
 
 import { defineManifest } from "../../../src/manifest/index.ts";
-import { execute as rawExecute } from "../../../src/commands.ts";
-import { helpCommands, helpReadiness } from "../../../src/commands/help.ts";
+import { execute as rawExecute } from "../../support/execute.ts";
+import {
+	helpCommands,
+	helpReadiness,
+} from "../../../src/runtime/commands/help.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 it("should ensure that help returns a stable success envelope", async () => {
 	const envelope = await execute(["--help"]);
@@ -27,13 +30,15 @@ it("should ensure that help returns a stable success envelope", async () => {
 	expect(data.description).toBe("Agent workflow CLI.");
 	expect(Array.isArray(data.commands)).toBeTruthy();
 	expect(
-		data.commands.some((command) => command.usage === "awf start <id>"),
-	).toBeTruthy();
-	expect(
 		data.commands.some(
 			(command) =>
-				command.usage ===
-				"awf create handoff --source <issue> --input <file|->",
+				command.name.startsWith("run-command") ||
+				command.usage.startsWith("awf run-command"),
+		),
+	).toBe(false);
+	expect(
+		data.commands.some(
+			(command) => command.usage === "awf create task --input <file|->",
 		),
 	).toBeTruthy();
 	expect(
@@ -46,21 +51,21 @@ it("should ensure that help returns a stable success envelope", async () => {
 
 it("should ensure that help combines runtime commands with manifest CLI targets and readiness filters", () => {
 	const manifest = defineManifest({
-		...agentDevelopmentManifest,
+		...agentWorkflowManifest,
 		readiness: {
-			filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+			filters: [{ kind: "task", state: "ready", action: "work" }],
 			namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
 		},
 		commands: [
 			{
 				id: "ticket-create",
 				cli: { verb: "create", target: "ticket" },
-				target: { kind: "ticket", action: "implement" },
+				target: { kind: "task", action: "work" },
 			},
 			{
-				id: "plan-apply",
-				cli: { verb: "apply", target: "brief" },
-				target: { kind: "ticket", action: "implement" },
+				id: "plan-score",
+				cli: { verb: "score", target: "brief" },
+				target: { kind: "task", action: "work" },
 			},
 		],
 	});
@@ -75,11 +80,11 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 	).toBeTruthy();
 	expect(
 		helpCommands(manifest).some(
-			(command) => command.usage === "awf apply brief <issue> --input <file|->",
+			(command) => command.usage === "awf score brief <issue> --input <file|->",
 		),
 	).toBeTruthy();
 	expect(helpReadiness(manifest).filters).toEqual([
-		{ kind: "ticket", state: "ready", action: "implement" },
+		{ kind: "task", state: "ready", action: "work" },
 	]);
 	expect(helpReadiness(manifest).namedFilters).toEqual([
 		{
@@ -88,5 +93,8 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 			relationship: "parent",
 			usage: "awf ready --filter spec=<spec>",
 		},
+	]);
+	expect(helpReadiness(manifest).subkinds).toEqual([
+		{ kind: "task", values: ["work", "research", "prototype"] },
 	]);
 });

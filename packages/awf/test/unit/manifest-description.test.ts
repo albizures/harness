@@ -1,19 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { describeWorkflow } from "../../src/manifest/description.ts";
+import { describeWorkflow } from "../../src/domain/manifest/describe.ts";
 import { defineManifest } from "../../src/manifest/index.ts";
 
 const stringInput = z.object({ value: z.string() });
-const objectOutput = z.object({ ok: z.boolean() });
 
 function descriptionManifest() {
 	return defineManifest({
 		version: "v1",
-		workflow: { id: "description-test" },
+		workflow: { id: "description-test", version: "1.2.3" },
 		vocabulary: {
 			states: ["backlog", "ready", "running", "need-human", "done"],
 			actions: ["plan", "implement", "review", "none"],
-			reasons: ["blocked", "answered"],
 			events: ["schedule", "start", "succeed", "escalate"],
 		},
 		github: { reservedPrefix: "secret-prefix" },
@@ -25,7 +23,7 @@ function descriptionManifest() {
 		readiness: {
 			filters: [
 				{ kind: "spec", state: "ready", action: "plan" },
-				{ kind: "ticket", reason: "answered" },
+				{ kind: "ticket", state: "ready" },
 			],
 			namedFilters: [
 				{ name: "for-spec", kind: "spec", relationship: "parent" },
@@ -40,12 +38,8 @@ function descriptionManifest() {
 			],
 		},
 		lifecycle: {
-			retry: { allow: [{ kind: "ticket", action: "implement" }] },
-			escalation: {
-				allow: [{ kind: "spec", action: "plan" }],
-				input: stringInput,
-			},
-			resume: { allow: [{ kind: "spec", actions: ["plan", "review"] }] },
+			activeStates: ["running"],
+			terminalStates: ["done"],
 			relationshipPolicies: [
 				{
 					relationship: "parent",
@@ -65,7 +59,6 @@ function descriptionManifest() {
 					{
 						from: { state: "backlog", action: "plan" },
 						event: "schedule",
-						input: stringInput,
 						to: { state: "ready", action: "plan" },
 					},
 					{
@@ -88,18 +81,22 @@ function descriptionManifest() {
 				cli: { verb: "create", target: "spec" },
 				target: { kind: "spec", action: "plan" },
 				input: stringInput,
-				output: objectOutput,
 			},
 			{
-				id: "createTicketFromSpec",
-				cli: { verb: "create", target: "ticket", source: true },
+				id: "createTicket",
+				cli: { verb: "create", target: "ticket" },
 				target: { kind: "ticket", action: "implement" },
 			},
 			{
-				id: "applyPlan",
-				cli: { verb: "apply", target: "plan" },
+				id: "scorePlan",
+				cli: { verb: "score", target: "plan" },
 				target: { kind: "spec", action: "review" },
 				input: stringInput,
+			},
+			{
+				id: "approveReview",
+				cli: { verb: "approve", target: "review", input: "none" },
+				target: { kind: "spec", state: "ready", action: "review" },
 			},
 		],
 		relationships: [
@@ -107,7 +104,7 @@ function descriptionManifest() {
 				id: "spec-tickets",
 				from: "spec",
 				to: "ticket",
-				projection: { type: "parent-child", direction: "outbound" },
+				projection: { type: "parent-child" },
 			},
 		],
 	});
@@ -118,7 +115,10 @@ describe("when building a Workflow description DTO", () => {
 		const description = describeWorkflow(descriptionManifest());
 
 		expect(description.version).toBe("v1");
-		expect(description.workflow).toEqual({ id: "description-test" });
+		expect(description.workflow).toEqual({
+			id: "description-test",
+			version: "1.2.3",
+		});
 		expect(description.vocabulary.states).toEqual([
 			"backlog",
 			"ready",
@@ -135,52 +135,63 @@ describe("when building a Workflow description DTO", () => {
 		).toEqual(["schedule", "start"]);
 		expect(description.commands.map((command) => command.id)).toEqual([
 			"createSpec",
-			"createTicketFromSpec",
-			"applyPlan",
+			"createTicket",
+			"scorePlan",
+			"approveReview",
 		]);
 		expect(description.readiness?.filters).toEqual([
 			{ kind: "spec", state: "ready", action: "plan" },
-			{ kind: "ticket", reason: "answered" },
+			{ kind: "ticket", state: "ready" },
 		]);
+		expect(description.lifecycle?.activeStates).toEqual(["running"]);
+		expect(description.lifecycle?.terminalStates).toEqual(["done"]);
+		expect(description.lifecycle).not.toHaveProperty("retry");
+		expect(description.lifecycle).not.toHaveProperty("escalation");
+		expect(description.lifecycle).not.toHaveProperty("resume");
 		expect(description.lifecycle?.relationshipPolicies?.[0]?.to).toEqual({
 			state: "ready",
 			action: "review",
 		});
-		expect(
-			description.relationships?.map((relationship) => relationship.id),
-		).toEqual(["spec-tickets"]);
+		expect(description.relationships).toEqual([
+			{
+				id: "spec-tickets",
+				from: "spec",
+				to: "ticket",
+				projection: { type: "parent-child" },
+			},
+		]);
 	});
 
-	it("should use schema presence markers and generated manifest CLI usage", () => {
+	it("should use command input schema presence markers and generated manifest CLI usage", () => {
 		const description = describeWorkflow(descriptionManifest());
 
 		expect(description.kinds[0]?.transitions).toMatchObject([
-			{ event: "schedule", input: { required: true } },
-			{ event: "start", input: { required: false } },
+			{ event: "schedule" },
+			{ event: "start" },
 		]);
 		expect(description.commands).toMatchObject([
 			{
 				id: "createSpec",
 				cli: { usage: "awf create spec --input <file|->" },
 				input: { required: true },
-				output: { declared: true },
 			},
 			{
-				id: "createTicketFromSpec",
-				cli: { usage: "awf create ticket --source <issue> --input <file|->" },
+				id: "createTicket",
+				cli: { usage: "awf create ticket --input <file|->" },
 				input: { required: false },
-				output: { declared: false },
 			},
 			{
-				id: "applyPlan",
-				cli: { usage: "awf apply plan <issue> --input <file|->" },
+				id: "scorePlan",
+				cli: { usage: "awf score plan <issue> --input <file|->" },
 				input: { required: true },
-				output: { declared: false },
+			},
+			{
+				id: "approveReview",
+				cli: { usage: "awf approve review <issue>" },
+				input: { required: false },
 			},
 		]);
-		expect(description.lifecycle?.escalation?.input).toEqual({
-			required: true,
-		});
+		expect(description.commands[3]?.cli).not.toHaveProperty("input");
 		expect(JSON.stringify(description)).not.toContain("_def");
 		expect(JSON.stringify(description)).not.toContain("secret-prefix");
 	});
@@ -204,7 +215,7 @@ describe("when building a Workflow description DTO", () => {
 		expect(serialized).not.toContain("_def");
 		expect(description.scopeNotes).toEqual([
 			"Describes the loaded Workflow manifest only.",
-			"Does not inspect Tracker API state, issue counts, active runs, actual dependencies, runtime handlers, config paths, raw Zod schemas, or parsed schema structures.",
+			"Does not inspect Tracker API state, issue counts, active attempts, actual dependencies, runtime handlers, config paths, raw Zod schemas, or parsed schema structures.",
 		]);
 	});
 });

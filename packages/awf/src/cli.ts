@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { bindCliExecution } from "./cli-config.ts";
-import { execute } from "./commands.ts";
-import { parseOutputFormat, serializeCliOutput } from "./output.ts";
-import { CorruptWorkflowProjectionError } from "./workflow/projection.ts";
+import { bindCliExecution } from "./cli/config.ts";
+import { execute } from "./runtime/execute.ts";
+import { parseOutputFormat, serializeCliOutput } from "./cli/output.ts";
+import { CorruptWorkflowProjectionError } from "./domain/workflow/projection.ts";
 
 declare const process: {
 	argv: Array<string>;
@@ -11,24 +11,6 @@ declare const process: {
 	cwd: () => string;
 	exitCode?: number;
 };
-
-const knownConfigCommands = new Set([
-	undefined,
-	"--help",
-	"-h",
-	"get",
-	"logs",
-	"reconcile",
-	"ready",
-	"workflow",
-	"create",
-	"apply",
-	"start",
-	"succeed",
-	"fail",
-	"escalate",
-	"resume",
-]);
 
 try {
 	const rawArgs = process.argv.slice(2);
@@ -83,8 +65,7 @@ function commandDoesNotNeedConfig(args: Array<string>): boolean {
 	return (
 		command === "--version" ||
 		command === "-v" ||
-		(command === "manifest" && commandArgs[1] === "validate") ||
-		!knownConfigCommands.has(command)
+		(command === "manifest" && commandArgs[1] === "validate")
 	);
 }
 

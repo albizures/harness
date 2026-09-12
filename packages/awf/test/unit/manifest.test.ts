@@ -1,12 +1,14 @@
 import { expect, it } from "vitest";
 import { z } from "zod";
-import { ManifestValidationError } from "../../src/manifest/manifest.ts";
+import { ManifestValidationError } from "../../src/domain/manifest/schema.ts";
 import {
 	defineManifest,
 	validateManifest,
-} from "../../src/manifest/definition.ts";
-import { loadManifest, loadWorkflowModule } from "../../src/workflow-module.ts";
-import { artifacts } from "../../src/workflow/artifact.ts";
+} from "../../src/domain/manifest/define.ts";
+import {
+	loadManifest,
+	loadWorkflowModule,
+} from "../../src/runtime/workflow-module.ts";
 
 const validFixture = new URL("../fixtures/valid.workflow.ts", import.meta.url)
 	.pathname;
@@ -26,8 +28,13 @@ const invalidTrackerFixture = new URL(
 it("should load a TypeScript-authored workflow manifest as declarative data", async () => {
 	const manifest = await loadManifest(validFixture);
 
-	expect(manifest.workflow.id).toBe("agent-development");
-	expect(manifest.kinds.map((kind) => kind.id)).toEqual(["spec", "ticket"]);
+	expect(manifest.workflow.id).toBe("agent-workflow");
+	expect(manifest.kinds.map((kind) => kind.id)).toEqual([
+		"spec",
+		"wayfinder",
+		"task",
+		"grilling",
+	]);
 	expect(
 		manifest.commands.every(
 			(command) =>
@@ -39,12 +46,10 @@ it("should load a TypeScript-authored workflow manifest as declarative data", as
 it("should load a Workflow module manifest and optional concrete tracker binding", async () => {
 	const workflowModule = await loadWorkflowModule(moduleFixture);
 
-	expect(workflowModule.manifest.workflow.id).toBe("agent-development");
+	expect(workflowModule.manifest.workflow.id).toBe("agent-workflow");
 	expect(typeof workflowModule.tracker?.getIssue).toBe("function");
 	expect(
-		typeof workflowModule.lifecycleHandlers?.[
-			"ticket:running/implement:succeed"
-		],
+		typeof workflowModule.lifecycleHandlers?.["task:running/work:succeed"],
 	).toBe("function");
 });
 
@@ -63,7 +68,7 @@ it("should ensure that Workflow module loading rejects non-concrete tracker expo
 it("should ensure that manifest loading validates the manifest export without requiring or checking tracker", async () => {
 	const manifest = await loadManifest(invalidTrackerFixture);
 
-	expect(manifest.workflow.id).toBe("agent-development");
+	expect(manifest.workflow.id).toBe("agent-workflow");
 });
 
 it("should reject loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
@@ -75,23 +80,110 @@ it("should reject loaded TypeScript workflow manifests with Zod-owned shape erro
 				issues
 					.map((issue) => issue.path)
 					.filter((path) => path.includes("projection.type")),
-			).toEqual(["$.relationships[2].projection.type"]);
+			).toEqual(["$.relationships[7].projection.type"]);
 			expect(issues.map((issue) => issue.message).join("\n")).toMatch(
-				/parent-child or dependency/,
+				/parent-child, dependency, or generated-by/,
 			);
 			return true;
 		},
 	);
 });
 
+it("should reject configurable relationship projection direction", () => {
+	const issues = validateManifest({
+		version: "v1",
+		workflow: { id: "projection-direction", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["work"],
+			events: ["noop"],
+		},
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				transitions: [],
+			},
+		],
+		commands: [],
+		relationships: [
+			{
+				id: "task-children",
+				from: "task",
+				to: "task",
+				projection: { type: "parent-child", direction: "outbound" },
+			},
+		],
+	});
+
+	expect(
+		issues.some(
+			(issue) =>
+				issue.path === "$.relationships[0].projection" &&
+				issue.message.includes("direction"),
+		),
+	).toBe(true);
+});
+
+it("should ensure that defineManifest accepts Workflow attempt transition effects", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "attempt-effects", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["implement", "none"],
+			events: ["start", "succeed"],
+		},
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "ready", action: "implement" },
+						event: "start",
+						to: { state: "running", action: "implement" },
+					},
+					{
+						from: { state: "running", action: "implement" },
+						event: "succeed",
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "start",
+				target: { kind: "ticket", state: "ready", action: "implement" },
+				transition: { event: "start", attempt: "start" },
+			},
+			{
+				id: "succeed",
+				target: { kind: "ticket", state: "running", action: "implement" },
+				transition: { event: "succeed", attempt: "complete" },
+			},
+		],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+	expect(manifest.commands.map((command) => command.transition)).toEqual([
+		{ event: "start", attempt: "start" },
+		{ event: "succeed", attempt: "complete" },
+	]);
+});
+
 it("should ensure that defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "tiny" },
+		workflow: { id: "tiny", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "running"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		concurrency: { perIssue: 1 },
@@ -113,7 +205,12 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 			{
 				id: "start",
 				target: { kind: "ticket", action: "implement" },
-				input: artifacts.object({ pullRequest: artifacts.pullRequest() }),
+				input: z.strictObject({
+					pullRequest: z.strictObject({
+						type: z.literal("pull-request"),
+						url: z.string().trim().pipe(z.url()),
+					}),
+				}),
 			},
 		],
 	});
@@ -137,25 +234,60 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 	});
 });
 
-it("should ensure that public Zod authoring helpers declare and validate artifact payload schemas", () => {
-	const zodOutput = artifacts.object({
-		url: artifacts.url(),
-		file: artifacts.file(),
-		issue: artifacts.issue(),
-		pullRequest: artifacts.pullRequest(),
-		gitRef: artifacts.gitRef(),
-		inlineMarkdown: artifacts.inlineMarkdown(),
-		handoff: artifacts.handoff(),
-		finding: artifacts.finding(),
-	});
+it("should validate per-subkind concurrency against declared kind subkinds", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "artifact-payloads" },
+		workflow: { id: "subkind-concurrency", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["implement"],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: {
+			perIssue: 1,
+			perSubkind: { ticket: { bug: 1, feature: 2 } },
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				subkinds: ["bug", "feature"],
+				transitions: [],
+			},
+		],
+		commands: [],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+
+	const invalid = {
+		...manifest,
+		concurrency: {
+			perIssue: 1,
+			perSubkind: {
+				ticket: { bug: 0, feature: 1.5, missing: 1 },
+				missing: { bug: 1 },
+			},
+		},
+	};
+	const messages = validateManifest(invalid)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/perSubkind kind must reference a known kind/);
+	expect(messages).toMatch(/perSubkind subkind must reference a known subkind/);
+	expect(messages).toMatch(/perSubkind concurrency must be a positive integer/);
+});
+
+it("should require a workflow semantic version", () => {
+	const issues = validateManifest({
+		version: "v1",
+		workflow: { id: "missing-semantic-version" },
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
-			reasons: [],
-			events: ["succeed"],
+			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
@@ -167,87 +299,158 @@ it("should ensure that public Zod authoring helpers declare and validate artifac
 				transitions: [],
 			},
 		],
-		commands: [
+		commands: [],
+	});
+
+	expect(
+		issues.map((issue) => `${issue.path} ${issue.message}`).join("\n"),
+	).toMatch(/\$\.workflow\.version.*semantic version is required/);
+});
+
+it("should validate lifecycle active and terminal states against the workflow vocabulary", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "lifecycle-states", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["implement", "none"],
+			events: ["start"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: {
+			activeStates: ["running"],
+			terminalStates: ["done"],
+		},
+		kinds: [
 			{
-				id: "complete",
-				target: { kind: "ticket", action: "implement" },
-				output: zodOutput,
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [],
 			},
 		],
+		commands: [],
 	});
 
 	expect(validateManifest(manifest)).toEqual([]);
-	expect(manifest.commands[0]?.output).toBe(zodOutput);
-
-	const legacyStringValues = {
-		url: "https://example.com/spec",
-		file: "docs/spec.md",
-		issue: "https://github.com/albizures/harness/issues/51",
-		pullRequest: "https://github.com/albizures/harness/pull/52",
-		gitRef: "feature/awf-artifacts",
-		inlineMarkdown: "# Summary\n\nReady.",
-		handoff: "Next agent should run the focused tests.",
-		finding: "Missing coverage for invalid declarations.",
-	};
-	const structuredValues = {
-		url: { type: "url", url: "https://example.com/spec", title: "Spec" },
-		file: { type: "file", path: "docs/spec.md", title: "Spec" },
-		issue: { type: "issue", ref: "#51", id: "51", title: "Spec issue" },
-		pullRequest: {
-			type: "pull-request",
-			url: "https://github.com/albizures/harness/pull/52",
-			id: "52",
-			title: "Implementation",
-			metadata: { repository: "albizures/harness" },
-		},
-		gitRef: { type: "git-ref", ref: "feature/awf-artifacts" },
-		inlineMarkdown: { type: "markdown", ref: "# Summary\n\nReady." },
-		handoff: {
-			type: "handoff",
-			ref: "Next agent should run the focused tests.",
-		},
-		finding: {
-			type: "finding",
-			ref: "Missing coverage for invalid declarations.",
-		},
-	};
 	expect(
-		artifacts
-			.object({ issue: artifacts.issue() })
-			.safeParse({ issue: legacyStringValues.issue }).success,
-	).toBe(false);
-	expect(zodOutput.parse(structuredValues)).toEqual(structuredValues);
+		validateManifest({
+			...manifest,
+			lifecycle: {
+				activeStates: ["running", "missing-active"],
+				terminalStates: ["done", "missing-terminal"],
+			},
+		})
+			.map((issue) => `${issue.path} ${issue.message}`)
+			.join("\n"),
+	).toMatch(/activeStates\[1\].*known state/);
+	expect(
+		validateManifest({
+			...manifest,
+			lifecycle: {
+				activeStates: ["running"],
+				terminalStates: ["done", "missing-terminal"],
+			},
+		})
+			.map((issue) => `${issue.path} ${issue.message}`)
+			.join("\n"),
+	).toMatch(/terminalStates\[1\].*known state/);
+});
 
-	const invalid = zodOutput.safeParse({
-		...structuredValues,
-		url: { type: "url", url: "ftp://example.com/spec" },
-		file: { type: "file", path: "/tmp/spec.md" },
-		issue: { type: "issue", ref: "not-an-issue" },
-		pullRequest: {
-			type: "pull-request",
-			url: "https://github.com/albizures/harness/issues/51",
+it("should reject removed lifecycle retry escalation and resume allow-list contracts", () => {
+	const manifest = {
+		version: "v1",
+		workflow: { id: "removed-lifecycle-policy", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "need-human", "done"],
+			actions: ["work", "none"],
+			events: ["start", "succeed", "fail"],
 		},
-		gitRef: { type: "git-ref", ref: "bad ref" },
-		inlineMarkdown: { type: "markdown", ref: "" },
-		handoff: { type: "handoff", ref: "" },
-		finding: { type: "finding", ref: "" },
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: {
+			activeStates: ["running"],
+			terminalStates: ["done"],
+			retry: { allow: [{ kind: "task", action: "work" }] },
+			escalation: { allow: [{ kind: "task", action: "work" }] },
+			resume: { allow: [{ kind: "task", actions: ["work"] }] },
+		},
+		kinds: [
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				transitions: [],
+			},
+		],
+		commands: [],
+	};
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/\$\.lifecycle/);
+	expect(messages).toMatch(/retry/);
+	expect(messages).toMatch(/escalation/);
+	expect(messages).toMatch(/resume/);
+});
+
+it("should reject readiness filters that target terminal states while allowing terminal outgoing transitions", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "terminal-readiness", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["implement", "none"],
+			events: ["reopen"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
+		readiness: {
+			filters: [{ kind: "ticket", state: "done", action: "none" }],
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "done", action: "none" },
+						event: "reopen",
+						to: { state: "ready", action: "implement" },
+					},
+				],
+			},
+		],
+		commands: [],
 	});
-	const invalidArtifactReferenceCount = Object.keys(legacyStringValues).length;
-	expect(invalid.success).toBe(false);
-	if (invalid.success) {
-		throw new Error("expected parse failure");
-	}
-	expect(invalid.error.issues.length).toBe(invalidArtifactReferenceCount);
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/Readiness filter state must not be terminal/);
+	expect(messages).not.toMatch(/transitions\[0\]/);
+
+	expect(
+		validateManifest({
+			...manifest,
+			readiness: {
+				filters: [{ kind: "ticket", state: "ready", action: "implement" }],
+			},
+		}),
+	).toEqual([]);
 });
 
 it("should validate manifest-declared CLI targets and named readiness filters", () => {
 	const manifest = defineManifest({
 		version: "v1",
-		workflow: { id: "command-declarations" },
+		workflow: { id: "command-declarations", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -319,14 +522,137 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 	expect(messages).toMatch(/Named readiness filter kind must be known/);
 });
 
+it("should reject executable hook fields embedded in workflow semantic declarations", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "semantic-hooks", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "waiting-human", "done"],
+			actions: ["planning", "work", "none"],
+			events: ["start", "succeed", "resume"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		readiness: {
+			filters: [{ kind: "task", state: "ready", action: "work" }],
+		},
+		kinds: [
+			{
+				id: "wayfinder",
+				label: "Wayfinder",
+				initial: { state: "ready", action: "planning" },
+				transitions: [
+					{
+						from: { state: "ready", action: "planning" },
+						event: "start",
+						to: { state: "running", action: "planning" },
+					},
+				],
+			},
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				subkinds: ["research"],
+				transitions: [],
+			},
+		],
+		commands: [],
+	});
+	const invalid = {
+		...manifest,
+		readiness: {
+			filters: [
+				{
+					kind: "task",
+					state: "ready",
+					action: "work",
+					handler: () => undefined,
+				},
+			],
+		},
+		kinds: manifest.kinds.map((kind) =>
+			kind.id === "task"
+				? { ...kind, subkinds: ["research", { id: "prototype", run() {} }] }
+				: {
+						...kind,
+						transitions: kind.transitions.map((transition) => ({
+							...transition,
+							hooks: { onSucceed() {} },
+						})),
+					},
+		),
+		lifecycle: {
+			resume: {
+				allow: [{ kind: "task", actions: ["work"], execute() {} }],
+			},
+		},
+	};
+
+	const messages = validateManifest(invalid)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/\.subkinds\[1\]\.run/);
+	expect(messages).toMatch(/\.readiness\.filters\[0\]\.handler/);
+	expect(messages).toMatch(/\.transitions\[0\]\.hooks/);
+	expect(messages).toMatch(/\.lifecycle\.resume\.allow\[0\]\.execute/);
+	expect(messages).toMatch(/Executable hook fields/);
+	expect(messages).toMatch(/Executable hooks are not allowed/);
+});
+
+it("should reject payload schemas outside command input declarations", () => {
+	const manifest = {
+		version: "v1",
+		workflow: { id: "payload-boundaries", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["implement", "none"],
+			events: ["start", "succeed"],
+		},
+		github: { reservedPrefix: "awf" },
+		concurrency: { perIssue: 1 },
+		lifecycle: { escalation: { input: z.object({ reason: z.string() }) } },
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "implement" },
+				transitions: [
+					{
+						from: { state: "running", action: "implement" },
+						event: "succeed",
+						input: z.object({ summary: z.string() }),
+						to: { state: "ready", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "create-ticket",
+				target: { kind: "ticket", action: "implement" },
+				input: z.object({ title: z.string() }),
+				output: z.object({ id: z.string() }),
+			},
+		],
+	};
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/Command output schemas are not supported/);
+	expect(messages).toMatch(/Transition input schemas are not supported/);
+	expect(messages).toMatch(/\$\.lifecycle.*escalation/);
+	expect(messages).not.toMatch(/commands\[0\]\.input.*not supported/);
+});
+
 it("should reject tracker as a manifest field inside defineManifest data", () => {
 	const manifestWithTracker = {
 		version: "v1",
-		workflow: { id: "tracker-field" },
+		workflow: { id: "tracker-field", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready"],
 			actions: ["implement"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -352,11 +678,10 @@ it("should reject tracker as a manifest field inside defineManifest data", () =>
 it("should reject non-declarative hooks, wildcards, unknown references, and malformed schemas", () => {
 	const issues = validateManifest({
 		version: "v1",
-		workflow: { id: "bad" },
+		workflow: { id: "bad", version: "1.0.0" },
 		vocabulary: {
 			states: ["ready", "ready"],
 			actions: ["implement", "review"],
-			reasons: [],
 			events: ["start"],
 		},
 		github: { reservedPrefix: "awf" },
@@ -412,4 +737,76 @@ it("should reject non-declarative hooks, wildcards, unknown references, and malf
 	expect(messages).toMatch(/Payload schema must be a Zod schema/);
 	expect(messages).toMatch(/Relationship target/);
 	expect(messages).toMatch(/projection type/);
+});
+
+it("should reject removed workflow reason and generic command dimensions", () => {
+	const base = {
+		version: "v1",
+		workflow: { id: "removed-dimensions", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready"],
+			actions: ["work"],
+			events: ["noop"],
+		},
+		concurrency: { perIssue: 1 },
+		kinds: [
+			{
+				id: "task",
+				label: "Task",
+				initial: { state: "ready", action: "work" },
+				transitions: [],
+			},
+		],
+		commands: [
+			{
+				id: "create-task",
+				cli: { verb: "create", target: "task" },
+				target: { kind: "task", action: "work" },
+			},
+		],
+	};
+
+	const obsolete = validateManifest({
+		...base,
+		vocabulary: { ...base.vocabulary, reasons: ["blocked"] },
+		readiness: { filters: [{ kind: "task", reason: "blocked" }] },
+		kinds: [
+			{
+				...base.kinds[0],
+				initial: { state: "ready", action: "work", reason: "blocked" },
+				transitions: [
+					{
+						from: { state: "ready", action: "work", reason: "blocked" },
+						event: "noop",
+						to: { state: "ready", action: "work", reason: "blocked" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "create-task",
+				cli: { verb: "create", target: "task", source: true },
+				target: { kind: "task", action: "work", reason: "blocked" },
+			},
+			{
+				id: "apply-task",
+				cli: { verb: "apply", target: "task" },
+				target: { kind: "task", action: "work" },
+			},
+		],
+	});
+
+	expect(obsolete.map((issue) => issue.path)).toEqual(
+		expect.arrayContaining([
+			"$.vocabulary",
+			"$.readiness.filters[0]",
+			"$.kinds[0].initial",
+			"$.kinds[0].transitions[0].from",
+			"$.kinds[0].transitions[0].to",
+			"$.commands[0].cli.source",
+			"$.commands[0].target",
+			"$.commands[1].cli.verb",
+		]),
+	);
 });

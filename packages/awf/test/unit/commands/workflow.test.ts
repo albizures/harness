@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { execute as rawExecute } from "../../../src/commands.ts";
+import { execute as rawExecute } from "../../support/execute.ts";
 import type { WorkflowDescriptionV1 } from "../../../src/manifest/index.ts";
-import { agentDevelopmentManifest } from "../../../src/workflows/agent-development/index.ts";
+import { agentWorkflowManifest } from "../../../src/workflows/agent-workflow/index.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 
 describe("when describing a workflow through command execution", () => {
@@ -21,7 +21,7 @@ describe("when describing a workflow through command execution", () => {
 		}
 		const data = envelope.data as WorkflowDescriptionV1;
 		expect(data.version).toBe("v1");
-		expect(data.workflow.id).toBe(agentDevelopmentManifest.workflow.id);
+		expect(data.workflow.id).toBe(agentWorkflowManifest.workflow.id);
 	});
 
 	it("should require a manifest at the command layer", async () => {

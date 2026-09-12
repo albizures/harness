@@ -30,27 +30,23 @@ const missingManifestPath = new URL(
 	"../fixtures/missing-manifest.workflow.ts",
 	import.meta.url,
 ).pathname;
-const agentDevelopmentWorkflowSourcePath = new URL(
-	"../../src/workflows/agent-development/index.ts",
-	import.meta.url,
-).pathname;
-const manifestSourcePath = new URL(
-	"../../src/manifest/index.ts",
+const agentWorkflowSourcePath = new URL(
+	"../../src/workflows/agent-workflow/index.ts",
 	import.meta.url,
 ).pathname;
 const memoryTrackerSourcePath = new URL(
-	"../../src/trackers/memory.ts",
+	"../../src/adapters/trackers/memory.ts",
 	import.meta.url,
 ).pathname;
 const filesystemTrackerSourcePath = new URL(
-	"../../src/trackers/filesystem.ts",
+	"../../src/adapters/trackers/filesystem.ts",
 	import.meta.url,
 ).pathname;
 
 const unreadableMode = 0o000;
 const ownerReadWriteMode = 0o600;
-const durableImplementationPrNumber = 93;
 const bundledGoldenSmokeTimeoutMs = 15_000;
+const configLifecycleHandlerPrNumber = 42;
 
 const prArtifact = (n: number) => ({
 	type: "pull-request",
@@ -71,17 +67,17 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
 }
 
 function configWithMemoryIssue(id: string): string {
-	return `import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
+	return `import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
 import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
 
-export const manifest = agentDevelopmentManifest;
+export const manifest = agentWorkflowManifest;
 export const tracker = createInMemoryTracker({ issues: [{
 	id: ${JSON.stringify(id)},
-	title: "Configured ticket",
+	title: "Configured task",
 	labels: [
-		"awf:agent-development:kind:ticket",
-		"awf:agent-development:state:ready",
-		"awf:agent-development:action:implement",
+		"awf:agent-workflow:kind:task",
+		"awf:agent-workflow:state:ready",
+		"awf:agent-workflow:action:work",
 	],
 }] });
 `;
@@ -112,34 +108,33 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 
 	expect(result.status).toBe(0);
 	expect(result.stderr).toBe("");
-	expect(result.stdout).toContain("# Workflow agent-development");
-	expect(result.stdout).toContain("- States: ready, running, done, need-human");
+	expect(result.stdout).toContain("# Workflow agent-workflow");
 	expect(result.stdout).toContain(
-		"- Actions: plan, implement, review, fix, merge, integration-test, none",
+		"- States: ready, running, in-discussion, done, need-human, waiting-human",
+	);
+	expect(result.stdout).toContain(
+		"- Actions: planning, work, discuss, integration-test, merge, none",
 	);
 	expect(result.stdout).toContain("- Per workflow: 4");
-	expect(result.stdout).toContain("- Per kind ticket: 3");
+	expect(result.stdout).toContain("- Per kind task: 3");
 	expect(result.stdout).toContain("- spec (Spec)");
-	expect(result.stdout).toContain("- ticket (Ticket)");
+	expect(result.stdout).toContain("- task (Task)");
+	expect(result.stdout).toContain("- wayfinder (Wayfinder)");
+	expect(result.stdout).toContain("- grilling (Grilling)");
 	expect(result.stdout).toContain(
-		"- plan-apply\n  - Usage: awf apply plan <issue> --input <file|->\n  - Target: spec/plan\n  - Input: required\n  - Output: declared",
+		"- task-create\n  - Usage: awf create task --input <file|->\n  - Target: task/work\n  - Input: required",
 	);
 	expect(result.stdout).toContain(
-		"- handoff-create\n  - Usage: awf create handoff --source <issue> --input <file|->",
+		"  - implementation-gate: implement, review",
 	);
 	expect(result.stdout).toContain(
-		"  - children where spec/ready/integration-test; children all ticket/done, min 1, gate children",
+		"  - siblings where task/ready/work/integration-test; siblings all task/done/none/implementation-gate, gate implementation-gate",
 	);
 	expect(result.stdout).toContain(
-		"  - parent child ticket/done/none; parent spec/ready/none; siblings all ticket/done; to ready/integration-test",
-	);
-	expect(result.stdout).toContain(
-		"- spec-tickets: spec -> ticket (parent-child, outbound)",
-	);
-	expect(result.stdout).toContain(
-		"- ticket-dependencies: ticket -> ticket (dependency, outbound)",
+		"- task-generated-by-task: task -> task (generated-by)",
 	);
 	expect(result.stdout).toContain("## Scope notes");
+	expect(result.stdout).not.toContain("agent-development");
 	expect(result.stdout).not.toContain("_def");
 	expect(result.stdout).not.toContain("reservedPrefix");
 	expect(result.stdout).not.toContain("typeName");
@@ -166,106 +161,119 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 	expect(envelope.data).not.toEqual(expect.any(String));
 	expect(envelope.data).toMatchObject({
 		version: "v1",
-		workflow: { id: "agent-development" },
-		concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
+		workflow: { id: "agent-workflow", version: "1.0.0" },
+		concurrency: { perIssue: 1, perWorkflow: 4, perKind: { task: 3 } },
 		vocabulary: {
-			states: ["ready", "running", "done", "need-human"],
+			states: [
+				"ready",
+				"running",
+				"in-discussion",
+				"done",
+				"need-human",
+				"waiting-human",
+			],
 			actions: [
-				"plan",
-				"implement",
-				"review",
-				"fix",
-				"merge",
+				"planning",
+				"work",
+				"discuss",
 				"integration-test",
+				"merge",
 				"none",
 			],
-			reasons: ["dependencies"],
-			events: ["start", "succeed", "fail"],
+			events: [
+				"start",
+				"succeed",
+				"fail",
+				"recover",
+				"escalate",
+				"pause",
+				"resume",
+			],
 		},
 		readiness: {
 			filters: [
-				{ kind: "spec", state: "ready", action: "plan" },
-				{ kind: "spec", state: "ready", action: "integration-test" },
-				{ kind: "spec", state: "ready", action: "merge" },
-				{ kind: "ticket", state: "ready", action: "implement" },
-				{ kind: "ticket", state: "ready", action: "review" },
-				{ kind: "ticket", state: "ready", action: "fix" },
-				{ kind: "ticket", state: "ready", action: "merge" },
+				{ kind: "spec", state: "ready", action: "planning" },
+				{ kind: "task", state: "ready", action: "work" },
 			],
-			namedFilters: [
+			profileGroups: [
 				{
-					name: "spec",
-					kind: "spec",
-					relationship: "parent",
-					usage: "awf ready --filter spec=<spec>",
-				},
-			],
-			relationshipPolicies: [
-				{
-					relationship: "children",
-					where: { kind: "spec", state: "ready", action: "integration-test" },
-					children: { all: { kind: "ticket", state: "done" }, min: 1 },
-					gate: "children",
+					name: "implementation-gate",
+					profiles: ["implement", "review"],
 				},
 			],
 		},
-		lifecycle: {
-			relationshipPolicies: [
-				{
-					relationship: "parent",
-					child: { kind: "ticket", state: "done", action: "none" },
-					parent: { kind: "spec", state: "ready", action: "none" },
-					siblings: { all: { kind: "ticket", state: "done" }, min: 1 },
-					to: { state: "ready", action: "integration-test" },
-				},
-			],
-		},
-		relationships: [
+		relationships: expect.arrayContaining([
 			{
-				id: "spec-tickets",
+				id: "spec-task",
 				from: "spec",
-				to: "ticket",
-				projection: { type: "parent-child", direction: "outbound" },
+				to: "task",
+				projection: { type: "parent-child" },
 			},
 			{
-				id: "ticket-dependencies",
-				from: "ticket",
-				to: "ticket",
-				projection: { type: "dependency", direction: "outbound" },
+				id: "task-generated-by-task",
+				from: "task",
+				to: "task",
+				projection: { type: "generated-by" },
 			},
-		],
+		]),
 	});
 	expect(envelope.data.kinds.map((kind: { id: string }) => kind.id)).toEqual([
 		"spec",
-		"ticket",
+		"wayfinder",
+		"task",
+		"grilling",
 	]);
-	expect(envelope.data.commands).toMatchObject([
-		{
-			id: "spec-create",
-			cli: { usage: "awf create spec --input <file|->" },
-			input: { required: true },
-			output: { declared: true },
-		},
-		{
-			id: "plan-apply",
-			cli: { usage: "awf apply plan <issue> --input <file|->" },
-			input: { required: true },
-			output: { declared: true },
-		},
-		{
-			id: "handoff-create",
-			cli: { usage: "awf create handoff --source <issue> --input <file|->" },
-			input: { required: true },
-			output: { declared: true },
-		},
-	]);
+	expect(
+		envelope.data.commands.filter(
+			(command: { cli?: unknown }) => command.cli !== undefined,
+		),
+	).toEqual(
+		expect.arrayContaining([
+			{
+				id: "spec-create",
+				cli: {
+					verb: "create",
+					target: "spec",
+					usage: "awf create spec --input <file|->",
+				},
+				target: { kind: "spec", action: "planning" },
+				input: { required: true },
+			},
+			{
+				id: "spec-complete",
+				cli: {
+					verb: "spec",
+					target: "complete",
+					usage: "awf spec complete <issue> --input <file|->",
+				},
+				target: { kind: "spec", state: "ready", action: "none" },
+				input: { required: false },
+			},
+			{
+				id: "task-create",
+				cli: {
+					verb: "create",
+					target: "task",
+					usage: "awf create task --input <file|->",
+				},
+				target: { kind: "task", action: "work" },
+				input: { required: true },
+			},
+			expect.objectContaining({
+				id: "task-start",
+				cli: expect.objectContaining({ usage: "awf task start <issue>" }),
+				transition: { event: "start", attempt: "start" },
+			}),
+		]),
+	);
 	const serialized = JSON.stringify(envelope.data);
+	expect(serialized).not.toContain("agent-development");
 	expect(serialized).not.toContain("_def");
 	expect(serialized).not.toContain("reservedPrefix");
 	expect(serialized).not.toContain("typeName");
 });
 
-it("should ensure that CLI workflow describe requires config discovery", async () => {
+it("should ensure that CLI workflow describe uses the no-config agent-workflow default", async () => {
 	await withTempDir(async (dir) => {
 		const result = spawnSync(
 			process.execPath,
@@ -273,10 +281,15 @@ it("should ensure that CLI workflow describe requires config discovery", async (
 			{ cwd: dir, encoding: "utf8" },
 		);
 
-		expect(result.status).toBe(1);
+		expect(result.status).toBe(0);
 		const envelope = JSON.parse(result.stdout);
-		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
-		expect(envelope.error.message).toMatch(/explicit workflow config/);
+		expect(envelope.data.workflow.id).toBe("agent-workflow");
+		expect(envelope.data.kinds.map((kind: { id: string }) => kind.id)).toEqual([
+			"spec",
+			"wayfinder",
+			"task",
+			"grilling",
+		]);
 	});
 });
 
@@ -347,10 +360,9 @@ it("should ensure that CLI discovers only ./awf.config.ts from the current worki
 			{ cwd: child, encoding: "utf8" },
 		);
 
-		expect(notDiscoveredFromParent.status).toBe(1);
+		expect(notDiscoveredFromParent.status).toBe(0);
 		const envelope = JSON.parse(notDiscoveredFromParent.stdout);
-		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
-		expect(envelope.error.message).toMatch(/explicit workflow config/);
+		expect(envelope.data.items).toEqual([]);
 	});
 });
 
@@ -373,123 +385,41 @@ it("should ensure that CLI global --config loads a workflow module before comman
 	});
 });
 
-it("should ensure that CLI without a workflow config fails instead of defaulting to the bundled manifest", async () => {
+it("should ensure that CLI without a workflow config defaults to the bundled agent-workflow manifest", async () => {
 	await withTempDir(async (dir) => {
 		const created = spawnSync(
 			process.execPath,
 			[cliPath.pathname, "--json", "create", "spec", "--input", "-"],
-			{ cwd: dir, encoding: "utf8", input: "# No default\n" },
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({ title: "No default", body: "# No default\n" }),
+			},
 		);
 
-		expect(created.status).toBe(1);
+		expect(created.status).toBe(0);
 		const envelope = JSON.parse(created.stdout);
-		expect(envelope.error.code).toBe("CONFIG_LOAD_FAILED");
-		expect(envelope.error.message).toMatch(/explicit workflow config/);
-	});
-});
-
-it("should ensure that CLI config-exported command handlers are invoked by manifest command id", async () => {
-	await withTempDir(async (dir) => {
-		const configPath = join(dir, "custom.workflow.ts");
-		await writeFile(
-			configPath,
-			`import { z } from "zod";
-import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
-
-export const manifest = defineManifest({
-	version: "v1",
-	workflow: { id: "cli-handler" },
-	vocabulary: { states: ["ready"], actions: ["draft"], events: ["saved"] },
-	concurrency: { perIssue: 1 },
-	kinds: [{
-		id: "item",
-		label: "Item",
-		initial: { state: "ready", action: "draft" },
-		transitions: [],
-	}],
-	commands: [{
-		id: "memo-create",
-		cli: { verb: "create", target: "memo" },
-		target: { kind: "item", action: "draft" },
-		input: z.strictObject({ title: z.string() }),
-		output: z.strictObject({ title: z.string(), handled: z.literal(true) }),
-	}],
-});
-
-export const commandHandlers = {
-	"memo-create": async ({ input }) => ({ title: input.title, handled: true }),
-};
-`,
-		);
-
-		const result = spawnSync(
-			process.execPath,
-			[
-				cliPath.pathname,
-				"--json",
-				"--config",
-				configPath,
-				"create",
-				"memo",
-				"--input",
-				"-",
-			],
-			{ cwd: dir, encoding: "utf8", input: JSON.stringify({ title: "Note" }) },
-		);
-
-		expect(result.status).toBe(0);
-		expect(JSON.parse(result.stdout)).toEqual({
-			ok: true,
-			data: { title: "Note", handled: true },
+		expect(envelope.data.issue.workflow).toMatchObject({
+			kind: "spec",
+			state: "ready",
+			action: "planning",
 		});
 	});
 });
 
-it("should ensure that CLI config-exported lifecycle handlers are invoked by transition key", async () => {
+it("should ensure that CLI config-exported command handlers can customize bundled agent-workflow command ids", async () => {
 	await withTempDir(async (dir) => {
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
 			configPath,
-			`import { z } from "zod";
-import { defineManifest } from ${JSON.stringify(manifestSourcePath)};
-import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
 
-export const manifest = defineManifest({
-	version: "v1",
-	workflow: { id: "cli-lifecycle-handler" },
-	vocabulary: { states: ["running", "done"], actions: ["publish", "none"], events: ["succeed"] },
-	concurrency: { perIssue: 1 },
-	kinds: [{
-		id: "article",
-		label: "Article",
-		initial: { state: "running", action: "publish" },
-		transitions: [{
-			from: { state: "running", action: "publish" },
-			event: "succeed",
-			input: z.strictObject({ summary: z.string() }),
-			to: { state: "done", action: "none" },
-		}],
-	}],
-	commands: [],
-});
-
-export const tracker = createInMemoryTracker({
-	issues: [{
-		id: "article-1",
-		title: "Article",
-		workflow: {
-			kind: "article",
-			state: "running",
-			action: "publish",
-			activeRunId: "run-1",
-		},
-	}],
-});
-
-export const lifecycleHandlers = {
-	"article:running/publish:succeed": ({ input }) => ({
-		log: { summary: input.summary, external: true },
-		artifacts: [{ kind: "inline", uri: "handler:summary", name: "Handler summary" }],
+export const manifest = agentWorkflowManifest;
+export const commandHandlers = {
+	"task-create": async ({ input, command }) => ({
+		command: command.id,
+		title: input.title,
+		handled: true,
 	}),
 };
 `,
@@ -502,24 +432,85 @@ export const lifecycleHandlers = {
 				"--json",
 				"--config",
 				configPath,
-				"succeed",
-				"article-1",
-				"--run",
-				"run-1",
+				"create",
+				"task",
 				"--input",
 				"-",
 			],
 			{
 				cwd: dir,
 				encoding: "utf8",
-				input: JSON.stringify({ summary: "Published externally" }),
+				input: JSON.stringify({
+					parent: "1",
+					title: "Configured task",
+					description: "Handle through config.",
+					profile: "implement",
+				}),
 			},
 		);
 
 		expect(result.status).toBe(0);
-		expect(JSON.parse(result.stdout).data.log.payload).toMatchObject({
-			summary: "Published externally",
-			external: true,
+		expect(JSON.parse(result.stdout)).toEqual({
+			ok: true,
+			data: { command: "task-create", title: "Configured task", handled: true },
+		});
+	});
+});
+
+it("should ensure that CLI config-exported lifecycle handlers can customize bundled agent-workflow transition keys", async () => {
+	await withTempDir(async (dir) => {
+		const configPath = join(dir, "custom.workflow.ts");
+		await writeFile(
+			configPath,
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
+
+export const manifest = agentWorkflowManifest;
+export const tracker = createInMemoryTracker({
+	issues: [{
+		id: "task-1",
+		title: "Task",
+		workflow: {
+			kind: "task",
+			state: "running",
+			action: "work",
+		},
+	}],
+});
+
+export const lifecycleHandlers = {
+	"task:running/work:succeed": () => undefined,
+};
+`,
+		);
+
+		const result = spawnSync(
+			process.execPath,
+			[
+				cliPath.pathname,
+				"--json",
+				"--config",
+				configPath,
+				"run-command",
+				"succeed",
+				"task-1",
+				"--input",
+				"-",
+			],
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({
+					implementationPr: prArtifact(configLifecycleHandlerPrNumber),
+				}),
+			},
+		);
+
+		expect(result.status).toBe(0);
+		expect(
+			JSON.parse(JSON.parse(result.stdout).data.log.message),
+		).toMatchObject({
+			input: { implementationPr: prArtifact(configLifecycleHandlerPrNumber) },
 		});
 	});
 });
@@ -528,21 +519,29 @@ it("should ensure that CLI config that omits tracker uses the default filesystem
 	await withTempDir(async (dir) => {
 		await writeFile(
 			join(dir, "awf.config.ts"),
-			`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
-export const manifest = agentDevelopmentManifest;
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+export const manifest = agentWorkflowManifest;
 `,
 		);
 		const created = spawnSync(
 			process.execPath,
 			[cliPath.pathname, "--json", "create", "spec", "--input", "-"],
-			{ cwd: dir, encoding: "utf8", input: "# Manifest-only config\n" },
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({
+					title: "Manifest-only config",
+					body: "# Spec",
+				}),
+			},
 		);
 
 		expect(created.status).toBe(0);
-		const trackerState = JSON.parse(
-			await readFile(join(dir, ".awf", "tracker.json"), "utf8"),
+		const trackerIssue = await readFile(
+			join(dir, ".awf", "tracker", "1.md"),
+			"utf8",
 		);
-		expect(trackerState.issues[0].title).toBe("Manifest-only config");
+		expect(trackerIssue).toContain('title: "Manifest-only config"');
 	});
 });
 
@@ -552,8 +551,8 @@ it(
 		await withTempDir(async (dir) => {
 			await writeFile(
 				join(dir, "awf.config.ts"),
-				`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
-export const manifest = agentDevelopmentManifest;
+				`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+export const manifest = agentWorkflowManifest;
 `,
 			);
 			const runCli = (args: Array<string>, input?: unknown) => {
@@ -574,72 +573,57 @@ export const manifest = agentDevelopmentManifest;
 				return envelope.data;
 			};
 
-			const spec = runCli(
-				["create", "spec", "--input", "-"],
-				"# Durable spec\n",
-			).issue;
+			const spec = runCli(["create", "spec", "--input", "-"], {
+				title: "Durable spec",
+				body: "# Durable spec\n",
+			}).issue;
 			expect(spec.id).toBe("1");
 			expect(
 				runCli(["ready"]).items.map((item: { id: string }) => item.id),
 			).toEqual(["1"]);
 			expect(runCli(["get", spec.id]).issue.title).toBe("Durable spec");
 
-			const planned = runCli(["apply", "plan", spec.id, "--input", "-"], {
-				tickets: [{ key: "one", title: "Durable ticket", content: "Do it." }],
+			const task = runCli(["create", "task", "--input", "-"], {
+				parent: spec.id,
+				title: "Durable task",
+				description: "Do it.",
+				profile: "implement",
 			});
-			const ticketId = planned.tickets[0].id;
+			const taskId = task.issue.id;
 			expect(
 				runCli(["ready"]).items.map((item: { id: string }) => item.id),
-			).toEqual([ticketId]);
-			expect(runCli(["get", ticketId]).issue.relationships.parent).toBe(
-				spec.id,
-			);
+			).toEqual(["1", taskId]);
+			expect(runCli(["get", taskId]).issue.relationships.parent).toBe(spec.id);
 			expect(
 				runCli(["logs", spec.id]).logs.map((log: { type: string }) => log.type),
-			).toEqual(["spec_created", "plan_applied"]);
+			).toEqual(["spec-create_created"]);
 
-			const started = runCli(["start", ticketId]);
-			expect(runCli(["ready"]).items).toEqual([]);
-			const failed = runCli(
-				["fail", ticketId, "--run", started.run.id, "--input", "-"],
-				{ reason: "transient" },
-			);
+			runCli(["run-command", "start", taskId]);
+			const failed = runCli(["run-command", "fail", taskId, "--input", "-"], {
+				reason: "transient",
+			});
 			expect({
 				state: failed.issue.workflow.state,
 				action: failed.issue.workflow.action,
-			}).toEqual({ state: "ready", action: "implement" });
-
-			const restarted = runCli(["start", ticketId]);
-			const implemented = runCli(
-				["succeed", ticketId, "--run", restarted.run.id, "--input", "-"],
-				{ implementationPr: prArtifact(durableImplementationPrNumber) },
-			);
-			expect({
-				state: implemented.issue.workflow.state,
-				action: implemented.issue.workflow.action,
-			}).toEqual({ state: "ready", action: "review" });
-			const escalated = runCli(["escalate", ticketId, "--input", "-"], {
-				reason: "needs decision",
-			});
-			expect({
-				state: escalated.issue.workflow.state,
-				action: escalated.issue.workflow.action,
 			}).toEqual({ state: "need-human", action: "none" });
-			const resumed = runCli(["resume", ticketId, "--action", "fix"]);
+
+			const recovered = runCli([
+				"run-command",
+				"resume",
+				taskId,
+				"--action",
+				"work",
+			]);
 			expect({
-				state: resumed.issue.workflow.state,
-				action: resumed.issue.workflow.action,
-			}).toEqual({ state: "ready", action: "fix" });
+				state: recovered.issue.workflow.state,
+				action: recovered.issue.workflow.action,
+			}).toEqual({ state: "ready", action: "work" });
 			expect(
-				runCli(["logs", ticketId]).logs.map(
-					(log: { type: string }) => log.type,
-				),
+				runCli(["logs", taskId]).logs.map((log: { type: string }) => log.type),
 			).toEqual([
+				"task-create_created",
 				"action_started",
 				"action_failed",
-				"action_started",
-				"action_succeeded",
-				"human_intervention_needed",
 				"action_resumed",
 			]);
 		});
@@ -652,11 +636,11 @@ it("should ensure that CLI uses an explicit config-exported filesystem tracker a
 		const configPath = join(dir, "custom.workflow.ts");
 		await writeFile(
 			configPath,
-			`import { agentDevelopmentManifest } from ${JSON.stringify(agentDevelopmentWorkflowSourcePath)};
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
 import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
 
-export const manifest = agentDevelopmentManifest;
-export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" });
+export const manifest = agentWorkflowManifest;
+export const tracker = createFileSystemTracker({ path: "./custom-tracker" });
 `,
 		);
 		const create = spawnSync(
@@ -671,7 +655,11 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" }
 				"--input",
 				"-",
 			],
-			{ cwd: dir, encoding: "utf8", input: "# Config tracker\n" },
+			{
+				cwd: dir,
+				encoding: "utf8",
+				input: JSON.stringify({ title: "Config tracker", body: "# Spec" }),
+			},
 		);
 		expect(create.status).toBe(0);
 		const createdId = JSON.parse(create.stdout).data.issue.id;
@@ -683,10 +671,11 @@ export const tracker = createFileSystemTracker({ path: "./custom-tracker.json" }
 		);
 		expect(get.status).toBe(0);
 		expect(JSON.parse(get.stdout).data.issue.title).toBe("Config tracker");
-		const trackerState = JSON.parse(
-			await readFile(join(dir, "custom-tracker.json"), "utf8"),
+		const trackerIssue = await readFile(
+			join(dir, "custom-tracker", `${createdId}.md`),
+			"utf8",
 		);
-		expect(trackerState.issues[0].id).toBe(createdId);
+		expect(trackerIssue).toContain(`id: ${JSON.stringify(createdId)}`);
 	});
 });
 
@@ -749,9 +738,9 @@ it("should ensure that CLI smoke path loads a fixture manifest and returns a JSO
 	expect(JSON.parse(result.stdout)).toEqual({
 		ok: true,
 		data: {
-			manifest: "agent-development",
+			manifest: "agent-workflow",
 			version: "v1",
-			kinds: ["spec", "ticket"],
+			kinds: ["spec", "wayfinder", "task", "grilling"],
 		},
 	});
 });
@@ -769,10 +758,10 @@ it("should ensure that CLI returns a stable validation error envelope for a gene
 	expect(envelope.ok).toBe(false);
 	expect(envelope.error.code).toBe("MANIFEST_VALIDATION_FAILED");
 	expect(envelope.error.details.issues.at(-1).path).toBe(
-		"$.relationships[2].projection.type",
+		"$.relationships[7].projection.type",
 	);
 	expect(envelope.error.details.issues.at(-1).message).toMatch(
-		/parent-child or dependency/,
+		/parent-child, dependency, or generated-by/,
 	);
 });
 
@@ -804,18 +793,18 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 						id: "1",
 						title: "Ready ticket",
 						labels: [
-							"awf:agent-development:kind:ticket",
-							"awf:agent-development:state:ready",
-							"awf:agent-development:action:implement",
+							"awf:agent-workflow:kind:task",
+							"awf:agent-workflow:state:ready",
+							"awf:agent-workflow:action:work",
 						],
 					},
 					{
 						id: "2",
 						title: "Dependency blocked ticket",
 						labels: [
-							"awf:agent-development:kind:ticket",
-							"awf:agent-development:state:ready",
-							"awf:agent-development:action:implement",
+							"awf:agent-workflow:kind:task",
+							"awf:agent-workflow:state:ready",
+							"awf:agent-workflow:action:work",
 						],
 						relationships: { dependencies: ["1"] },
 					},
@@ -823,10 +812,9 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 						id: "3",
 						title: "Running ticket",
 						workflow: {
-							kind: "ticket",
+							kind: "task",
 							state: "running",
-							action: "implement",
-							activeRunId: "run-3",
+							action: "work",
 						},
 					},
 				]),
@@ -841,18 +829,17 @@ it("should ensure that CLI smoke path seeds multiple in-memory issues and return
 	).toEqual(["1"]);
 });
 
-it("should ensure that CLI smoke path reconciles a corrupt in-memory issue before normal commands resume", () => {
+it("should ensure that CLI smoke path does not report compatibility run ids", () => {
 	const issues = [
 		{
 			id: "42",
 			title: "Drifted lifecycle",
-			workflow: { kind: "ticket", state: "running", action: "implement" },
+			workflow: { kind: "task", state: "running", action: "work" },
 			logs: [
 				{
 					sequence: 1,
 					issueId: "42",
 					type: "action_started",
-					runId: "run-42",
 				},
 			],
 		},
@@ -866,10 +853,9 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"succeed",
 			"42",
-			"--run",
-			"run-42",
 			"--input",
 			"-",
 		],
@@ -881,8 +867,7 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 			env,
 		},
 	);
-	expect(before.status).toBe(1);
-	expect(JSON.parse(before.stdout).error.code).toBe("RUN_MISMATCH");
+	expect(before.status).toBe(0);
 
 	const diagnosed = spawnSync(
 		process.execPath,
@@ -900,9 +885,10 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 		},
 	);
 	expect(diagnosed.status).toBe(0);
-	expect(JSON.parse(diagnosed.stdout).data.diagnostics[0].code).toBe(
-		"MISSING_ACTIVE_RUN",
-	);
+	expect(JSON.parse(diagnosed.stdout).data).toMatchObject({
+		status: "clean",
+		diagnostics: [],
+	});
 
 	const applied = spawnSync(
 		process.execPath,
@@ -919,7 +905,6 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 	);
 	expect(applied.status).toBe(0);
 	const repairedIssue = JSON.parse(applied.stdout).data.issue;
-	expect(repairedIssue.workflow.activeRunId).toBe("run-42");
 
 	const after = spawnSync(
 		process.execPath,
@@ -928,10 +913,9 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"succeed",
 			"42",
-			"--run",
-			"run-42",
 			"--input",
 			"-",
 		],
@@ -949,10 +933,9 @@ it("should ensure that CLI smoke path reconciles a corrupt in-memory issue befor
 		},
 	);
 	expect(after.status).toBe(0);
-	expect(JSON.parse(after.stdout).ok).toBe(true);
 });
 
-it("should ensure that CLI smoke path starts and succeeds a workflow run with logs oldest-first", () => {
+it("should ensure that CLI smoke path starts and succeeds a workflow action with logs oldest-first", () => {
 	const started = spawnSync(
 		process.execPath,
 		[
@@ -960,6 +943,7 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"start",
 			"42",
 		],
@@ -972,9 +956,9 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 						id: "42",
 						title: "Implement lifecycle",
 						labels: [
-							"awf:agent-development:kind:ticket",
-							"awf:agent-development:state:ready",
-							"awf:agent-development:action:implement",
+							"awf:agent-workflow:kind:task",
+							"awf:agent-workflow:state:ready",
+							"awf:agent-workflow:action:work",
 						],
 					},
 				]),
@@ -986,7 +970,6 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 	expect(started.stderr).toBe("");
 	const startEnvelope = JSON.parse(started.stdout);
 	expect(startEnvelope.ok).toBe(true);
-	const runId = startEnvelope.data.run.id;
 	const succeeded = spawnSync(
 		process.execPath,
 		[
@@ -994,10 +977,9 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 			"--json",
 			"--config",
 			envMemoryWorkflowPath,
+			"run-command",
 			"succeed",
 			"42",
-			"--run",
-			runId,
 			"--input",
 			"-",
 		],
@@ -1013,10 +995,9 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 						id: "42",
 						title: "Implement lifecycle",
 						workflow: {
-							kind: "ticket",
+							kind: "task",
 							state: "running",
-							action: "implement",
-							activeRunId: runId,
+							action: "work",
 						},
 						logs: [startEnvelope.data.log],
 					},
@@ -1048,9 +1029,9 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 						id: "42",
 						title: "Implement lifecycle",
 						workflow: {
-							kind: "ticket",
+							kind: "task",
 							state: "ready",
-							action: "review",
+							action: "none",
 						},
 						logs: [startEnvelope.data.log, succeedEnvelope.data.log],
 					},
@@ -1067,159 +1048,6 @@ it("should ensure that CLI smoke path starts and succeeds a workflow run with lo
 		logsEnvelope.data.logs.map((log: { type: string }) => log.type),
 	).toEqual(["action_started", "action_succeeded"]);
 });
-
-it(
-	"should ensure that CLI smoke path drives one tiny Spec with one Ticket to Spec done",
-	() => {
-		const runCli = (
-			args: Array<string>,
-			issues: Array<unknown>,
-			input?: unknown,
-		) => {
-			const stdin =
-				input === undefined ? undefined : serializeCliSmokeInput(input);
-			const result = spawnSync(
-				process.execPath,
-				[
-					cliPath.pathname,
-					"--json",
-					"--config",
-					envMemoryWorkflowPath,
-					...args,
-				],
-				{
-					encoding: "utf8",
-					input: stdin,
-					env: { ...process.env, AWF_MEMORY_ISSUES: JSON.stringify(issues) },
-				},
-			);
-			expect(result.status).toBe(0);
-			expect(result.stderr).toBe("");
-			const envelope = JSON.parse(result.stdout);
-			expect(envelope.ok).toBe(true);
-			return envelope.data;
-		};
-
-		const implementationPrNumber = 39;
-		const specPrNumber = 40;
-
-		const created = runCli(
-			["create", "spec", "--input", "-"],
-			[],
-			"# Tiny spec\n",
-		);
-		const planned = runCli(
-			["apply", "plan", created.issue.id, "--input", "-"],
-			[created.issue],
-			{ tickets: [{ key: "one", title: "One", content: "Do one thing." }] },
-		);
-		const specAfterPlan = planned.spec;
-		const ticket = {
-			id: planned.tickets[0].id,
-			title: "One",
-			body: "Do one thing.",
-			workflow: { kind: "ticket", state: "ready", action: "implement" },
-			relationships: { parent: specAfterPlan.id },
-		};
-
-		let started = runCli(["start", ticket.id], [specAfterPlan, ticket]);
-		let completed = runCli(
-			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
-			[
-				specAfterPlan,
-				{ ...ticket, workflow: started.issue.workflow, logs: [started.log] },
-			],
-			{ implementationPr: prArtifact(implementationPrNumber) },
-		);
-		let ticketIssue = completed.issue;
-		let ticketLogs = [started.log, completed.log];
-
-		started = runCli(
-			["start", ticket.id],
-			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
-		);
-		completed = runCli(
-			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
-			[
-				specAfterPlan,
-				{
-					...ticketIssue,
-					workflow: started.issue.workflow,
-					logs: [...ticketLogs, started.log],
-				},
-			],
-			{ verdict: "approved" },
-		);
-		ticketIssue = completed.issue;
-		ticketLogs = [...ticketLogs, started.log, completed.log];
-
-		started = runCli(
-			["start", ticket.id],
-			[specAfterPlan, { ...ticketIssue, logs: ticketLogs }],
-		);
-		completed = runCli(
-			["succeed", ticket.id, "--run", started.run.id, "--input", "-"],
-			[
-				specAfterPlan,
-				{
-					...ticketIssue,
-					workflow: started.issue.workflow,
-					logs: [...ticketLogs, started.log],
-				},
-			],
-			{ merged: true },
-		);
-		ticketIssue = completed.issue;
-		expect(ticketIssue.workflow.state).toBe("done");
-		const specReadyForIntegration = {
-			...specAfterPlan,
-			workflow: { ...specAfterPlan.workflow, action: "integration-test" },
-		};
-
-		started = runCli(
-			["start", specAfterPlan.id],
-			[specReadyForIntegration, ticketIssue],
-		);
-		completed = runCli(
-			["succeed", specAfterPlan.id, "--run", started.run.id, "--input", "-"],
-			[
-				{
-					...specReadyForIntegration,
-					workflow: started.issue.workflow,
-					logs: [started.log],
-				},
-				ticketIssue,
-			],
-			{
-				verdict: "passed",
-				specPr: prArtifact(specPrNumber),
-			},
-		);
-		let specIssue = completed.issue;
-		const specLogs = [started.log, completed.log];
-
-		started = runCli(
-			["start", specIssue.id],
-			[{ ...specIssue, logs: specLogs }, ticketIssue],
-		);
-		completed = runCli(
-			["succeed", specIssue.id, "--run", started.run.id, "--input", "-"],
-			[
-				{
-					...specIssue,
-					workflow: started.issue.workflow,
-					logs: [...specLogs, started.log],
-				},
-				ticketIssue,
-			],
-			{ merged: true },
-		);
-		specIssue = completed.issue;
-		expect(specIssue.workflow.state).toBe("done");
-		expect(specIssue.workflow.action).toBe("none");
-	},
-	bundledGoldenSmokeTimeoutMs,
-);
 
 it("should ensure that CLI writes plain text errors to stdout and exits non-zero by default", () => {
 	const result = spawnSync(process.execPath, [cliPath.pathname, "unknown"], {

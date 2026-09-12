@@ -1,15 +1,15 @@
 import { expect, it } from "vitest";
-import { execute as rawExecute } from "../../src/commands.ts";
-import { agentDevelopmentManifest } from "../../src/workflows/agent-development/index.ts";
+import { execute as rawExecute } from "../support/execute.ts";
+import { agentWorkflowManifest } from "../../src/workflows/agent-workflow/index.ts";
 
-import type { Tracker } from "../../src/tracker.ts";
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
+import type { Tracker } from "../../src/ports/tracker.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
 
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
 ): ReturnType<typeof rawExecute> {
-	return rawExecute(args, { manifest: agentDevelopmentManifest, ...options });
+	return rawExecute(args, { manifest: agentWorkflowManifest, ...options });
 }
 it("should ensure that fixed handoff runtime command is not publicly accepted", async () => {
 	const envelope = await execute(["handoff", "ticket-1", "--input", "-"]);
@@ -27,7 +27,7 @@ it("should ensure that fixed handoff runtime command is not publicly accepted", 
 it("should ensure that unknown manifest command targets are rejected before tracker mutation", async () => {
 	const envelope = await execute(["create", "ticket", "--input", "-"], {
 		tracker: createNoTouchTracker(),
-		manifest: agentDevelopmentManifest,
+		manifest: agentWorkflowManifest,
 		stdin: "# Ticket\n",
 	});
 
@@ -46,8 +46,8 @@ it("should ensure that start records one high-level tracker intent instead of lo
 		issues: [
 			{
 				id: "123",
-				title: "Ticket",
-				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				title: "Task",
+				workflow: { kind: "task", state: "ready", action: "work" },
 			},
 		],
 	});
@@ -59,35 +59,45 @@ it("should ensure that start records one high-level tracker intent instead of lo
 			expect(id).toBe("123");
 			return issue;
 		},
-		startRun: async (id, input) => {
-			intents.push("startRun");
-			expect(id).toBe("123");
-			expect(input.expect).toEqual({
+		applyWorkflowEffects: async ({ effects }) => {
+			intents.push("applyWorkflowEffects");
+			expect(effects).toHaveLength(2);
+			const update = effects[0];
+			const record = effects[1];
+			expect(update.type).toBe("update-workflow");
+			if (update.type !== "update-workflow") {
+				throw new Error("expected workflow update");
+			}
+			expect(update.issue).toEqual({ id: "123" });
+			expect(update.expect).toEqual({
 				version: issue.workflow.version,
 				hash: issue.workflow.hash,
 			});
-			expect(input.workflow.state).toBe("running");
-			expect(input.workflow.action).toBe("implement");
-			expect(input.log.type).toBe("action_started");
-			expect(input.log.runId).toBe(input.runId);
+			expect(update.workflow.state).toBe("running");
+			expect(update.workflow.action).toBe("work");
+			expect(record.type).toBe("record-command");
+			if (record.type !== "record-command") {
+				throw new Error("expected command record");
+			}
+			expect(record.issue).toEqual({ id: "123" });
+			expect(record.log.type).toBe("action_started");
 			return {
-				issue: {
-					...issue,
-					workflow: {
-						...issue.workflow,
-						state: "running",
-						activeRunId: input.runId,
+				issues: {
+					"123": {
+						...issue,
+						workflow: { ...issue.workflow, ...update.workflow },
 					},
 				},
-				log: { ...input.log, issueId: id, sequence: 1 },
+				createdIssues: [],
+				logs: [{ ...record.log, issueId: "123", sequence: 1 }],
 			};
 		},
 	};
 
-	const envelope = await execute(["start", "123"], { tracker });
+	const envelope = await execute(["run-command", "start", "123"], { tracker });
 
 	expect(envelope.ok).toBe(true);
-	expect(intents).toEqual(["startRun"]);
+	expect(intents).toEqual(["applyWorkflowEffects"]);
 });
 
 function createNoTouchTracker(): Tracker {
@@ -96,15 +106,9 @@ function createNoTouchTracker(): Tracker {
 	};
 	return {
 		createWorkflowIssue: touched,
-		startRun: touched,
-		completeRun: touched,
-		recordArtifacts: touched,
-		escalateWorkflow: touched,
-		resumeWorkflow: touched,
 		changeRelationship: touched,
 		applyWorkflowEffects: touched,
 		recordCommand: touched,
-		advanceWorkflow: touched,
 		repairIssue: touched,
 		getIssue: touched,
 		listIssues: touched,
@@ -112,15 +116,30 @@ function createNoTouchTracker(): Tracker {
 	};
 }
 
-it("should ensure that invalid arguments return a stable parse error envelope", async () => {
-	const envelope = await execute(["succeed", "123"]);
+it("should ensure that lifecycle commands validate before issue lookup", async () => {
+	for (const command of ["start", "succeed", "resume"]) {
+		const envelope = await execute(["run-command", command, "123"]);
 
-	expect(envelope).toEqual({
-		ok: false,
-		error: {
-			code: "INVALID_ARGUMENTS",
-			message: "Invalid command arguments.",
-			details: { usage: "awf succeed <id> --run <run> --input <file|->" },
-		},
-	});
+		expect(envelope).toEqual(
+			command === "resume"
+				? {
+						ok: false,
+						error: {
+							code: "INVALID_ARGUMENTS",
+							message: "Invalid command arguments.",
+							details: {
+								usage: "awf run-command resume <id> --action <action>",
+							},
+						},
+					}
+				: {
+						ok: false,
+						error: {
+							code: "NOT_FOUND",
+							message: "Workflow issue '123' was not found.",
+							details: { id: "123" },
+						},
+					},
+		);
+	}
 });

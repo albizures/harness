@@ -6,10 +6,13 @@ import {
 	NeedReconciliationError,
 	type TrackerAdapter,
 	type TrackerCreateWorkflowIssueIntent,
-} from "../../src/tracker.ts";
-import { createFileSystemTracker } from "../../src/trackers/filesystem.ts";
-import { createInMemoryTracker } from "../../src/trackers/memory.ts";
-import { ProjectionConflictError } from "../../src/workflow/projection.ts";
+	type TrackerLog,
+	type TrackerProjectionExpectation,
+	type TrackerWorkflow,
+} from "../../src/ports/tracker.ts";
+import { createFileSystemTracker } from "../../src/adapters/trackers/filesystem.ts";
+import { createInMemoryTracker } from "../../src/adapters/trackers/memory.ts";
+import { ProjectionConflictError } from "../../src/domain/workflow/projection.ts";
 
 type TrackerFixture = {
 	tracker: TrackerAdapter;
@@ -23,6 +26,29 @@ type TrackerFamily = {
 	) => Promise<TrackerFixture>;
 };
 
+async function applyWorkflowAndLog(
+	tracker: TrackerAdapter,
+	id: string,
+	input: {
+		expect: TrackerProjectionExpectation;
+		workflow: TrackerWorkflow;
+		log: TrackerLog;
+	},
+): Promise<{ issue: Awaited<ReturnType<TrackerAdapter["getIssue"]>> }> {
+	const result = await tracker.applyWorkflowEffects({
+		effects: [
+			{
+				type: "update-workflow",
+				issue: { id },
+				expect: input.expect,
+				workflow: input.workflow,
+			},
+			{ type: "record-command", issue: { id }, log: input.log },
+		],
+	});
+	return { issue: result.issues[id] ?? (await tracker.getIssue(id)) };
+}
+
 const trackerFamilies: Array<TrackerFamily> = [
 	{
 		name: "in-memory tracker",
@@ -35,7 +61,7 @@ const trackerFamilies: Array<TrackerFamily> = [
 		create: async (seed = []) => {
 			const dir = await mkdtemp(join(tmpdir(), "awf-conformance-"));
 			const tracker = createFileSystemTracker({
-				path: join(dir, "tracker.json"),
+				path: join(dir, "tracker"),
 			});
 			for (const issue of seed) {
 				await tracker.createWorkflowIssue(issue);
@@ -56,25 +82,27 @@ for (const family of trackerFamilies) {
 			const created = await tracker.createWorkflowIssue({
 				title: "Conformance ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
-				initialLog: { type: "workflow_created", payload: { source: "test" } },
+				initialLog: { type: "workflow_created", message: "test" },
 			});
 
-			const started = await tracker.startRun(created.issue.id, {
+			const started = await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: created.issue.workflow.version,
 					hash: created.issue.workflow.hash,
 				},
-				runId: "run-1",
-				workflow: { state: "running", action: "implement" },
-				log: { type: "action_started", runId: "run-1" },
+				workflow: {
+					state: "running",
+					action: "implement",
+				},
+				log: { type: "action_started" },
 			});
-			await tracker.resumeWorkflow(created.issue.id, {
+			await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: started.issue.workflow.version,
 					hash: started.issue.workflow.hash,
 				},
 				workflow: { state: "ready", action: "implement" },
-				log: { type: "action_resumed", runId: "run-1" },
+				log: { type: "action_succeeded" },
 			});
 
 			expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject(
@@ -86,7 +114,7 @@ for (const family of trackerFamilies) {
 			);
 			expect(
 				(await tracker.readLogs(created.issue.id)).map((log) => log.type),
-			).toEqual(["workflow_created", "action_started", "action_resumed"]);
+			).toEqual(["workflow_created", "action_started", "action_succeeded"]);
 		});
 	});
 
@@ -147,14 +175,11 @@ for (const family of trackerFamilies) {
 							workflow: { state: "ready", action: "none" },
 						},
 						{
-							type: "record-artifacts",
+							type: "record-command",
 							issue: { id: "spec-1" },
-							artifacts: [
-								{ kind: "file", uri: "plans/workflow.json", name: "Workflow" },
-							],
 							log: {
 								type: "workflow_applied",
-								payload: { source: "workflow" },
+								message: JSON.stringify({ source: "workflow" }),
 							},
 						},
 					],
@@ -173,14 +198,9 @@ for (const family of trackerFamilies) {
 				expect(
 					(await tracker.getIssue(finishId)).relationships.dependencies,
 				).toEqual([setupId]);
-				expect(result.artifacts[0]?.artifact).toMatchObject({
-					kind: "file",
-					uri: "plans/workflow.json",
-					name: "Workflow",
-				});
-				expect((await tracker.readLogs("spec-1"))[0]?.payload).toEqual({
-					source: "workflow",
-				});
+				expect((await tracker.readLogs("spec-1"))[0]?.message).toBe(
+					JSON.stringify({ source: "workflow" }),
+				);
 			},
 			[
 				{
@@ -192,79 +212,112 @@ for (const family of trackerFamilies) {
 		);
 	});
 
-	it(`should preserve JSON-compatible artifact metadata and log payloads for ${family.name}`, async () => {
+	it(`should remove deleted issues from relationship graphs for ${family.name}`, async () => {
+		await withTracker(family, async (tracker) => {
+			const parent = await tracker.createWorkflowIssue({
+				title: "Parent",
+				workflow: { kind: "spec", state: "ready", action: "plan" },
+			});
+			const child = await tracker.createWorkflowIssue({
+				title: "Child",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			});
+			const blocker = await tracker.createWorkflowIssue({
+				title: "Blocker",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			});
+
+			await tracker.changeRelationship({
+				type: "add-child",
+				parentId: parent.issue.id,
+				childId: child.issue.id,
+			});
+			await tracker.changeRelationship({
+				type: "add-dependency",
+				issueId: child.issue.id,
+				blockedById: blocker.issue.id,
+			});
+			await tracker.deleteIssue(child.issue.id);
+
+			expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual([
+				parent.issue.id,
+				blocker.issue.id,
+			]);
+			expect(
+				(await tracker.getIssue(parent.issue.id)).relationships.children,
+			).toEqual([]);
+			expect(
+				(await tracker.getIssue(blocker.issue.id)).relationships.dependents,
+			).toEqual([]);
+			await expect(tracker.getIssue(child.issue.id)).rejects.toThrow();
+		});
+	});
+
+	it(`should preserve JSON-compatible log payloads for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "JSON conformance ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
 				initialLog: {
 					type: "workflow_created",
-					payload: { nested: { values: ["one", 2, true, null] } },
+					message: JSON.stringify({
+						nested: { values: ["one", 2, true, null] },
+					}),
 				},
 			});
 
-			const artifact = await tracker.registerArtifact(created.issue.id, {
-				kind: "file",
-				uri: "docs/result.md",
-				metadata: {
-					count: 2,
-					nested: { ok: true, values: ["alpha", null] },
-				},
-			});
 			await tracker.recordCommand(created.issue.id, {
 				log: {
 					type: "json_payload_recorded",
-					payload: { artifact, flags: [true, false], empty: null },
+					message: JSON.stringify({ flags: [true, false], empty: null }),
 				},
 			});
 
-			expect((await tracker.getIssue(created.issue.id)).artifacts).toEqual([
-				artifact,
-			]);
 			expect(
-				(await tracker.readLogs(created.issue.id)).map((log) => log.payload),
+				(await tracker.readLogs(created.issue.id)).map((log) => log.message),
 			).toEqual([
-				{ nested: { values: ["one", 2, true, null] } },
-				{ artifact, flags: [true, false], empty: null },
+				JSON.stringify({ nested: { values: ["one", 2, true, null] } }),
+				JSON.stringify({ flags: [true, false], empty: null }),
 			]);
 		});
 	});
 
-	it(`should record artifacts, changes, and terminal logs for ${family.name}`, async () => {
+	it(`should record terminal logs for ${family.name}`, async () => {
 		await withTracker(family, async (tracker) => {
 			const created = await tracker.createWorkflowIssue({
 				title: "Conformance ticket",
 				workflow: { kind: "ticket", state: "ready", action: "implement" },
 			});
-			const started = await tracker.startRun(created.issue.id, {
+			const started = await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: created.issue.workflow.version,
 					hash: created.issue.workflow.hash,
 				},
-				runId: "run-1",
-				workflow: { state: "running", action: "implement" },
-				log: { type: "action_started", runId: "run-1" },
+				workflow: {
+					state: "running",
+					action: "implement",
+				},
+				log: { type: "action_started" },
 			});
 
-			const completed = await tracker.completeRun(created.issue.id, {
+			const completed = await applyWorkflowAndLog(tracker, created.issue.id, {
 				expect: {
 					version: started.issue.workflow.version,
 					hash: started.issue.workflow.hash,
 				},
-				runId: "run-1",
-				workflow: { state: "done", action: "none" },
-				artifacts: [{ kind: "file", uri: "docs/result.md" }],
-				changes: [{ kind: "git-ref", uri: "abc123", summary: "Implemented" }],
-				log: { type: "action_succeeded", runId: "run-1" },
+				workflow: {
+					state: "done",
+					action: "none",
+				},
+				log: { type: "action_succeeded" },
 			});
 
 			expect(completed.issue.workflow).toMatchObject({
 				state: "done",
 				action: "none",
 			});
-			expect(completed.issue.workflow).not.toHaveProperty("activeRunId");
-			expect(completed.issue.artifacts).toEqual(completed.artifacts);
-			expect(completed.issue.changes).toEqual(completed.changes);
+			expect(completed.issue).not.toHaveProperty("artifacts");
+			expect(completed.issue).not.toHaveProperty("changes");
 			expect(
 				(await tracker.readLogs(created.issue.id)).map((log) => log.type),
 			).toEqual(["action_started", "action_succeeded"]);
@@ -279,23 +332,38 @@ for (const family of trackerFamilies) {
 					title: "Conflict ticket",
 					workflow: { kind: "ticket", state: "ready", action: "implement" },
 				});
-				await tracker.advanceWorkflow(ticket.issue.id, {
-					expect: {
-						version: ticket.issue.workflow.version,
-						hash: ticket.issue.workflow.hash,
-					},
-					workflow: { state: "running", activeRunId: "run-1" },
+				await tracker.applyWorkflowEffects({
+					effects: [
+						{
+							type: "update-workflow",
+							issue: { id: ticket.issue.id },
+							expect: {
+								version: ticket.issue.workflow.version,
+								hash: ticket.issue.workflow.hash,
+							},
+							workflow: { state: "running" },
+						},
+					],
 				});
 
 				await expect(
-					tracker.startRun(ticket.issue.id, {
-						expect: {
-							version: ticket.issue.workflow.version,
-							hash: ticket.issue.workflow.hash,
-						},
-						runId: "run-2",
-						workflow: { state: "running" },
-						log: { type: "action_started", runId: "run-2" },
+					tracker.applyWorkflowEffects({
+						effects: [
+							{
+								type: "update-workflow",
+								issue: { id: ticket.issue.id },
+								expect: {
+									version: ticket.issue.workflow.version,
+									hash: ticket.issue.workflow.hash,
+								},
+								workflow: { state: "running" },
+							},
+							{
+								type: "record-command",
+								issue: { id: ticket.issue.id },
+								log: { type: "workflow_applied" },
+							},
+						],
 					}),
 				).rejects.toThrow(ProjectionConflictError);
 
@@ -320,11 +388,8 @@ for (const family of trackerFamilies) {
 								child: { key: "a" },
 							},
 							{
-								type: "record-artifacts",
-								issue: { id: "spec-1" },
-								artifacts: [
-									{ kind: "file", uri: "https://example.com/not-a-file" },
-								],
+								type: "record-command",
+								issue: { key: "missing" },
 								log: { type: "workflow_applied" },
 							},
 						],
