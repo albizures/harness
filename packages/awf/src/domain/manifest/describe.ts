@@ -133,7 +133,8 @@ export function describeWorkflow(
 				? {}
 				: {
 						cli: {
-							...command.cli,
+							verb: command.cli.verb,
+							target: command.cli.target,
 							usage: manifestCommandUsage(command),
 						},
 					}),

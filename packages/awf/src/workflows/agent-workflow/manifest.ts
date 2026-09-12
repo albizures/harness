@@ -301,7 +301,7 @@ export const agentWorkflowManifest = defineManifest({
 		},
 		{
 			id: "spec-complete",
-			cli: { verb: "spec", target: "complete", input: "none" },
+			cli: { verb: "spec", target: "complete" },
 			target: { kind: "spec", state: "ready", action: "none" },
 		},
 		{

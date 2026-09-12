@@ -93,6 +93,11 @@ function descriptionManifest() {
 				target: { kind: "spec", action: "review" },
 				input: stringInput,
 			},
+			{
+				id: "approveReview",
+				cli: { verb: "approve", target: "review", input: "none" },
+				target: { kind: "spec", state: "ready", action: "review" },
+			},
 		],
 		relationships: [
 			{
@@ -132,6 +137,7 @@ describe("when building a Workflow description DTO", () => {
 			"createSpec",
 			"createTicket",
 			"scorePlan",
+			"approveReview",
 		]);
 		expect(description.readiness?.filters).toEqual([
 			{ kind: "spec", state: "ready", action: "plan" },
@@ -179,7 +185,13 @@ describe("when building a Workflow description DTO", () => {
 				cli: { usage: "awf score plan <issue> --input <file|->" },
 				input: { required: true },
 			},
+			{
+				id: "approveReview",
+				cli: { usage: "awf approve review <issue>" },
+				input: { required: false },
+			},
 		]);
+		expect(description.commands[3]?.cli).not.toHaveProperty("input");
 		expect(JSON.stringify(description)).not.toContain("_def");
 		expect(JSON.stringify(description)).not.toContain("secret-prefix");
 	});
