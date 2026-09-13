@@ -1,8 +1,10 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for direct GitHub issue operations that are **not** managed by AWF planning workflows.
 
-## Conventions
+AWF-backed planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use the public AWF `agent-workflow` CLI instead of direct tracker creation, labels, sub-issue APIs, or dependency APIs. See `skills/workflow/agent-workflow/SKILL.md` and `docs/agents/awf-github-tracker-prereq.md`.
+
+## Direct GitHub conventions for non-AWF work
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
@@ -25,21 +27,21 @@ When set to `yes`, PRs run through the same labels and states as issues, using t
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
-## When a skill says "publish to the issue tracker"
+## When a non-AWF skill says "publish to the issue tracker"
 
-Create a GitHub issue.
+Create a GitHub issue with `gh issue create` unless that skill explicitly opts into AWF.
 
-## When a skill says "fetch the relevant ticket"
+## When a non-AWF skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Run `gh issue view <number> --comments` unless the ticket is an AWF Workflow issue, in which case use AWF (`awf get <id>`, `awf logs <id>`) for workflow state/history.
 
-## Wayfinding operations
+## AWF-backed planning workflows
 
-Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
+For AWF Specs, Tasks, Wayfinders, and Grilling issues:
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
-- **Blocking**: GitHub's **native issue dependencies** — the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only — the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- Create issues with `awf create spec`, `awf create task`, `awf create wayfinder`, or `awf create grilling`.
+- Attach parent/child relationships with AWF create input (`spec` or `parent`).
+- Preserve blocking edges with AWF Task `dependsOn` input.
+- Query executable frontier work with `awf ready`.
+- Inspect state/history with `awf get <id>` and `awf logs <id>`.
+- Run lifecycle steps only through public commands shown by `awf --help` or by a `Usage:` line in `awf workflow describe`.

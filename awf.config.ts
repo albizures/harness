@@ -1,11 +1,11 @@
 import {
-	agentDevelopmentCommandHandlers,
-	agentDevelopmentLifecycleHandlers,
-	agentDevelopmentManifest,
-} from "./packages/awf/dist";
+	agentWorkflowManifest,
+	createGhCliGitHubTracker,
+} from "@albizures/awf";
 
-export {
-	agentDevelopmentCommandHandlers as commandHandlers,
-	agentDevelopmentLifecycleHandlers as lifecycleHandlers,
-	agentDevelopmentManifest as manifest,
-};
+export const manifest = agentWorkflowManifest;
+export const tracker = createGhCliGitHubTracker({
+	owner: "albizures",
+	repo: "harness",
+	manifest: agentWorkflowManifest,
+});

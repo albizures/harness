@@ -13,5 +13,5 @@ A category inside the skill catalog that groups related skills by user outcome, 
 _Avoid_: skill package, category package, bundle
 
 **Workflow skill group**:
-A skill group for meta-skills that help users coordinate agent sessions, choose agent flows, or transform work artifacts so agents can operate more effectively.
+A skill group for meta-skills that help users coordinate agent sessions, choose agent flows, operate AWF-backed planning artifacts, or transform work artifacts so agents can operate more effectively.
 _Avoid_: engineering skill group, design skill group, miscellaneous skill group
