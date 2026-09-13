@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for direct GitHub issue operations that are **not** managed by AWF planning workflows.
 
-AWF-backed planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use `skills/workflow/agent-workflow/SKILL.md` as the Agent Workflow reference. Load `docs/agents/awf-github-tracker-prereq.md` only when configuring or validating GitHub-backed AWF operation.
+AWF-backed planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use the installed `agent-workflow` skill as the Agent Workflow reference, resolving its local `SKILL.md` from the active skill catalog or installed skill location. Load the `GITHUB-SETUP.md` file beside that `SKILL.md` only when configuring or validating GitHub-backed AWF setup.
 
 ## Direct GitHub conventions for non-AWF work
 

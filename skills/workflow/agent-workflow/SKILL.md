@@ -77,20 +77,9 @@ AWF gates `integration-test` and `merge` readiness by profile. It does not prove
 
 ## GitHub target
 
-For GitHub-backed operation, use a repo `awf.config.ts` that exports the bundled workflow and GitHub tracker from `@albizures/awf`, then run AWF commands from the repo root:
+For normal GitHub-backed operation, run public AWF commands from the repo root with the configured repo `awf.config.ts`. AWF is responsible for projecting workflow labels, machine comments, child relationships, and dependencies.
 
-```ts
-import { agentWorkflowManifest, createGhCliGitHubTracker } from "@albizures/awf";
-
-export const manifest = agentWorkflowManifest;
-export const tracker = createGhCliGitHubTracker({
-  owner: "albizures",
-  repo: "harness",
-  manifest: agentWorkflowManifest,
-});
-```
-
-The GitHub tracker requires an authenticated `gh` CLI with issue, sub-issue, dependency, label, comment, and close permissions. AWF is responsible for projecting workflow labels, machine comments, child relationships, and dependencies.
+When configuring or validating GitHub-backed AWF setup, use [`GITHUB-SETUP.md`](GITHUB-SETUP.md).
 
 ## Filesystem fallback
 
