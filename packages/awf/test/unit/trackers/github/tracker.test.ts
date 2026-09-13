@@ -2,6 +2,7 @@ import { assert, expect, it } from "vitest";
 import { execute } from "../../../support/execute.ts";
 import { agentWorkflowManifest } from "../../../../src/workflows/agent-workflow/index.ts";
 import {
+	GhCliGitHubTrackerApi,
 	createGitHubTracker,
 	validateGitHubTrackerCapabilities,
 	type GitHubTrackerApi,
@@ -257,6 +258,177 @@ it("should ensure that listIssues ignores unrelated GitHub issues without workfl
 	expect((await tracker.listIssues()).map((issue) => issue.id)).toEqual(["2"]);
 });
 
+it("should expose GitHub-backed child and dependency relationships to public AWF readiness", async () => {
+	const api = createMockGitHubApi();
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentWorkflowManifest,
+	});
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			manifest: agentWorkflowManifest,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const blocker = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			manifest: agentWorkflowManifest,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Set up",
+				description: "Prepare the work.",
+				profile: "implement",
+			}),
+		}),
+	) as { issue: { id: string } };
+	const dependent = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			manifest: agentWorkflowManifest,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Do the work",
+				description: "Complete the work.",
+				profile: "implement",
+				dependsOn: [blocker.issue.id],
+			}),
+		}),
+	) as {
+		issue: {
+			id: string;
+			relationships: { parent?: string; dependencies: Array<string> };
+		};
+	};
+
+	expect(dependent.issue.relationships.parent).toBe(spec.issue.id);
+	expect(dependent.issue.relationships.dependencies).toEqual([
+		blocker.issue.id,
+	]);
+	expect(
+		(await tracker.getIssue(spec.issue.id)).relationships.children,
+	).toEqual([blocker.issue.id, dependent.issue.id]);
+	const blockedReady = assertSuccess(
+		await execute(["ready"], { tracker, manifest: agentWorkflowManifest }),
+	) as {
+		items: Array<{ id: string }>;
+		blocked: Array<{ id: string; blocking: Array<Record<string, unknown>> }>;
+	};
+	expect(blockedReady.items.map((item) => item.id)).not.toContain(
+		dependent.issue.id,
+	);
+	expect(blockedReady.blocked).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: dependent.issue.id,
+				blocking: [
+					expect.objectContaining({
+						gate: "dependency",
+						blockedBy: [expect.objectContaining({ id: blocker.issue.id })],
+					}),
+				],
+			}),
+		]),
+	);
+
+	assertSuccess(
+		await execute(["run-command", "start", blocker.issue.id], {
+			tracker,
+			manifest: agentWorkflowManifest,
+		}),
+	);
+	assertSuccess(
+		await execute(
+			["run-command", "succeed", blocker.issue.id, "--input", "-"],
+			{
+				tracker,
+				manifest: agentWorkflowManifest,
+				stdin: "{}",
+			},
+		),
+	);
+	const ready = assertSuccess(
+		await execute(["ready"], { tracker, manifest: agentWorkflowManifest }),
+	) as {
+		items: Array<{ id: string }>;
+	};
+	expect(ready.items.map((item) => item.id)).toContain(dependent.issue.id);
+});
+
+it("should infer child parent relationships from parent sub-issue lists when GitHub omits child parent fields", async () => {
+	const api = createMockGitHubApi({ exposeChildParent: false });
+	const tracker = createGitHubTracker({
+		api,
+		manifest: agentWorkflowManifest,
+	});
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--input", "-"], {
+			tracker,
+			manifest: agentWorkflowManifest,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		}),
+	) as { issue: { id: string } };
+	const task = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			manifest: agentWorkflowManifest,
+			stdin: JSON.stringify({
+				spec: spec.issue.id,
+				title: "Task",
+				description: "Do the work.",
+				profile: "implement",
+			}),
+		}),
+	) as { issue: { id: string; relationships: { parent?: string } } };
+
+	expect(task.issue.relationships.parent).toBe(spec.issue.id);
+	expect((await tracker.getIssue(task.issue.id)).relationships.parent).toBe(
+		spec.issue.id,
+	);
+	expect((await tracker.getIssue(spec.issue.id)).relationships.children).toEqual([
+		task.issue.id,
+	]);
+});
+
+it("should read native GitHub relationship projections through the gh CLI boundary", async () => {
+	const calls: Array<{ method: string; path: string; args: Array<string> }> =
+		[];
+	const api = new GhCliGitHubTrackerApi(
+		"acme",
+		"repo",
+		async (method, path, args = []) => {
+			calls.push({ method, path, args });
+			if (path.endsWith("/issues/2")) {
+				return { number: 2, parent_issue: { number: 1 } };
+			}
+			if (path.endsWith("/issues/2/sub_issues")) {
+				return [{ number: 4 }];
+			}
+			if (path.endsWith("/issues/2/dependencies/blocked_by")) {
+				return [{ number: 3 }];
+			}
+			if (path.endsWith("/issues/2/dependencies/blocking")) {
+				return [{ number: 5 }];
+			}
+			throw new Error(`unexpected gh api call ${method} ${path}`);
+		},
+	);
+
+	await expect(api.readRelationships(2)).resolves.toEqual({
+		parent: "1",
+		children: ["4"],
+		dependencies: ["3"],
+		dependents: ["5"],
+	});
+	expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+		"GET repos/acme/repo/issues/2",
+		"GET repos/acme/repo/issues/2/sub_issues",
+		"GET repos/acme/repo/issues/2/dependencies/blocked_by",
+		"GET repos/acme/repo/issues/2/dependencies/blocking",
+	]);
+});
+
 it("should ensure that capability validation fails when native issue relationships are unavailable", async () => {
 	const api = createMockGitHubApi({
 		capabilities: { subIssues: false, dependencies: true },
@@ -415,6 +587,7 @@ it("should ensure that opt-in smoke: execute create/get/start/succeed/log agains
 function createMockGitHubApi(
 	options: {
 		capabilities?: { subIssues: boolean; dependencies: boolean };
+		exposeChildParent?: boolean;
 	} = {},
 ): GitHubTrackerApi & { issue: (number: number) => MockIssue } {
 	const issues = new Map<number, MockIssue>();
@@ -424,6 +597,7 @@ function createMockGitHubApi(
 		subIssues: true,
 		dependencies: true,
 	};
+	const exposeChildParent = options.exposeChildParent ?? true;
 	const requireIssue = (number: number): MockIssue => {
 		const issue = issues.get(number);
 		assert(issue);
@@ -497,7 +671,9 @@ function createMockGitHubApi(
 		async addSubIssue(parentNumber, childNumber) {
 			const parent = requireIssue(parentNumber);
 			const child = requireIssue(childNumber);
-			child.relationships.parent = String(parentNumber);
+			if (exposeChildParent) {
+				child.relationships.parent = String(parentNumber);
+			}
 			pushUnique(parent.relationships.children, String(childNumber));
 		},
 		async removeSubIssue(parentNumber, childNumber) {
@@ -554,6 +730,13 @@ function toGitHubIssue(issue: MockIssue): GitHubTrackerIssue {
 		body: issue.body,
 		labels: [...issue.labels],
 	};
+}
+
+function assertSuccess(envelope: Awaited<ReturnType<typeof execute>>): unknown {
+	if (!envelope.ok) {
+		throw new Error(JSON.stringify(envelope.error));
+	}
+	return envelope.data;
 }
 
 function pushUnique(values: Array<string>, value: string): void {

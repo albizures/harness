@@ -18,13 +18,21 @@ const GH_API_MAX_BUFFER_MIB = 10;
 const GH_API_MAX_BUFFER_BYTES =
 	GH_API_MAX_BUFFER_MIB * BYTES_PER_KIB * BYTES_PER_KIB;
 
+type GhApiTransport = (
+	method: string,
+	path: string,
+	args?: Array<string>,
+) => Promise<unknown>;
+
 export class GhCliGitHubTrackerApi implements GitHubTrackerApi {
 	private readonly owner: string;
 	private readonly repo: string;
+	private readonly transport?: GhApiTransport;
 
-	constructor(owner: string, repo: string) {
+	constructor(owner: string, repo: string, transport?: GhApiTransport) {
 		this.owner = owner;
 		this.repo = repo;
+		this.transport = transport;
 	}
 
 	async capabilities(): Promise<GitHubTrackerCapabilities> {
@@ -171,9 +179,33 @@ export class GhCliGitHubTrackerApi implements GitHubTrackerApi {
 	}
 
 	async readRelationships(
-		_number: number,
+		number: number,
 	): Promise<Partial<IssueRelationships>> {
-		return {};
+		const [issue, subIssues, blockedBy, blocking] = await Promise.all([
+			this.api<Record<string, unknown>>(
+				"GET",
+				`repos/${this.owner}/${this.repo}/issues/${number}`,
+			),
+			this.api<Array<Record<string, unknown>>>(
+				"GET",
+				`repos/${this.owner}/${this.repo}/issues/${number}/sub_issues`,
+			),
+			this.api<Array<Record<string, unknown>>>(
+				"GET",
+				`repos/${this.owner}/${this.repo}/issues/${number}/dependencies/blocked_by`,
+			),
+			this.api<Array<Record<string, unknown>>>(
+				"GET",
+				`repos/${this.owner}/${this.repo}/issues/${number}/dependencies/blocking`,
+			),
+		]);
+		const parentNumber = relatedIssueNumber(issue.parent_issue ?? issue.parent);
+		return {
+			...(parentNumber === undefined ? {} : { parent: String(parentNumber) }),
+			children: relatedIssueNumbers(subIssues),
+			dependencies: relatedIssueNumbers(blockedBy),
+			dependents: relatedIssueNumbers(blocking),
+		};
 	}
 
 	private async requireIssue(number: number): Promise<GitHubTrackerIssue> {
@@ -189,6 +221,9 @@ export class GhCliGitHubTrackerApi implements GitHubTrackerApi {
 		path: string,
 		args: Array<string> = [],
 	): Promise<T> {
+		if (this.transport !== undefined) {
+			return (await this.transport(method, path, args)) as T;
+		}
 		const { stdout } = await execFileAsync(
 			"gh",
 			["api", "--method", method, path, ...args],
@@ -196,6 +231,23 @@ export class GhCliGitHubTrackerApi implements GitHubTrackerApi {
 		);
 		return JSON.parse(stdout) as T;
 	}
+}
+
+function relatedIssueNumbers(
+	issues: Array<Record<string, unknown>>,
+): Array<string> {
+	return issues.flatMap((issue) => {
+		const number = relatedIssueNumber(issue);
+		return number === undefined ? [] : [String(number)];
+	});
+}
+
+function relatedIssueNumber(issue: unknown): number | undefined {
+	if (!isRecord(issue)) {
+		return undefined;
+	}
+	const number = Number(issue.number);
+	return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
 function normalizeGhIssue(issue: Record<string, unknown>): GitHubTrackerIssue {

@@ -420,7 +420,7 @@ export function readinessBlocking(
 	activeIssues: Array<{ workflow: WorkflowFields }>,
 ): Array<Record<string, JsonValue>> {
 	return [
-		...dependencyBlocking(issue, byId),
+		...dependencyBlocking(issue, byId, manifest),
 		...relationshipReadinessBlocking(issue, byId, manifest),
 		...concurrencyBlocking(issue.workflow, manifest, activeIssues),
 	];
@@ -429,11 +429,15 @@ export function readinessBlocking(
 export function dependencyBlocking(
 	issue: { relationships: { dependencies: Array<string> } },
 	byId: Map<string, { id: string; title: string; workflow: WorkflowFields }>,
+	manifest: WorkflowManifest,
 ): Array<Record<string, JsonValue>> {
 	const blockedBy: Array<Record<string, JsonValue>> = [];
 	for (const id of issue.relationships.dependencies) {
 		const dependency = byId.get(id);
-		if (isDone(dependency)) {
+		if (
+			dependency !== undefined &&
+			isWorkflowTerminal(dependency.workflow, manifest)
+		) {
 			continue;
 		}
 		blockedBy.push(
@@ -512,12 +516,6 @@ function readWorkflowSubkind(
 	}
 	return manifest?.kinds.find((kind) => kind.id === workflow.kind)
 		?.subkinds?.[0];
-}
-
-export function isDone(
-	issue: { workflow: WorkflowFields } | undefined,
-): boolean {
-	return issue?.workflow.state === "done";
 }
 
 export function relationshipReadinessBlocking(
