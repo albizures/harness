@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for direct GitHub issue operations that are **not** managed by AWF planning workflows.
 
-AWF-backed planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use the public AWF `agent-workflow` CLI instead of direct tracker creation, labels, sub-issue APIs, or dependency APIs. See `skills/workflow/agent-workflow/SKILL.md` and `docs/agents/awf-github-tracker-prereq.md`.
+AWF-backed planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use `skills/workflow/agent-workflow/SKILL.md` as the Agent Workflow reference. Load `docs/agents/awf-github-tracker-prereq.md` only when configuring or validating GitHub-backed AWF operation.
 
 ## Direct GitHub conventions for non-AWF work
 
@@ -33,15 +33,8 @@ Create a GitHub issue with `gh issue create` unless that skill explicitly opts i
 
 ## When a non-AWF skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments` unless the ticket is an AWF Workflow issue, in which case use AWF (`awf get <id>`, `awf logs <id>`) for workflow state/history.
+Run `gh issue view <number> --comments` unless the ticket is an AWF Workflow issue, in which case use the public AWF inspection/history commands from the Agent Workflow reference.
 
 ## AWF-backed planning workflows
 
-For AWF Specs, Tasks, Wayfinders, and Grilling issues:
-
-- Create issues with `awf create spec`, `awf create task`, `awf create wayfinder`, or `awf create grilling`.
-- Attach parent/child relationships with AWF create input (`spec` or `parent`).
-- Preserve blocking edges with AWF Task `dependsOn` input.
-- Query executable frontier work with `awf ready`.
-- Inspect state/history with `awf get <id>` and `awf logs <id>`.
-- Run lifecycle steps only through public commands shown by `awf --help` or by a `Usage:` line in `awf workflow describe`.
+For AWF Specs, Tasks, Wayfinders, and Grilling issues, use `skills/workflow/agent-workflow/SKILL.md` for command shapes, input shapes, parent/child relationships, dependencies, readiness, history, and lifecycle rules.

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Agent Workflow (AWF)
 
-Use this skill when creating or operating AWF-backed Specs, Tasks, Wayfinders, or Grilling issues. AWF's supported public surface is the bundled `agent-workflow` workflow and its CLI/config behavior, not private runtime APIs.
+Use this skill when creating or operating AWF-backed Specs, Tasks, Wayfinders, or Grilling issues. This is the Agent Workflow reference: the single source of truth for AWF command shape, create input shape, relationship rules, readiness, lifecycle boundaries, tracker fallback, and unsupported internals.
 
 ## Public commands
 

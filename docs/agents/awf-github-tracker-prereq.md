@@ -20,21 +20,7 @@ export const tracker = createGhCliGitHubTracker({
 });
 ```
 
-Run with either repo-local `awf.config.ts` discovery or an explicit config:
-
-```sh
-awf --config ./awf.config.ts ready
-awf --config ./awf.config.ts create wayfinder --input ./wayfinder.json
-awf --config ./awf.config.ts create task --input ./task.json
-awf --config ./awf.config.ts create grilling --input ./grilling.json
-```
-
-Current public inputs that matter for the planning-skill migration:
-
-- `create wayfinder`: `{ "title": string, "body" | "content": string }`
-- `create spec`: `{ "title": string, "body" | "content": string }`
-- `create task`: `{ "parent" | "spec": string, "title": string, "description": string, "profile": string, "subkind"?: "work" | "research" | "prototype", "dependsOn"?: string[], "generatedBy"?: string }`
-- `create grilling`: `{ "title": string, "description": string, "parent"?: string }`
+Run AWF with either repo-local `awf.config.ts` discovery or an explicit config. Use `skills/workflow/agent-workflow/SKILL.md` as the Agent Workflow reference for public command shapes and issue input shapes.
 
 ## Authentication and permissions
 
