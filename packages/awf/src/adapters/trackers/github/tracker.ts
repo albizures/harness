@@ -104,17 +104,21 @@ export class GitHubTracker {
 	}
 
 	async listIssues(): Promise<Array<WorkflowIssue>> {
-		const issues: Array<WorkflowIssue> = [];
-		for (const issue of await this.api.listIssues()) {
+		const githubIssues = await this.api.listIssues();
+		const projectedIssues = githubIssues.filter((issue) => {
 			assertNoMalformedWorkflowProjectionLabels(
 				this.manifest,
 				issue.number,
 				issue.labels,
 			);
-			if (!hasWorkflowProjectionLabels(this.manifest, issue.labels)) {
-				continue;
-			}
-			issues.push(await this.readProjectedIssue(String(issue.number), issue));
+			return hasWorkflowProjectionLabels(this.manifest, issue.labels);
+		});
+		const parentByChild = await this.parentMapFromSubIssues(projectedIssues);
+		const issues: Array<WorkflowIssue> = [];
+		for (const issue of projectedIssues) {
+			issues.push(
+				await this.readProjectedIssue(String(issue.number), issue, parentByChild),
+			);
 		}
 		return issues;
 	}
@@ -269,9 +273,36 @@ export class GitHubTracker {
 		await this.api.deleteIssue(parseIssueNumber(id));
 	}
 
+	private async findParentFromSubIssues(
+		number: number,
+	): Promise<string | undefined> {
+		const parentByChild = await this.parentMapFromSubIssues(
+			(await this.api.listIssues()).filter((issue) =>
+				hasWorkflowProjectionLabels(this.manifest, issue.labels),
+			),
+		);
+		return parentByChild.get(String(number));
+	}
+
+	private async parentMapFromSubIssues(
+		issues: Array<GitHubTrackerIssue>,
+	): Promise<Map<string, string>> {
+		const parentByChild = new Map<string, string>();
+		await Promise.all(
+			issues.map(async (issue) => {
+				const relationships = await this.api.readRelationships(issue.number);
+				for (const childId of relationships.children ?? []) {
+					parentByChild.set(childId, String(issue.number));
+				}
+			}),
+		);
+		return parentByChild;
+	}
+
 	private async readProjectedIssue(
 		id: string,
 		known?: GitHubTrackerIssue,
+		knownParentByChild?: Map<string, string>,
 	): Promise<WorkflowIssue> {
 		const issue = known ?? (await this.requireGitHubIssue(id));
 		const metadata = await this.readProjectionMetadata(issue.number);
@@ -287,6 +318,11 @@ export class GitHubTracker {
 				"labels and metadata disagree",
 			);
 		}
+		const apiRelationships = await this.api.readRelationships(issue.number);
+		const parent =
+			apiRelationships.parent ??
+			knownParentByChild?.get(String(issue.number)) ??
+			(await this.findParentFromSubIssues(issue.number));
 		return {
 			id: String(issue.number),
 			title: issue.title,
@@ -295,7 +331,8 @@ export class GitHubTracker {
 				: { body: issue.body }),
 			workflow,
 			relationships: normalizeRelationships({
-				...(await this.api.readRelationships(issue.number)),
+				...apiRelationships,
+				...(parent === undefined ? {} : { parent }),
 				...metadata.relationships,
 			}),
 		} as WorkflowIssue;
