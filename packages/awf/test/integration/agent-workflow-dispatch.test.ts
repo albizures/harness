@@ -83,9 +83,14 @@ it("should ensure that bundled agent-workflow exposes supported task lifecycle c
 	expect(help.commands.map((command) => command.usage)).toEqual(
 		expect.arrayContaining([
 			"awf task start <issue>",
+			"awf task succeed <issue> --input <file|->",
 			"awf task fail <issue>",
 			"awf task recover <issue>",
 			"awf task escalate <issue>",
+			"awf wayfinder start <issue>",
+			"awf wayfinder succeed <issue> --input <file|->",
+			"awf grilling start <issue>",
+			"awf grilling succeed <issue> --input <file|->",
 		]),
 	);
 

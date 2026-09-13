@@ -108,9 +108,14 @@ it("should export a valid explicit bundled workflow module", () => {
 		"escalate",
 		"resume",
 		"task-start",
+		"task-succeed",
 		"task-fail",
 		"task-recover",
 		"task-escalate",
+		"wayfinder-start",
+		"wayfinder-succeed",
+		"grilling-start",
+		"grilling-succeed",
 	]);
 });
 
@@ -130,9 +135,14 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf create grilling --input <file|->",
 			"awf spec complete <issue> --input <file|->",
 			"awf task start <issue>",
+			"awf task succeed <issue> --input <file|->",
 			"awf task fail <issue>",
 			"awf task recover <issue>",
 			"awf task escalate <issue>",
+			"awf wayfinder start <issue>",
+			"awf wayfinder succeed <issue> --input <file|->",
+			"awf grilling start <issue>",
+			"awf grilling succeed <issue> --input <file|->",
 		]),
 	);
 	expect(
@@ -182,9 +192,14 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		"awf create task --input <file|->",
 		"awf create grilling --input <file|->",
 		"awf task start <issue>",
+		"awf task succeed <issue> --input <file|->",
 		"awf task fail <issue>",
 		"awf task recover <issue>",
 		"awf task escalate <issue>",
+		"awf wayfinder start <issue>",
+		"awf wayfinder succeed <issue> --input <file|->",
+		"awf grilling start <issue>",
+		"awf grilling succeed <issue> --input <file|->",
 	]);
 	expect(description.readiness?.filters).toEqual(help.readiness.filters);
 });
@@ -739,7 +754,7 @@ it("should create Tasks and Specs under Wayfinder maps without offering the Wayf
 	expect(ready.items.map((item) => item.id)).toContain(task.issue.id);
 });
 
-it("should complete Wayfinder maps only by explicit success after all children are done", async () => {
+it("should run public Wayfinder lifecycle commands with completion summary after all children are done", async () => {
 	const tracker = createInMemoryTracker();
 	const wayfinder = assertSuccess(
 		await execute(["create", "wayfinder", "--input", "-"], {
@@ -759,22 +774,24 @@ it("should complete Wayfinder maps only by explicit success after all children a
 		}),
 	) as { issue: { id: string } };
 	assertSuccess(
-		await execute(["run-command", "start", wayfinder.issue.id], { tracker }),
+		await execute(["wayfinder", "start", wayfinder.issue.id], { tracker }),
 	);
+	const beforeBlocked = await tracker.getIssue(wayfinder.issue.id);
 	const blocked = await execute(
-		["run-command", "succeed", wayfinder.issue.id, "--input", "-"],
-		{ tracker, stdin: "{}" },
+		["wayfinder", "succeed", wayfinder.issue.id, "--input", "-"],
+		{ tracker, stdin: JSON.stringify({ summary: "Mapped too early." }) },
 	);
 	expect(blocked).toMatchObject({
 		ok: false,
 		error: { code: "WAYFINDER_CHILDREN_INCOMPLETE" },
 	});
+	expect(await tracker.getIssue(wayfinder.issue.id)).toEqual(beforeBlocked);
 
 	assertSuccess(
 		await execute(["run-command", "start", task.issue.id], { tracker }),
 	);
 	assertSuccess(
-		await execute(["run-command", "succeed", task.issue.id, "--input", "-"], {
+		await execute(["task", "succeed", task.issue.id, "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				outcome: { type: "completed", facts: ["Explored the route."] },
@@ -789,14 +806,20 @@ it("should complete Wayfinder maps only by explicit success after all children a
 
 	const done = assertSuccess(
 		await execute(
-			["run-command", "succeed", wayfinder.issue.id, "--input", "-"],
-			{ tracker, stdin: "{}" },
+			["wayfinder", "succeed", wayfinder.issue.id, "--input", "-"],
+			{ tracker, stdin: JSON.stringify({ summary: "Mapped viable route." }) },
 		),
-	) as { issue: { workflow: Record<string, string> } };
+	) as {
+		issue: { workflow: Record<string, string> };
+		log: { message: string };
+	};
 	expect(done.issue.workflow).toMatchObject({
 		kind: "wayfinder",
 		state: "done",
 		action: "none",
+	});
+	expect(JSON.parse(done.log.message).input).toEqual({
+		summary: "Mapped viable route.",
 	});
 });
 
@@ -972,7 +995,7 @@ it("should create Grilling as collaborative work without offering it as autonomo
 	expect(ready.items.map((item) => item.id)).not.toContain(standalone.issue.id);
 
 	const started = assertSuccess(
-		await execute(["run-command", "start", standalone.issue.id], { tracker }),
+		await execute(["grilling", "start", standalone.issue.id], { tracker }),
 	) as { issue: { workflow: Record<string, unknown> } };
 	expect(started.issue.workflow).toMatchObject({
 		kind: "grilling",
@@ -981,10 +1004,17 @@ it("should create Grilling as collaborative work without offering it as autonomo
 	});
 
 	const done = assertSuccess(
-		await execute(["run-command", "succeed", standalone.issue.id], {
-			tracker,
-		}),
-	) as { issue: { workflow: Record<string, unknown> } };
+		await execute(
+			["grilling", "succeed", standalone.issue.id, "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({ outcome: "Decision recorded by the human." }),
+			},
+		),
+	) as {
+		issue: { workflow: Record<string, unknown> };
+		log: { message: string };
+	};
 	expect(done.issue.workflow).toMatchObject({
 		kind: "grilling",
 		state: "done",
