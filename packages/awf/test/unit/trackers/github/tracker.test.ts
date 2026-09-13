@@ -386,9 +386,9 @@ it("should infer child parent relationships from parent sub-issue lists when Git
 	expect((await tracker.getIssue(task.issue.id)).relationships.parent).toBe(
 		spec.issue.id,
 	);
-	expect((await tracker.getIssue(spec.issue.id)).relationships.children).toEqual([
-		task.issue.id,
-	]);
+	expect(
+		(await tracker.getIssue(spec.issue.id)).relationships.children,
+	).toEqual([task.issue.id]);
 });
 
 it("should read native GitHub relationship projections through the gh CLI boundary", async () => {

@@ -117,7 +117,11 @@ export class GitHubTracker {
 		const issues: Array<WorkflowIssue> = [];
 		for (const issue of projectedIssues) {
 			issues.push(
-				await this.readProjectedIssue(String(issue.number), issue, parentByChild),
+				await this.readProjectedIssue(
+					String(issue.number),
+					issue,
+					parentByChild,
+				),
 			);
 		}
 		return issues;
