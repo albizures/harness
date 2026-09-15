@@ -124,9 +124,7 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.stdout).toContain(
 		"- task-create\n  - Usage: awf create task --input <file|->\n  - Target: task/work\n  - Input: required",
 	);
-	expect(result.stdout).toContain(
-		"  - implementation-gate: implement, review",
-	);
+	expect(result.stdout).toContain("  - implementation-gate: implement, review");
 	expect(result.stdout).toContain(
 		"  - siblings where task/ready/work/integration-test; siblings all task/done/none/implementation-gate, gate implementation-gate",
 	);
