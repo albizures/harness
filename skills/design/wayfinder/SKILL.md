@@ -88,10 +88,10 @@ User invokes with a loose destination.
 
 ### Work through the map
 
-User invokes with an existing AWF Wayfinder id/URL. A child is optional; without one, choose from AWF readiness.
+User invokes with an existing AWF Wayfinder id/URL. A child is optional; without one, choose an executable Task child from AWF readiness. Grilling children are HITL support flows selected by explicit user direction or map context, then inspected with AWF.
 
 1. Load the map with the public AWF inspection command from the Agent Workflow reference and orient on Destination, Notes, Decisions-so-far, Not yet specified, and Out of scope.
-2. Choose the child. If the user named one, inspect it through AWF. Otherwise use AWF readiness behavior as the source of truth for the frontier; pick one ready, unclaimed child of the map.
+2. Choose the child. If the user named one, inspect it through AWF. Otherwise use AWF readiness behavior as the source of truth for the executable frontier; pick one ready, unclaimed Task child of the map. Do not expect AWF readiness to list Grilling children; discover those from the map or explicit user direction and inspect them through AWF before starting.
 3. Claim/start with the public lifecycle command for the child kind: `awf task start <issue>`, `awf wayfinder start <issue>`, or `awf grilling start <issue>`. If the needed lifecycle command is not public, stop and ask for the AWF command surface to be upgraded rather than using hidden command ids.
 4. Resolve the child. For Grilling, call `grilling` and `domain-modeling` and wait for the human. For research, call `research`. For prototype, call `prototype`. For Tasks, do only the prerequisite work described.
 5. Record the outcome with the public completion command for the child kind: `awf task succeed <issue> --input <file|->`, `awf grilling succeed <issue> --input <file|->`, or `awf wayfinder succeed <issue> --input <file|->`. Wayfinder child outcomes should be one of:

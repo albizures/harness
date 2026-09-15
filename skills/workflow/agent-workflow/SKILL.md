@@ -51,8 +51,8 @@ If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` l
 - Use `spec`/`parent` in AWF create input to attach children. Do not create tracker sub-issues directly.
 - Use `dependsOn` in Task create input to preserve blocking edges. Do not call raw GitHub dependency APIs directly.
 - Use `generatedBy` only as provenance. It is not dependency ordering and does not gate readiness.
-- Use `awf ready` as the source of truth for executable frontier work. It applies dependency, lifecycle, concurrency, and parent/child gates.
-- Use `awf get <id>` and `awf logs <id>` to inspect workflow state and history.
+- Use `awf ready` as the source of truth for executable frontier work. In this workflow it exposes Specs ready for planning and Tasks ready for work; it does not list Grilling.
+- Use `awf get <id>` and `awf logs <id>` to inspect workflow state, history, and HITL Grilling children.
 
 ## Lifecycle boundaries
 
