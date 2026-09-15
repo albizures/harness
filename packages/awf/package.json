@@ -3,6 +3,9 @@
 	"version": "0.2.0",
 	"description": "Agent workflow CLI shell.",
 	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
 	"type": "module",
 	"bin": {
 		"awf": "./dist/cli.js"

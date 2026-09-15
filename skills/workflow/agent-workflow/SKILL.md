@@ -1,7 +1,6 @@
 ---
 name: agent-workflow
 description: Operate bundled AWF agent-workflow Specs, Tasks, Wayfinders, and Grilling issues through the public AWF CLI.
-disable-model-invocation: true
 ---
 
 # Agent Workflow (AWF)

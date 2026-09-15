@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: publish-packages
@@ -49,7 +50,7 @@ jobs:
         continue-on-error: true
         run: pnpm release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
 
       - name: Push package version tags
         if: always() && steps.publish.outcome != 'skipped'
