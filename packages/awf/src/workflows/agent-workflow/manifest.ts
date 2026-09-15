@@ -59,6 +59,10 @@ const grillingCreateInput = z.strictObject({
 	description: z.string().trim().min(1),
 	parent: z.string().trim().min(1).optional(),
 });
+const wayfinderCompletionInput = z.strictObject({
+	summary: z.string().trim().min(1),
+});
+const anyJsonObjectInput = z.record(z.string(), z.unknown());
 
 const specTransitions = [
 	{
@@ -330,27 +334,60 @@ export const agentWorkflowManifest = defineManifest({
 		{ id: "resume", target: { kind: "task", action: "none" } },
 		{
 			id: "task-start",
-			cli: { verb: "task", target: "start" },
+			cli: { verb: "task", target: "start", input: "none" },
 			target: { kind: "task", state: "ready", action: "work" },
 			transition: { event: "start", attempt: "start" },
 		},
 		{
+			id: "task-succeed",
+			cli: { verb: "task", target: "succeed", input: "json" },
+			target: { kind: "task", state: "running", action: "work" },
+			transition: { event: "succeed", attempt: "complete" },
+			input: anyJsonObjectInput,
+		},
+		{
 			id: "task-fail",
-			cli: { verb: "task", target: "fail" },
+			cli: { verb: "task", target: "fail", input: "none" },
 			target: { kind: "task", state: "running", action: "work" },
 			transition: { event: "fail", attempt: "complete" },
 		},
 		{
 			id: "task-recover",
-			cli: { verb: "task", target: "recover" },
+			cli: { verb: "task", target: "recover", input: "none" },
 			target: { kind: "task", state: "need-human", action: "none" },
 			transition: { event: "recover", attempt: "none" },
 		},
 		{
 			id: "task-escalate",
-			cli: { verb: "task", target: "escalate" },
+			cli: { verb: "task", target: "escalate", input: "none" },
 			target: { kind: "task", state: "running", action: "work" },
 			transition: { event: "escalate", attempt: "complete" },
+		},
+		{
+			id: "wayfinder-start",
+			cli: { verb: "wayfinder", target: "start", input: "none" },
+			target: { kind: "wayfinder", state: "ready", action: "planning" },
+			transition: { event: "start", attempt: "start" },
+		},
+		{
+			id: "wayfinder-succeed",
+			cli: { verb: "wayfinder", target: "succeed", input: "json" },
+			target: { kind: "wayfinder", action: "planning" },
+			transition: { event: "succeed", attempt: "complete" },
+			input: wayfinderCompletionInput,
+		},
+		{
+			id: "grilling-start",
+			cli: { verb: "grilling", target: "start", input: "none" },
+			target: { kind: "grilling", state: "ready", action: "discuss" },
+			transition: { event: "start", attempt: "start" },
+		},
+		{
+			id: "grilling-succeed",
+			cli: { verb: "grilling", target: "succeed", input: "json" },
+			target: { kind: "grilling", state: "in-discussion", action: "discuss" },
+			transition: { event: "succeed", attempt: "complete" },
+			input: anyJsonObjectInput,
 		},
 	],
 });

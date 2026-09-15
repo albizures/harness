@@ -1,7 +1,10 @@
 import type { JsonValue } from "type-fest";
 import type { CommandHandlers } from "../command-handlers.ts";
 import { failure, success, type Envelope } from "../envelope.ts";
-import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
+import {
+	runLifecycleTransitionHandler,
+	type LifecycleTransitionHandlers,
+} from "../lifecycle-handlers.ts";
 import type {
 	ManifestCommand,
 	WorkflowManifest,
@@ -73,10 +76,12 @@ export async function manifestCommand(
 	const handler = commandHandlers[command.id];
 	if (handler === undefined && command.transition !== undefined) {
 		return transitionGenericWorkflowCommand(
-			args[2],
+			args,
 			versionedTracker,
 			manifest,
+			stdin,
 			command,
+			lifecycleHandlers,
 		);
 	}
 	if (handler !== undefined) {
@@ -500,17 +505,24 @@ export async function createGenericWorkflowIssueCommand(
 }
 
 async function transitionGenericWorkflowCommand(
-	issueId: string | undefined,
+	args: Array<string>,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
+	stdin: string | undefined,
 	command: ManifestCommand,
+	lifecycleHandlers?: LifecycleTransitionHandlers,
 ): Promise<Envelope> {
+	const issueId = args[2];
 	if (issueId === undefined) {
 		return failure(
 			runtimeFailures.invalidArguments({
-				usage: `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id} <issue>`,
+				usage: transitionCommandUsage(command),
 			}),
 		);
+	}
+	const input = await readTransitionCommandInput(args, stdin, command);
+	if (input.ok === false) {
+		return input;
 	}
 	const transitionCommand = command.transition;
 	if (transitionCommand === undefined) {
@@ -569,6 +581,20 @@ async function transitionGenericWorkflowCommand(
 				}),
 			);
 		}
+		const handler =
+			lifecycleHandlers === undefined
+				? { ok: true as const, contribution: { effects: [] } }
+				: await runLifecycleTransitionHandler(lifecycleHandlers, {
+						manifest,
+						transition,
+						issue,
+						tracker,
+						event: transitionCommand.event,
+						input: input.data,
+					});
+		if (handler.ok !== true) {
+			return handler;
+		}
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
 				{
@@ -588,9 +614,11 @@ async function transitionGenericWorkflowCommand(
 						message: transitionRunLogMessage(
 							transitionCommand.event,
 							runEffect,
+							input.data,
 						),
 					},
 				},
+				...handler.contribution.effects,
 			],
 		});
 		const updated = result.issues[issueId] ?? (await tracker.getIssue(issueId));
@@ -612,11 +640,52 @@ async function transitionGenericWorkflowCommand(
 	}
 }
 
+async function readTransitionCommandInput(
+	args: Array<string>,
+	stdin: string | undefined,
+	command: ManifestCommand,
+): Promise<Envelope<JsonValue>> {
+	if (command.cli?.input === "none") {
+		return success({});
+	}
+	const inputPath = readOption(args, "--input");
+	if (inputPath === undefined) {
+		return failure(
+			runtimeFailures.invalidArguments({
+				usage: transitionCommandUsage(command),
+			}),
+		);
+	}
+	const parsed = parseJsonInput(
+		await readInput(inputPath, stdin),
+		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	return parseWorkflowCommandInput(command, parsed.data);
+}
+
+function transitionCommandUsage(command: ManifestCommand): string {
+	const route = `awf ${command.cli?.verb ?? "run-command"} ${command.cli?.target ?? command.id}`;
+	return command.cli?.input === "none"
+		? `${route} <issue>`
+		: `${route} <issue> --input <file|->`;
+}
+
 function transitionRunLogMessage(
 	event: string,
 	_runEffect: "none" | "start" | "complete",
+	input: JsonValue,
 ): string {
-	return `Applied ${event}.`;
+	if (isEmptyPlainObject(input)) {
+		return `Applied ${event}.`;
+	}
+	return stableStringify({ event, input });
+}
+
+function isEmptyPlainObject(value: JsonValue): boolean {
+	return isRecord(value) && Object.keys(value).length === 0;
 }
 
 function commandTargetMatches(
