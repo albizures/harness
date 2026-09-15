@@ -27,7 +27,15 @@ Supported public commands for this workflow include:
 - `awf get <id>`
 - `awf logs <id>`
 - `awf spec complete <issue> --input <file|->`
-- Public lifecycle commands shown by `awf --help` or by a `Usage:` line in `awf workflow describe`, such as `awf task start <issue>`, `awf task fail <issue>`, `awf task recover <issue>`, and `awf task escalate <issue>`.
+- `awf task start <issue>`
+- `awf task succeed <issue> --input <file|->`
+- `awf task fail <issue>`
+- `awf task recover <issue>`
+- `awf task escalate <issue>`
+- `awf wayfinder start <issue>`
+- `awf wayfinder succeed <issue> --input <file|->`
+- `awf grilling start <issue>`
+- `awf grilling succeed <issue> --input <file|->`
 
 If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` line for the loaded workflow, stop and ask for the AWF command surface to be upgraded. Do not reach for hidden `run-command` forms or command ids.
 
@@ -50,9 +58,10 @@ If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` l
 
 - Specs start ready for planning. After planning, child Tasks run; integration testing and merging are ordinary Tasks, not Spec lifecycle actions.
 - Complete a delivered Spec only with `awf spec complete <issue> --input <file|->`, after AWF validates child completion.
-- Wayfinders are maps. Update the map body through AWF-supported map revision/lifecycle behavior, and complete it only through public Wayfinder lifecycle commands when available and all children are done.
-- Grilling is HITL. Do not let the agent answer for the human side of a Grilling issue.
-- Record outcomes through AWF lifecycle/log commands. Do not edit AWF machine comments, labels, frontmatter, relationships, or logs by hand except as documented filesystem repair.
+- Wayfinders are maps. Start them with `awf wayfinder start <issue>` and complete them with `awf wayfinder succeed <issue> --input <file|->` after all children are done.
+- Tasks are completed with `awf task succeed <issue> --input <file|->`; Wayfinder child Tasks require structured outcome input so the child log records the result and optional map revision.
+- Grilling is HITL. Start it with `awf grilling start <issue>` and complete it with `awf grilling succeed <issue> --input <file|->` after the human-side discussion resolves; do not answer for the human.
+- Record outcomes through these public lifecycle commands. Do not edit AWF machine comments, labels, frontmatter, relationships, or logs by hand except as documented filesystem repair.
 
 ## Profile conventions
 

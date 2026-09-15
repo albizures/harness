@@ -83,7 +83,7 @@ User invokes with a loose destination.
 3. **Create the Wayfinder map** with the public AWF Wayfinder creation command from the Agent Workflow reference, including Destination, Notes, empty Decisions-so-far, Not yet specified, and Out of scope sections.
 4. **Create the specifiable children** with the public AWF child creation commands and parent input from the Agent Workflow reference.
 5. **Wire dependencies** with the AWF dependency inputs from the Agent Workflow reference. If ids were not known yet, create blockers first or create the remaining dependent children after blockers exist.
-6. **Start research in parallel** where appropriate. For each research Task, have a subagent call the `research` skill and record the outcome through AWF lifecycle/log behavior.
+6. **Start research in parallel** where appropriate. For each research Task, have a subagent call the `research` skill, then record the outcome with `awf task succeed <issue> --input <file|->`.
 7. Stop. Charting creates the map and frontier; it does not resolve a HITL child in the same session.
 
 ### Work through the map
@@ -92,13 +92,13 @@ User invokes with an existing AWF Wayfinder id/URL. A child is optional; without
 
 1. Load the map with the public AWF inspection command from the Agent Workflow reference and orient on Destination, Notes, Decisions-so-far, Not yet specified, and Out of scope.
 2. Choose the child. If the user named one, inspect it through AWF. Otherwise use AWF readiness behavior as the source of truth for the frontier; pick one ready, unclaimed child of the map.
-3. Claim/start only through public AWF lifecycle commands from the Agent Workflow reference. If the needed Wayfinder or Grilling lifecycle command is not public, stop and ask for the AWF command surface to be upgraded rather than using hidden command ids.
+3. Claim/start with the public lifecycle command for the child kind: `awf task start <issue>`, `awf wayfinder start <issue>`, or `awf grilling start <issue>`. If the needed lifecycle command is not public, stop and ask for the AWF command surface to be upgraded rather than using hidden command ids.
 4. Resolve the child. For Grilling, call `grilling` and `domain-modeling` and wait for the human. For research, call `research`. For prototype, call `prototype`. For Tasks, do only the prerequisite work described.
-5. Record the outcome through public AWF lifecycle/log commands. Outcomes should be one of:
-   - decision: the resolution and one-line gist
-   - completed prerequisite: what was done and facts later work needs
-   - out-of-scope: the scope boundary and why it is outside the destination
-6. Revise the map through AWF-supported map revision/lifecycle behavior: append a linked gist to Decisions-so-far, graduate or clear fog, add newly specifiable children, and record out-of-scope boundaries.
+5. Record the outcome with the public completion command for the child kind: `awf task succeed <issue> --input <file|->`, `awf grilling succeed <issue> --input <file|->`, or `awf wayfinder succeed <issue> --input <file|->`. Wayfinder child outcomes should be one of:
+   - decision: `{ "outcome": { "type": "decision", "resolution": string, "gist": string } }`
+   - completed prerequisite: `{ "outcome": { "type": "completed", "facts": string[] } }`
+   - out-of-scope: `{ "outcome": { "type": "out-of-scope", "reason"?: string, "scopeNote"?: string } }`
+6. When the child outcome changes the map, include `mapRevision.body` in the completion input: append a linked gist to Decisions-so-far, graduate or clear fog, add newly specifiable children, and record out-of-scope boundaries.
 7. Stop after this one non-research child. Other sessions may be working the same map concurrently, so reload AWF state before future writes.
 
 ## Boundaries

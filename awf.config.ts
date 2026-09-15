@@ -1,7 +1,7 @@
 import {
 	agentWorkflowManifest,
 	createGhCliGitHubTracker,
-} from "@albizures/awf";
+} from "./packages/awf/dist";
 
 export const manifest = agentWorkflowManifest;
 export const tracker = createGhCliGitHubTracker({

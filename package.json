@@ -11,7 +11,8 @@
 		"format": "biome format --write .",
 		"format:check": "biome format .",
 		"typecheck": "tsc --noEmit",
-		"test": "node --test packages/*/extensions/*.test.ts"
+		"test": "node --test packages/*/extensions/*.test.ts",
+		"awf": "node ./packages/awf/dist/cli.js"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.12",

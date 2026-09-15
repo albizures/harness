@@ -9,3 +9,7 @@
 | Releases      | Follow the repository release process.                                                                                               | `docs/release.md`                                 |
 | ADR 0001      | Records the pnpm workspace and Changesets decision.                                                                                  | `docs/adr/0001-pnpm-workspace-with-changesets.md` |
 | ADR 0002      | Records the human-triggered CI release decision.                                                                                     | `docs/adr/0002-human-triggered-ci-releases.md`    |
+
+### AWF
+
+Use awf through pnpm like: pnpm awf
