@@ -98,7 +98,7 @@ User invokes with an existing AWF Wayfinder id/URL. A child is optional; without
    - decision: `{ "outcome": { "type": "decision", "resolution": string, "gist": string } }`
    - completed prerequisite: `{ "outcome": { "type": "completed", "facts": string[] } }`
    - out-of-scope: `{ "outcome": { "type": "out-of-scope", "reason"?: string, "scopeNote"?: string } }`
-6. When the child outcome changes the map, include `mapRevision.body` in the completion input: append a linked gist to Decisions-so-far, graduate or clear fog, add newly specifiable children, and record out-of-scope boundaries.
+6. When the child outcome changes the map, include exactly one of `mapRevision.body` or `mapRevision.bodyFile` in the completion input: append a linked gist to Decisions-so-far, graduate or clear fog, add newly specifiable children, and record out-of-scope boundaries. Use `mapRevision.bodyFile` for large map revisions; its path is resolved from the current working directory.
 7. Stop after this one non-research child. Other sessions may be working the same map concurrently, so reload AWF state before future writes.
 
 ## Boundaries

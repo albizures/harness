@@ -870,6 +870,76 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 		"# Updated map",
 	);
 
+	const bodyFile = join(
+		await mkdtemp(join(tmpdir(), "awf-map-revision-")),
+		"map.md",
+	);
+	await writeFile(bodyFile, "# Updated map from file", "utf8");
+	const fileTask = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Explore again",
+				description: "Explore another route.",
+				profile: "research",
+			}),
+		}),
+	) as { issue: { id: string } };
+	assertSuccess(
+		await execute(["run-command", "start", fileTask.issue.id], { tracker }),
+	);
+	const completedFromFile = assertSuccess(
+		await execute(
+			["run-command", "succeed", fileTask.issue.id, "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					outcome: { type: "completed", facts: ["Found another route."] },
+					mapRevision: { bodyFile },
+				}),
+			},
+		),
+	) as { log: { message: string } };
+	expect((await tracker.getIssue(wayfinder.issue.id)).body).toBe(
+		"# Updated map from file",
+	);
+	expect(JSON.parse(completedFromFile.log.message).input.mapRevision).toEqual({
+		bodyFile,
+	});
+
+	const invalidRevisionTask = assertSuccess(
+		await execute(["create", "task", "--input", "-"], {
+			tracker,
+			stdin: JSON.stringify({
+				parent: wayfinder.issue.id,
+				title: "Explore invalid revision",
+				description: "Explore invalid revision.",
+				profile: "research",
+			}),
+		}),
+	) as { issue: { id: string } };
+	assertSuccess(
+		await execute(["run-command", "start", invalidRevisionTask.issue.id], {
+			tracker,
+		}),
+	);
+	expect(
+		await execute(
+			["run-command", "succeed", invalidRevisionTask.issue.id, "--input", "-"],
+			{
+				tracker,
+				stdin: JSON.stringify({
+					outcome: { type: "completed", facts: ["Found invalid route."] },
+					mapRevision: { body: "# Inline", bodyFile },
+				}),
+			},
+		),
+	).toMatchObject({
+		ok: false,
+		error: { code: "WAYFINDER_CHILD_OUTCOME_INVALID" },
+	});
+
 	const grilling = assertSuccess(
 		await execute(["create", "grilling", "--input", "-"], {
 			tracker,

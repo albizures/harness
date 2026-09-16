@@ -143,7 +143,7 @@ const grillingTransitions = [
 
 export const agentWorkflowManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "agent-workflow", version: "1.0.0" },
+	workflow: { id: "w1", version: "1.0.0" },
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],

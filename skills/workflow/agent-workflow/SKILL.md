@@ -24,6 +24,9 @@ Supported public commands for this workflow include:
 - `awf create task --input <file|->`
 - `awf create grilling --input <file|->`
 - `awf ready [--filter <name=value>] [--limit <n>]`
+  - In the bundled `agent-workflow`, the only named readiness filter is `--filter spec=<spec-id>`.
+  - `--filter spec=<spec-id>` narrows readiness to executable work whose direct parent is that Spec.
+  - Parent-generic and Wayfinder-scoped readiness filters such as `--filter parent=<id>` or `--filter wayfinder=<id>` are not currently supported.
 - `awf get <id>`
 - `awf logs <id>`
 - `awf spec complete <issue> --input <file|->`
@@ -52,6 +55,8 @@ If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` l
 - Use `dependsOn` in Task create input to preserve blocking edges. Do not call raw GitHub dependency APIs directly.
 - Use `generatedBy` only as provenance. It is not dependency ordering and does not gate readiness.
 - Use `awf ready` as the source of truth for executable frontier work. In this workflow it exposes Specs ready for planning and Tasks ready for work; it does not list Grilling.
+- Use `awf ready --filter spec=<spec-id>` to ask for executable work directly under a Spec. Do not use `--filter parent=<id>` or `--filter wayfinder=<id>`; those filters are undeclared and AWF will reject them.
+- For Wayfinder children, inspect the Wayfinder with `awf get <id>` / `awf logs <id>` and then use unfiltered `awf ready` to identify executable Task children manually until a Wayfinder-scoped readiness filter exists.
 - Use `awf get <id>` and `awf logs <id>` to inspect workflow state, history, and HITL Grilling children.
 
 ## Lifecycle boundaries

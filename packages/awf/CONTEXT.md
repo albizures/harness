@@ -84,6 +84,14 @@ _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 A workflow issue that describes an implementation outcome and contains the child Tasks and Grilling needed to deliver it. Its executable lifecycle is limited to planning and explicit validated completion; integration testing and merging are modeled as Tasks instead of Spec actions.
 _Avoid_: execution phase container, integration-test action, merge action
 
+**Wayfinder**:
+A Workflow issue that maps a route through uncertain planning fog by coordinating child Tasks and Grilling issues, capturing decisions so far, and keeping unresolved or out-of-scope areas visible until the route is complete.
+_Avoid_: spec, project plan, epic
+
+**Map body revision file**:
+A local Markdown file referenced by a Wayfinder child completion payload when a map update is too large or error-prone to embed directly in JSON. The file supplies the complete replacement Wayfinder body for that one completion.
+_Avoid_: patch file, attachment, uploaded body
+
 **Task**:
 A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, durable subkind (`work`, `research`, or `prototype`; default `work`), and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
 _Avoid_: ticket, implementation action
