@@ -53,7 +53,7 @@ it("should export a valid explicit bundled workflow module", () => {
 		"grilling:in-discussion/discuss:succeed",
 	]);
 	expect(validateManifest(agentWorkflowManifest)).toEqual([]);
-	expect(agentWorkflowManifest.workflow.id).toBe("agent-workflow");
+	expect(agentWorkflowManifest.workflow.id).toBe("w1");
 	expect(agentWorkflowManifest.workflow.version).toBe("1.0.0");
 	expect(agentWorkflowManifest.vocabulary).toEqual({
 		states: [
@@ -170,7 +170,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		commands: Array<{ id: string; cli: { usage: string } }>;
 		readiness?: { filters: Array<Record<string, string>> };
 	};
-	expect(description.workflow.id).toBe("agent-workflow");
+	expect(description.workflow.id).toBe("w1");
 	expect(description.kinds).toMatchObject([
 		{ id: "spec", initial: { state: "ready", action: "planning" } },
 		{ id: "wayfinder", initial: { state: "ready", action: "planning" } },
@@ -418,7 +418,7 @@ it("should validate the bundled agent-workflow module through the manifest valid
 	expect(await validateManifestCommand(configPath)).toEqual({
 		ok: true,
 		data: {
-			manifest: "agent-workflow",
+			manifest: "w1",
 			version: "v1",
 			kinds: ["spec", "wayfinder", "task", "grilling"],
 		},

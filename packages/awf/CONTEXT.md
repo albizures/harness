@@ -36,6 +36,10 @@ _Avoid_: global error bag, random constants, status enum
 A bundled `agent-workflow` declaration for an invokable workflow operation, including its supported CLI shape, target workflow filter, optional transition event, optional attempt effect, and input schema. Hidden command-id invocation is retained only as an internal/automation escape hatch and is omitted from normal help.
 _Avoid_: arbitrary CLI verb, public command registration, generic run-command UX
 
+**Command input file**:
+A local file supplied through `--input <path>` that provides one command's JSON payload. AWF consumes command input files after successful command completion; stdin input (`--input -`) is not a Command input file.
+_Avoid_: reusable fixture, config file, stdin payload
+
 **Transition command**:
 A Manifest command that applies a manifest-declared transition, optionally through generic handlerless execution with a plain default log message. Its availability is determined by the command target filter and matching transition existence; completing transitions require the issue to currently be in a manifest active state.
 _Avoid_: built-in start command, built-in fail command, hidden event inference, run-token command
@@ -80,6 +84,10 @@ _Avoid_: filesystem memory tracker, local GitHub replacement
 The core domain object managed by the Workflow runtime. A Workflow issue is a tracker issue with one manifest-defined kind attached to it, plus explicit current workflow fields and append-only logs.
 _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 
+**Issue inspection payload**:
+The curated read model returned by `awf get` for one Workflow issue, shared by JSON output and Markdown text rendering. It contains the target Workflow issue plus inspection-oriented one-hop related issue summaries and recent logs so agents can inspect workflow state without falling back to tracker-specific views.
+_Avoid_: raw tracker issue, command summary, issue dump
+
 **Spec**:
 A workflow issue that describes an implementation outcome and contains the child Tasks and Grilling needed to deliver it. Its executable lifecycle is limited to planning and explicit validated completion; integration testing and merging are modeled as Tasks instead of Spec actions.
 _Avoid_: execution phase container, integration-test action, merge action
@@ -89,7 +97,7 @@ A Workflow issue that maps a route through uncertain planning fog by coordinatin
 _Avoid_: spec, project plan, epic
 
 **Map body revision file**:
-A local Markdown file referenced by a Wayfinder child completion payload when a map update is too large or error-prone to embed directly in JSON. The file supplies the complete replacement Wayfinder body for that one completion.
+A local Markdown file referenced by a Wayfinder child completion payload when a map update is too large or error-prone to embed directly in JSON. The file supplies the complete replacement Wayfinder body for that one completion and is consumed after successful command completion.
 _Avoid_: patch file, attachment, uploaded body
 
 **Task**:

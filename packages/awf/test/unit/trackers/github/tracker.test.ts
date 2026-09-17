@@ -23,16 +23,16 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:work",
-		"awf:agent-workflow:kind:task",
-		"awf:agent-workflow:state:ready",
+		"awf:w1:action:work",
+		"awf:w1:kind:task",
+		"awf:w1:state:ready",
 	]);
 	expect(api.issue(1).comments.length).toBe(1);
 	expect(
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
-				'<!-- awf:current v1 agent-workflow -->\n{"schemaVersion":1,',
+				'<!-- awf:current v1 w1 -->\n{"schemaVersion":1,',
 			),
 	).toBeTruthy();
 	expect(issue).not.toHaveProperty("artifacts");
@@ -46,16 +46,16 @@ it("should project workflow fields to reserved GitHub labels and singleton metad
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:work",
-		"awf:agent-workflow:kind:task",
-		"awf:agent-workflow:state:running",
+		"awf:w1:action:work",
+		"awf:w1:kind:task",
+		"awf:w1:state:running",
 	]);
 	expect(api.issue(1).comments.length).toBe(1);
 	expect(
 		api
 			.issue(1)
 			.comments[0]?.body.startsWith(
-				'<!-- awf:current v1 agent-workflow -->\n{"schemaVersion":1,',
+				'<!-- awf:current v1 w1 -->\n{"schemaVersion":1,',
 			),
 	).toBeTruthy();
 	const updated = await tracker.getIssue("1");
@@ -80,11 +80,11 @@ it("should project Task subkind as metadata without masquerading as GitHub kind 
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:work",
-		"awf:agent-workflow:kind:task",
-		"awf:agent-workflow:state:ready",
+		"awf:w1:action:work",
+		"awf:w1:kind:task",
+		"awf:w1:state:ready",
 	]);
-	expect(api.issue(1).labels).not.toContain("awf:agent-workflow:kind:research");
+	expect(api.issue(1).labels).not.toContain("awf:w1:kind:research");
 	expect(issue.workflow).toMatchObject({
 		kind: "task",
 		state: "ready",
@@ -120,13 +120,13 @@ it("should project agent-workflow Spec create fields to reserved GitHub labels a
 		"# Agent Workflow Spec\n\nWork this through the agent-workflow workflow.",
 	);
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:planning",
-		"awf:agent-workflow:kind:spec",
-		"awf:agent-workflow:state:ready",
+		"awf:w1:action:planning",
+		"awf:w1:kind:spec",
+		"awf:w1:state:ready",
 	]);
 	expect(api.issue(1).comments.map((comment) => comment.body)).toEqual([
-		expect.stringContaining("<!-- awf:current v1 agent-workflow -->"),
-		expect.stringContaining("<!-- awf:log v1 agent-workflow -->"),
+		expect.stringContaining("<!-- awf:current v1 w1 -->"),
+		expect.stringContaining("<!-- awf:log v1 w1 -->"),
 	]);
 });
 
@@ -147,9 +147,9 @@ it("should project canonical workflow labels on update", async () => {
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:none",
-		"awf:agent-workflow:kind:task",
-		"awf:agent-workflow:state:need-human",
+		"awf:w1:action:none",
+		"awf:w1:kind:task",
+		"awf:w1:state:need-human",
 	]);
 
 	await tracker.updateIssue(issue.id, {
@@ -162,9 +162,9 @@ it("should project canonical workflow labels on update", async () => {
 	});
 
 	expect(api.issue(1).labels.sort()).toEqual([
-		"awf:agent-workflow:action:plan",
-		"awf:agent-workflow:kind:spec",
-		"awf:agent-workflow:state:ready",
+		"awf:w1:action:plan",
+		"awf:w1:kind:spec",
+		"awf:w1:state:ready",
 	]);
 });
 
@@ -172,7 +172,7 @@ it("should ensure that listIssues requires reconciliation for malformed reserved
 	const api = createMockGitHubApi();
 	await api.createIssue({
 		title: "Reserved but malformed workflow label",
-		labels: ["awf:agent-workflow"],
+		labels: ["awf:w1"],
 	});
 	const tracker = createGitHubTracker({
 		api,
@@ -204,7 +204,7 @@ it("should append logs as strict machine comments", async () => {
 
 	expect(api.issue(1).comments.length).toBe(2);
 	expect(api.issue(1).comments[1]?.body).toBe(
-		'<!-- awf:log v1 agent-workflow -->\n{"issueId":"1","message":"ok","sequence":1,"type":"succeeded"}',
+		'<!-- awf:log v1 w1 -->\n{"issueId":"1","message":"ok","sequence":1,"type":"succeeded"}',
 	);
 	expect(
 		(await tracker.readLogs(issue.id)).map((log) => [log.sequence, log.type]),
@@ -448,7 +448,7 @@ it("should ensure that manual reserved-label corruption requires reconciliation"
 		title: "Implement adapter",
 		workflow: { kind: "task", state: "ready", action: "work" },
 	});
-	api.issue(1).labels.push("awf:agent-workflow:state:running");
+	api.issue(1).labels.push("awf:w1:state:running");
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(
 		CorruptWorkflowProjectionError,
@@ -466,8 +466,7 @@ it("should ensure that machine-comment corruption requires reconciliation", asyn
 		title: "Implement adapter",
 		workflow: { kind: "task", state: "ready", action: "work" },
 	});
-	api.issue(1).comments[0].body =
-		"<!-- awf:current v1 agent-workflow -->\nnot-json";
+	api.issue(1).comments[0].body = "<!-- awf:current v1 w1 -->\nnot-json";
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
@@ -485,14 +484,14 @@ it("should ensure that malformed canonical and legacy workflow-owned machine com
 
 	api.issue(1).comments.push({
 		id: 100,
-		body: "<!-- awf:log v2 agent-workflow -->\n{}",
+		body: "<!-- awf:log v2 w1 -->\n{}",
 	});
 	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
-	api.issue(1).comments[1].body = "<!-- awf:agent-workflow:log -->\n{}";
+	api.issue(1).comments[1].body = "<!-- awf:w1:log -->\n{}";
 	await expect(tracker.readLogs("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 
-	api.issue(1).comments[1].body = "<!-- awf:current v1 agent-workflow -->";
+	api.issue(1).comments[1].body = "<!-- awf:current v1 w1 -->";
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
 });
 
@@ -510,8 +509,8 @@ it("should ensure that machine-comment markers validate type version and workflo
 		api
 			.issue(1)
 			.comments[0]?.body.replace(
-				"<!-- awf:current v1 agent-workflow -->",
-				"<!-- awf:log v1 agent-workflow -->",
+				"<!-- awf:current v1 w1 -->",
+				"<!-- awf:log v1 w1 -->",
 			) ?? "";
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
@@ -520,8 +519,8 @@ it("should ensure that machine-comment markers validate type version and workflo
 		api
 			.issue(1)
 			.comments[0]?.body.replace(
-				"<!-- awf:log v1 agent-workflow -->",
-				"<!-- awf:current v2 agent-workflow -->",
+				"<!-- awf:log v1 w1 -->",
+				"<!-- awf:current v2 w1 -->",
 			) ?? "";
 
 	await expect(tracker.getIssue("1")).rejects.toThrow(/NEED_RECONCILIATION/);
@@ -530,7 +529,7 @@ it("should ensure that machine-comment markers validate type version and workflo
 		api
 			.issue(1)
 			.comments[0]?.body.replace(
-				"<!-- awf:current v2 agent-workflow -->",
+				"<!-- awf:current v2 w1 -->",
 				"<!-- awf:current v1 other-workflow -->",
 			) ?? "";
 

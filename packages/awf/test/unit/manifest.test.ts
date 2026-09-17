@@ -28,7 +28,7 @@ const invalidTrackerFixture = new URL(
 it("should load a TypeScript-authored workflow manifest as declarative data", async () => {
 	const manifest = await loadManifest(validFixture);
 
-	expect(manifest.workflow.id).toBe("agent-workflow");
+	expect(manifest.workflow.id).toBe("w1");
 	expect(manifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",
 		"wayfinder",
@@ -46,7 +46,7 @@ it("should load a TypeScript-authored workflow manifest as declarative data", as
 it("should load a Workflow module manifest and optional concrete tracker binding", async () => {
 	const workflowModule = await loadWorkflowModule(moduleFixture);
 
-	expect(workflowModule.manifest.workflow.id).toBe("agent-workflow");
+	expect(workflowModule.manifest.workflow.id).toBe("w1");
 	expect(typeof workflowModule.tracker?.getIssue).toBe("function");
 	expect(
 		typeof workflowModule.lifecycleHandlers?.["task:running/work:succeed"],
@@ -68,7 +68,7 @@ it("should ensure that Workflow module loading rejects non-concrete tracker expo
 it("should ensure that manifest loading validates the manifest export without requiring or checking tracker", async () => {
 	const manifest = await loadManifest(invalidTrackerFixture);
 
-	expect(manifest.workflow.id).toBe("agent-workflow");
+	expect(manifest.workflow.id).toBe("w1");
 });
 
 it("should reject loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
