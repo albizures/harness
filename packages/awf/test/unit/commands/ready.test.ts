@@ -16,7 +16,6 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 		actions: ["plan", "implement", "none"],
 		events: ["start", "succeed"],
 	},
-	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 	lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
 	readiness: {

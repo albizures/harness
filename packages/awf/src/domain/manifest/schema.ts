@@ -101,9 +101,6 @@ export type WorkflowManifest = {
 		actions: Array<Identifier>;
 		events: Array<Identifier>;
 	};
-	github: {
-		reservedPrefix: string;
-	};
 	concurrency: {
 		perIssue: 1;
 		perWorkflow?: number;
@@ -128,9 +125,8 @@ export type WorkflowManifest = {
 
 export type WorkflowManifestDefinition = Omit<
 	WorkflowManifest,
-	"github" | "kinds" | "commands"
+	"kinds" | "commands"
 > & {
-	github?: { reservedPrefix?: string };
 	kinds: Array<ManifestKindDefinition>;
 	commands: Array<ManifestCommand>;
 };
@@ -180,11 +176,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 		actions: z.array(z.string()),
 		events: z.array(z.string()),
 	}),
-	github: z
-		.strictObject({
-			reservedPrefix: z.string().min(1).optional(),
-		})
-		.optional(),
 	concurrency: z.strictObject({
 		perIssue: z.literal(1),
 		perWorkflow: z.number().int().positive().optional(),

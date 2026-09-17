@@ -11,7 +11,6 @@ export const manifest = defineManifest({
 		actions: ["implement"],
 		events: ["start"],
 	},
-	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1 },
 	kinds: [
 		{

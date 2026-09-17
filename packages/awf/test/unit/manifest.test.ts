@@ -177,7 +177,7 @@ it("should ensure that defineManifest accepts Workflow attempt transition effect
 	]);
 });
 
-it("should ensure that defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
+it("should ensure that defineManifest keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",
 		workflow: { id: "tiny", version: "1.0.0" },
@@ -216,20 +216,19 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 	});
 
 	expect(validateManifest(manifest)).toEqual([]);
-	expect(manifest.github.reservedPrefix).toBe("awf");
 	expect(typeof manifest.kinds[0]?.transitions[0]?.event).toBe("string");
 	expect(manifest.commands[0]?.input instanceof z.ZodType).toBe(true);
 	expect(
 		manifest.commands[0]?.input?.parse({
 			pullRequest: {
 				type: "pull-request",
-				url: " https://github.com/albizures/harness/pull/52 ",
+				url: " https://example.com/pull/52 ",
 			},
 		}),
 	).toEqual({
 		pullRequest: {
 			type: "pull-request",
-			url: "https://github.com/albizures/harness/pull/52",
+			url: "https://example.com/pull/52",
 		},
 	});
 });
@@ -243,7 +242,6 @@ it("should validate per-subkind concurrency against declared kind subkinds", () 
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: {
 			perIssue: 1,
 			perSubkind: { ticket: { bug: 1, feature: 2 } },
@@ -289,7 +287,6 @@ it("should require a workflow semantic version", () => {
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
@@ -316,7 +313,6 @@ it("should validate lifecycle active and terminal states against the workflow vo
 			actions: ["implement", "none"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: {
 			activeStates: ["running"],
@@ -367,7 +363,6 @@ it("should reject removed lifecycle retry escalation and resume allow-list contr
 			actions: ["work", "none"],
 			events: ["start", "succeed", "fail"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: {
 			activeStates: ["running"],
@@ -405,7 +400,6 @@ it("should reject readiness filters that target terminal states while allowing t
 			actions: ["implement", "none"],
 			events: ["reopen"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
 		readiness: {
@@ -453,7 +447,6 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		readiness: {
 			filters: [{ kind: "ticket", state: "ready", action: "implement" }],
@@ -531,7 +524,6 @@ it("should reject executable hook fields embedded in workflow semantic declarati
 			actions: ["planning", "work", "none"],
 			events: ["start", "succeed", "resume"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		readiness: {
 			filters: [{ kind: "task", state: "ready", action: "work" }],
@@ -609,7 +601,6 @@ it("should reject payload schemas outside command input declarations", () => {
 			actions: ["implement", "none"],
 			events: ["start", "succeed"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: { escalation: { input: z.object({ reason: z.string() }) } },
 		kinds: [
@@ -655,7 +646,6 @@ it("should reject tracker as a manifest field inside defineManifest data", () =>
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
@@ -684,7 +674,6 @@ it("should reject non-declarative hooks, wildcards, unknown references, and malf
 			actions: ["implement", "review"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{

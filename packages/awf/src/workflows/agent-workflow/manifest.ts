@@ -149,7 +149,6 @@ export const agentWorkflowManifest = defineManifest({
 		actions: [...actions],
 		events: [...events],
 	},
-	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { task: 3 } },
 	readiness: {
 		filters: [

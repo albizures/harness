@@ -250,7 +250,6 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.stdout).toContain("## Scope notes");
 	expect(result.stdout).not.toContain("agent-development");
 	expect(result.stdout).not.toContain("_def");
-	expect(result.stdout).not.toContain("reservedPrefix");
 	expect(result.stdout).not.toContain("typeName");
 });
 
@@ -383,7 +382,6 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 	const serialized = JSON.stringify(envelope.data);
 	expect(serialized).not.toContain("agent-development");
 	expect(serialized).not.toContain("_def");
-	expect(serialized).not.toContain("reservedPrefix");
 	expect(serialized).not.toContain("typeName");
 });
 

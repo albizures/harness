@@ -238,7 +238,6 @@ it("should ensure that succeed applies generic relationship-driven lifecycle pro
 			actions: ["wait", "do", "verify", "none"],
 			events: ["start", "succeed"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		readiness: { filters: [] },
 		lifecycle: {
@@ -664,7 +663,6 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 			actions: ["do", "none"],
 			events: ["start", "succeed"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 as const },
 		kinds: [
 			{
@@ -766,7 +764,6 @@ it("should ensure that generic lifecycle transition handlers reject invalid cont
 			actions: ["do", "none"],
 			events: ["succeed"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 as const },
 		kinds: [
 			{

@@ -57,8 +57,6 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 		issues,
 	);
 
-	validateGithub(value.github, issues);
-
 	const kinds = readArray(value.kinds, "$.kinds", issues);
 	const kindIds = new Set<string>();
 	const kindActions = new Map<string, Set<string>>();
@@ -203,7 +201,6 @@ export function normalizeManifest(
 ): WorkflowManifest {
 	return {
 		...manifest,
-		github: { reservedPrefix: manifest.github?.reservedPrefix ?? "awf" },
 		kinds: manifest.kinds,
 		commands: manifest.commands,
 	};
@@ -303,26 +300,6 @@ function readIdentifierSet(
 		}
 	}
 	return seen;
-}
-
-function validateGithub(value: unknown, issues: Array<ValidationIssue>): void {
-	if (value === undefined) {
-		return;
-	}
-	if (!isRecord(value)) {
-		issue(issues, "$.github", "GitHub metadata must be an object.");
-		return;
-	}
-	if (
-		value.reservedPrefix !== undefined &&
-		(typeof value.reservedPrefix !== "string" || value.reservedPrefix === "")
-	) {
-		issue(
-			issues,
-			"$.github.reservedPrefix",
-			"Reserved prefix must be a non-empty string.",
-		);
-	}
 }
 
 function validateConcurrency(

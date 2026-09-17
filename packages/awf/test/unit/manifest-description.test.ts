@@ -14,7 +14,6 @@ function descriptionManifest() {
 			actions: ["plan", "implement", "review", "none"],
 			events: ["schedule", "start", "succeed", "escalate"],
 		},
-		github: { reservedPrefix: "secret-prefix" },
 		concurrency: {
 			perIssue: 1,
 			perWorkflow: 2,
