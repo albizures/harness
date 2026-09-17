@@ -20,6 +20,6 @@ _Avoid_: engineering skill group, design skill group, miscellaneous skill group
 The canonical skill document that defines how agents operate AWF-backed Specs, Tasks, Wayfinders, and Grilling issues through public AWF behavior.
 _Avoid_: duplicated AWF command table, local AWF schema reference
 
-**GitHub-backed AWF setup**:
-A workflow-skill setup procedure that configures AWF to use the GitHub tracker through `gh`, verifies authentication and workflow loading, and leaves operational AWF command shapes in the Agent Workflow reference.
-_Avoid_: AWF GitHub prerequisite, smoke-run evidence, duplicated command reference
+**Filesystem-backed AWF operation**:
+The workflow-skill operating mode where AWF stores Workflow issues as readable Markdown files under `.awf/tracker`, configured explicitly by the repository `awf.config.ts` or used through AWF's no-config fallback.
+_Avoid_: GitHub-backed default, AWF GitHub prerequisite, duplicated command reference

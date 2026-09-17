@@ -1,11 +1,5 @@
-import {
-	agentWorkflowManifest,
-	createGhCliGitHubTracker,
-} from "./packages/awf/dist";
+import { agentWorkflowManifest } from "./packages/awf/dist";
+import { createFileSystemTracker } from "./packages/awf/dist/trackers/filesystem";
 
 export const manifest = agentWorkflowManifest;
-export const tracker = createGhCliGitHubTracker({
-	owner: "albizures",
-	repo: "harness",
-	manifest: agentWorkflowManifest,
-});
+export const tracker = createFileSystemTracker({ path: "./.awf/tracker" });

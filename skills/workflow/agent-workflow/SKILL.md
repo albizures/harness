@@ -15,6 +15,8 @@ Prefer the configured command shape for the repository:
 awf --config ./awf.config.ts <command>
 ```
 
+In Harness agent sessions, use the repository wrapper form `pnpm awf --config ./awf.config.ts <command>`.
+
 If no config is present, AWF falls back to the filesystem tracker under `.awf/tracker` in the current working directory.
 
 Supported public commands for this workflow include:
@@ -52,7 +54,7 @@ If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` l
 ## Relationship rules
 
 - Use `spec`/`parent` in AWF create input to attach children. Do not create tracker sub-issues directly.
-- Use `dependsOn` in Task create input to preserve blocking edges. Do not call raw GitHub dependency APIs directly.
+- Use `dependsOn` in Task create input to preserve blocking edges. Do not call raw tracker dependency APIs directly.
 - Use `generatedBy` only as provenance. It is not dependency ordering and does not gate readiness.
 - Use `awf ready` as the source of truth for executable frontier work. In this workflow it exposes Specs ready for planning and Tasks ready for work; it does not list Grilling.
 - Use `awf ready --filter spec=<spec-id>` to ask for executable work directly under a Spec. Do not use `--filter parent=<id>` or `--filter wayfinder=<id>`; those filters are undeclared and AWF will reject them.
@@ -88,16 +90,12 @@ AWF gates `integration-test` and `merge` readiness by profile. It does not prove
 - Grilling and most Wayfinder decision work are HITL. Stop at the checkpoint and wait for the human rather than simulating agreement.
 - If scope is ambiguous during implementation, create or use Grilling / `need-human` flow instead of silently expanding executable work.
 
-## GitHub target
+## Filesystem target
 
-For normal GitHub-backed operation, run public AWF commands from the repo root with the configured repo `awf.config.ts`. AWF is responsible for projecting workflow labels, machine comments, child relationships, and dependencies.
+Harness configures AWF to store readable Markdown issue files in `.awf/tracker` through `awf.config.ts`. If no tracker is configured, AWF uses the same filesystem tracker location by default.
 
-When configuring or validating GitHub-backed AWF setup, use [`GITHUB-SETUP.md`](GITHUB-SETUP.md).
-
-## Filesystem fallback
-
-Without a configured tracker, AWF stores readable Markdown issue files in `.awf/tracker`. You may inspect these files, but still create and operate workflow issues with public `awf` commands. Manual file repair is only for documented corruption recovery.
+You may inspect these files, but still create and operate workflow issues with public `awf` commands. Manual file repair is only for documented corruption recovery.
 
 ## Unsupported internals
 
-Do not instruct agents to use private runtime APIs, raw command ids, hidden `run-command` invocations, direct GitHub relationship/dependency endpoints, AWF machine-comment edits, legacy tracker labels such as `ready-for-agent`, or the old `agentDevelopment*` / agent-development workflow conventions for AWF-backed planning.
+Do not instruct agents to use private runtime APIs, raw command ids, hidden `run-command` invocations, direct tracker relationship/dependency endpoints, AWF storage edits except documented filesystem repair, legacy tracker labels such as `ready-for-agent`, or the old `agentDevelopment*` / agent-development workflow conventions for AWF-backed planning.
