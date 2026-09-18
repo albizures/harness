@@ -4,7 +4,9 @@ import {
 	mkdir,
 	mkdtemp,
 	readFile,
+	readdir,
 	rm,
+	stat,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -46,6 +48,7 @@ const filesystemTrackerSourcePath = new URL(
 const unreadableMode = 0o000;
 const ownerReadWriteMode = 0o600;
 const bundledGoldenSmokeTimeoutMs = 15_000;
+const externalLogCliTimeoutMs = 15_000;
 const configLifecycleHandlerPrNumber = 42;
 const inspectionLogCount = 6;
 const inspectionRecentLogCount = 5;
@@ -215,6 +218,303 @@ Keep **Markdown** verbatim.
 	});
 });
 
+it(
+	"should ensure that filesystem CLI stores default logs externally without embedding them in issue markdown",
+	async () => {
+		await withTempDir(async (dir) => {
+			const trackerPath = join(dir, "tracker");
+			const configPath = join(dir, "filesystem.workflow.ts");
+			await writeFile(
+				configPath,
+				`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = agentWorkflowManifest;
+export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerPath)} });
+`,
+			);
+			const runCli = (args: Array<string>, input?: unknown) => {
+				const result = spawnSync(
+					process.execPath,
+					[cliPath.pathname, "--json", "--config", configPath, ...args],
+					{
+						cwd: dir,
+						encoding: "utf8",
+						input:
+							input === undefined ? undefined : serializeCliSmokeInput(input),
+					},
+				);
+				expect(result.status).toBe(0);
+				expect(result.stderr).toBe("");
+				const envelope = JSON.parse(result.stdout);
+				expect(envelope.ok).toBe(true);
+				return envelope.data;
+			};
+
+			const spec = runCli(["create", "spec", "--input", "-"], {
+				title: "External log spec",
+				body: "Body",
+			}).issue;
+			const task = runCli(["create", "task", "--input", "-"], {
+				parent: spec.id,
+				title: "External log task",
+				description: "Do it.",
+				profile: "implement",
+			}).issue;
+			runCli(["task", "start", task.id]);
+			runCli(["task", "succeed", task.id, "--input", "-"], {
+				summary: "Implemented external log coverage.",
+				checks: ["pnpm test"],
+				implementationPr: prArtifact(1),
+			});
+			const runTextCli = (args: Array<string>) => {
+				const result = spawnSync(
+					process.execPath,
+					[cliPath.pathname, "--config", configPath, ...args],
+					{ cwd: dir, encoding: "utf8" },
+				);
+				expect(result.status).toBe(0);
+				expect(result.stderr).toBe("");
+				return result.stdout;
+			};
+
+			expect(await readdir(trackerPath)).toEqual(["1.md", "2.md", "logs"]);
+			expect(await readdir(join(trackerPath, "logs", spec.id))).toEqual([
+				"1-spec-create-created.md",
+			]);
+			expect(await readdir(join(trackerPath, "logs", task.id))).toEqual([
+				"1-task-create-created.md",
+				"2-command.md",
+				"3-command.md",
+			]);
+			expect(
+				await readFile(join(trackerPath, `${spec.id}.md`), "utf8"),
+			).not.toContain("## Logs");
+			expect(
+				await readFile(join(trackerPath, `${task.id}.md`), "utf8"),
+			).not.toContain("## Logs");
+			const creationLog = await readFile(
+				join(trackerPath, "logs", spec.id, "1-spec-create-created.md"),
+				"utf8",
+			);
+			expect(creationLog).toContain("\n\nApplied spec-create.\n");
+			expect(creationLog).not.toContain("```json");
+			const completionLog = await readFile(
+				join(trackerPath, "logs", task.id, "3-command.md"),
+				"utf8",
+			);
+			expect(completionLog).toContain(
+				"\n\nImplemented external log coverage.\n",
+			);
+			expect(completionLog).not.toContain("checks");
+			expect(completionLog).not.toContain("implementationPr");
+			expect(
+				runCli(["logs", task.id]).logs.map(
+					(log: { type: string; message?: string }) => [log.type, log.message],
+				),
+			).toEqual([
+				["task-create_created", "Applied task-create."],
+				["command", "Applied start."],
+				["command", "Implemented external log coverage."],
+			]);
+			expect(runTextCli(["logs", task.id])).toBe(
+				"1 task-create_created — Applied task-create.\n2 command — Applied start.\n3 command — Implemented external log coverage.\n",
+			);
+			expect(runTextCli(["get", task.id])).toContain(
+				"- 3 command — Implemented external log coverage.",
+			);
+		});
+	},
+	externalLogCliTimeoutMs,
+);
+
+it(
+	"should ensure that filesystem CLI honors disabled manifest logging across create and lifecycle commands",
+	async () => {
+		await withTempDir(async (dir) => {
+			const trackerPath = join(dir, "tracker");
+			const configPath = join(dir, "filesystem-no-logs.workflow.ts");
+			await writeFile(
+				configPath,
+				`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = { ...agentWorkflowManifest, logging: { enabled: false } };
+export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerPath)} });
+`,
+			);
+			const runCli = (args: Array<string>, input?: unknown) => {
+				const result = spawnSync(
+					process.execPath,
+					[cliPath.pathname, "--json", "--config", configPath, ...args],
+					{
+						cwd: dir,
+						encoding: "utf8",
+						input:
+							input === undefined ? undefined : serializeCliSmokeInput(input),
+					},
+				);
+				expect(result.status).toBe(0);
+				expect(result.stderr).toBe("");
+				const envelope = JSON.parse(result.stdout);
+				expect(envelope.ok).toBe(true);
+				return envelope.data;
+			};
+
+			const spec = runCli(["create", "spec", "--input", "-"], {
+				title: "No-log spec",
+				body: "Body",
+			}).issue;
+			const task = runCli(["create", "task", "--input", "-"], {
+				parent: spec.id,
+				title: "No-log task",
+				description: "Do it.",
+				profile: "implement",
+			}).issue;
+			runCli(["task", "start", task.id]);
+			runCli(["task", "succeed", task.id, "--input", "-"], {
+				implementationPr: prArtifact(1),
+			});
+
+			expect(runCli(["logs", spec.id]).logs).toEqual([]);
+			expect(runCli(["logs", task.id]).logs).toEqual([]);
+			expect(runCli(["get", task.id]).recentLogs).toEqual([]);
+			expect(await readdir(trackerPath)).toEqual(["1.md", "2.md"]);
+			await expect(stat(join(trackerPath, "logs"))).rejects.toThrow();
+			expect(
+				await readFile(join(trackerPath, `${spec.id}.md`), "utf8"),
+			).not.toContain("## Logs");
+			expect(
+				await readFile(join(trackerPath, `${task.id}.md`), "utf8"),
+			).not.toContain("## Logs");
+		});
+	},
+	externalLogCliTimeoutMs,
+);
+
+it("should ensure that filesystem CLI reads historical JSON-looking log files as Markdown prose", async () => {
+	await withTempDir(async (dir) => {
+		const trackerPath = join(dir, "tracker");
+		const configPath = join(dir, "filesystem.workflow.ts");
+		await writeFile(
+			configPath,
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = agentWorkflowManifest;
+export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerPath)} });
+`,
+		);
+		const runCli = (args: Array<string>, input?: unknown) => {
+			const result = spawnSync(
+				process.execPath,
+				[cliPath.pathname, "--json", "--config", configPath, ...args],
+				{
+					cwd: dir,
+					encoding: "utf8",
+					input:
+						input === undefined ? undefined : serializeCliSmokeInput(input),
+				},
+			);
+			expect(result.status).toBe(0);
+			expect(result.stderr).toBe("");
+			const envelope = JSON.parse(result.stdout);
+			expect(envelope.ok).toBe(true);
+			return envelope.data;
+		};
+		const spec = runCli(["create", "spec", "--input", "-"], {
+			title: "Historical log spec",
+			body: "Body",
+		}).issue;
+		const historicalBody = `# action_succeeded
+
+\`\`\`json
+{"message":"{\\"summary\\":\\"Nested summary\\"}"}
+\`\`\`
+`;
+		const historicalPath = join(
+			trackerPath,
+			"logs",
+			spec.id,
+			"2-action-succeeded.md",
+		);
+		await writeFile(
+			historicalPath,
+			`---
+sequence: 2
+issue: ${JSON.stringify(spec.id)}
+event: "action_succeeded"
+createdAt: "2024-01-01T00:00:00.000Z"
+---
+
+${historicalBody}`,
+		);
+		const before = await readFile(historicalPath, "utf8");
+
+		const logs = runCli(["logs", spec.id]).logs;
+		expect(logs[1].message).toBe(historicalBody.trim());
+		expect(runCli(["get", spec.id]).recentLogs[1].message).toBe(
+			historicalBody.trim(),
+		);
+		expect(await readFile(historicalPath, "utf8")).toBe(before);
+	});
+});
+
+it("should ensure that filesystem CLI get preserves metadata while surfacing malformed external log diagnostics", async () => {
+	await withTempDir(async (dir) => {
+		const trackerPath = join(dir, "tracker");
+		const configPath = join(dir, "filesystem.workflow.ts");
+		const inputPath = join(dir, "spec.json");
+		await writeFile(
+			configPath,
+			`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = agentWorkflowManifest;
+export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerPath)} });
+`,
+		);
+		await writeFile(
+			inputPath,
+			JSON.stringify({ title: "External log spec", body: "Body" }),
+		);
+		const createResult = spawnSync(
+			process.execPath,
+			[
+				cliPath.pathname,
+				"--config",
+				configPath,
+				"create",
+				"spec",
+				"--input",
+				inputPath,
+			],
+			{ cwd: dir, encoding: "utf8" },
+		);
+		expect(createResult.status).toBe(0);
+
+		await mkdir(join(trackerPath, "logs", "1"), { recursive: true });
+		await writeFile(
+			join(trackerPath, "logs", "1", "2-malformed.md"),
+			"not frontmatter\n",
+		);
+
+		const result = spawnSync(
+			process.execPath,
+			[cliPath.pathname, "--config", configPath, "get", "1"],
+			{ cwd: dir, encoding: "utf8" },
+		);
+
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain(
+			"# 1 External log spec [spec/ready/planning]",
+		);
+		expect(result.stdout).toContain("## Recent logs");
+		expect(result.stderr).toContain("2-malformed.md");
+		expect(result.stderr).toContain("invalid markdown projection data");
+	});
+});
+
 it("should ensure that CLI writes bundled workflow descriptions as Markdown text by default", () => {
 	const result = spawnSync(
 		process.execPath,
@@ -351,6 +651,16 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				},
 				target: { kind: "spec", action: "planning" },
 				input: { required: true },
+			},
+			{
+				id: "spec-planned",
+				cli: {
+					verb: "spec",
+					target: "planned",
+					usage: "awf spec planned <issue>",
+				},
+				target: { kind: "spec", action: "planning" },
+				input: { required: false },
 			},
 			{
 				id: "spec-complete",
@@ -619,11 +929,7 @@ export const lifecycleHandlers = {
 		);
 
 		expect(result.status).toBe(0);
-		expect(
-			JSON.parse(JSON.parse(result.stdout).data.log.message),
-		).toMatchObject({
-			input: { implementationPr: prArtifact(configLifecycleHandlerPrNumber) },
-		});
+		expect(JSON.parse(result.stdout).data.log.message).toBe("Applied succeed.");
 	});
 });
 

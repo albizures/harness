@@ -144,6 +144,7 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			issues,
 		);
 	}
+	validateLoggingPolicy(value.logging, commandIds, events, issues);
 
 	for (const [index, relationship] of readArray(
 		value.relationships ?? [],
@@ -807,6 +808,81 @@ function validateMinimum(
 			path,
 			"Relationship policy minimum must be a non-negative integer.",
 		);
+	}
+}
+
+function validateLoggingPolicy(
+	value: unknown,
+	commandIds: Set<string>,
+	events: Set<string>,
+	issues: Array<ValidationIssue>,
+): void {
+	if (value === undefined) {
+		return;
+	}
+	if (!isRecord(value)) {
+		issue(issues, "$.logging", "Logging policy must be an object.");
+		return;
+	}
+	validateLoggingCategory(
+		value.creation,
+		"$.logging.creation",
+		commandIds,
+		undefined,
+		issues,
+	);
+	validateLoggingCategory(
+		value.stateChanges,
+		"$.logging.stateChanges",
+		commandIds,
+		events,
+		issues,
+	);
+}
+
+function validateLoggingCategory(
+	value: unknown,
+	path: string,
+	commandIds: Set<string>,
+	events: Set<string> | undefined,
+	issues: Array<ValidationIssue>,
+): void {
+	if (value === undefined) {
+		return;
+	}
+	if (!isRecord(value)) {
+		issue(issues, path, "Logging category policy must be an object.");
+		return;
+	}
+	if (isRecord(value.commands)) {
+		for (const commandId of Object.keys(value.commands)) {
+			if (!commandIds.has(commandId)) {
+				issue(
+					issues,
+					`${path}.commands.${commandId}`,
+					"Logging command selector must reference a declared command.",
+				);
+			}
+		}
+	}
+	if (value.events !== undefined) {
+		if (events === undefined) {
+			issue(
+				issues,
+				`${path}.events`,
+				"Logging event selectors are only supported for state changes.",
+			);
+		} else if (isRecord(value.events)) {
+			for (const event of Object.keys(value.events)) {
+				if (!events.has(event)) {
+					issue(
+						issues,
+						`${path}.events.${event}`,
+						"Logging event selector must reference a declared event.",
+					);
+				}
+			}
+		}
 	}
 }
 

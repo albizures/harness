@@ -6,6 +6,10 @@ import {
 	validateManifest,
 } from "../../src/domain/manifest/define.ts";
 import {
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "../../src/domain/manifest/logging.ts";
+import {
 	loadManifest,
 	loadWorkflowModule,
 } from "../../src/runtime/workflow-module.ts";
@@ -125,6 +129,133 @@ it("should reject configurable relationship projection direction", () => {
 				issue.message.includes("direction"),
 		),
 	).toBe(true);
+});
+
+it("should accept manifest logging policy selectors and preserve default-enabled behavior", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "logging-policy", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["work", "none"],
+			events: ["start", "succeed"],
+		},
+		concurrency: { perIssue: 1 },
+		logging: {
+			enabled: false,
+			creation: {
+				commands: { "create-ticket": true },
+			},
+			stateChanges: {
+				enabled: false,
+				events: { start: true, succeed: false },
+				commands: { "finish-ticket": true, "start-ticket": false },
+			},
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "work" },
+				transitions: [
+					{
+						from: { state: "ready", action: "work" },
+						event: "start",
+						to: { state: "running", action: "work" },
+					},
+					{
+						from: { state: "running", action: "work" },
+						event: "succeed",
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "create-ticket",
+				cli: { verb: "create", target: "ticket" },
+				target: { kind: "ticket", action: "work" },
+			},
+			{
+				id: "start-ticket",
+				target: { kind: "ticket", state: "ready", action: "work" },
+				transition: { event: "start", attempt: "start" },
+			},
+			{
+				id: "finish-ticket",
+				target: { kind: "ticket", state: "running", action: "work" },
+				transition: { event: "succeed", attempt: "complete" },
+			},
+		],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+	expect(shouldLogCreation(manifest, "create-ticket")).toBe(true);
+	expect(shouldLogCreation(manifest, "unknown-create")).toBe(false);
+	expect(shouldLogStateChange(manifest, { event: "start" })).toBe(true);
+	const startTicket = manifest.commands[1];
+	const finishTicket = manifest.commands[2];
+	expect(startTicket).toBeDefined();
+	expect(finishTicket).toBeDefined();
+	if (startTicket === undefined || finishTicket === undefined) {
+		throw new Error("Expected manifest commands to exist.");
+	}
+	expect(shouldLogStateChange(manifest, startTicket)).toBe(false);
+	expect(shouldLogStateChange(manifest, finishTicket)).toBe(true);
+	expect(
+		shouldLogCreation({ ...manifest, logging: undefined }, "anything"),
+	).toBe(true);
+});
+
+it("should validate manifest logging selector keys", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "logging-validation", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["work"],
+			events: ["start"],
+		},
+		concurrency: { perIssue: 1 },
+		logging: {
+			creation: { commands: { "missing-create": true } },
+			stateChanges: {
+				commands: { "missing-transition": false },
+				events: { missing: false },
+			},
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "work" },
+				transitions: [
+					{
+						from: { state: "ready", action: "work" },
+						event: "start",
+						to: { state: "running", action: "work" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "start-ticket",
+				target: { kind: "ticket", state: "ready", action: "work" },
+				transition: { event: "start" },
+			},
+		],
+	});
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/creation\.commands\.missing-create/);
+	expect(messages).toMatch(/stateChanges\.commands\.missing-transition/);
+	expect(messages).toMatch(/stateChanges\.events\.missing/);
+	expect(messages).toMatch(/declared command/);
+	expect(messages).toMatch(/declared event/);
 });
 
 it("should ensure that defineManifest accepts Workflow attempt transition effects", () => {

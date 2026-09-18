@@ -5,6 +5,10 @@ import {
 	runLifecycleTransitionHandler,
 	type LifecycleTransitionHandlers,
 } from "../lifecycle-handlers.ts";
+import {
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "../../domain/manifest/logging.ts";
 import type {
 	ManifestCommand,
 	WorkflowManifest,
@@ -34,7 +38,7 @@ import {
 	workflowCommand,
 	workflowCommandByCli,
 	readOption,
-	stableStringify,
+	proseLogMessage,
 	workflowTarget,
 } from "./shared.ts";
 
@@ -487,17 +491,21 @@ export async function createGenericWorkflowIssueCommand(
 			title: genericIssueTitle(payload.data, command.cli?.target ?? kind.id),
 			body: genericIssueBody(payload.data, raw),
 			workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
-			initialLog: {
-				type: `${command.id}_created`,
-				message: stableStringify({ input: payload.data }),
-			},
+			...(shouldLogCreation(manifest, command)
+				? {
+						initialLog: {
+							type: `${command.id}_created`,
+							message: proseLogMessage(command.id, payload.data),
+						},
+					}
+				: {}),
 		});
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		const data = { issue, log };
+		const data = { issue, ...(log === undefined ? {} : { log }) };
 		return success(data);
 	} catch (error) {
 		return lifecycleError("new", error);
@@ -606,18 +614,22 @@ async function transitionGenericWorkflowCommand(
 					},
 					workflow,
 				},
-				{
-					type: "record-command",
-					issue: { id: issueId },
-					log: {
-						type: "command",
-						message: transitionRunLogMessage(
-							transitionCommand.event,
-							runEffect,
-							input.data,
-						),
-					},
-				},
+				...(shouldLogStateChange(manifest, command)
+					? [
+							{
+								type: "record-command" as const,
+								issue: { id: issueId },
+								log: {
+									type: "command",
+									message: transitionRunLogMessage(
+										transitionCommand.event,
+										runEffect,
+										input.data,
+									),
+								},
+							},
+						]
+					: []),
 				...handler.contribution.effects,
 			],
 		});
@@ -632,7 +644,7 @@ async function transitionGenericWorkflowCommand(
 		}
 		return success({
 			issue: updated,
-			log: result.logs[0],
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 			outcome: "APPLIED",
 		});
 	} catch (error) {
@@ -678,14 +690,7 @@ function transitionRunLogMessage(
 	_runEffect: "none" | "start" | "complete",
 	input: JsonValue,
 ): string {
-	if (isEmptyPlainObject(input)) {
-		return `Applied ${event}.`;
-	}
-	return stableStringify({ event, input });
-}
-
-function isEmptyPlainObject(value: JsonValue): boolean {
-	return isRecord(value) && Object.keys(value).length === 0;
+	return proseLogMessage(event, input);
 }
 
 function commandTargetMatches(

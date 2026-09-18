@@ -303,6 +303,11 @@ export const agentWorkflowManifest = defineManifest({
 			input: createInput,
 		},
 		{
+			id: "spec-planned",
+			cli: { verb: "spec", target: "planned", input: "none" },
+			target: { kind: "spec", action: "planning" },
+		},
+		{
 			id: "spec-complete",
 			cli: { verb: "spec", target: "complete" },
 			target: { kind: "spec", state: "ready", action: "none" },

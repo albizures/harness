@@ -3,11 +3,11 @@ import { parseJsonValue } from "../../shared/json.ts";
 import type { LifecycleTransitionHandlers } from "../lifecycle-handlers.ts";
 import type { TrackerAdapterPrimitiveReads } from "../../ports/tracker.ts";
 import { runLifecycleTransitionHandler } from "../lifecycle-handlers.ts";
+import { shouldLogStateChange } from "../../domain/manifest/logging.ts";
 import type { WorkflowManifest } from "../../domain/manifest/schema.ts";
 import type { Tracker, TrackerLog } from "../../ports/tracker.ts";
 import { runtimeFailures } from "../failures.ts";
 import {
-	cleanTransitionTarget,
 	defaultRetryTarget,
 	findTransition,
 	invalidTransition,
@@ -19,7 +19,7 @@ import {
 	readInput,
 	terminalLogType,
 	workflowTarget,
-	stableStringify,
+	proseLogMessage,
 } from "./shared.ts";
 
 export async function startCommand(
@@ -55,10 +55,7 @@ export async function startCommand(
 		if (lifecycleHandlers === undefined) {
 			const log: TrackerLog = {
 				type: "action_started",
-				message: stableStringify({
-					event: "start",
-					to: cleanTransitionTarget(transition.to),
-				}),
+				message: proseLogMessage("start"),
 			};
 			const result = await tracker.applyWorkflowEffects({
 				effects: [
@@ -71,12 +68,14 @@ export async function startCommand(
 						},
 						workflow: workflowTarget(transition.to),
 					},
-					{ type: "record-command", issue: { id }, log },
+					...(shouldLogStateChange(manifest, { event: "start" })
+						? [{ type: "record-command" as const, issue: { id }, log }]
+						: []),
 				],
 			});
 			return success({
 				issue: result.issues[id] ?? (await tracker.getIssue(id)),
-				log: result.logs[0],
+				...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 			});
 		}
 		const handler = await runLifecycleTransitionHandler(lifecycleHandlers, {
@@ -93,10 +92,7 @@ export async function startCommand(
 		const target = workflowTarget(transition.to);
 		const log: TrackerLog = {
 			type: "action_started",
-			message: stableStringify({
-				event: "start",
-				to: cleanTransitionTarget(transition.to),
-			}),
+			message: proseLogMessage("start"),
 		};
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
@@ -109,13 +105,15 @@ export async function startCommand(
 					},
 					workflow: target,
 				},
-				{ type: "record-command", issue: { id }, log },
+				...(shouldLogStateChange(manifest, { event: "start" })
+					? [{ type: "record-command" as const, issue: { id }, log }]
+					: []),
 				...handler.contribution.effects,
 			],
 		});
 		return success({
 			issue: result.issues[id] ?? (await tracker.getIssue(id)),
-			log: result.logs[0],
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 		});
 	} catch (error) {
 		return lifecycleError(id, error);
@@ -188,11 +186,7 @@ export async function terminalCommand(
 		if (lifecycleHandlers === undefined) {
 			const log: TrackerLog = {
 				type: logType,
-				message: stableStringify({
-					event,
-					...(parsedInput === undefined ? {} : { input: terminalInput }),
-					to: target,
-				}),
+				message: proseLogMessage(event, terminalInput),
 			};
 			const result = await tracker.applyWorkflowEffects({
 				effects: [
@@ -205,7 +199,9 @@ export async function terminalCommand(
 						},
 						workflow: target,
 					},
-					{ type: "record-command", issue: { id }, log },
+					...(shouldLogStateChange(manifest, { event })
+						? [{ type: "record-command" as const, issue: { id }, log }]
+						: []),
 				],
 			});
 			const updated = result.issues[id] ?? (await tracker.getIssue(id));
@@ -217,7 +213,7 @@ export async function terminalCommand(
 			);
 			return success({
 				issue: updated,
-				log: result.logs[0],
+				...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 			});
 		}
 		const handler =
@@ -236,11 +232,7 @@ export async function terminalCommand(
 		}
 		const log: TrackerLog = {
 			type: logType,
-			message: stableStringify({
-				event,
-				...(parsedInput === undefined ? {} : { input: terminalInput }),
-				to: target,
-			}),
+			message: proseLogMessage(event, terminalInput),
 		};
 		const result = await tracker.applyWorkflowEffects({
 			effects: [
@@ -253,7 +245,9 @@ export async function terminalCommand(
 					},
 					workflow: target,
 				},
-				{ type: "record-command", issue: { id }, log },
+				...(shouldLogStateChange(manifest, { event })
+					? [{ type: "record-command" as const, issue: { id }, log }]
+					: []),
 				...handler.contribution.effects,
 			],
 		});
@@ -266,7 +260,7 @@ export async function terminalCommand(
 		);
 		return success({
 			issue: updated,
-			log: result.logs[0],
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 		});
 	} catch (error) {
 		return lifecycleError(id, error);

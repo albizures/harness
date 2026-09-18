@@ -42,6 +42,7 @@ it("should export a valid explicit bundled workflow module", () => {
 		"escalate",
 		"resume",
 		"spec-create",
+		"spec-planned",
 		"spec-complete",
 		"task-create",
 		"grilling-create",
@@ -97,6 +98,7 @@ it("should export a valid explicit bundled workflow module", () => {
 	).toBeUndefined();
 	expect(agentWorkflowManifest.commands.map((command) => command.id)).toEqual([
 		"spec-create",
+		"spec-planned",
 		"spec-complete",
 		"wayfinder-create",
 		"task-create",
@@ -130,6 +132,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 	expect(help.commands.map((command) => command.usage)).toEqual(
 		expect.arrayContaining([
 			"awf create spec --input <file|->",
+			"awf spec planned <issue>",
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
 			"awf create grilling --input <file|->",
@@ -187,6 +190,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		),
 	).toEqual([
 		"awf create spec --input <file|->",
+		"awf spec planned <issue>",
 		"awf spec complete <issue> --input <file|->",
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
@@ -456,18 +460,69 @@ it("should create agent-workflow Specs from structured JSON ready for planning w
 		action: "planning",
 	});
 	expect(created.log.type).toBe("spec-create_created");
-	expect(JSON.parse(created.log.message)).toEqual({
-		input: {
-			title: "Write the spec",
-			content: "# Write the spec\n\nDefine the work in Markdown.",
-		},
-	});
+	expect(created.log.message).toBe("Applied spec-create.");
 	expect(
 		(await tracker.readLogs(created.issue.id)).map((log) => log.type),
 	).toEqual(["spec-create_created"]);
 });
 
-it("should complete agent-workflow Specs only after merge work is done", async () => {
+it("should mark ready and running Spec planning as completed through the public planned command", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "ready-spec",
+				title: "Ready Spec",
+				workflow: { kind: "spec", state: "ready", action: "planning" },
+			},
+			{
+				id: "running-spec",
+				title: "Running Spec",
+				workflow: { kind: "spec", state: "running", action: "planning" },
+			},
+			{
+				id: "planned-spec",
+				title: "Planned Spec",
+				workflow: { kind: "spec", state: "ready", action: "none" },
+			},
+		],
+	});
+
+	const ready = assertSuccess(
+		await execute(["spec", "planned", "ready-spec"], { tracker }),
+	) as {
+		issue: { workflow: Record<string, string> };
+		log: { message: string };
+	};
+	expect(ready.issue.workflow).toMatchObject({
+		kind: "spec",
+		state: "ready",
+		action: "none",
+	});
+	expect(ready.log.message).toBe("Completed Spec planning.");
+
+	const running = assertSuccess(
+		await execute(["spec", "planned", "running-spec"], { tracker }),
+	) as {
+		issue: { workflow: Record<string, string> };
+		log: { message: string };
+	};
+	expect(running.issue.workflow).toMatchObject({
+		kind: "spec",
+		state: "ready",
+		action: "none",
+	});
+	expect(running.log.message).toBe("Completed Spec planning.");
+
+	const rejected = await execute(["spec", "planned", "planned-spec"], {
+		tracker,
+	});
+	expect(rejected.ok).toBe(false);
+	expect(rejected.ok ? undefined : rejected.error.code).toBe(
+		"UNAVAILABLE_COMMAND",
+	);
+});
+
+it("should complete planned agent-workflow Specs after children are done without merge or integration-test gates", async () => {
 	const tracker = createInMemoryTracker();
 	const created = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -475,18 +530,21 @@ it("should complete agent-workflow Specs only after merge work is done", async (
 			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
 		}),
 	) as { issue: { id: string } };
-	assertSuccess(
-		await execute(["run-command", "start", created.issue.id], { tracker }),
-	);
-	expect(
-		assertSuccess(
-			await execute(
-				["run-command", "succeed", created.issue.id, "--input", "-"],
-				{ tracker, stdin: "{}" },
-			),
-		) as { issue: { workflow: Record<string, string> } },
-	).toMatchObject({ issue: { workflow: { state: "ready", action: "none" } } });
 
+	const planningComplete = await execute(
+		["spec", "complete", created.issue.id],
+		{
+			tracker,
+		},
+	);
+	expect(planningComplete.ok).toBe(false);
+	expect(planningComplete.ok ? undefined : planningComplete.error.code).toBe(
+		"UNAVAILABLE_COMMAND",
+	);
+
+	assertSuccess(
+		await execute(["spec", "planned", created.issue.id], { tracker }),
+	);
 	const task = assertSuccess(
 		await execute(["create", "task", "--input", "-"], {
 			tracker,
@@ -498,19 +556,8 @@ it("should complete agent-workflow Specs only after merge work is done", async (
 			}),
 		}),
 	) as { issue: { id: string } };
-	assertSuccess(
-		await execute(["run-command", "start", task.issue.id], { tracker }),
-	);
-	assertSuccess(
-		await execute(["run-command", "succeed", task.issue.id, "--input", "-"], {
-			tracker,
-			stdin: "{}",
-		}),
-	);
-	expect((await tracker.getIssue(created.issue.id)).workflow).toMatchObject({
-		state: "ready",
-		action: "none",
-	});
+	assertSuccess(await execute(["task", "start", task.issue.id], { tracker }));
+
 	const blockedComplete = await execute(
 		["spec", "complete", created.issue.id],
 		{
@@ -518,44 +565,17 @@ it("should complete agent-workflow Specs only after merge work is done", async (
 		},
 	);
 	expect(blockedComplete.ok).toBe(false);
+	expect(blockedComplete.ok ? undefined : blockedComplete.error).toMatchObject({
+		code: "SPEC_COMPLETION_INVALID",
+		details: {
+			blockedBy: expect.arrayContaining([
+				expect.objectContaining({ id: task.issue.id }),
+			]),
+		},
+	});
 
-	const integrationTest = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				spec: created.issue.id,
-				title: "Integration test",
-				description: "Verify it.",
-				profile: "integration-test",
-			}),
-		}),
-	) as { issue: { id: string } };
 	assertSuccess(
-		await execute(["task", "start", integrationTest.issue.id], { tracker }),
-	);
-	assertSuccess(
-		await execute(
-			["run-command", "succeed", integrationTest.issue.id, "--input", "-"],
-			{
-				tracker,
-				stdin: "{}",
-			},
-		),
-	);
-	const merge = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				spec: created.issue.id,
-				title: "Merge",
-				description: "Merge it.",
-				profile: "merge",
-			}),
-		}),
-	) as { issue: { id: string } };
-	assertSuccess(await execute(["task", "start", merge.issue.id], { tracker }));
-	assertSuccess(
-		await execute(["run-command", "succeed", merge.issue.id, "--input", "-"], {
+		await execute(["task", "succeed", task.issue.id, "--input", "-"], {
 			tracker,
 			stdin: "{}",
 		}),
@@ -818,9 +838,7 @@ it("should run public Wayfinder lifecycle commands with completion summary after
 		state: "done",
 		action: "none",
 	});
-	expect(JSON.parse(done.log.message).input).toEqual({
-		summary: "Mapped viable route.",
-	});
+	expect(done.log.message).toBe("Mapped viable route.");
 });
 
 it("should validate Wayfinder child terminal outcomes and allow coarse map body revisions", async () => {
@@ -862,10 +880,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 			}),
 		}),
 	) as { log: { message: string } };
-	expect(JSON.parse(completed.log.message).input.outcome).toEqual({
-		type: "completed",
-		facts: ["Found the shortest route."],
-	});
+	expect(completed.log.message).toBe("Applied succeed.");
 	expect((await tracker.getIssue(wayfinder.issue.id)).body).toBe(
 		"# Updated map",
 	);
@@ -904,9 +919,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 	expect((await tracker.getIssue(wayfinder.issue.id)).body).toBe(
 		"# Updated map from file",
 	);
-	expect(JSON.parse(completedFromFile.log.message).input.mapRevision).toEqual({
-		bodyFile,
-	});
+	expect(completedFromFile.log.message).toBe("Applied succeed.");
 
 	const invalidRevisionTask = assertSuccess(
 		await execute(["create", "task", "--input", "-"], {

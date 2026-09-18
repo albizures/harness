@@ -14,7 +14,7 @@ export async function logsCommand(
 	}
 
 	try {
-		return success({ logs: await tracker.readLogs(id) });
+		return success({ issueId: id, logs: await tracker.readLogs(id) });
 	} catch (error) {
 		if (error instanceof IssueNotFoundError) {
 			return failure(runtimeFailures.notFound({ message: error.message, id }));

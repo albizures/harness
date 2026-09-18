@@ -5,6 +5,10 @@ import type {
 	CommandHandlers,
 } from "../../runtime/command-handlers.ts";
 import { type Envelope, failure, success } from "../../runtime/envelope.ts";
+import {
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "../../domain/manifest/logging.ts";
 import { getKind, type ManifestCommand } from "../../domain/manifest/schema.ts";
 import { NeedReconciliationError, type Tracker } from "../../ports/tracker.ts";
 import type { WorkflowIssue } from "../../domain/workflow/issue.ts";
@@ -13,7 +17,7 @@ import {
 	initialWorkflowTarget,
 	isRecord,
 	lifecycleError,
-	stableStringify,
+	proseLogMessage,
 	workflowTarget,
 } from "../../runtime/commands/shared.ts";
 import { humanInteractionCommandHandlers } from "../human-interaction-handlers.ts";
@@ -43,6 +47,8 @@ type GrillingCreateInput = {
 };
 
 const createSpecCommand: CommandHandler = specCreateCommand;
+const plannedSpecCommand: CommandHandler = specPlannedCommand;
+plannedSpecCommand.rawInput = true;
 const completeSpecCommand: CommandHandler = specCompleteCommand;
 completeSpecCommand.rawInput = true;
 const createTaskCommand: CommandHandler = taskCreateCommand;
@@ -51,6 +57,7 @@ const createGrillingCommand: CommandHandler = grillingCreateCommand;
 export const agentWorkflowCommandHandlers: CommandHandlers = {
 	...humanInteractionCommandHandlers(),
 	"spec-create": createSpecCommand,
+	"spec-planned": plannedSpecCommand,
 	"spec-complete": completeSpecCommand,
 	"task-create": createTaskCommand,
 	"grilling-create": createGrillingCommand,
@@ -103,10 +110,14 @@ async function specCreateCommand(
 							...initialWorkflowTarget(specKind.initial),
 						},
 					},
-					initialLog: {
-						type: `${command.id}_created`,
-						message: stableStringify({ input: specInput }),
-					},
+					...(shouldLogCreation(manifest, command)
+						? {
+								initialLog: {
+									type: `${command.id}_created`,
+									message: proseLogMessage(command.id, specInput),
+								},
+							}
+						: {}),
 				},
 				...(parent === undefined
 					? []
@@ -127,19 +138,92 @@ async function specCreateCommand(
 		}
 		const issue = await tracker.getIssue(created.id);
 		const log = applied.logs[0];
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		return validateOrSucceed(command, { issue, log });
+		return validateOrSucceed(command, {
+			issue,
+			...(log === undefined ? {} : { log }),
+		});
 	} catch (error) {
 		return lifecycleError("new", error);
 	}
 }
 
+async function specPlannedCommand({
+	args = [],
+	command,
+	manifest,
+	tracker,
+}: Parameters<CommandHandler>[0]): Promise<Envelope> {
+	const issueId = args[2];
+	if (issueId === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid arguments.", {
+			usage: "awf spec planned <issue>",
+		});
+	}
+	try {
+		const issue = await tracker.getIssue(issueId);
+		if (
+			issue.workflow.kind !== "spec" ||
+			issue.workflow.action !== "planning"
+		) {
+			return failure(
+				"UNAVAILABLE_COMMAND",
+				"Workflow command is not available for the issue's current workflow state.",
+				{ id: issue.id, command: "spec-planned" },
+			);
+		}
+		if (
+			issue.workflow.state !== "ready" &&
+			issue.workflow.state !== "running"
+		) {
+			return failure(
+				"UNAVAILABLE_COMMAND",
+				"Workflow command is not available for the issue's current workflow state.",
+				{ id: issue.id, command: "spec-planned" },
+			);
+		}
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: issue.id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: workflowTarget({ state: "ready", action: "none" }),
+				},
+				...(shouldLogStateChange(manifest, command)
+					? [
+							{
+								type: "record-command" as const,
+								issue: { id: issue.id },
+								log: {
+									type: "command",
+									message: "Completed Spec planning.",
+								},
+							},
+						]
+					: []),
+			],
+		});
+		return success({
+			issue: result.issues[issue.id] ?? (await tracker.getIssue(issue.id)),
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
+		});
+	} catch (error) {
+		return lifecycleError(issueId, error);
+	}
+}
+
 async function specCompleteCommand({
 	args = [],
+	command,
+	manifest,
 	tracker,
 }: Parameters<CommandHandler>[0]): Promise<Envelope> {
 	const issueId = args[2];
@@ -165,7 +249,7 @@ async function specCompleteCommand({
 		if (blockers.length > 0) {
 			return failure(
 				"SPEC_COMPLETION_INVALID",
-				"Spec completion requires all child Tasks terminal, at least one Merge Task done, and no open child Grilling issues.",
+				"Spec completion requires planning to be completed, all child Tasks terminal, and no open child Grilling issues.",
 				{ id: issue.id, blockedBy: blockers },
 			);
 		}
@@ -180,22 +264,23 @@ async function specCompleteCommand({
 					},
 					workflow: workflowTarget({ state: "done", action: "none" }),
 				},
-				{
-					type: "record-command",
-					issue: { id: issue.id },
-					log: {
-						type: "command",
-						message: stableStringify({
-							event: "complete",
-							to: { state: "done", action: "none" },
-						}),
-					},
-				},
+				...(shouldLogStateChange(manifest, command)
+					? [
+							{
+								type: "record-command" as const,
+								issue: { id: issue.id },
+								log: {
+									type: "command",
+									message: proseLogMessage("complete"),
+								},
+							},
+						]
+					: []),
 			],
 		});
 		return success({
 			issue: result.issues[issue.id] ?? (await tracker.getIssue(issue.id)),
-			log: result.logs[0],
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 		});
 	} catch (error) {
 		return lifecycleError(issueId, error);
@@ -210,23 +295,14 @@ async function specCompletionBlockers(
 		return [{ id: issue.id, reason: "not-spec", workflow: issue.workflow }];
 	}
 	const blockers: Array<Record<string, JsonValue>> = [];
-	let doneMergeTasks = 0;
 	for (const childId of issue.relationships.children) {
 		const child = await tracker.getIssue(childId);
-		if (child.workflow.kind === "task") {
-			if (
-				child.workflow.data?.profile === "merge" &&
-				child.workflow.state === "done"
-			) {
-				doneMergeTasks += 1;
-			}
-			if (child.workflow.state !== "done") {
-				blockers.push({
-					id: child.id,
-					title: child.title,
-					workflow: child.workflow,
-				});
-			}
+		if (child.workflow.kind === "task" && child.workflow.state !== "done") {
+			blockers.push({
+				id: child.id,
+				title: child.title,
+				workflow: child.workflow,
+			});
 		}
 		if (child.workflow.kind === "grilling" && child.workflow.state !== "done") {
 			blockers.push({
@@ -235,9 +311,6 @@ async function specCompletionBlockers(
 				workflow: child.workflow,
 			});
 		}
-	}
-	if (doneMergeTasks === 0) {
-		blockers.push({ gate: "merge-done", minimum: 1 });
 	}
 	return blockers;
 }
@@ -323,10 +396,14 @@ async function taskCreateCommand({
 								? undefined
 								: { generatedBy: taskInput.generatedBy },
 					},
-					initialLog: {
-						type: `${command.id}_created`,
-						message: stableStringify({ input: taskInput }),
-					},
+					...(shouldLogCreation(manifest, command)
+						? {
+								initialLog: {
+									type: `${command.id}_created`,
+									message: proseLogMessage(command.id, taskInput),
+								},
+							}
+						: {}),
 				},
 				{
 					type: "add-child",
@@ -348,12 +425,15 @@ async function taskCreateCommand({
 		}
 		const issue = await tracker.getIssue(created.id);
 		const log = applied.logs[0];
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		return validateOrSucceed(command, { issue, log });
+		return validateOrSucceed(command, {
+			issue,
+			...(log === undefined ? {} : { log }),
+		});
 	} catch (error) {
 		return lifecycleError("new", error);
 	}
@@ -408,10 +488,14 @@ async function grillingCreateCommand({
 					...initialWorkflowTarget(grillingKind.initial),
 				},
 			},
-			initialLog: {
-				type: `${command.id}_created`,
-				message: stableStringify({ input: grillingInput }),
-			},
+			...(shouldLogCreation(manifest, command)
+				? {
+						initialLog: {
+							type: `${command.id}_created`,
+							message: proseLogMessage(command.id, grillingInput),
+						},
+					}
+				: {}),
 		};
 		const applied = await tracker.applyWorkflowEffects({
 			effects: [
@@ -435,12 +519,15 @@ async function grillingCreateCommand({
 		}
 		const issue = await tracker.getIssue(created.id);
 		const log = applied.logs[0];
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		return validateOrSucceed(command, { issue, log });
+		return validateOrSucceed(command, {
+			issue,
+			...(log === undefined ? {} : { log }),
+		});
 	} catch (error) {
 		return lifecycleError("new", error);
 	}

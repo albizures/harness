@@ -93,6 +93,18 @@ export type ManifestLifecycleRelationshipPolicy = {
 	to: ManifestStateReference;
 };
 
+export type ManifestLoggingCategoryPolicy = {
+	enabled?: boolean;
+	commands?: Record<Identifier, boolean>;
+	events?: Record<Identifier, boolean>;
+};
+
+export type ManifestLoggingPolicy = {
+	enabled?: boolean;
+	creation?: Omit<ManifestLoggingCategoryPolicy, "events">;
+	stateChanges?: ManifestLoggingCategoryPolicy;
+};
+
 export type WorkflowManifest = {
 	version: "v1";
 	workflow: { id: Identifier; version: string };
@@ -118,6 +130,7 @@ export type WorkflowManifest = {
 		terminalStates?: Array<Identifier>;
 		relationshipPolicies?: Array<ManifestLifecycleRelationshipPolicy>;
 	};
+	logging?: ManifestLoggingPolicy;
 	kinds: Array<ManifestKind>;
 	commands: Array<ManifestCommand>;
 	relationships?: Array<ManifestRelationship>;
@@ -166,6 +179,11 @@ const workflowFilterSchema = z.strictObject({
 	action: z.string().optional(),
 	profile: z.string().optional(),
 	profileGroup: z.string().optional(),
+});
+
+const loggingCategoryPolicySchema = z.strictObject({
+	enabled: z.boolean().optional(),
+	commands: z.record(z.string(), z.boolean()).optional(),
 });
 
 export const workflowManifestStructuralSchema = z.strictObject({
@@ -244,6 +262,15 @@ export const workflowManifestStructuralSchema = z.strictObject({
 						to: stateReferenceSchema,
 					}),
 				)
+				.optional(),
+		})
+		.optional(),
+	logging: z
+		.strictObject({
+			enabled: z.boolean().optional(),
+			creation: loggingCategoryPolicySchema.optional(),
+			stateChanges: loggingCategoryPolicySchema
+				.extend({ events: z.record(z.string(), z.boolean()).optional() })
 				.optional(),
 		})
 		.optional(),

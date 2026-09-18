@@ -61,7 +61,7 @@ function formatData(data: JsonValue): string {
 			return formatIssueResult(data);
 		}
 		if (Array.isArray(data.logs)) {
-			return formatLogs(data.logs);
+			return formatLogs(data.logs, data.issueId);
 		}
 		if (typeof data.manifest === "string") {
 			return `Manifest ${data.manifest} ${typeof data.version === "string" ? data.version : ""}`.trim();
@@ -503,16 +503,19 @@ function formatIssue(issue: Record<string, JsonValue>): string {
 	return `${String(issue.id ?? "")} ${String(issue.title ?? "")}${workflow}`.trim();
 }
 
-function formatLogs(logs: Array<JsonValue>): string {
+function formatLogs(
+	logs: Array<JsonValue>,
+	issueId: JsonValue | undefined,
+): string {
 	if (logs.length === 0) {
-		return "No logs.";
+		return typeof issueId === "string" ? `No logs for ${issueId}.` : "No logs.";
 	}
 	return logs
 		.map((log) => {
 			if (!isRecord(log)) {
 				return formatValue(log);
 			}
-			return `${String(log.sequence ?? "")} ${String(log.type ?? "")}`.trim();
+			return formatRecentLog(log).replace(/^- /u, "");
 		})
 		.join("\n");
 }

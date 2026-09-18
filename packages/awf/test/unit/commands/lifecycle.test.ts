@@ -114,6 +114,70 @@ it("should reject handler workflow effects that target states not declared by th
 	});
 });
 
+it("should ensure that manifest logging policy can suppress creation logs without requiring verification", async () => {
+	const manifest = defineManifest({
+		...neutralManifest,
+		logging: { creation: { commands: { "work-create": false } } },
+		commands: [
+			{
+				id: "work-create",
+				cli: { verb: "create", target: "work" },
+				target: { kind: "work" },
+			},
+		],
+	});
+	const tracker = createInMemoryTracker();
+
+	const envelope = await rawExecute(["create", "work", "--input", "-"], {
+		manifest,
+		tracker,
+		stdin: JSON.stringify({ title: "Quiet work" }),
+	});
+
+	const data = assertSuccess<{ issue: { id: string }; log?: unknown }>(
+		envelope,
+	);
+	expect(data.log).toBeUndefined();
+	expect(await tracker.readLogs(data.issue.id)).toEqual([]);
+});
+
+it("should ensure that manifest logging policy can suppress transition logs without weakening emitted log verification", async () => {
+	const manifest = defineManifest({
+		...neutralManifest,
+		logging: { stateChanges: { events: { start: false } } },
+		commands: [
+			{
+				id: "work-start",
+				cli: { verb: "work", target: "start", input: "none" },
+				target: { kind: "work", state: "ready", action: "do" },
+				transition: { event: "start", attempt: "start" },
+			},
+		],
+	});
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "123",
+				title: "Work",
+				workflow: { kind: "work", state: "ready", action: "do" },
+			},
+		],
+	});
+
+	const envelope = await rawExecute(["work", "start", "123"], {
+		manifest,
+		tracker,
+	});
+
+	const data = assertSuccess<{
+		issue: { workflow: { state: string } };
+		log?: unknown;
+	}>(envelope);
+	expect(data.issue.workflow.state).toBe("active");
+	expect(data.log).toBeUndefined();
+	expect(await tracker.readLogs("123")).toEqual([]);
+});
+
 it("should ensure that start moves a ready issue to running and appends an action_started log without run identity", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -211,11 +275,7 @@ it("should ensure that pause moves a running issue to waiting-human and logs pau
 		action: "none",
 	});
 	expect(data.log.type).toBe("human_input_needed");
-	expect(JSON.parse(data.log.message ?? "{}")).toMatchObject({
-		event: "pause",
-		pausedAction: "work",
-		reason: "Need clarification on the API shape.",
-	});
+	expect(data.log.message).toBe("Applied pause.");
 	const getEnvelope = await execute(["get", "123"], { tracker });
 	const getData = (getEnvelope as { ok: true; data: Record<string, unknown> })
 		.data;
@@ -400,13 +460,7 @@ it("should ensure that failed running actions retry the same ready action by def
 		action: data.issue.workflow.action,
 		reason: data.issue.workflow.reason,
 	}).toEqual({ state: "ready", action: "merge", reason: undefined });
-	expect(
-		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
-	).toEqual({
-		event: "fail",
-		input: { verdict: "changes-requested", findings: [findingArtifact("bug")] },
-		to: { state: "ready", action: "merge" },
-	});
+	expect((await tracker.readLogs("123"))[0]?.message).toBe("Applied fail.");
 });
 
 it("should ensure that explicit escalation moves work to need-human none and logs the reason", async () => {
@@ -431,14 +485,7 @@ it("should ensure that explicit escalation moves work to need-human none and log
 	expect(envelope.ok).toBe(true);
 	expect((await tracker.getIssue("123")).workflow.state).toBe("need-human");
 	expect((await tracker.getIssue("123")).workflow.action).toBe("none");
-	expect(
-		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
-	).toEqual({
-		event: "escalate",
-		input: { reason: "review requires product decision" },
-		from: { state: "ready", action: "work" },
-		to: { state: "need-human", action: "none" },
-	});
+	expect((await tracker.readLogs("123"))[0]?.message).toBe("Applied escalate.");
 });
 
 it("should ensure that lifecycle commands do not schema-validate arbitrary terminal or escalation payload shapes", async () => {
@@ -469,11 +516,9 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 		},
 	);
 	expect(terminal.ok).toBe(true);
-	expect(
-		JSON.parse((await tracker.readLogs("running"))[0]?.message ?? "{}"),
-	).toMatchObject({
-		input: { arbitrary: { nested: true } },
-	});
+	expect((await tracker.readLogs("running"))[0]?.message).toBe(
+		"Applied succeed.",
+	);
 
 	const escalated = await execute(
 		["run-command", "escalate", "escalate", "--input", "-"],
@@ -483,11 +528,9 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 		},
 	);
 	expect(escalated.ok).toBe(true);
-	expect(
-		JSON.parse((await tracker.readLogs("escalate"))[0]?.message ?? "{}"),
-	).toMatchObject({
-		input: { arbitrary: true, extra: [1] },
-	});
+	expect((await tracker.readLogs("escalate"))[0]?.message).toBe(
+		"Applied escalate.",
+	);
 });
 it("should ensure that explicit resume chooses a valid next ready action", async () => {
 	const tracker = createInMemoryTracker({
@@ -741,13 +784,7 @@ it("should ensure that generic lifecycle transition handlers receive JSON input 
 		action: "none",
 	});
 	expect(await tracker.getIssue("123")).not.toHaveProperty("artifacts");
-	expect(
-		JSON.parse((await tracker.readLogs("123"))[0]?.message ?? "{}"),
-	).toEqual({
-		event: "succeed",
-		input: { n: "2" },
-		to: { state: "done", action: "none" },
-	});
+	expect((await tracker.readLogs("123"))[0]?.message).toBe("Applied succeed.");
 	expect(await tracker.getIssue("child")).toMatchObject({
 		id: "child",
 		title: "Follow-up",
@@ -859,13 +896,7 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		action: failed.issue.workflow.action,
 		reason: failed.issue.workflow.reason,
 	}).toEqual({ state: "ready", action: "merge", reason: undefined });
-	expect(
-		JSON.parse((await tracker.readLogs("retry"))[0]?.message ?? "{}"),
-	).toEqual({
-		event: "fail",
-		input: { reason: "temporary CI failure" },
-		to: { state: "ready", action: "merge" },
-	});
+	expect((await tracker.readLogs("retry"))[0]?.message).toBe("Applied fail.");
 
 	const invalidResume = await execute(
 		["run-command", "resume", "retry", "--action", "fix"],
@@ -891,14 +922,9 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		state: (await tracker.getIssue("human")).workflow.state,
 		action: (await tracker.getIssue("human")).workflow.action,
 	}).toEqual({ state: "need-human", action: "none" });
-	expect(
-		JSON.parse((await tracker.readLogs("human"))[0]?.message ?? "{}"),
-	).toEqual({
-		event: "escalate",
-		input: { reason: "needs product decision" },
-		from: { state: "ready", action: "work" },
-		to: { state: "need-human", action: "none" },
-	});
+	expect((await tracker.readLogs("human"))[0]?.message).toBe(
+		"Applied escalate.",
+	);
 
 	const resumed = assertSuccess<{
 		issue: { workflow: { state: string; action: string } };
@@ -915,10 +941,5 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		"human_intervention_needed",
 		"action_resumed",
 	]);
-	expect(
-		JSON.parse((await tracker.readLogs("human"))[1]?.message ?? "{}"),
-	).toEqual({
-		event: "resume",
-		to: { state: "ready", action: "work" },
-	});
+	expect((await tracker.readLogs("human"))[1]?.message).toBe("Applied resume.");
 });

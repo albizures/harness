@@ -88,9 +88,17 @@ _Avoid_: generic entity, built-in Spec/Ticket/Handoff object
 The curated read model returned by `awf get` for one Workflow issue, shared by JSON output and Markdown text rendering. It contains the target Workflow issue plus inspection-oriented one-hop related issue summaries and recent logs so agents can inspect workflow state without falling back to tracker-specific views.
 _Avoid_: raw tracker issue, command summary, issue dump
 
+**Issue frontmatter**:
+The AWF-owned metadata header in a File-backed Tracker Adapter issue Markdown file that stores the issue's id, title, current workflow fields, and relationships. It is an internal-but-inspectable storage projection and the canonical term regardless of whether individual metadata values are rendered as inline JSON or block-style YAML.
+_Avoid_: yaml, issue yaml, markdown header
+
 **Spec**:
-A workflow issue that describes an implementation outcome and contains the child Tasks and Grilling needed to deliver it. Its executable lifecycle is limited to planning and explicit validated completion; integration testing and merging are modeled as Tasks instead of Spec actions.
+A workflow issue that describes an implementation outcome and contains the child Tasks and Grilling needed to deliver it. Its executable lifecycle is limited to planning, explicit planning completion, and explicit validated delivery completion; integration testing and any merge or release handoff are modeled as Tasks instead of Spec actions.
 _Avoid_: execution phase container, integration-test action, merge action
+
+**Spec planning completion**:
+The lifecycle moment when a Spec's task breakdown has been accepted and the Spec moves from `ready/planning` to `ready/none`; delivery work continues through child Tasks and can later be completed only by the separate Spec completion command.
+_Avoid_: start implementation, merge readiness, planning succeed
 
 **Wayfinder**:
 A Workflow issue that maps a route through uncertain planning fog by coordinating child Tasks and Grilling issues, capturing decisions so far, and keeping unresolved or out-of-scope areas visible until the route is complete.
@@ -109,7 +117,7 @@ A ready-gated Task that verifies completed implementation and review work agains
 _Avoid_: Spec integration-test action, test phase
 
 **Merge Task**:
-A ready-gated Task that performs the final integration of completed, verified work for a Spec. It is ordinary work routed by profile rather than a separate Task subkind or Spec lifecycle phase; AWF may enforce coarse readiness such as no open implementation, review, or integration-test Tasks, while integration-test freshness is an agent obligation.
+An optional ready-gated Task that performs final integration, merge, or release handoff work when a Spec needs that explicit step. It is ordinary work routed by profile rather than a separate Task subkind or Spec lifecycle phase; AWF may enforce coarse readiness such as no open implementation, review, or integration-test Tasks, while integration-test freshness is an agent obligation.
 _Avoid_: Spec merge action, terminal Spec phase
 
 **Ready-gated Task**:
@@ -121,7 +129,7 @@ A declarative profile group that identifies Tasks whose non-terminal state block
 _Avoid_: hard-coded implementation task list, dependency rewiring
 
 **Integration-test freshness**:
-An agent-planning obligation that follow-up implementation or review work after an Integration-test Task schedules another Integration-test Task before merge work proceeds. Freshness is not proved by AWF readiness gates unless a workflow explicitly models it.
+An agent-planning obligation that follow-up implementation or review work after an Integration-test Task schedules another Integration-test Task before merge/release handoff work or Spec completion proceeds. Freshness is not proved by AWF readiness gates unless a workflow explicitly models it.
 _Avoid_: runtime freshness proof, implicit merge validation
 
 **Grilling**:
@@ -145,8 +153,8 @@ The explicit tracker-backed fields on a Workflow issue that describe its durable
 _Avoid_: derived state, cached labels, durable dependency-blocked state, active run token
 
 **Workflow log**:
-An append-only text record for a Workflow issue with minimal runtime metadata such as sequence and issue id. Workflow logs are authoritative for history, audit, attempt derivation, and drift diagnosis, but workflow-specific lifecycle meaning belongs in current workflow fields and manifest transitions rather than special log types.
-_Avoid_: regular comment, mutable history, structured command output, run-token record
+An append-only prose record for a Workflow issue with minimal runtime metadata such as sequence and issue id. Workflow logs are authoritative for history, audit, attempt derivation, and drift diagnosis, but workflow-specific lifecycle meaning belongs in current workflow fields and manifest transitions rather than special log types. A Workflow log message summarizes what happened; it is not durable command input, check evidence, or a structured command payload.
+_Avoid_: regular comment, mutable history, structured command output, command evidence record, run-token record
 
 **Workflow attempt**:
 One execution attempt for a Workflow issue's current action, inferred from ordered start and end logs rather than identified by a runtime token. Workflows that use attempt effects must declare active-state semantics, and terminal outcome history is plain log text rather than a runtime-enforced immutable record.

@@ -125,10 +125,7 @@ it("should ensure that duplicate or malformed workflow projection fields are cor
 			{
 				id: "2",
 				title: "Bad",
-				labels: [
-					"awf:w1:kind:task",
-					"awf:w1:state:ready",
-				],
+				labels: ["awf:w1:kind:task", "awf:w1:state:ready"],
 			},
 		],
 	});

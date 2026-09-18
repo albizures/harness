@@ -373,6 +373,18 @@ it("should ensure that awf get text output renders empty body, relationships, an
 	expect(output).toContain("## Recent logs\n\nNone.\n");
 });
 
+it("should ensure that awf logs text output names the issue when logs are absent", () => {
+	expect(
+		serializeCliOutput(
+			{
+				ok: true,
+				data: { issueId: "target", logs: [] },
+			},
+			"text",
+		),
+	).toBe("No logs for target.\n");
+});
+
 it("should ensure that text output renders issue, created issue, log, and manifest envelopes", () => {
 	expect(
 		serializeCliOutput(
@@ -417,12 +429,15 @@ it("should ensure that text output renders issue, created issue, log, and manife
 			{
 				ok: true,
 				data: {
-					logs: [{ sequence: 1, type: "action_started" }],
+					logs: [
+						{ sequence: 1, type: "action_started" },
+						{ sequence: 2, type: "action_succeeded", message: "Done." },
+					],
 				},
 			},
 			"text",
 		),
-	).toBe("1 action_started\n");
+	).toBe("1 action_started\n2 action_succeeded — Done.\n");
 
 	expect(
 		serializeCliOutput(

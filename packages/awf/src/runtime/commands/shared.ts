@@ -822,6 +822,21 @@ export function policyViolation(
 	);
 }
 
+/**
+ * Formats the append-only Workflow log prose for AWF command applications.
+ *
+ * A caller-supplied, non-empty `summary` is already command input and should be
+ * recorded exactly. Other command input fields and command results are not log
+ * prose, so the fallback names only the applied event.
+ */
+export function proseLogMessage(event: string, input?: JsonValue): string {
+	const summary = isRecord(input) ? input.summary : undefined;
+	if (typeof summary === "string" && summary.trim() !== "") {
+		return summary;
+	}
+	return `Applied ${event}.`;
+}
+
 export function stableStringify(value: unknown): string {
 	if (Array.isArray(value)) {
 		return `[${value.map(stableStringify).join(",")}]`;

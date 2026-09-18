@@ -117,10 +117,7 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 			{
 				id: "missing",
 				title: "Missing labels",
-				labels: [
-					"awf:w1:kind:ticket",
-					"awf:w1:state:ready",
-				],
+				labels: ["awf:w1:kind:ticket", "awf:w1:state:ready"],
 			},
 		],
 	});

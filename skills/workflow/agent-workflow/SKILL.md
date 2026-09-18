@@ -31,6 +31,7 @@ Supported public commands for this workflow include:
   - Parent-generic and Wayfinder-scoped readiness filters such as `--filter parent=<id>` or `--filter wayfinder=<id>` are not currently supported.
 - `awf get <id>`
 - `awf logs <id>`
+- `awf spec planned <issue>`
 - `awf spec complete <issue> --input <file|->`
 - `awf task start <issue>`
 - `awf task succeed <issue> --input <file|->`
@@ -63,8 +64,9 @@ If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` l
 
 ## Lifecycle boundaries
 
-- Specs start ready for planning. After planning, child Tasks run; integration testing and merging are ordinary Tasks, not Spec lifecycle actions.
-- Complete a delivered Spec only with `awf spec complete <issue> --input <file|->`, after AWF validates child completion.
+- Specs start ready for planning. After the human-approved task breakdown is published, run `awf spec planned <issue>` so delivery Tasks can proceed while the Spec waits at `ready/none`.
+- Integration testing and merging are ordinary Tasks, not Spec lifecycle actions. Create Merge Tasks only when the Spec's delivery path needs explicit merge/release handoff work.
+- Complete a delivered Spec only with `awf spec complete <issue> --input <file|->`, after AWF validates planning is complete, all child Tasks are terminal, and child Grilling issues are not open.
 - Wayfinders are maps. Start them with `awf wayfinder start <issue>` and complete them with `awf wayfinder succeed <issue> --input <file|->` after all children are done.
 - Tasks are completed with `awf task succeed <issue> --input <file|->`; Wayfinder child Tasks require structured outcome input so the child log records the result and optional map revision.
 - Grilling is HITL. Start it with `awf grilling start <issue>` and complete it with `awf grilling succeed <issue> --input <file|->` after the human-side discussion resolves; do not answer for the human.
@@ -77,12 +79,12 @@ Profiles are project-owned routing data. Use names that say who or what should p
 - implementation work: the project's implementation profile (for example `implement`)
 - review work: the project's review profile when explicit review Tasks are created
 - verification: `integration-test`
-- merge/release handoff: `merge`
+- optional merge/release handoff: `merge`
 - documentation-only work: `docs`
 - research work: `research` with `subkind: "research"`
 - prototypes: `prototype` with `subkind: "prototype"`
 
-AWF gates `integration-test` and `merge` readiness by profile. It does not prove integration-test freshness after later follow-up work; if new implementation or review Tasks are added after an integration pass, add another `integration-test` Task before merge.
+AWF gates `integration-test` readiness by profile, and gates `merge` readiness when Merge Tasks exist. It does not prove integration-test freshness after later follow-up work; if new implementation or review Tasks are added after an integration pass, add another `integration-test` Task before completing any merge/release handoff or the Spec.
 
 ## HITL checkpoints
 
