@@ -618,6 +618,98 @@ it("should complete planned agent-workflow Specs after children are done without
 	).toMatchObject({ issue: { workflow: { state: "done", action: "none" } } });
 });
 
+it("should create agent-workflow Specs from ergonomic Markdown flags", async () => {
+	const tracker = createInMemoryTracker();
+
+	const created = assertSuccess(
+		await execute(["create", "spec", "--title", "Write", "--body", "-"], {
+			tracker,
+			stdin: "# Write\n\nDefine the work.",
+		}),
+	) as { issue: { title: string; body: string } };
+
+	expect(created.issue.title).toBe("Write");
+	expect(created.issue.body).toBe("# Write\n\nDefine the work.");
+});
+
+it("should create agent-workflow Specs from ergonomic Markdown files", async () => {
+	const tracker = createInMemoryTracker();
+	const cwd = await mkdtemp(join(tmpdir(), "awf-spec-body-"));
+	const bodyPath = join(cwd, "spec.md");
+	await writeFile(bodyPath, "# Write\n\nDefine the work.\n");
+
+	const created = assertSuccess(
+		await execute(
+			["create", "spec", "--title", "Write", "--body-file", bodyPath],
+			{
+				tracker,
+			},
+		),
+	) as { issue: { title: string; body: string } };
+
+	expect(created.issue.title).toBe("Write");
+	expect(created.issue.body).toBe("# Write\n\nDefine the work.\n");
+});
+
+it("should create agent-workflow Wayfinders from ergonomic Markdown flags", async () => {
+	const tracker = createInMemoryTracker();
+
+	const created = assertSuccess(
+		await execute(["create", "wayfinder", "--title", "Map", "--body", "-"], {
+			tracker,
+			stdin: "# Map\n\nExplore options.",
+		}),
+	) as {
+		issue: { title: string; body: string; workflow: Record<string, string> };
+	};
+
+	expect(created.issue.title).toBe("Map");
+	expect(created.issue.body).toBe("# Map\n\nExplore options.");
+	expect(created.issue.workflow).toMatchObject({
+		kind: "wayfinder",
+		state: "ready",
+		action: "planning",
+	});
+});
+
+it("should create agent-workflow Wayfinders from ergonomic Markdown files", async () => {
+	const tracker = createInMemoryTracker();
+	const cwd = await mkdtemp(join(tmpdir(), "awf-wayfinder-body-"));
+	const bodyPath = join(cwd, "wayfinder.md");
+	await writeFile(bodyPath, "# Map\n\nExplore options.\n");
+
+	const created = assertSuccess(
+		await execute(
+			["create", "wayfinder", "--title", "Map", "--body-file", bodyPath],
+			{
+				tracker,
+			},
+		),
+	) as { issue: { title: string; body: string } };
+
+	expect(created.issue.title).toBe("Map");
+	expect(created.issue.body).toBe("# Map\n\nExplore options.\n");
+});
+
+it("should reject mixed structured and ergonomic agent-workflow create input", async () => {
+	const tracker = createInMemoryTracker();
+
+	const envelope = await execute(
+		["create", "spec", "--input", "-", "--title", "Mixed"],
+		{
+			tracker,
+			stdin: JSON.stringify({ title: "Spec", content: "# Spec" }),
+		},
+	);
+
+	expect(envelope.ok).toBe(false);
+	expect(envelope.ok ? undefined : envelope.error).toMatchObject({
+		code: "INVALID_ARGUMENTS",
+		message: "Use either --input or ergonomic create flags, not both.",
+	});
+	expect(await tracker.listIssues()).toEqual([]);
+});
+
 it("should reject malformed agent-workflow Spec create input before tracker mutation", async () => {
 	const tracker = createInMemoryTracker();
 
@@ -711,6 +803,123 @@ it("should create agent-workflow Tasks under Specs with routing profiles and dep
 			}),
 		]),
 	);
+});
+
+it("should create agent-workflow Tasks from ergonomic flags", async () => {
+	const tracker = createInMemoryTracker();
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--title", "Spec", "--body", "# Spec"], {
+			tracker,
+		}),
+	) as { issue: { id: string } };
+	const firstBlocker = assertSuccess(
+		await execute(
+			[
+				"create",
+				"task:work",
+				"--parent",
+				spec.issue.id,
+				"--title",
+				"First blocker",
+				"--description",
+				"Prepare first.",
+				"--profile",
+				"implement",
+			],
+			{ tracker },
+		),
+	) as { issue: { id: string } };
+	const secondBlocker = assertSuccess(
+		await execute(
+			[
+				"create",
+				"task:work",
+				"--parent",
+				spec.issue.id,
+				"--title",
+				"Second blocker",
+				"--description",
+				"Prepare second.",
+				"--profile",
+				"implement",
+			],
+			{ tracker },
+		),
+	) as { issue: { id: string } };
+
+	const created = assertSuccess(
+		await execute(
+			[
+				"create",
+				"task",
+				"--kind",
+				"task:work",
+				"--parent",
+				spec.issue.id,
+				"--title",
+				"Do work",
+				"--description",
+				"-",
+				"--profile",
+				"implement",
+				"--depends-on",
+				firstBlocker.issue.id,
+				"--depends-on",
+				secondBlocker.issue.id,
+				"--generated-by",
+				firstBlocker.issue.id,
+			],
+			{ tracker, stdin: "Complete the work." },
+		),
+	) as {
+		issue: {
+			body: string;
+			relationships: { dependencies: Array<string>; generatedBy?: string };
+		};
+	};
+
+	expect(created.issue.body).toContain("Complete the work.");
+	expect(created.issue.relationships.dependencies).toEqual([
+		firstBlocker.issue.id,
+		secondBlocker.issue.id,
+	]);
+	expect(created.issue.relationships.generatedBy).toBe(firstBlocker.issue.id);
+});
+
+it("should create concrete agent-workflow Tasks from ergonomic description files", async () => {
+	const tracker = createInMemoryTracker();
+	const cwd = await mkdtemp(join(tmpdir(), "awf-task-description-"));
+	const descriptionPath = join(cwd, "task.md");
+	await writeFile(descriptionPath, "Complete concrete work.\n");
+	const spec = assertSuccess(
+		await execute(["create", "spec", "--title", "Spec", "--body", "# Spec"], {
+			tracker,
+		}),
+	) as { issue: { id: string } };
+
+	const created = assertSuccess(
+		await execute(
+			[
+				"create",
+				"task:research",
+				"--parent",
+				spec.issue.id,
+				"--title",
+				"Research",
+				"--description-file",
+				descriptionPath,
+				"--profile",
+				"research",
+			],
+			{ tracker },
+		),
+	) as { issue: { body: string; workflow: Record<string, unknown> } };
+
+	expect(created.issue.body).toContain("Complete concrete work.\n");
+	expect(created.issue.workflow).toMatchObject({
+		kind: "task:research",
+		data: { profile: "research" },
+	});
 });
 
 it("should create concrete Research Tasks without legacy subkind workflow data", async () => {
@@ -1055,29 +1264,35 @@ it("should create Grilling as collaborative work without offering it as autonomo
 	) as { issue: { id: string } };
 
 	const standalone = assertSuccess(
-		await execute(["create", "grilling", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				title: "Pressure-test",
-				description: "Pressure-test the decision.",
-			}),
-		}),
+		await execute(
+			["create", "grilling", "--title", "Pressure-test", "--description", "-"],
+			{
+				tracker,
+				stdin: "Pressure-test the decision.",
+			},
+		),
 	) as {
 		issue: {
 			id: string;
+			body: string;
 			workflow: Record<string, unknown>;
 			relationships: { parent?: string };
 		};
 	};
 	const specChild = assertSuccess(
-		await execute(["create", "grilling", "--input", "-"], {
-			tracker,
-			stdin: JSON.stringify({
-				title: "Spec questions",
-				description: "Resolve spec questions.",
-				parent: spec.issue.id,
-			}),
-		}),
+		await execute(
+			[
+				"create",
+				"grilling",
+				"--title",
+				"Spec questions",
+				"--description",
+				"Resolve spec questions.",
+				"--parent",
+				spec.issue.id,
+			],
+			{ tracker },
+		),
 	) as { issue: { id: string; relationships: { parent?: string } } };
 	const wayfinderChild = assertSuccess(
 		await execute(["create", "grilling", "--input", "-"], {
@@ -1096,6 +1311,7 @@ it("should create Grilling as collaborative work without offering it as autonomo
 		action: "discuss",
 	});
 	expect(standalone.issue.workflow).not.toHaveProperty("data.subkind");
+	expect(standalone.issue.body).toBe("Pressure-test the decision.");
 	expect(standalone.issue.relationships.parent).toBeUndefined();
 	expect(specChild.issue.relationships.parent).toBe(spec.issue.id);
 	expect(wayfinderChild.issue.relationships.parent).toBe(wayfinder.issue.id);

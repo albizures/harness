@@ -76,7 +76,7 @@ Iterate until the user approves the breakdown. Do not publish unapproved Tasks.
 
 Publish the approved breakdown under the existing Spec with the public Task creation command and current input shape from the Agent Workflow reference. Create blockers before dependents so dependency fields can reference real AWF ids.
 
-For each Task, use the approved concrete Task creation command and include the title, description, routing profile, dependency edges, and provenance where relevant, using the field names defined by the Agent Workflow reference. Preserve every approved blocking edge.
+For each Task, use the approved concrete Task creation command and prefer ergonomic create flags: `--spec`/`--parent`, `--title`, `--description -` or `--description-file`, `--profile`, repeatable `--depends-on`, and `--generated-by` where relevant. Preserve every approved blocking edge. Do not create intermediate `.scratch` JSON payload files just to carry long Markdown descriptions; use `--input <file|->` only when a structured JSON create payload is already warranted.
 
 Publishing is complete only when every approved Task exists under the parent Spec, every approved blocker is represented by an AWF dependency edge, and the created ids are reported to the user.
 

@@ -535,9 +535,15 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.stdout).toContain("- task (Task)");
 	expect(result.stdout).toContain("- wayfinder (Wayfinder)");
 	expect(result.stdout).toContain("- grilling (Grilling)");
+	expect(result.stdout).toContain("- task-create");
 	expect(result.stdout).toContain(
-		"- task-create\n  - Usage: awf create task --input <file|->\n  - Target: task/work\n  - Input: required",
+		"  - Usage: awf create task --input <file|->",
 	);
+	expect(result.stdout).toContain(
+		'    - awf create task --title "Title" --description -',
+	);
+	expect(result.stdout).toContain("  - Target: task/work");
+	expect(result.stdout).toContain("  - Input: required");
 	expect(result.stdout).toContain(
 		"  - siblings where task:work:integration-test/ready/work; siblings all done/none, gate implementation-gate",
 	);
@@ -631,16 +637,17 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 		),
 	).toEqual(
 		expect.arrayContaining([
-			{
+			expect.objectContaining({
 				id: "spec-create",
-				cli: {
+				cli: expect.objectContaining({
 					verb: "create",
 					target: "spec",
 					usage: "awf create spec --input <file|->",
-				},
+					examples: ['awf create spec --title "Title" --body -'],
+				}),
 				target: { kind: "spec", action: "planning" },
 				input: { required: true },
-			},
+			}),
 			{
 				id: "spec-planned",
 				cli: {
@@ -661,16 +668,17 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				target: { kind: "spec", state: "ready", action: "none" },
 				input: { required: false },
 			},
-			{
+			expect.objectContaining({
 				id: "task-create",
-				cli: {
+				cli: expect.objectContaining({
 					verb: "create",
 					target: "task",
 					usage: "awf create task --input <file|->",
-				},
+					examples: ['awf create task --title "Title" --description -'],
+				}),
 				target: { kind: "task", action: "work" },
 				input: { required: true },
-			},
+			}),
 			expect.objectContaining({
 				id: "task-start",
 				cli: expect.objectContaining({ usage: "awf task start <issue>" }),

@@ -21,15 +21,15 @@ If no config is present, AWF falls back to the filesystem tracker under `.awf/tr
 
 Supported public commands for this workflow include:
 
-- `awf create spec --input <file|->`
-- `awf create wayfinder --input <file|->`
-- `awf create task --input <file|->` (generic validated seam; input must include a concrete `kind`)
-- `awf create task:work --input <file|->`
-- `awf create task:research --input <file|->`
-- `awf create task:prototype --input <file|->`
-- `awf create task:work:integration-test --input <file|->`
-- `awf create task:work:merge --input <file|->`
-- `awf create grilling --input <file|->`
+- `awf create spec --title <title> --body <markdown|->` or `--body-file <file>`
+- `awf create wayfinder --title <title> --body <markdown|->` or `--body-file <file>`
+- `awf create task --title <title> --description <markdown|-> --kind <kind> ...` (generic validated seam; input must include a concrete `kind`)
+- `awf create task:work (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
+- `awf create task:research (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
+- `awf create task:prototype (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
+- `awf create task:work:integration-test (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
+- `awf create task:work:merge (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
+- `awf create grilling --title <title> --description <markdown|-> [--parent <id>]`
 - `awf ready [--filter <name=value>] [--limit <n>]`
   - In the bundled `agent-workflow`, the only named readiness filter is `--filter spec=<spec-id>`.
   - `--filter spec=<spec-id>` narrows readiness to executable work whose direct parent is that Spec.
@@ -51,17 +51,25 @@ Supported public commands for this workflow include:
 
 If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` line for the loaded workflow, stop and ask for the AWF command surface to be upgraded. Do not reach for hidden `run-command` forms or command ids.
 
+## Create input forms
+
+Prefer ergonomic create flags for ordinary issue creation, especially when the long Markdown field can come from stdin (`--body -` or `--description -`) or a Markdown file (`--body-file <file>` or `--description-file <file>`). This avoids creating intermediate `.scratch` JSON payload files just to hold long prose.
+
+Use `--input <file|->` for create commands only when you already have a structured JSON payload or need fields that are awkward to express with flags. Do not combine `--input` with ergonomic create flags. Continue to use `--input <file|->` for structured lifecycle completion commands such as `awf task succeed`, `awf spec complete`, `awf wayfinder succeed`, and `awf grilling succeed`.
+
+Supported ergonomic create fields are `--title`, `--body`, `--body-file`, `--description`, `--description-file`, `--parent`, `--spec`, `--profile`, repeatable `--depends-on`, `--generated-by`, and `--kind`.
+
 ## Issue kinds
 
-- **Spec**: a workflow issue that describes an implementation outcome and contains delivery Tasks and Grilling. Create with `{ "title": string, "body" | "content": string }`.
-- **Task**: an executable workflow issue. Create under a Spec or Wayfinder with direct concrete Task commands. Use `create task:work`, `create task:research`, `create task:prototype`, `create task:work:integration-test`, or `create task:work:merge` with `{ "spec" | "parent": string, "title": string, "description": string, "profile": string, "dependsOn"?: string[], "generatedBy"?: string }`. The generic `create task` command is a validated seam for tests/future tooling and requires a concrete `kind` in input.
-- **Wayfinder**: a map for discovering a route through fog. Create with `{ "title": string, "body" | "content": string }`.
-- **Grilling**: collaborative human-in-the-loop discussion. Create with `{ "title": string, "description": string, "parent"?: string }`.
+- **Spec**: a workflow issue that describes an implementation outcome and contains delivery Tasks and Grilling. Create with `--title` plus `--body`, `--body -`, or `--body-file`; use JSON `--input <file|->` only for structured payloads.
+- **Task**: an executable workflow issue. Create under a Spec or Wayfinder with direct concrete Task commands. Use `create task:work`, `create task:research`, `create task:prototype`, `create task:work:integration-test`, or `create task:work:merge` with `--spec` or `--parent`, `--title`, `--description`/`--description-file`, `--profile`, repeatable `--depends-on`, and optional `--generated-by`. The generic `create task` command is a validated seam for tests/future tooling and requires a concrete `--kind` or JSON `kind`.
+- **Wayfinder**: a map for discovering a route through fog. Create with `--title` plus `--body`, `--body -`, or `--body-file`; use JSON `--input <file|->` only for structured payloads.
+- **Grilling**: collaborative human-in-the-loop discussion. Create with `--title`, `--description`/`--description-file`, and optional `--parent`; use JSON `--input <file|->` only for structured payloads.
 
 ## Relationship rules
 
-- Use `spec`/`parent` in AWF create input to attach children. Do not create tracker sub-issues directly.
-- Use `dependsOn` in Task create input to preserve blocking edges. Do not call raw tracker dependency APIs directly.
+- Use `--spec`/`--parent` (or `spec`/`parent` in structured JSON create input) to attach children. Do not create tracker sub-issues directly.
+- Use repeatable `--depends-on` (or `dependsOn` in structured JSON create input) to preserve blocking edges. Do not call raw tracker dependency APIs directly.
 - Use `generatedBy` only as provenance. It is not dependency ordering and does not gate readiness.
 - Use `awf ready` as the source of truth for executable frontier work. In this workflow it exposes Specs ready for planning and Tasks ready for work; it does not list Grilling.
 - Use `awf ready --filter spec=<spec-id>` to ask for executable work directly under a Spec. Do not use `--filter parent=<id>` or `--filter wayfinder=<id>`; those filters are undeclared and AWF will reject them.

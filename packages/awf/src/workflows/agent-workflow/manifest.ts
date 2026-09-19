@@ -27,11 +27,15 @@ const taskKinds = [
 	"task:work:merge",
 ] as const;
 
+const nonEmptyMarkdown = z.string().refine((value) => value.trim() !== "", {
+	message: "Required",
+});
+
 const createInput = z
 	.strictObject({
 		title: z.string().trim().min(1),
-		body: z.string().trim().min(1).optional(),
-		content: z.string().trim().min(1).optional(),
+		body: nonEmptyMarkdown.optional(),
+		content: nonEmptyMarkdown.optional(),
 		parent: z.string().trim().min(1).optional(),
 	})
 	.refine(

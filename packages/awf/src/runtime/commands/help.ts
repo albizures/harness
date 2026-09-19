@@ -8,6 +8,7 @@ export type CommandSpec = {
 	name: string;
 	usage: string;
 	description: string;
+	examples?: Array<string>;
 };
 
 type HelpReadinessFilterSpec = {
@@ -68,6 +69,7 @@ export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 					name: `${command.cli.verb} ${command.cli.target}`,
 					usage: manifestCommandUsage(command),
 					description: `Run workflow command '${command.id}'.`,
+					...manifestCommandExamples(command),
 				},
 			];
 		}),
@@ -86,6 +88,22 @@ function manifestCommandUsage(command: ManifestCommand): string {
 		return `${route} <issue>`;
 	}
 	return `${route} <issue> --input <file|->`;
+}
+
+function manifestCommandExamples(command: ManifestCommand): {
+	examples?: Array<string>;
+} {
+	if (command.cli?.verb !== "create") {
+		return {};
+	}
+	const target = command.cli.target;
+	const longMarkdownOption =
+		target === "spec" || target === "wayfinder" ? "body" : "description";
+	return {
+		examples: [
+			`awf create ${target} --title "Title" --${longMarkdownOption} -`,
+		],
+	};
 }
 
 function runCommandUsage(commandId: string): string {

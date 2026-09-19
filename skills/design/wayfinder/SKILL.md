@@ -21,7 +21,7 @@ Every map and child has a title. In human-facing narration and map notes, refer 
 
 ## The AWF map
 
-Create one AWF Wayfinder issue as the canonical map, using the public Wayfinder creation command and current input shape from the Agent Workflow reference.
+Create one AWF Wayfinder issue as the canonical map, using the public Wayfinder creation command and current input shape from the Agent Workflow reference. Prefer ergonomic create flags such as `awf create wayfinder --title <title> --body -` or `--body-file <markdown-file>` for the Markdown map body; do not create intermediate `.scratch` JSON payload files for ordinary map creation.
 
 Recommended map body:
 
@@ -51,7 +51,7 @@ The map is an index, not duplicated storage. Detailed answers live in child outc
 
 ## Child issues
 
-Create AWF children under the Wayfinder using the parent and dependency input fields defined by the Agent Workflow reference:
+Create AWF children under the Wayfinder using the parent and dependency input fields defined by the Agent Workflow reference. Prefer ergonomic create flags (`--parent`, `--title`, `--description -` or `--description-file`, `--profile`, repeatable `--depends-on`) for child creation; reserve `--input <file|->` for structured JSON create payloads:
 
 - **Grilling child**: collaborative HITL decision.
 - **Research Task child**: AFK reading/investigation, created as `task:research` with a clear routing profile.
@@ -80,9 +80,9 @@ User invokes with a loose destination.
 
 1. **Name the destination.** Call the Skill tool for `grilling` and `domain-modeling` to pin down what this map is finding its way to. The destination fixes scope.
 2. **Map the frontier.** Grill breadth-first across the space to surface open decisions, prerequisite research/prototypes/tasks, and fog. If there is no fog and the route fits one session, do not create a map; ask how the user wants to proceed.
-3. **Create the Wayfinder map** with the public AWF Wayfinder creation command from the Agent Workflow reference, including Destination, Notes, empty Decisions-so-far, Not yet specified, and Out of scope sections.
-4. **Create the specifiable children** with the public AWF child creation commands and parent input from the Agent Workflow reference.
-5. **Wire dependencies** with the AWF dependency inputs from the Agent Workflow reference. If ids were not known yet, create blockers first or create the remaining dependent children after blockers exist.
+3. **Create the Wayfinder map** with the public AWF Wayfinder creation command from the Agent Workflow reference, including Destination, Notes, empty Decisions-so-far, Not yet specified, and Out of scope sections. Use `--body -` or `--body-file` for the Markdown body unless a structured JSON create payload is warranted.
+4. **Create the specifiable children** with the public AWF child creation commands and parent input from the Agent Workflow reference. Use `--description -` or `--description-file` for long Markdown descriptions rather than temporary JSON payload files.
+5. **Wire dependencies** with the AWF dependency inputs from the Agent Workflow reference, usually repeatable `--depends-on` flags. If ids were not known yet, create blockers first or create the remaining dependent children after blockers exist.
 6. **Start research in parallel** where appropriate. For each research Task, have a subagent call the `research` skill, then record the outcome with `awf task succeed <issue> --input <file|->`.
 7. Stop. Charting creates the map and frontier; it does not resolve a HITL child in the same session.
 

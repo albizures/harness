@@ -102,7 +102,7 @@ export async function manifestCommand(
 	const effectiveVerb = verb === "run-command" ? command.cli?.verb : verb;
 	if (effectiveVerb === "create") {
 		return createGenericWorkflowIssueCommand(
-			readOption(args, "--input"),
+			args,
 			versionedTracker,
 			manifest,
 			stdin,
@@ -179,27 +179,25 @@ async function handledManifestCommand(
 		routeVerb === "run-command" ? (command.cli?.verb ?? routeVerb) : routeVerb;
 	const issueId = commandVerb === "create" ? undefined : args[2];
 	const inputPath = readOption(args, "--input");
-	if (
-		inputPath === undefined ||
-		(commandVerb !== "create" && issueId === undefined)
-	) {
+	if (commandVerb !== "create" && issueId === undefined) {
 		return failure(
 			runtimeFailures.invalidArguments({
-				usage:
-					commandVerb === "create"
-						? `awf ${routeVerb} ${command.cli?.target ?? command.id} --input <file|->`
-						: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
+				usage: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
 			}),
 		);
 	}
-	const raw = await readInput(inputPath, stdin);
-	const parsed = parseJsonInput(
-		raw,
-		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
-	);
-	if (!parsed.ok) {
-		return parsed;
+	const input =
+		commandVerb === "create"
+			? await readCreateCommandInput(args, stdin, command)
+			: await readStructuredCommandInput(
+					inputPath,
+					stdin,
+					`awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
+				);
+	if (!input.ok) {
+		return input;
 	}
+	const parsed = input.data;
 	const payload = parseWorkflowCommandInput(command, parsed.data);
 	if (!payload.ok) {
 		return payload;
@@ -450,20 +448,130 @@ async function validateIssueWorkflowSemanticVersion(
 	}
 }
 
-export async function createGenericWorkflowIssueCommand(
+type CreateCommandInput = { raw: string; data: JsonValue };
+
+async function readStructuredCommandInput(
 	inputPath: string | undefined,
+	stdin: string | undefined,
+	usage: string,
+): Promise<Envelope<CreateCommandInput>> {
+	if (inputPath === undefined) {
+		return failure(runtimeFailures.invalidArguments({ usage }));
+	}
+	const raw = await readInput(inputPath, stdin);
+	const parsed = parseJsonInput(
+		raw,
+		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	return success({ raw, data: parsed.data as JsonValue });
+}
+
+async function readCreateCommandInput(
+	args: Array<string>,
+	stdin: string | undefined,
+	command: ManifestCommand,
+): Promise<Envelope<CreateCommandInput>> {
+	const usage = `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`;
+	const inputPath = readOption(args, "--input");
+	const ergonomicArgs = args
+		.slice(2)
+		.filter((arg) => arg !== "--input" && arg !== inputPath);
+	if (inputPath !== undefined && ergonomicArgs.length > 0) {
+		return failure(
+			runtimeFailures.invalidArguments({
+				message: "Use either --input or ergonomic create flags, not both.",
+				usage,
+			}),
+		);
+	}
+	if (inputPath !== undefined) {
+		const raw = await readInput(inputPath, stdin);
+		const parsed = parseJsonInput(
+			raw,
+			runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
+		);
+		if (!parsed.ok) {
+			return parsed;
+		}
+		return success({ raw, data: parsed.data as JsonValue });
+	}
+	const parsed = await parseErgonomicCreateArgs(args.slice(2), stdin, usage);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	return success({ raw: JSON.stringify(parsed.data), data: parsed.data });
+}
+
+async function parseErgonomicCreateArgs(
+	args: Array<string>,
+	stdin: string | undefined,
+	usage: string,
+): Promise<Envelope<JsonValue>> {
+	if (args.length === 0) {
+		return failure(runtimeFailures.invalidArguments({ usage }));
+	}
+	const input: Record<string, JsonValue> = {};
+	const dependsOn: Array<string> = [];
+	for (let index = 0; index < args.length; index += 2) {
+		const option = args[index];
+		const value = args[index + 1];
+		if (option === undefined || value === undefined || value === "") {
+			return failure(runtimeFailures.invalidArguments({ usage }));
+		}
+		switch (option) {
+			case "--title":
+				input.title = value;
+				break;
+			case "--body":
+				input.body = value === "-" ? (stdin ?? "") : value;
+				break;
+			case "--body-file":
+				input.body = await readInput(value, stdin);
+				break;
+			case "--description":
+				input.description = value === "-" ? (stdin ?? "") : value;
+				break;
+			case "--description-file":
+				input.description = await readInput(value, stdin);
+				break;
+			case "--parent":
+				input.parent = value;
+				break;
+			case "--spec":
+				input.spec = value;
+				break;
+			case "--profile":
+				input.profile = value;
+				break;
+			case "--depends-on":
+				dependsOn.push(value);
+				break;
+			case "--generated-by":
+				input.generatedBy = value;
+				break;
+			case "--kind":
+				input.kind = value;
+				break;
+			default:
+				return failure(runtimeFailures.invalidArguments({ usage }));
+		}
+	}
+	if (dependsOn.length > 0) {
+		input.dependsOn = dependsOn;
+	}
+	return success(input);
+}
+
+export async function createGenericWorkflowIssueCommand(
+	args: Array<string>,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
 	command: ManifestCommand,
 ): Promise<Envelope> {
-	if (inputPath === undefined) {
-		return failure(
-			runtimeFailures.invalidArguments({
-				usage: `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`,
-			}),
-		);
-	}
 	const kind = manifest.kinds.find(
 		(candidate) => candidate.id === command.target.kind,
 	);
@@ -475,15 +583,12 @@ export async function createGenericWorkflowIssueCommand(
 			}),
 		);
 	}
-	const raw = await readInput(inputPath, stdin);
-	const parsed = parseJsonInput(
-		raw,
-		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
-	);
-	if (!parsed.ok) {
-		return parsed;
+	const input = await readCreateCommandInput(args, stdin, command);
+	if (!input.ok) {
+		return input;
 	}
-	const payload = parseWorkflowCommandInput(command, parsed.data);
+	const { raw, data: parsed } = input.data;
+	const payload = parseWorkflowCommandInput(command, parsed);
 	if (!payload.ok) {
 		return payload;
 	}

@@ -116,12 +116,7 @@ function validateManifestCommandArguments(
 			runtimeFailures.invalidArguments({ usage: `awf ${verb} <target> ...` }),
 		);
 	}
-	return requirePositionalAndOption(
-		args,
-		`awf create ${target} --input <file|->`,
-		"--input",
-		1,
-	);
+	return undefined;
 }
 
 function validateReconcile(args: Array<string>): Envelope | undefined {
@@ -198,29 +193,6 @@ function requirePositionalCount(
 ): Envelope | undefined {
 	const positionals = args.slice(offset).filter((arg) => !arg.startsWith("-"));
 	if (positionals.length === count && args.length === offset + count) {
-		return undefined;
-	}
-
-	return failure(runtimeFailures.invalidArguments({ usage }));
-}
-
-function requirePositionalAndOption(
-	args: Array<string>,
-	usage: string,
-	optionName: string,
-	prefixPositionals = 1,
-): Envelope | undefined {
-	const prefix = args.slice(1, 1 + prefixPositionals);
-	const optionIndex = args.indexOf(optionName);
-	if (
-		prefix.every(
-			(arg) => arg !== undefined && arg !== "" && !arg.startsWith("-"),
-		) &&
-		optionIndex === 1 + prefixPositionals &&
-		args[optionIndex + 1] !== undefined &&
-		args[optionIndex + 1] !== "" &&
-		args.length === optionIndex + 2
-	) {
 		return undefined;
 	}
 

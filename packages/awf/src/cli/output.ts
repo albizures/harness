@@ -146,6 +146,7 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 		lines.push(`- ${String(command.id)}`);
 		if (isRecord(command.cli) && typeof command.cli.usage === "string") {
 			lines.push(`  - Usage: ${command.cli.usage}`);
+			appendCommandExamples(lines, command.cli.examples, "  ");
 		}
 		if (isRecord(command.target)) {
 			lines.push(`  - Target: ${formatCommandTarget(command.target)}`);
@@ -331,9 +332,24 @@ function formatHelp(data: Record<string, JsonValue>): string {
 		lines.push(
 			`  ${String(command.usage ?? command.name ?? "")}  ${String(command.description ?? "")}`.trimEnd(),
 		);
+		appendCommandExamples(lines, command.examples, "    ");
 	}
 	lines.push("", "Use --json for machine-readable output.");
 	return lines.join("\n");
+}
+
+function appendCommandExamples(
+	lines: Array<string>,
+	examples: JsonValue | undefined,
+	indent: string,
+): void {
+	if (!Array.isArray(examples) || examples.length === 0) {
+		return;
+	}
+	lines.push(`${indent}- Examples:`);
+	for (const example of examples) {
+		lines.push(`${indent}  - ${String(example)}`);
+	}
 }
 
 function formatReady(data: Record<string, JsonValue>): string {
