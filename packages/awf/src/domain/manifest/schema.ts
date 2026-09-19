@@ -37,6 +37,7 @@ export type ManifestCli = {
 	verb: Identifier;
 	target: Identifier;
 	input?: "json" | "none";
+	examples?: Array<string>;
 };
 
 export type ManifestCommand = {
@@ -319,6 +320,7 @@ export const workflowManifestStructuralSchema = z.strictObject({
 					verb: z.string().min(1),
 					target: z.string(),
 					input: z.enum(["json", "none"]).optional(),
+					examples: z.array(z.string().min(1)).optional(),
 				})
 				.optional(),
 			target: workflowFilterSchema.extend({ kind: z.string() }),

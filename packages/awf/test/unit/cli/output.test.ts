@@ -104,6 +104,85 @@ it("should ensure that text output renders ready items and suggested commands", 
 	);
 });
 
+it("should ensure that text output renders ready blocked footer", () => {
+	const output = serializeCliOutput(
+		{
+			ok: true,
+			data: {
+				items: [
+					{
+						id: "42",
+						title: "Implement CLI",
+						workflow: {
+							kind: "ticket",
+							state: "ready",
+							action: "implement",
+						},
+					},
+				],
+				blocked: [
+					{
+						id: "99",
+						title: "Blocked CLI",
+						workflow: {
+							kind: "ticket",
+							state: "ready",
+							action: "implement",
+						},
+						blocking: [],
+					},
+				],
+			},
+		},
+		"text",
+	);
+
+	expect(output).toBe(
+		"42 Implement CLI [ticket/ready/implement]\n\nBlocked work: 1. Use awf ready --blocked to inspect.\n",
+	);
+});
+
+it("should ensure that text output renders blocked-only ready diagnostics", () => {
+	const output = serializeCliOutput(
+		{
+			ok: true,
+			data: {
+				blocked: [
+					{
+						id: "99",
+						title: "Blocked CLI",
+						workflow: {
+							kind: "ticket",
+							state: "ready",
+							action: "implement",
+						},
+						blocking: [
+							{
+								gate: "dependency",
+								blockedBy: [{ id: "42", title: "Implement CLI" }],
+							},
+						],
+					},
+				],
+			},
+		},
+		"text",
+	);
+
+	expect(output).toBe(
+		"99 Blocked CLI [ticket/ready/implement] — blocked by dependency: 42 Implement CLI\n",
+	);
+});
+
+it("should ensure that text output renders empty blocked-only diagnostics", () => {
+	const output = serializeCliOutput(
+		{ ok: true, data: { blocked: [] } },
+		"text",
+	);
+
+	expect(output).toBe("No blocked work.\n");
+});
+
 it("should ensure that text output renders hierarchical Task kind in lifecycle fields", () => {
 	const output = serializeCliOutput(
 		{

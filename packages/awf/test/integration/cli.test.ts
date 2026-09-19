@@ -44,6 +44,22 @@ const filesystemTrackerSourcePath = new URL(
 	"../../src/adapters/trackers/filesystem.ts",
 	import.meta.url,
 ).pathname;
+const agentWorkflowSkillPath = new URL(
+	"../../../../skills/workflow/agent-workflow/SKILL.md",
+	import.meta.url,
+).pathname;
+const toSpecSkillPath = new URL(
+	"../../../../skills/design/to-spec/SKILL.md",
+	import.meta.url,
+).pathname;
+const toTicketsSkillPath = new URL(
+	"../../../../skills/design/to-tickets/SKILL.md",
+	import.meta.url,
+).pathname;
+const wayfinderSkillPath = new URL(
+	"../../../../skills/design/wayfinder/SKILL.md",
+	import.meta.url,
+).pathname;
 
 const unreadableMode = 0o000;
 const ownerReadWriteMode = 0o600;
@@ -809,6 +825,99 @@ it("should ensure that CLI global --config loads a workflow module before comman
 	});
 });
 
+it(
+	"should ensure that blocked ready diagnostics work end-to-end through the CLI",
+	async () => {
+		await withTempDir(async (dir) => {
+			const configPath = join(dir, "blocked.workflow.ts");
+			await writeFile(
+				configPath,
+				`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createInMemoryTracker } from ${JSON.stringify(memoryTrackerSourcePath)};
+
+export const manifest = agentWorkflowManifest;
+export const tracker = createInMemoryTracker({ issues: [
+	{
+		id: "1",
+		title: "Unblocked work",
+		workflow: { kind: "task", state: "ready", action: "work" },
+	},
+	{
+		id: "2",
+		title: "First blocked work",
+		workflow: { kind: "task", state: "ready", action: "work" },
+		relationships: { dependencies: ["1"] },
+	},
+	{
+		id: "3",
+		title: "Second blocked work",
+		workflow: { kind: "task", state: "ready", action: "work" },
+		relationships: { dependencies: ["1"] },
+	},
+] });
+`,
+			);
+			const runCli = (args: Array<string>) =>
+				spawnSync(
+					process.execPath,
+					[cliPath.pathname, "--config", configPath, ...args],
+					{
+						cwd: dir,
+						encoding: "utf8",
+					},
+				);
+
+			const defaultReady = runCli(["ready", "--limit", "1"]);
+			expect(defaultReady.status).toBe(0);
+			expect(defaultReady.stderr).toBe("");
+			expect(defaultReady.stdout).toBe(
+				"1 Unblocked work [task/ready/work] — awf run-command start 1\n\nBlocked work: 2. Use awf ready --blocked to inspect.\n",
+			);
+
+			const defaultJson = runCli(["--json", "ready", "--limit", "1"]);
+			expect(defaultJson.status).toBe(0);
+			const defaultEnvelope = JSON.parse(defaultJson.stdout);
+			expect(
+				defaultEnvelope.data.items.map((item: { id: string }) => item.id),
+			).toEqual(["1"]);
+			expect(
+				defaultEnvelope.data.blocked.map((item: { id: string }) => item.id),
+			).toEqual(["2", "3"]);
+
+			const blockedReady = runCli(["ready", "--blocked", "--limit", "1"]);
+			expect(blockedReady.status).toBe(0);
+			expect(blockedReady.stderr).toBe("");
+			expect(blockedReady.stdout).toBe(
+				"2 First blocked work [task/ready/work] — blocked by dependency: 1 Unblocked work\n",
+			);
+
+			const blockedJson = runCli(["--json", "ready", "--blocked"]);
+			expect(blockedJson.status).toBe(0);
+			const blockedEnvelope = JSON.parse(blockedJson.stdout);
+			expect(blockedEnvelope.data.items).toBeUndefined();
+			expect(
+				blockedEnvelope.data.blocked.map((item: { id: string }) => item.id),
+			).toEqual(["2", "3"]);
+
+			const emptyBlocked = spawnSync(
+				process.execPath,
+				[cliPath.pathname, "--config", validManifestPath, "ready", "--blocked"],
+				{ cwd: dir, encoding: "utf8" },
+			);
+			expect(emptyBlocked.status).toBe(0);
+			expect(emptyBlocked.stderr).toBe("");
+			expect(emptyBlocked.stdout).toBe("No blocked work.\n");
+
+			const help = runCli(["--help"]);
+			expect(help.status).toBe(0);
+			expect(help.stdout).toContain(
+				"awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
+			);
+		});
+	},
+	externalLogCliTimeoutMs,
+);
+
 it("should ensure that CLI without a workflow config defaults to the bundled agent-workflow manifest", async () => {
 	await withTempDir(async (dir) => {
 		const created = spawnSync(
@@ -830,6 +939,150 @@ it("should ensure that CLI without a workflow config defaults to the bundled age
 		});
 	});
 });
+
+it(
+	"should ensure that ergonomic AWF CLI creation flows work end-to-end",
+	async () => {
+		await withTempDir(async (dir) => {
+			const trackerPath = join(dir, "tracker");
+			const configPath = join(dir, "awf.config.ts");
+			const wayfinderBodyPath = join(dir, "wayfinder.md");
+			const grillingDescriptionPath = join(dir, "grilling.md");
+			await writeFile(
+				configPath,
+				`import { agentWorkflowManifest } from ${JSON.stringify(agentWorkflowSourcePath)};
+import { createFileSystemTracker } from ${JSON.stringify(filesystemTrackerSourcePath)};
+
+export const manifest = agentWorkflowManifest;
+export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerPath)} });
+`,
+			);
+			await writeFile(wayfinderBodyPath, "# Map\n\nFind the route.\n");
+			await writeFile(
+				grillingDescriptionPath,
+				"Discuss the acceptance edge.\n",
+			);
+			const runCli = (args: Array<string>, input?: unknown) => {
+				const result = spawnSync(
+					process.execPath,
+					[cliPath.pathname, "--json", "--config", configPath, ...args],
+					{
+						cwd: dir,
+						encoding: "utf8",
+						input:
+							input === undefined ? undefined : serializeCliSmokeInput(input),
+					},
+				);
+				expect(result.stderr).toBe("");
+				return result;
+			};
+			const assertOk = (result: ReturnType<typeof runCli>) => {
+				expect(result.status, result.stdout).toBe(0);
+				const envelope = JSON.parse(result.stdout);
+				expect(envelope.ok).toBe(true);
+				return envelope.data;
+			};
+
+			const jsonSpec = assertOk(
+				runCli(["create", "spec", "--input", "-"], {
+					title: "JSON spec",
+					body: "# JSON spec\n\nStill supported.",
+				}),
+			).issue;
+			const stdinSpec = assertOk(
+				runCli(
+					["create", "spec", "--title", "Stdin spec", "--body", "-"],
+					"# Stdin spec\n\nMarkdown from stdin.",
+				),
+			).issue;
+			const wayfinder = assertOk(
+				runCli([
+					"create",
+					"wayfinder",
+					"--title",
+					"File wayfinder",
+					"--body-file",
+					wayfinderBodyPath,
+				]),
+			).issue;
+			const task = assertOk(
+				runCli(
+					[
+						"create",
+						"task:work",
+						"--parent",
+						jsonSpec.id,
+						"--title",
+						"Stdin task",
+						"--description",
+						"-",
+						"--profile",
+						"implement",
+					],
+					"Implement with Markdown from stdin.",
+				),
+			).issue;
+			const grilling = assertOk(
+				runCli([
+					"create",
+					"grilling",
+					"--parent",
+					jsonSpec.id,
+					"--title",
+					"File grilling",
+					"--description-file",
+					grillingDescriptionPath,
+				]),
+			).issue;
+			const mixed = runCli(
+				["create", "spec", "--input", "-", "--title", "Mixed"],
+				{ title: "Mixed", body: "# Mixed" },
+			);
+
+			expect(mixed.status).toBe(1);
+			expect(JSON.parse(mixed.stdout)).toMatchObject({
+				ok: false,
+				error: {
+					code: "INVALID_ARGUMENTS",
+					message: "Use either --input or ergonomic create flags, not both.",
+				},
+			});
+			expect(jsonSpec.body).toContain("Still supported.");
+			expect(stdinSpec.body).toBe("# Stdin spec\n\nMarkdown from stdin.");
+			expect(wayfinder.body).toBe("# Map\n\nFind the route.\n");
+			expect(task.body).toContain("Implement with Markdown from stdin.");
+			expect(grilling.body).toContain("Discuss the acceptance edge.");
+			expect(task.relationships.parent).toBe(jsonSpec.id);
+			expect(grilling.relationships.parent).toBe(jsonSpec.id);
+
+			const help = spawnSync(
+				process.execPath,
+				[cliPath.pathname, "--config", configPath, "--help"],
+				{ cwd: dir, encoding: "utf8" },
+			);
+			expect(help.status).toBe(0);
+			expect(help.stderr).toBe("");
+			expect(help.stdout).toContain("awf create spec --input <file|->");
+			expect(help.stdout).toContain('awf create spec --title "Title" --body -');
+			expect(help.stdout).toContain("awf create task:work --input <file|->");
+			expect(help.stdout).toContain(
+				'awf create task:work --title "Title" --description -',
+			);
+
+			for (const skillPath of [
+				agentWorkflowSkillPath,
+				toSpecSkillPath,
+				toTicketsSkillPath,
+				wayfinderSkillPath,
+			]) {
+				const skill = await readFile(skillPath, "utf8");
+				expect(skill).toMatch(/prefer(?:ring)? ergonomic create flags/i);
+				expect(skill).toContain("--input <file|->");
+			}
+		});
+	},
+	externalLogCliTimeoutMs,
+);
 
 it("should ensure that CLI config-exported command handlers can customize bundled agent-workflow command ids", async () => {
 	await withTempDir(async (dir) => {

@@ -77,7 +77,11 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 		commands: [
 			{
 				id: "ticket-create",
-				cli: { verb: "create", target: "ticket" },
+				cli: {
+					verb: "create",
+					target: "ticket",
+					examples: ['awf create ticket --title "Title" --description -'],
+				},
 				target: { kind: "task", action: "work" },
 			},
 			{

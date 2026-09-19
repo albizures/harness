@@ -60,6 +60,10 @@ _Avoid_: built-in lifecycle command, hidden transition policy, run-id validator
 A declarative Workflow definition rule that decides which Workflow issues are executable now, including workflow-field filters, named relationship filters, dependency gates, active-run gates, concurrency gates, and relationship-driven gates such as waiting for children to finish. It is evaluated by the Workflow runtime and should remain explainable without executing workflow-module code.
 _Avoid_: ready callback, schedulability plugin, hidden queue logic
 
+**Blocked readiness candidate**:
+A Workflow issue that matches declared readiness filters but is excluded from executable ready work by a dependency, relationship, or concurrency gate. Blocked readiness candidates are useful diagnostics for why `awf ready` has no runnable items or why future work is not yet executable.
+_Avoid_: pending task, hidden ready work, almost ready issue
+
 **AWF config file**:
 The project-local TypeScript file, conventionally `awf.config.ts`, that the AWF CLI loads as a Workflow module for the current working directory.
 _Avoid_: global config, manifest file, workflow definition file

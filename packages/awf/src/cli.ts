@@ -80,8 +80,12 @@ function argsWithoutConfigOption(args: Array<string>): Array<string> {
 }
 
 function readStdinForDashInput(args: Array<string>): string | undefined {
-	const inputIndex = args.indexOf("--input");
-	if (inputIndex === -1 || args[inputIndex + 1] !== "-") {
+	const dashInputOptions = ["--input", "--body", "--description"];
+	const shouldReadStdin = dashInputOptions.some((option) => {
+		const index = args.indexOf(option);
+		return index !== -1 && args[index + 1] === "-";
+	});
+	if (!shouldReadStdin) {
 		return undefined;
 	}
 	return readFileSync(0, "utf8");

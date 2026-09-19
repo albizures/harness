@@ -32,8 +32,9 @@ const runtimeCommands: Array<CommandSpec> = [
 	},
 	{
 		name: "ready",
-		usage: "awf ready [--filter <name=value>] [--limit <n>]",
-		description: "Return legally executable work.",
+		usage: "awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
+		description:
+			"Return legally executable work; use --blocked to inspect blocked readiness candidates.",
 	},
 	{
 		name: "logs",
@@ -69,7 +70,9 @@ export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 					name: `${command.cli.verb} ${command.cli.target}`,
 					usage: manifestCommandUsage(command),
 					description: `Run workflow command '${command.id}'.`,
-					...manifestCommandExamples(command),
+					...(command.cli.examples === undefined
+						? {}
+						: { examples: [...command.cli.examples] }),
 				},
 			];
 		}),
@@ -88,22 +91,6 @@ function manifestCommandUsage(command: ManifestCommand): string {
 		return `${route} <issue>`;
 	}
 	return `${route} <issue> --input <file|->`;
-}
-
-function manifestCommandExamples(command: ManifestCommand): {
-	examples?: Array<string>;
-} {
-	if (command.cli?.verb !== "create") {
-		return {};
-	}
-	const target = command.cli.target;
-	const longMarkdownOption =
-		target === "spec" || target === "wayfinder" ? "body" : "description";
-	return {
-		examples: [
-			`awf create ${target} --title "Title" --${longMarkdownOption} -`,
-		],
-	};
 }
 
 function runCommandUsage(commandId: string): string {

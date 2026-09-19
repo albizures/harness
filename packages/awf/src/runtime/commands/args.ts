@@ -138,35 +138,44 @@ function invalidReadyArguments(): Envelope {
 	return failure(
 		runtimeFailures.invalidArguments({
 			message: "Invalid arguments for ready.",
-			usage: "awf ready [--filter <name=value>] [--limit <n>]",
+			usage: "awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
 		}),
 	);
 }
 
 export type ReadyOptions = {
+	blocked: boolean;
 	filters: Array<{ name: string; value: string }>;
 	limit?: number;
 	error?: true;
 };
 
 export function parseReadyOptions(args: Array<string>): ReadyOptions {
-	const options: ReadyOptions = { filters: [] };
-	for (let index = 1; index < args.length; index += 2) {
+	const options: ReadyOptions = { blocked: false, filters: [] };
+	for (let index = 1; index < args.length; ) {
 		const option = args[index];
+		if (option === "--blocked" && !options.blocked) {
+			options.blocked = true;
+			index += 1;
+			continue;
+		}
+
 		const value = args[index + 1];
 		if (value === undefined || value === "") {
-			return { filters: [], error: true };
+			return { blocked: false, filters: [], error: true };
 		}
 		if (option === "--filter") {
 			const parsed = parseNamedFilter(value);
 			if (parsed === undefined) {
-				return { filters: [], error: true };
+				return { blocked: false, filters: [], error: true };
 			}
 			options.filters.push(parsed);
+			index += 2;
 		} else if (option === "--limit" && options.limit === undefined) {
 			options.limit = Number(value);
+			index += 2;
 		} else {
-			return { filters: [], error: true };
+			return { blocked: false, filters: [], error: true };
 		}
 	}
 	return options;

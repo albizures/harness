@@ -76,6 +76,13 @@ const wayfinderCompletionInput = z.strictObject({
 });
 const anyJsonObjectInput = z.record(z.string(), z.unknown());
 
+function createExample(
+	target: string,
+	longMarkdownOption: string,
+): Array<string> {
+	return [`awf create ${target} --title "Title" --${longMarkdownOption} -`];
+}
+
 const specTransitions = [
 	{
 		from: { state: "ready", action: "planning" },
@@ -323,7 +330,11 @@ export const agentWorkflowManifest = defineManifest({
 	commands: [
 		{
 			id: "spec-create",
-			cli: { verb: "create", target: "spec" },
+			cli: {
+				verb: "create",
+				target: "spec",
+				examples: createExample("spec", "body"),
+			},
 			target: { kind: "spec", action: "planning" },
 			input: createInput,
 		},
@@ -339,49 +350,81 @@ export const agentWorkflowManifest = defineManifest({
 		},
 		{
 			id: "wayfinder-create",
-			cli: { verb: "create", target: "wayfinder" },
+			cli: {
+				verb: "create",
+				target: "wayfinder",
+				examples: createExample("wayfinder", "body"),
+			},
 			target: { kind: "wayfinder", action: "planning" },
 			input: createInput,
 		},
 		{
 			id: "task-create",
-			cli: { verb: "create", target: "task" },
+			cli: {
+				verb: "create",
+				target: "task",
+				examples: createExample("task", "description"),
+			},
 			target: { kind: "task", action: "work" },
 			input: taskCreateInput,
 		},
 		{
 			id: "task-work-create",
-			cli: { verb: "create", target: "task:work" },
+			cli: {
+				verb: "create",
+				target: "task:work",
+				examples: createExample("task:work", "description"),
+			},
 			target: { kind: "task:work", action: "work" },
 			input: directTaskCreateInput,
 		},
 		{
 			id: "task-research-create",
-			cli: { verb: "create", target: "task:research" },
+			cli: {
+				verb: "create",
+				target: "task:research",
+				examples: createExample("task:research", "description"),
+			},
 			target: { kind: "task:research", action: "work" },
 			input: directTaskCreateInput,
 		},
 		{
 			id: "task-prototype-create",
-			cli: { verb: "create", target: "task:prototype" },
+			cli: {
+				verb: "create",
+				target: "task:prototype",
+				examples: createExample("task:prototype", "description"),
+			},
 			target: { kind: "task:prototype", action: "work" },
 			input: directTaskCreateInput,
 		},
 		{
 			id: "task-work-integration-test-create",
-			cli: { verb: "create", target: "task:work:integration-test" },
+			cli: {
+				verb: "create",
+				target: "task:work:integration-test",
+				examples: createExample("task:work:integration-test", "description"),
+			},
 			target: { kind: "task:work:integration-test", action: "work" },
 			input: directTaskCreateInput,
 		},
 		{
 			id: "task-work-merge-create",
-			cli: { verb: "create", target: "task:work:merge" },
+			cli: {
+				verb: "create",
+				target: "task:work:merge",
+				examples: createExample("task:work:merge", "description"),
+			},
 			target: { kind: "task:work:merge", action: "work" },
 			input: directTaskCreateInput,
 		},
 		{
 			id: "grilling-create",
-			cli: { verb: "create", target: "grilling" },
+			cli: {
+				verb: "create",
+				target: "grilling",
+				examples: createExample("grilling", "description"),
+			},
 			target: { kind: "grilling", action: "discuss" },
 			input: grillingCreateInput,
 		},

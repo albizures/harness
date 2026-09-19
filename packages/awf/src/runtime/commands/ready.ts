@@ -60,18 +60,19 @@ export async function readyCommand(
 	const blocked = readiness
 		.filter((item) => item.blocking.length > 0)
 		.sort((left, right) => compareReadyIssues(left.issue, right.issue));
+	const blockedCandidates = blocked.map(({ issue, blocking }) => ({
+		id: issue.id,
+		title: issue.title,
+		workflow: cleanWorkflowFields(issue.workflow, manifest),
+		blocking,
+	}));
+
+	if (options.blocked) {
+		return success({ blocked: blockedCandidates.slice(0, options.limit) });
+	}
 
 	return success({
 		items: candidates.map((issue) => readyItem(issue, manifest)),
-		...(blocked.length === 0
-			? {}
-			: {
-					blocked: blocked.map(({ issue, blocking }) => ({
-						id: issue.id,
-						title: issue.title,
-						workflow: cleanWorkflowFields(issue.workflow, manifest),
-						blocking,
-					})),
-				}),
+		...(blockedCandidates.length === 0 ? {} : { blocked: blockedCandidates }),
 	});
 }

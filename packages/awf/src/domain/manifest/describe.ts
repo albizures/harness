@@ -137,7 +137,9 @@ export function describeWorkflow(
 							verb: command.cli.verb,
 							target: command.cli.target,
 							usage: manifestCommandUsage(command),
-							...manifestCommandExamples(command),
+							...(command.cli.examples === undefined
+								? {}
+								: { examples: [...command.cli.examples] }),
 						},
 					}),
 			input: inputMarker(command.input),
@@ -173,22 +175,6 @@ export function manifestCommandUsage(command: ManifestCommand): string {
 		return `${route} <issue>`;
 	}
 	return `${route} <issue> --input <file|->`;
-}
-
-function manifestCommandExamples(command: ManifestCommand): {
-	examples?: Array<string>;
-} {
-	if (command.cli?.verb !== "create") {
-		return {};
-	}
-	const target = command.cli.target;
-	const longMarkdownOption =
-		target === "spec" || target === "wayfinder" ? "body" : "description";
-	return {
-		examples: [
-			`awf create ${target} --title "Title" --${longMarkdownOption} -`,
-		],
-	};
 }
 
 function describeVocabulary(manifest: WorkflowManifest) {

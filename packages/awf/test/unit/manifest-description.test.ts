@@ -77,13 +77,21 @@ function descriptionManifest() {
 		commands: [
 			{
 				id: "createSpec",
-				cli: { verb: "create", target: "spec" },
+				cli: {
+					verb: "create",
+					target: "spec",
+					examples: ['awf create spec --title "Title" --body -'],
+				},
 				target: { kind: "spec", action: "plan" },
 				input: stringInput,
 			},
 			{
 				id: "createTicket",
-				cli: { verb: "create", target: "ticket" },
+				cli: {
+					verb: "create",
+					target: "ticket",
+					examples: ['awf create ticket --title "Title" --description -'],
+				},
 				target: { kind: "ticket", action: "implement" },
 			},
 			{

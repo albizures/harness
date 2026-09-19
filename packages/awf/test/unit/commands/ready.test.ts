@@ -789,6 +789,62 @@ it("should ensure that ready treats a missing subkind as the kind default for co
 	});
 });
 
+it("should ensure that ready --blocked returns only blocked candidates and applies --limit", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "1",
+				title: "First blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+			{
+				id: "2",
+				title: "Second blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+			{
+				id: "3",
+				title: "Ready ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	await tracker.addDependency("1", "3");
+	await tracker.addDependency("2", "3");
+
+	const envelope = await execute(["ready", "--blocked", "--limit", "1"], {
+		tracker,
+		manifest: defaultTicketOnlyReadyManifest,
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		blocked: [
+			{
+				id: "1",
+				title: "First blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				blocking: [
+					{
+						gate: "dependency",
+						blockedBy: [
+							{
+								id: "3",
+								title: "Ready ticket",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "implement",
+								},
+							},
+						],
+					},
+				],
+			},
+		],
+	});
+});
+
 it("should ensure that ready returns deterministic ordering, supports --limit 1, and manifest-named filtering", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
@@ -900,7 +956,9 @@ it("should ensure that malformed readiness filter expressions return a clear par
 		error: {
 			code: "INVALID_ARGUMENTS",
 			message: "Invalid arguments for ready.",
-			details: { usage: "awf ready [--filter <name=value>] [--limit <n>]" },
+			details: {
+				usage: "awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
+			},
 		},
 	});
 });

@@ -30,7 +30,8 @@ Supported public commands for this workflow include:
 - `awf create task:work:integration-test (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
 - `awf create task:work:merge (--spec <spec-id>|--parent <parent-id>) --title <title> --description <markdown|-> --profile <profile> [--depends-on <id>]...`
 - `awf create grilling --title <title> --description <markdown|-> [--parent <id>]`
-- `awf ready [--filter <name=value>] [--limit <n>]`
+- `awf ready [--blocked] [--filter <name=value>] [--limit <n>]`
+  - Use `--blocked` to list only blocked readiness candidates for dependency/concurrency diagnostics; combine it with `--limit <n>` to limit blocked output.
   - In the bundled `agent-workflow`, the only named readiness filter is `--filter spec=<spec-id>`.
   - `--filter spec=<spec-id>` narrows readiness to executable work whose direct parent is that Spec.
   - Parent-generic and Wayfinder-scoped readiness filters such as `--filter parent=<id>` or `--filter wayfinder=<id>` are not currently supported.
@@ -71,7 +72,7 @@ Supported ergonomic create fields are `--title`, `--body`, `--body-file`, `--des
 - Use `--spec`/`--parent` (or `spec`/`parent` in structured JSON create input) to attach children. Do not create tracker sub-issues directly.
 - Use repeatable `--depends-on` (or `dependsOn` in structured JSON create input) to preserve blocking edges. Do not call raw tracker dependency APIs directly.
 - Use `generatedBy` only as provenance. It is not dependency ordering and does not gate readiness.
-- Use `awf ready` as the source of truth for executable frontier work. In this workflow it exposes Specs ready for planning and Tasks ready for work; it does not list Grilling.
+- Use `awf ready` as the source of truth for executable frontier work. In this workflow it exposes Specs ready for planning and Tasks ready for work; it does not list Grilling. When the default output reports blocked work, use `awf ready --blocked` to inspect blocked readiness candidates.
 - Use `awf ready --filter spec=<spec-id>` to ask for executable work directly under a Spec. Do not use `--filter parent=<id>` or `--filter wayfinder=<id>`; those filters are undeclared and AWF will reject them.
 - For Wayfinder children, inspect the Wayfinder with `awf get <id>` / `awf logs <id>` and then use unfiltered `awf ready` to identify executable Task children manually until a Wayfinder-scoped readiness filter exists.
 - Use `awf get <id>` and `awf logs <id>` to inspect workflow state, history, and HITL Grilling children.

@@ -54,6 +54,9 @@ function formatData(data: JsonValue): string {
 		if (Array.isArray(data.items)) {
 			return formatReady(data);
 		}
+		if (Array.isArray(data.blocked)) {
+			return formatBlockedReady(data.blocked);
+		}
 		if (isIssueInspectionPayload(data)) {
 			return formatIssueInspection(data);
 		}
@@ -354,25 +357,66 @@ function appendCommandExamples(
 
 function formatReady(data: Record<string, JsonValue>): string {
 	const items = data.items as Array<JsonValue>;
-	if (items.length === 0) {
-		return "No ready work.";
+	const lines =
+		items.length === 0
+			? ["No ready work."]
+			: items.map((item) => formatReadyLine(item));
+	const blockedCount = Array.isArray(data.blocked) ? data.blocked.length : 0;
+	if (blockedCount > 0) {
+		lines.push(
+			"",
+			`Blocked work: ${blockedCount}. Use awf ready --blocked to inspect.`,
+		);
 	}
-	return items
-		.map((item) => {
-			if (!isRecord(item)) {
-				return formatValue(item);
-			}
-			const workflow = isRecord(item.workflow)
-				? ` [${formatWorkflow(item.workflow)}]`
-				: "";
-			const command =
-				isRecord(item.suggestedCommand) &&
-				typeof item.suggestedCommand.display === "string"
-					? ` — ${item.suggestedCommand.display}`
-					: "";
-			return `${String(item.id ?? "")} ${String(item.title ?? "")}${workflow}${command}`.trim();
-		})
-		.join("\n");
+	return lines.join("\n");
+}
+
+function formatBlockedReady(blocked: Array<JsonValue>): string {
+	if (blocked.length === 0) {
+		return "No blocked work.";
+	}
+	return blocked.map((item) => formatReadyLine(item, true)).join("\n");
+}
+
+function formatReadyLine(item: JsonValue, includeBlocking = false): string {
+	if (!isRecord(item)) {
+		return formatValue(item);
+	}
+	const workflow = isRecord(item.workflow)
+		? ` [${formatWorkflow(item.workflow)}]`
+		: "";
+	const command =
+		isRecord(item.suggestedCommand) &&
+		typeof item.suggestedCommand.display === "string"
+			? ` — ${item.suggestedCommand.display}`
+			: "";
+	const blocking = includeBlocking ? formatBlockingSuffix(item.blocking) : "";
+	return `${String(item.id ?? "")} ${String(item.title ?? "")}${workflow}${command}${blocking}`.trim();
+}
+
+function formatBlockingSuffix(blocking: JsonValue | undefined): string {
+	if (!Array.isArray(blocking) || blocking.length === 0) {
+		return "";
+	}
+	const gates = blocking.map((gate) => {
+		if (!isRecord(gate)) {
+			return formatValue(gate);
+		}
+		const blockers = Array.isArray(gate.blockedBy)
+			? gate.blockedBy.map(formatBlockingIssue).join(", ")
+			: "";
+		return blockers.length === 0
+			? String(gate.gate ?? "unknown")
+			: `${String(gate.gate ?? "unknown")}: ${blockers}`;
+	});
+	return ` — blocked by ${gates.join("; ")}`;
+}
+
+function formatBlockingIssue(issue: JsonValue): string {
+	if (!isRecord(issue)) {
+		return formatValue(issue);
+	}
+	return `${String(issue.id ?? "")} ${String(issue.title ?? "")}`.trim();
 }
 
 function isIssueInspectionPayload(data: Record<string, JsonValue>): boolean {
