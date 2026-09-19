@@ -420,16 +420,16 @@ it("should ensure that succeed applies the manifest terminal transition", async 
 	]);
 });
 
-it("should ensure that failed running actions retry the same ready action by default", async () => {
+it("should ensure that failed running actions move to human review by default", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "123",
 				title: "Merge lifecycle",
 				workflow: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "running",
-					action: "merge",
+					action: "work",
 				},
 			},
 		],
@@ -459,7 +459,7 @@ it("should ensure that failed running actions retry the same ready action by def
 		state: data.issue.workflow.state,
 		action: data.issue.workflow.action,
 		reason: data.issue.workflow.reason,
-	}).toEqual({ state: "ready", action: "merge", reason: undefined });
+	}).toEqual({ state: "need-human", action: "none", reason: undefined });
 	expect((await tracker.readLogs("123"))[0]?.message).toBe("Applied fail.");
 });
 
@@ -503,7 +503,7 @@ it("should ensure that lifecycle commands do not schema-validate arbitrary termi
 			{
 				id: "escalate",
 				title: "Escalate payload",
-				workflow: { kind: "task", state: "ready", action: "review" },
+				workflow: { kind: "task:work", state: "ready", action: "work" },
 			},
 		],
 	});
@@ -563,15 +563,15 @@ it("should ensure that removed manifest lifecycle policy no longer constrains re
 				id: "retry",
 				title: "Retry unconstrained",
 				workflow: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "running",
-					action: "merge",
+					action: "work",
 				},
 			},
 			{
 				id: "escalate",
 				title: "Escalate unconstrained",
-				workflow: { kind: "task", state: "ready", action: "review" },
+				workflow: { kind: "task:work", state: "ready", action: "work" },
 			},
 			{
 				id: "human",
@@ -870,9 +870,9 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 				id: "retry",
 				title: "Retry task",
 				workflow: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "running",
-					action: "merge",
+					action: "work",
 				},
 			},
 			{
@@ -895,7 +895,7 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 		state: failed.issue.workflow.state,
 		action: failed.issue.workflow.action,
 		reason: failed.issue.workflow.reason,
-	}).toEqual({ state: "ready", action: "merge", reason: undefined });
+	}).toEqual({ state: "need-human", action: "none", reason: undefined });
 	expect((await tracker.readLogs("retry"))[0]?.message).toBe("Applied fail.");
 
 	const invalidResume = await execute(
@@ -906,10 +906,9 @@ it("should ensure that default retry, explicit escalation, and explicit resume e
 	);
 	expect(invalidResume.ok).toBe(false);
 	expect(invalidResume.ok ? undefined : invalidResume.error).toEqual({
-		code: "INVALID_TRANSITION",
-		message:
-			"No manifest transition matches the current workflow fields for this event.",
-		details: { id: "retry", event: "resume" },
+		code: "LIFECYCLE_POLICY_VIOLATION",
+		message: "Lifecycle policy does not allow this transition.",
+		details: { id: "retry", policy: "resume", action: "fix" },
 	});
 
 	await assertSuccess(

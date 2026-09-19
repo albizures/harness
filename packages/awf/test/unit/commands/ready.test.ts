@@ -584,37 +584,107 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 	});
 });
 
-it("should ensure that bundled task routing respects perSubkind concurrency", async () => {
+it("should ensure that bundled Integration-test and Merge readiness use task kinds without self-blocking", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "none" },
+				relationships: {
+					children: [
+						"done-work",
+						"ready-integration",
+						"done-integration",
+						"ready-merge",
+					],
+				},
+			},
+			{
+				id: "done-work",
+				title: "Done work",
+				workflow: { kind: "task:work", state: "done", action: "none" },
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "ready-integration",
+				title: "Ready integration",
+				workflow: {
+					kind: "task:work:integration-test",
+					state: "ready",
+					action: "work",
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "done-integration",
+				title: "Done integration",
+				workflow: {
+					kind: "task:work:integration-test",
+					state: "done",
+					action: "none",
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "ready-merge",
+				title: "Ready merge",
+				workflow: { kind: "task:work:merge", state: "ready", action: "work" },
+				relationships: { parent: "spec" },
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: agentWorkflowManifest,
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toMatchObject({
+		items: [{ id: "ready-integration" }],
+		blocked: [
+			{
+				id: "ready-merge",
+				blocking: [
+					{
+						gate: "integration-test-done",
+						blockedBy: [{ id: "ready-integration" }],
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that bundled task routing respects concrete kind concurrency", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "running-research",
 				title: "Running research task",
 				workflow: {
-					kind: "task",
+					kind: "task:research",
 					state: "running",
 					action: "work",
-					data: { subkind: "research" },
 				},
 			},
 			{
 				id: "ready-research",
 				title: "Ready research task",
 				workflow: {
-					kind: "task",
+					kind: "task:research",
 					state: "ready",
 					action: "work",
-					data: { subkind: "research" },
 				},
 			},
 			{
 				id: "ready-work",
 				title: "Ready work task",
 				workflow: {
-					kind: "task",
+					kind: "task:work",
 					state: "ready",
 					action: "work",
-					data: { subkind: "work" },
 				},
 			},
 		],
@@ -626,24 +696,26 @@ it("should ensure that bundled task routing respects perSubkind concurrency", as
 			...agentWorkflowManifest,
 			concurrency: {
 				...agentWorkflowManifest.concurrency,
-				perSubkind: { task: { research: 1 } },
+				perKind: {
+					...agentWorkflowManifest.concurrency.perKind,
+					"task:research": 1,
+				},
 			},
 		},
 	});
 
 	expect(envelope.ok).toBe(true);
 	expect(envelope.ok ? envelope.data : undefined).toMatchObject({
-		items: [{ id: "ready-work", workflow: { subkind: "work" } }],
+		items: [{ id: "ready-work", workflow: { kind: "task:work" } }],
 		blocked: [
 			{
 				id: "ready-research",
-				workflow: { subkind: "research" },
+				workflow: { kind: "task:research" },
 				blocking: [
 					{
 						gate: "concurrency",
-						scope: "subkind",
-						kind: "task",
-						subkind: "research",
+						scope: "kind",
+						kind: "task:research",
 						limit: 1,
 						active: 1,
 					},

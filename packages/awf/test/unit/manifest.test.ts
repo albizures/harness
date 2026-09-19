@@ -37,6 +37,11 @@ it("should load a TypeScript-authored workflow manifest as declarative data", as
 		"spec",
 		"wayfinder",
 		"task",
+		"task:work",
+		"task:research",
+		"task:prototype",
+		"task:work:integration-test",
+		"task:work:merge",
 		"grilling",
 	]);
 	expect(
@@ -636,7 +641,7 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 		/Duplicate command target declaration 'create ticket'/,
 	);
 	expect(messages).toMatch(/Duplicate id 'ticket-create'/);
-	expect(messages).toMatch(/Identifier must use lowercase/);
+	expect(messages).toMatch(/CLI target must use lowercase/);
 	expect(messages).toMatch(/Command target kind must reference a known kind/);
 	expect(messages).toMatch(
 		/Command target action must reference a known action/,

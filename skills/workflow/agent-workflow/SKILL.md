@@ -23,7 +23,12 @@ Supported public commands for this workflow include:
 
 - `awf create spec --input <file|->`
 - `awf create wayfinder --input <file|->`
-- `awf create task --input <file|->`
+- `awf create task --input <file|->` (generic validated seam; input must include a concrete `kind`)
+- `awf create task:work --input <file|->`
+- `awf create task:research --input <file|->`
+- `awf create task:prototype --input <file|->`
+- `awf create task:work:integration-test --input <file|->`
+- `awf create task:work:merge --input <file|->`
 - `awf create grilling --input <file|->`
 - `awf ready [--filter <name=value>] [--limit <n>]`
   - In the bundled `agent-workflow`, the only named readiness filter is `--filter spec=<spec-id>`.
@@ -42,13 +47,14 @@ Supported public commands for this workflow include:
 - `awf wayfinder succeed <issue> --input <file|->`
 - `awf grilling start <issue>`
 - `awf grilling succeed <issue> --input <file|->`
+- `awf migrate legacy-task-subkinds [--dry-run|--apply]`
 
 If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` line for the loaded workflow, stop and ask for the AWF command surface to be upgraded. Do not reach for hidden `run-command` forms or command ids.
 
 ## Issue kinds
 
 - **Spec**: a workflow issue that describes an implementation outcome and contains delivery Tasks and Grilling. Create with `{ "title": string, "body" | "content": string }`.
-- **Task**: an executable workflow issue. Create under a Spec or Wayfinder with `{ "spec" | "parent": string, "title": string, "description": string, "profile": string, "subkind"?: "work" | "research" | "prototype", "dependsOn"?: string[], "generatedBy"?: string }`.
+- **Task**: an executable workflow issue. Create under a Spec or Wayfinder with direct concrete Task commands. Use `create task:work`, `create task:research`, `create task:prototype`, `create task:work:integration-test`, or `create task:work:merge` with `{ "spec" | "parent": string, "title": string, "description": string, "profile": string, "dependsOn"?: string[], "generatedBy"?: string }`. The generic `create task` command is a validated seam for tests/future tooling and requires a concrete `kind` in input.
 - **Wayfinder**: a map for discovering a route through fog. Create with `{ "title": string, "body" | "content": string }`.
 - **Grilling**: collaborative human-in-the-loop discussion. Create with `{ "title": string, "description": string, "parent"?: string }`.
 
@@ -65,26 +71,26 @@ If a lifecycle operation you need is not exposed by `awf --help` or a `Usage:` l
 ## Lifecycle boundaries
 
 - Specs start ready for planning. After the human-approved task breakdown is published, run `awf spec planned <issue>` so delivery Tasks can proceed while the Spec waits at `ready/none`.
-- Integration testing and merging are ordinary Tasks, not Spec lifecycle actions. Create Merge Tasks only when the Spec's delivery path needs explicit merge/release handoff work.
+- Integration testing and merging are ordinary Tasks with concrete `task:work:integration-test` and `task:work:merge` kinds, not Spec lifecycle actions or profile conventions. Create Merge Tasks only when the Spec's delivery path needs explicit merge/release handoff work.
 - Complete a delivered Spec only with `awf spec complete <issue> --input <file|->`, after AWF validates planning is complete, all child Tasks are terminal, and child Grilling issues are not open.
 - Wayfinders are maps. Start them with `awf wayfinder start <issue>` and complete them with `awf wayfinder succeed <issue> --input <file|->` after all children are done.
 - Tasks are completed with `awf task succeed <issue> --input <file|->`; Wayfinder child Tasks require structured outcome input so the child log records the result and optional map revision.
 - Grilling is HITL. Start it with `awf grilling start <issue>` and complete it with `awf grilling succeed <issue> --input <file|->` after the human-side discussion resolves; do not answer for the human.
 - Record outcomes through these public lifecycle commands. Do not edit AWF machine comments, labels, frontmatter, relationships, or logs by hand except as documented filesystem repair.
 
-## Profile conventions
+## Task kinds and routing profiles
 
-Profiles are project-owned routing data. Use names that say who or what should pick up the work. For code Specs, default to:
+Task kind carries AWF workflow semantics; profile is project-owned routing data. Choose the concrete Task kind first, then set `profile` to say who or what should pick up the work. For code Specs, default to:
 
-- implementation work: the project's implementation profile (for example `implement`)
-- review work: the project's review profile when explicit review Tasks are created
-- verification: `integration-test`
-- optional merge/release handoff: `merge`
-- documentation-only work: `docs`
-- research work: `research` with `subkind: "research"`
-- prototypes: `prototype` with `subkind: "prototype"`
+- implementation work: `task:work` with the project's implementation profile (for example `implement`)
+- review work: `task:work` with the project's review profile when explicit review Tasks are created
+- verification: `task:work:integration-test` with an appropriate verification routing profile
+- optional merge/release handoff: `task:work:merge` with an appropriate release/handoff routing profile
+- documentation-only work: `task:work` with a docs routing profile
+- research work: `task:research` with a research routing profile
+- prototypes: `task:prototype` with a prototype routing profile
 
-AWF gates `integration-test` readiness by profile, and gates `merge` readiness when Merge Tasks exist. It does not prove integration-test freshness after later follow-up work; if new implementation or review Tasks are added after an integration pass, add another `integration-test` Task before completing any merge/release handoff or the Spec.
+AWF readiness gates use Task kind semantics and kind groups, not reserved profile values. It does not prove integration-test freshness after later follow-up work; if new implementation or review Tasks are added after an integration pass, add another `task:work:integration-test` Task before completing any merge/release handoff or the Spec.
 
 ## HITL checkpoints
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0006 supersedes inherited Task profile classification details from ADR 0004/0005; this ADR still records explicit planning completion and optional Merge Tasks.
 
 ## Context
 

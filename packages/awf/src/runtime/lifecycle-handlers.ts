@@ -1,5 +1,6 @@
 import type { JsonValue } from "type-fest";
 import { failure, type ErrorEnvelope } from "./envelope.ts";
+import { kindAncestry } from "../domain/manifest/kind-registry.ts";
 import type {
 	ManifestTransition,
 	WorkflowManifest,
@@ -54,10 +55,23 @@ export function findLifecycleTransitionHandler(
 	handlers: LifecycleTransitionHandlers | undefined,
 	kind: string,
 	transition: ManifestTransition,
+	manifest?: WorkflowManifest,
 ): LifecycleTransitionHandler | undefined {
-	return handlers?.[
-		lifecycleTransitionHandlerKey(kind, transition.from, transition.event)
+	const keys = [
+		lifecycleTransitionHandlerKey(kind, transition.from, transition.event),
+		...(manifest === undefined
+			? []
+			: [...kindAncestry(kind)]
+					.reverse()
+					.map((ancestor) =>
+						lifecycleTransitionHandlerKey(
+							ancestor,
+							transition.from,
+							transition.event,
+						),
+					)),
 	];
+	return keys.flatMap((key) => handlers?.[key] ?? [])[0];
 }
 
 export async function runLifecycleTransitionHandler(
@@ -70,6 +84,7 @@ export async function runLifecycleTransitionHandler(
 		handlers,
 		context.issue.workflow.kind,
 		context.transition,
+		context.manifest,
 	);
 	if (handler === undefined) {
 		return { ok: true, contribution: emptyContribution() };

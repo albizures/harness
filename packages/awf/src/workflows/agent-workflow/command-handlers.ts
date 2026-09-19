@@ -19,6 +19,7 @@ import {
 	lifecycleError,
 	proseLogMessage,
 	workflowTarget,
+	kindMatches,
 } from "../../runtime/commands/shared.ts";
 import { humanInteractionCommandHandlers } from "../human-interaction-handlers.ts";
 
@@ -35,7 +36,12 @@ type TaskCreateInput = {
 	title: string;
 	description: string;
 	profile: string;
-	subkind: "work" | "research" | "prototype";
+	kind:
+		| "task:work"
+		| "task:research"
+		| "task:prototype"
+		| "task:work:integration-test"
+		| "task:work:merge";
 	dependsOn?: Array<string>;
 	generatedBy?: string;
 };
@@ -60,6 +66,11 @@ export const agentWorkflowCommandHandlers: CommandHandlers = {
 	"spec-planned": plannedSpecCommand,
 	"spec-complete": completeSpecCommand,
 	"task-create": createTaskCommand,
+	"task-work-create": createTaskCommand,
+	"task-research-create": createTaskCommand,
+	"task-prototype-create": createTaskCommand,
+	"task-work-integration-test-create": createTaskCommand,
+	"task-work-merge-create": createTaskCommand,
 	"grilling-create": createGrillingCommand,
 };
 
@@ -245,7 +256,7 @@ async function specCompleteCommand({
 				{ id: issue.id, command: "spec-complete" },
 			);
 		}
-		const blockers = await specCompletionBlockers(issue, tracker);
+		const blockers = await specCompletionBlockers(issue, tracker, manifest);
 		if (blockers.length > 0) {
 			return failure(
 				"SPEC_COMPLETION_INVALID",
@@ -290,6 +301,7 @@ async function specCompleteCommand({
 async function specCompletionBlockers(
 	issue: WorkflowIssue,
 	tracker: Tracker,
+	manifest: Parameters<CommandHandler>[0]["manifest"],
 ): Promise<Array<Record<string, JsonValue>>> {
 	if (issue.workflow.kind !== "spec") {
 		return [{ id: issue.id, reason: "not-spec", workflow: issue.workflow }];
@@ -297,7 +309,10 @@ async function specCompletionBlockers(
 	const blockers: Array<Record<string, JsonValue>> = [];
 	for (const childId of issue.relationships.children) {
 		const child = await tracker.getIssue(childId);
-		if (child.workflow.kind === "task" && child.workflow.state !== "done") {
+		if (
+			kindMatches("task", child.workflow.kind, manifest) &&
+			child.workflow.state !== "done"
+		) {
 			blockers.push({
 				id: child.id,
 				title: child.title,
@@ -321,18 +336,18 @@ async function taskCreateCommand({
 	tracker,
 	input,
 }: Parameters<CommandHandler>[0]): Promise<Envelope> {
-	const taskKind = getKind(manifest, "task");
-	if (taskKind === undefined) {
-		return failure(
-			"MANIFEST_UNSUPPORTED",
-			"Manifest does not define task kind.",
-		);
-	}
-	const taskInput = parseTaskCreateInput(input);
+	const taskInput = parseTaskCreateInput(input, command.target.kind);
 	if (taskInput === undefined) {
 		return failure(
 			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 			"Workflow command input is invalid.",
+		);
+	}
+	const taskKind = getKind(manifest, taskInput.kind);
+	if (taskKind === undefined) {
+		return failure(
+			"MANIFEST_UNSUPPORTED",
+			"Manifest does not define task kind.",
 		);
 	}
 
@@ -357,7 +372,7 @@ async function taskCreateCommand({
 			taskInput.dependsOn ?? [],
 		);
 		const nonTaskBlocker = blockers.find(
-			(blocker) => blocker.workflow.kind !== "task",
+			(blocker) => !kindMatches("task", blocker.workflow.kind, manifest),
 		);
 		if (nonTaskBlocker !== undefined) {
 			return failure(
@@ -371,6 +386,7 @@ async function taskCreateCommand({
 		}
 		const generatedBy = await resolveGeneratedBy(
 			tracker,
+			manifest,
 			taskInput.generatedBy,
 			parent.id,
 		);
@@ -387,9 +403,9 @@ async function taskCreateCommand({
 						title: genericIssueTitle(taskInput, "task"),
 						body: taskBody(taskInput),
 						workflow: {
-							kind: "task",
+							kind: taskInput.kind,
 							...initialWorkflowTarget(taskKind.initial),
-							data: { subkind: taskInput.subkind, profile: taskInput.profile },
+							data: { profile: taskInput.profile },
 						},
 						relationships:
 							taskInput.generatedBy === undefined
@@ -545,7 +561,10 @@ function parseCreateInput(input: JsonValue): CreateInput | undefined {
 	};
 }
 
-function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
+function parseTaskCreateInput(
+	input: JsonValue,
+	commandKind: string,
+): TaskCreateInput | undefined {
 	if (!isRecord(input)) {
 		return undefined;
 	}
@@ -557,7 +576,7 @@ function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
 		title: String(input.title),
 		description: String(input.description),
 		profile: String(input.profile),
-		subkind: isTaskSubkind(input.subkind) ? input.subkind : "work",
+		kind: taskInputKind(input, commandKind),
 		...(Array.isArray(input.dependsOn) &&
 		input.dependsOn.every((dependency) => typeof dependency === "string")
 			? { dependsOn: input.dependsOn }
@@ -581,6 +600,7 @@ async function resolveTaskBlockers(
 
 async function resolveGeneratedBy(
 	tracker: Tracker,
+	manifest: Parameters<CommandHandler>[0]["manifest"],
 	generatedBy: string | undefined,
 	specId: string,
 ): Promise<{ ok: true } | { ok: false; envelope: Envelope }> {
@@ -588,7 +608,7 @@ async function resolveGeneratedBy(
 		return { ok: true };
 	}
 	const source = await tracker.getIssue(generatedBy);
-	if (source.workflow.kind !== "task") {
+	if (!kindMatches("task", source.workflow.kind, manifest)) {
 		return {
 			ok: false,
 			envelope: failure(
@@ -617,8 +637,21 @@ async function resolveGeneratedBy(
 	return { ok: true };
 }
 
-function isTaskSubkind(value: unknown): value is TaskCreateInput["subkind"] {
-	return value === "work" || value === "research" || value === "prototype";
+function taskInputKind(
+	input: Record<string, unknown>,
+	commandKind: string,
+): TaskCreateInput["kind"] {
+	const raw = commandKind === "task" ? input.kind : commandKind;
+	if (
+		raw === "task:work" ||
+		raw === "task:research" ||
+		raw === "task:prototype" ||
+		raw === "task:work:integration-test" ||
+		raw === "task:work:merge"
+	) {
+		return raw;
+	}
+	return "task:work";
 }
 
 function parseGrillingCreateInput(

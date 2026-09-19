@@ -109,24 +109,32 @@ A local Markdown file referenced by a Wayfinder child completion payload when a 
 _Avoid_: patch file, attachment, uploaded body
 
 **Task**:
-A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, durable subkind (`work`, `research`, or `prototype`; default `work`), and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
+A workflow-domain unit of work: anything an agent has to do. A Task carries a description, status, concrete Task kind, and project-specific routing profile; tracker issues are one representation of Tasks rather than the domain concept itself. Collaborative decision conversations belong to Grilling rather than Task.
 _Avoid_: ticket, implementation action
 
+**Hierarchical workflow kind**:
+A manifest-defined workflow kind ID whose colon-separated ancestry expresses semantic family membership, such as `task:work:integration-test` belonging to both `task:work` and `task`. Kind hierarchy is workflow taxonomy, not worker routing.
+_Avoid_: profile convention, string prefix trick, task subkind
+
+**Task kind**:
+A concrete hierarchical workflow kind in the Task family, such as `task:work`, `task:research`, `task:prototype`, `task:work:integration-test`, or `task:work:merge`. Task kinds replace Task subkind as the durable classification of Task semantics; ADR 0006 supersedes older ADR 0004/0005 profile-classification details.
+_Avoid_: task subkind, routing profile, lifecycle action
+
 **Integration-test Task**:
-A ready-gated Task that verifies completed implementation and review work against its parent Spec before merge work can proceed. It is ordinary work routed by profile rather than a separate Task subkind or Spec lifecycle phase, and each Integration-test Task represents one verification pass.
-_Avoid_: Spec integration-test action, test phase
+A ready-gated Task with the `task:work:integration-test` kind that verifies completed implementation and review work against its parent Spec before merge work can proceed. It is ordinary work rather than a Spec lifecycle phase, and each Integration-test Task represents one verification pass.
+_Avoid_: Spec integration-test action, test phase, integration-test profile
 
 **Merge Task**:
-An optional ready-gated Task that performs final integration, merge, or release handoff work when a Spec needs that explicit step. It is ordinary work routed by profile rather than a separate Task subkind or Spec lifecycle phase; AWF may enforce coarse readiness such as no open implementation, review, or integration-test Tasks, while integration-test freshness is an agent obligation.
-_Avoid_: Spec merge action, terminal Spec phase
+An optional ready-gated Task with the `task:work:merge` kind that performs final integration, merge, or release handoff work when a Spec needs that explicit step. AWF may enforce coarse readiness such as no open implementation, review, or integration-test Tasks, while integration-test freshness is an agent obligation.
+_Avoid_: Spec merge action, terminal Spec phase, merge profile
 
 **Ready-gated Task**:
-A Task whose readiness depends on declarative bundled-workflow conditions beyond its own lifecycle state, such as no open implementation or review Tasks under the same Spec. Ready-gated Tasks remain ordinary Tasks; the gate controls when they appear ready, not what kind of work they are, and does not necessarily prove every agent-planning invariant.
+A Task whose readiness depends on declarative bundled-workflow conditions beyond its own lifecycle state, such as no open implementation or review Tasks under the same Spec. Ready-gated Tasks remain ordinary Tasks; the gate controls when they appear ready, not their routing profile, and does not necessarily prove every agent-planning invariant.
 _Avoid_: Spec phase gate, hard-coded runtime special case
 
 **Implementation gate**:
-A declarative profile group that identifies Tasks whose non-terminal state blocks Integration-test readiness. Merge readiness also requires no open Integration-test Tasks and at least one completed Integration-test Task.
-_Avoid_: hard-coded implementation task list, dependency rewiring
+A declarative Task kind group that identifies Tasks whose non-terminal state blocks Integration-test readiness. Merge readiness also requires no open Integration-test Tasks and at least one completed Integration-test Task.
+_Avoid_: hard-coded implementation task list, dependency rewiring, profile group semantics
 
 **Integration-test freshness**:
 An agent-planning obligation that follow-up implementation or review work after an Integration-test Task schedules another Integration-test Task before merge/release handoff work or Spec completion proceeds. Freshness is not proved by AWF readiness gates unless a workflow explicitly models it.
@@ -140,13 +148,13 @@ _Avoid_: task subkind, autonomous agent work
 A directional Task-to-Task provenance relationship from a generated Task back to the source Task that caused it to exist. It explains task origin separately from Spec containment and dependency blocking.
 _Avoid_: implicit follow-up, child task provenance
 
-**Task subkind**:
-Manifest-declared durable workflow data on a Task that classifies the work as `work`, `research`, or `prototype` without changing the kind/state/action/reason lifecycle tuple or readiness matching.
+**Legacy Task subkind**:
+Former manifest-declared durable workflow data on a Task that classified work as `work`, `research`, or `prototype`. New workflow semantics use concrete Task kinds instead; legacy subkind appears only in migration contexts.
 _Avoid_: profile routing policy, lifecycle action, readiness gate
 
 **Task profile**:
-A project-specific freeform routing label on a Task that indicates what kind of agent or worker should pick it up. The Workflow runtime treats the profile as data for selection and routing rather than as workflow semantics.
-_Avoid_: hard-coded action, agent implementation config
+A project-specific freeform routing label on a Task that indicates what kind of agent or worker should pick it up. The Workflow runtime treats the profile as data for selection and routing rather than as workflow semantics, and bundled workflow readiness must not reserve profile values for semantic gates.
+_Avoid_: hard-coded action, agent implementation config, task kind
 
 **Current workflow fields**:
 The explicit tracker-backed fields on a Workflow issue that describe its durable workflow position, such as current kind, state, action, and workflow semantic version. They are authoritative for workflow commands; logs are used to validate and diagnose drift, not to silently replace these fields during execution. Manifest-declared active-state semantics validate whether the current state can have active work, and issues whose workflow semantic version does not match the loaded manifest require migration or reconciliation before normal commands proceed.

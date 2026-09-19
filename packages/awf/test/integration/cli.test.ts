@@ -136,7 +136,7 @@ export const tracker = createInMemoryTracker({ issues: [
 			generatedBy: "generator",
 		},
 		logs: [
-			{ sequence: 1, type: "task-create_created", message: "created" },
+			{ sequence: 1, type: "task-work-create_created", message: "created" },
 			{ sequence: 2, type: "action_started", message: "started" },
 			{ sequence: 3, type: "checkpoint", message: "one" },
 			{ sequence: 4, type: "checkpoint", message: "two" },
@@ -255,7 +255,7 @@ export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerP
 				title: "External log spec",
 				body: "Body",
 			}).issue;
-			const task = runCli(["create", "task", "--input", "-"], {
+			const task = runCli(["create", "task:work", "--input", "-"], {
 				parent: spec.id,
 				title: "External log task",
 				description: "Do it.",
@@ -283,7 +283,7 @@ export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerP
 				"1-spec-create-created.md",
 			]);
 			expect(await readdir(join(trackerPath, "logs", task.id))).toEqual([
-				"1-task-create-created.md",
+				"1-task-work-create-created.md",
 				"2-command.md",
 				"3-command.md",
 			]);
@@ -313,12 +313,12 @@ export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerP
 					(log: { type: string; message?: string }) => [log.type, log.message],
 				),
 			).toEqual([
-				["task-create_created", "Applied task-create."],
+				["task-work-create_created", "Applied task-work-create."],
 				["command", "Applied start."],
 				["command", "Implemented external log coverage."],
 			]);
 			expect(runTextCli(["logs", task.id])).toBe(
-				"1 task-create_created — Applied task-create.\n2 command — Applied start.\n3 command — Implemented external log coverage.\n",
+				"1 task-work-create_created — Applied task-work-create.\n2 command — Applied start.\n3 command — Implemented external log coverage.\n",
 			);
 			expect(runTextCli(["get", task.id])).toContain(
 				"- 3 command — Implemented external log coverage.",
@@ -365,7 +365,7 @@ export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerP
 				title: "No-log spec",
 				body: "Body",
 			}).issue;
-			const task = runCli(["create", "task", "--input", "-"], {
+			const task = runCli(["create", "task:work", "--input", "-"], {
 				parent: spec.id,
 				title: "No-log task",
 				description: "Do it.",
@@ -528,9 +528,7 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.stdout).toContain(
 		"- States: ready, running, in-discussion, done, need-human, waiting-human",
 	);
-	expect(result.stdout).toContain(
-		"- Actions: planning, work, discuss, integration-test, merge, none",
-	);
+	expect(result.stdout).toContain("- Actions: planning, work, discuss, none");
 	expect(result.stdout).toContain("- Per workflow: 4");
 	expect(result.stdout).toContain("- Per kind task: 3");
 	expect(result.stdout).toContain("- spec (Spec)");
@@ -540,9 +538,8 @@ it("should ensure that CLI writes bundled workflow descriptions as Markdown text
 	expect(result.stdout).toContain(
 		"- task-create\n  - Usage: awf create task --input <file|->\n  - Target: task/work\n  - Input: required",
 	);
-	expect(result.stdout).toContain("  - implementation-gate: implement, review");
 	expect(result.stdout).toContain(
-		"  - siblings where task/ready/work/integration-test; siblings all task/done/none/implementation-gate, gate implementation-gate",
+		"  - siblings where task:work:integration-test/ready/work; siblings all done/none, gate implementation-gate",
 	);
 	expect(result.stdout).toContain(
 		"- task-generated-by-task: task -> task (generated-by)",
@@ -585,14 +582,7 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 				"need-human",
 				"waiting-human",
 			],
-			actions: [
-				"planning",
-				"work",
-				"discuss",
-				"integration-test",
-				"merge",
-				"none",
-			],
+			actions: ["planning", "work", "discuss", "none"],
 			events: [
 				"start",
 				"succeed",
@@ -607,12 +597,6 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 			filters: [
 				{ kind: "spec", state: "ready", action: "planning" },
 				{ kind: "task", state: "ready", action: "work" },
-			],
-			profileGroups: [
-				{
-					name: "implementation-gate",
-					profiles: ["implement", "review"],
-				},
 			],
 		},
 		relationships: expect.arrayContaining([
@@ -634,6 +618,11 @@ it("should ensure that CLI writes bundled workflow description DTOs in JSON enve
 		"spec",
 		"wayfinder",
 		"task",
+		"task:work",
+		"task:research",
+		"task:prototype",
+		"task:work:integration-test",
+		"task:work:merge",
 		"grilling",
 	]);
 	expect(
@@ -710,6 +699,11 @@ it("should ensure that CLI workflow describe uses the no-config agent-workflow d
 			"spec",
 			"wayfinder",
 			"task",
+			"task:work",
+			"task:research",
+			"task:prototype",
+			"task:work:integration-test",
+			"task:work:merge",
 			"grilling",
 		]);
 	});
@@ -867,6 +861,7 @@ export const commandHandlers = {
 					title: "Configured task",
 					description: "Handle through config.",
 					profile: "implement",
+					kind: "task:work",
 				}),
 			},
 		);
@@ -1001,7 +996,7 @@ export const manifest = agentWorkflowManifest;
 			).toEqual(["1"]);
 			expect(runCli(["get", spec.id]).issue.title).toBe("Durable spec");
 
-			const task = runCli(["create", "task", "--input", "-"], {
+			const task = runCli(["create", "task:work", "--input", "-"], {
 				parent: spec.id,
 				title: "Durable task",
 				description: "Do it.",
@@ -1039,7 +1034,7 @@ export const manifest = agentWorkflowManifest;
 			expect(
 				runCli(["logs", taskId]).logs.map((log: { type: string }) => log.type),
 			).toEqual([
-				"task-create_created",
+				"task-work-create_created",
 				"action_started",
 				"action_failed",
 				"action_resumed",
@@ -1158,7 +1153,17 @@ it("should ensure that CLI smoke path loads a fixture manifest and returns a JSO
 		data: {
 			manifest: "w1",
 			version: "v1",
-			kinds: ["spec", "wayfinder", "task", "grilling"],
+			kinds: [
+				"spec",
+				"wayfinder",
+				"task",
+				"task:work",
+				"task:research",
+				"task:prototype",
+				"task:work:integration-test",
+				"task:work:merge",
+				"grilling",
+			],
 		},
 	});
 });

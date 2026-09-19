@@ -4,6 +4,7 @@ import { unknownCommand, workflowCommandByCli } from "./shared.ts";
 import { runtimeFailures } from "../failures.ts";
 
 const maxReconcileArgumentCount = 3;
+const maxMigrateArgumentCount = 3;
 export function validateKnownCommand(
 	args: Array<string>,
 	manifest?: WorkflowManifest,
@@ -27,6 +28,8 @@ export function validateKnownCommand(
 				return unknownCommand(args);
 			}
 			return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
+		case "migrate":
+			return validateMigrate(args);
 		case "workflow":
 			return validateWorkflowArguments(args);
 		default:
@@ -41,6 +44,27 @@ function validateWorkflowArguments(args: Array<string>): Envelope | undefined {
 	return failure(
 		runtimeFailures.invalidArguments({ usage: "awf workflow describe" }),
 	);
+}
+
+function validateMigrate(args: Array<string>): Envelope | undefined {
+	const usage = "awf migrate legacy-task-subkinds [--dry-run|--apply]";
+	if (args[1] !== "legacy-task-subkinds") {
+		return unknownCommand(args);
+	}
+	const allowed = new Set([
+		"migrate",
+		"legacy-task-subkinds",
+		"--dry-run",
+		"--apply",
+	]);
+	if (
+		args.length > maxMigrateArgumentCount ||
+		args.some((arg) => !allowed.has(arg)) ||
+		(args.includes("--dry-run") && args.includes("--apply"))
+	) {
+		return failure(runtimeFailures.invalidArguments({ usage }));
+	}
+	return undefined;
 }
 
 function validateManifestCliArguments(

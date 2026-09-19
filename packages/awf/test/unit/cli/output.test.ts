@@ -31,24 +31,20 @@ it("should ensure that text output renders help without requiring a subprocess",
 	expect(output).toContain("Use --json for machine-readable output.");
 });
 
-it("should ensure that text help renders subkind selection separately from kind", () => {
+it("should ensure that text help omits legacy subkind selection", () => {
 	const output = serializeCliOutput(
 		{
 			ok: true,
 			data: {
 				name: "awf",
 				commands: [],
-				readiness: {
-					subkinds: [{ kind: "task", values: ["work", "research"] }],
-				},
+				readiness: { subkinds: [] },
 			},
 		},
 		"text",
 	);
 
-	expect(output).toContain(
-		"Subkinds:\n  task: work, research (task remains the kind)",
-	);
+	expect(output).not.toContain("Subkinds:");
 });
 
 it("should ensure that JSON output serializes the envelope exactly", () => {
@@ -108,7 +104,7 @@ it("should ensure that text output renders ready items and suggested commands", 
 	);
 });
 
-it("should ensure that text output renders Task subkind separately from lifecycle fields", () => {
+it("should ensure that text output renders hierarchical Task kind in lifecycle fields", () => {
 	const output = serializeCliOutput(
 		{
 			ok: true,
@@ -118,10 +114,9 @@ it("should ensure that text output renders Task subkind separately from lifecycl
 						id: "42",
 						title: "Research CLI",
 						workflow: {
-							kind: "task",
+							kind: "task:research",
 							state: "ready",
 							action: "work",
-							subkind: "research",
 						},
 						suggestedCommand: { display: "awf run-command start 42" },
 					},
@@ -132,7 +127,7 @@ it("should ensure that text output renders Task subkind separately from lifecycl
 	);
 
 	expect(output).toBe(
-		"42 Research CLI [task/ready/work; subkind: research] — awf run-command start 42\n",
+		"42 Research CLI [task:research/ready/work] — awf run-command start 42\n",
 	);
 });
 
@@ -309,9 +304,7 @@ it("should ensure that awf get text output renders deterministic Markdown from t
 		"text",
 	);
 
-	expect(
-		output,
-	).toBe(`# 303 Render awf get text output [task/ready/work; subkind: work]
+	expect(output).toBe(`# 303 Render awf get text output [task/ready/work]
 
 ## Body
 
@@ -412,17 +405,16 @@ it("should ensure that text output renders issue, created issue, log, and manife
 						id: "3",
 						title: "Research",
 						workflow: {
-							kind: "task",
+							kind: "task:research",
 							state: "ready",
 							action: "work",
-							data: { subkind: "research" },
 						},
 					},
 				},
 			},
 			"text",
 		),
-	).toBe("3 Research [task/ready/work; subkind: research]\n");
+	).toBe("3 Research [task:research/ready/work]\n");
 
 	expect(
 		serializeCliOutput(

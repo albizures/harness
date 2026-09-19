@@ -1,6 +1,9 @@
+import { isValidKindId, kindAncestry } from "./kind-registry.ts";
 import {
 	isPayloadZodSchema,
 	workflowManifestStructuralSchema as manifestSchema,
+	type ManifestKind,
+	type ManifestKindDefinition,
 	type ValidationIssue,
 	type WorkflowManifest,
 	type WorkflowManifestDefinition,
@@ -67,22 +70,39 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			issue(issues, path, "Kind must be an object.");
 			continue;
 		}
-		validateUniqueId(kind.id, path, kindIds, issues);
-		const localActions = new Set<string>();
+		validateUniqueKindId(kind.id, path, kindIds, issues);
+		const inheritedActions =
+			typeof kind.id === "string"
+				? [...kindAncestry(kind.id)]
+						.reverse()
+						.flatMap((ancestor) => [...(kindActions.get(ancestor) ?? [])])
+				: [];
+		const localActions = new Set<string>(inheritedActions);
 		if (typeof kind.id === "string") {
 			kindActions.set(kind.id, localActions);
 		}
 		if (typeof kind.label !== "string" || kind.label === "") {
 			issue(issues, `${path}.label`, "Kind label must be a non-empty string.");
 		}
-		validateStateRef(
-			kind.initial,
-			`${path}.initial`,
-			states,
-			actions,
-			issues,
-			true,
-		);
+		if (kind.initial !== undefined) {
+			validateStateRef(
+				kind.initial,
+				`${path}.initial`,
+				states,
+				actions,
+				issues,
+				true,
+			);
+		} else if (
+			typeof kind.id === "string" &&
+			nearestKindAncestor(kind.id, kinds) === undefined
+		) {
+			issue(
+				issues,
+				`${path}.initial`,
+				"Kind initial state is required unless inherited from a declared ancestor kind.",
+			);
+		}
 		const localSubkinds = validateSubkinds(
 			kind.subkinds,
 			`${path}.subkinds`,
@@ -93,7 +113,7 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 		}
 		collectStateAction(kind.initial, localActions);
 		for (const [transitionIndex, transition] of readArray(
-			kind.transitions,
+			kind.transitions ?? [],
 			`${path}.transitions`,
 			issues,
 		).entries()) {
@@ -108,6 +128,14 @@ export function validateManifest(value: unknown): Array<ValidationIssue> {
 			if (isRecord(transition)) {
 				collectStateAction(transition.from, localActions);
 				collectStateAction(transition.to, localActions);
+			}
+		}
+	}
+
+	for (const [kindId, actionsForKind] of kindActions) {
+		for (const ancestor of kindAncestry(kindId)) {
+			for (const action of kindActions.get(ancestor) ?? []) {
+				actionsForKind.add(action);
 			}
 		}
 	}
@@ -202,9 +230,37 @@ export function normalizeManifest(
 ): WorkflowManifest {
 	return {
 		...manifest,
-		kinds: manifest.kinds,
+		kinds: normalizeKinds(manifest.kinds),
 		commands: manifest.commands,
 	};
+}
+
+function normalizeKinds(
+	kinds: Array<ManifestKindDefinition>,
+): Array<ManifestKind> {
+	const definitions = new Map(kinds.map((kind) => [kind.id, kind]));
+	const normalized = new Map<string, ManifestKind>();
+	const normalizeKind = (kind: ManifestKindDefinition): ManifestKind => {
+		const existing = normalized.get(kind.id);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const nearest = [...kindAncestry(kind.id)].reverse().flatMap((ancestor) => {
+			const definition = definitions.get(ancestor);
+			return definition === undefined ? [] : [normalizeKind(definition)];
+		})[0];
+		const normalizedKind: ManifestKind = {
+			...kind,
+			initial: kind.initial ?? nearest?.initial ?? { state: "", action: "" },
+			transitions: [
+				...(nearest?.transitions ?? []),
+				...(kind.transitions ?? []),
+			],
+		};
+		normalized.set(kind.id, normalizedKind);
+		return normalizedKind;
+	};
+	return kinds.map((kind) => normalizeKind(kind));
 }
 
 function validateIdentifier(
@@ -236,6 +292,24 @@ function validateId(
 	}
 }
 
+function validateCliTarget(
+	value: unknown,
+	path: string,
+	issues: Array<ValidationIssue>,
+): void {
+	if (
+		typeof value !== "string" ||
+		!/^[a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)*$/.test(value) ||
+		value === "*"
+	) {
+		issue(
+			issues,
+			path,
+			"CLI target must use lowercase letters, numbers, hyphens, and optional colon-separated segments, and cannot be a wildcard.",
+		);
+	}
+}
+
 function validateUniqueId(
 	value: unknown,
 	path: string,
@@ -249,6 +323,41 @@ function validateUniqueId(
 		}
 		seen.add(value);
 	}
+}
+
+function validateUniqueKindId(
+	value: unknown,
+	path: string,
+	seen: Set<string>,
+	issues: Array<ValidationIssue>,
+): void {
+	if (typeof value !== "string" || !isValidKindId(value)) {
+		issue(
+			issues,
+			`${path}.id`,
+			"Kind id must use colon-separated lowercase identifier segments.",
+		);
+	}
+	if (typeof value === "string") {
+		if (seen.has(value)) {
+			issue(issues, `${path}.id`, `Duplicate id '${value}'.`);
+		}
+		seen.add(value);
+	}
+}
+
+function nearestKindAncestor(
+	id: string,
+	kinds: Array<unknown>,
+): unknown | undefined {
+	const declared = new Set(
+		kinds.flatMap((kind) =>
+			isRecord(kind) && typeof kind.id === "string" ? [kind.id] : [],
+		),
+	);
+	return [...kindAncestry(id)]
+		.reverse()
+		.find((ancestor) => declared.has(ancestor));
 }
 
 function validateSemanticVersion(
@@ -331,6 +440,33 @@ function validateConcurrency(
 				"$.concurrency.perWorkflow",
 				"perWorkflow concurrency must be a positive integer.",
 			);
+		}
+	}
+	if (value.perKind !== undefined) {
+		if (!isRecord(value.perKind)) {
+			issue(
+				issues,
+				"$.concurrency.perKind",
+				"perKind concurrency must be an object.",
+			);
+		} else {
+			for (const [kind, limit] of Object.entries(value.perKind)) {
+				const path = `$.concurrency.perKind.${kind}`;
+				if (!kindIds.has(kind)) {
+					issue(issues, path, "perKind kind must reference a known kind.");
+				}
+				if (
+					typeof limit !== "number" ||
+					!Number.isInteger(limit) ||
+					limit < 1
+				) {
+					issue(
+						issues,
+						path,
+						"perKind concurrency must be a positive integer.",
+					);
+				}
+			}
 		}
 	}
 	if (value.perSubkind !== undefined) {
@@ -541,6 +677,46 @@ function validateReadiness(
 			);
 		}
 	}
+	const kindGroups = new Map<string, Set<string>>();
+	for (const [index, group] of readArray(
+		value.kindGroups ?? [],
+		"$.readiness.kindGroups",
+		issues,
+	).entries()) {
+		const path = `$.readiness.kindGroups[${index}]`;
+		if (!isRecord(group)) {
+			issue(issues, path, "Readiness kind group must be an object.");
+			continue;
+		}
+		validateId(group.name, `${path}.name`, issues);
+		if (typeof group.name === "string") {
+			if (kindGroups.has(group.name)) {
+				issue(
+					issues,
+					`${path}.name`,
+					`Duplicate readiness kind group '${group.name}'.`,
+				);
+			}
+			kindGroups.set(
+				group.name,
+				new Set(
+					readArray(group.kinds, `${path}.kinds`, issues).flatMap(
+						(kind, kindIndex) => {
+							if (typeof kind !== "string" || !kindIds.has(kind)) {
+								issue(
+									issues,
+									`${path}.kinds[${kindIndex}]`,
+									"Readiness kind group kinds must reference known kinds.",
+								);
+								return [];
+							}
+							return [kind];
+						},
+					),
+				),
+			);
+		}
+	}
 	const profileGroups = new Map<string, Set<string>>();
 	for (const [index, group] of readArray(
 		value.profileGroups ?? [],
@@ -609,6 +785,7 @@ function validateReadiness(
 			actions,
 			issues,
 			profileGroups,
+			kindGroups,
 		);
 		const rule =
 			policy.relationship === "siblings" ? policy.siblings : policy.children;
@@ -631,6 +808,7 @@ function validateReadiness(
 				actions,
 				issues,
 				profileGroups,
+				kindGroups,
 			);
 			validateMinimum(rule.min, `${rulePath}.min`, issues);
 		}
@@ -760,6 +938,7 @@ function validateWorkflowFilter(
 	actions: Set<string>,
 	issues: Array<ValidationIssue>,
 	profileGroups?: Map<string, Set<string>>,
+	kindGroups?: Map<string, Set<string>>,
 ): void {
 	if (!isRecord(value)) {
 		issue(issues, path, "Workflow filter must be an object.");
@@ -767,6 +946,17 @@ function validateWorkflowFilter(
 	}
 	if (value.kind !== undefined && !kindIds.has(String(value.kind))) {
 		issue(issues, `${path}.kind`, "Workflow filter kind must be known.");
+	}
+	if (
+		value.kindGroup !== undefined &&
+		(typeof value.kindGroup !== "string" ||
+			kindGroups?.has(value.kindGroup) === false)
+	) {
+		issue(
+			issues,
+			`${path}.kindGroup`,
+			"Workflow filter kind group must be declared.",
+		);
 	}
 	if (value.state !== undefined && !states.has(String(value.state))) {
 		issue(issues, `${path}.state`, "Workflow filter state must be known.");
@@ -912,7 +1102,7 @@ function validateCommand(
 			);
 		} else {
 			validateId(value.cli.verb, `${path}.cli.verb`, issues);
-			validateId(value.cli.target, `${path}.cli.target`, issues);
+			validateCliTarget(value.cli.target, `${path}.cli.target`, issues);
 			if (value.cli.verb === "apply") {
 				issue(
 					issues,

@@ -54,9 +54,9 @@ The map is an index, not duplicated storage. Detailed answers live in child outc
 Create AWF children under the Wayfinder using the parent and dependency input fields defined by the Agent Workflow reference:
 
 - **Grilling child**: collaborative HITL decision.
-- **Research Task child**: AFK reading/investigation, routed to the research profile with a research subkind.
-- **Prototype Task child**: cheap artifact to react to, routed to the prototype profile with a prototype subkind.
-- **Task child**: prerequisite work that unblocks a decision, routed with a clear profile and work subkind.
+- **Research Task child**: AFK reading/investigation, created as `task:research` with a clear routing profile.
+- **Prototype Task child**: cheap artifact to react to, created as `task:prototype` with a clear routing profile.
+- **Task child**: prerequisite work that unblocks a decision, created as `task:work` with a clear routing profile.
 
 Use AWF parent/child and dependency inputs only; do not call tracker sub-issue/dependency APIs directly.
 

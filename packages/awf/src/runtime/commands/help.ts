@@ -112,10 +112,6 @@ export function helpReadiness(manifest: WorkflowManifest): {
 			...filter,
 			usage: `awf ready --filter ${filter.name}=<${filter.kind}>`,
 		})),
-		subkinds: manifest.kinds.flatMap((kind) =>
-			kind.subkinds === undefined
-				? []
-				: [{ kind: kind.id, values: [...kind.subkinds] }],
-		),
+		subkinds: [],
 	};
 }

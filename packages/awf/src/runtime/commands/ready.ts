@@ -41,7 +41,9 @@ export async function readyCommand(
 		return namedFilterValidation;
 	}
 	const readyLike = issues
-		.filter((issue) => matchesReadinessFilters(issue.workflow, filters))
+		.filter((issue) =>
+			matchesReadinessFilters(issue.workflow, filters, manifest),
+		)
 		.filter((issue) => !isWorkflowTerminal(issue.workflow, manifest))
 		.filter((issue) =>
 			matchesNamedReadinessFilters(issue, options.filters, manifest),

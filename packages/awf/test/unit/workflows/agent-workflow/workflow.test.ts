@@ -45,6 +45,11 @@ it("should export a valid explicit bundled workflow module", () => {
 		"spec-planned",
 		"spec-complete",
 		"task-create",
+		"task-work-create",
+		"task-research-create",
+		"task-prototype-create",
+		"task-work-integration-test-create",
+		"task-work-merge-create",
 		"grilling-create",
 	]);
 	expect(Object.keys(agentWorkflowLifecycleHandlers)).toEqual([
@@ -65,14 +70,7 @@ it("should export a valid explicit bundled workflow module", () => {
 			"need-human",
 			"waiting-human",
 		],
-		actions: [
-			"planning",
-			"work",
-			"discuss",
-			"integration-test",
-			"merge",
-			"none",
-		],
+		actions: ["planning", "work", "discuss", "none"],
 		events: [
 			"start",
 			"succeed",
@@ -87,11 +85,16 @@ it("should export a valid explicit bundled workflow module", () => {
 		"spec",
 		"wayfinder",
 		"task",
+		"task:work",
+		"task:research",
+		"task:prototype",
+		"task:work:integration-test",
+		"task:work:merge",
 		"grilling",
 	]);
 	expect(
 		agentWorkflowManifest.kinds.find((kind) => kind.id === "task")?.subkinds,
-	).toEqual(["work", "research", "prototype"]);
+	).toBeUndefined();
 	expect(
 		agentWorkflowManifest.kinds.find((kind) => kind.id === "grilling")
 			?.subkinds,
@@ -102,6 +105,11 @@ it("should export a valid explicit bundled workflow module", () => {
 		"spec-complete",
 		"wayfinder-create",
 		"task-create",
+		"task-work-create",
+		"task-research-create",
+		"task-prototype-create",
+		"task-work-integration-test-create",
+		"task-work-merge-create",
 		"grilling-create",
 		"start",
 		"succeed",
@@ -135,6 +143,11 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 			"awf spec planned <issue>",
 			"awf create wayfinder --input <file|->",
 			"awf create task --input <file|->",
+			"awf create task:work --input <file|->",
+			"awf create task:research --input <file|->",
+			"awf create task:prototype --input <file|->",
+			"awf create task:work:integration-test --input <file|->",
+			"awf create task:work:merge --input <file|->",
 			"awf create grilling --input <file|->",
 			"awf spec complete <issue> --input <file|->",
 			"awf task start <issue>",
@@ -157,9 +170,7 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		{ kind: "spec", state: "ready", action: "planning" },
 		{ kind: "task", state: "ready", action: "work" },
 	]);
-	expect(help.readiness.subkinds).toEqual([
-		{ kind: "task", values: ["work", "research", "prototype"] },
-	]);
+	expect(help.readiness.subkinds).toEqual([]);
 
 	const description = assertSuccess(
 		await execute(["workflow", "describe"]),
@@ -177,11 +188,15 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 	expect(description.kinds).toMatchObject([
 		{ id: "spec", initial: { state: "ready", action: "planning" } },
 		{ id: "wayfinder", initial: { state: "ready", action: "planning" } },
+		{ id: "task", initial: { state: "ready", action: "work" } },
+		{ id: "task:work", initial: { state: "ready", action: "work" } },
+		{ id: "task:research", initial: { state: "ready", action: "work" } },
+		{ id: "task:prototype", initial: { state: "ready", action: "work" } },
 		{
-			id: "task",
+			id: "task:work:integration-test",
 			initial: { state: "ready", action: "work" },
-			subkinds: ["work", "research", "prototype"],
 		},
+		{ id: "task:work:merge", initial: { state: "ready", action: "work" } },
 		{ id: "grilling", initial: { state: "ready", action: "discuss" } },
 	]);
 	expect(
@@ -194,6 +209,11 @@ it("should expose Spec execution and Task work lifecycle through help and descri
 		"awf spec complete <issue> --input <file|->",
 		"awf create wayfinder --input <file|->",
 		"awf create task --input <file|->",
+		"awf create task:work --input <file|->",
+		"awf create task:research --input <file|->",
+		"awf create task:prototype --input <file|->",
+		"awf create task:work:integration-test --input <file|->",
+		"awf create task:work:merge --input <file|->",
 		"awf create grilling --input <file|->",
 		"awf task start <issue>",
 		"awf task succeed <issue> --input <file|->",
@@ -221,7 +241,7 @@ it("should block Integration-test Task readiness until implementation-gate child
 				id: "open-task",
 				title: "Open Task",
 				workflow: {
-					kind: "task",
+					kind: "task:work",
 					state: "ready",
 					action: "work",
 					data: { profile: "implement" },
@@ -232,7 +252,7 @@ it("should block Integration-test Task readiness until implementation-gate child
 				id: "integration-test",
 				title: "Integration Test",
 				workflow: {
-					kind: "task",
+					kind: "task:work:integration-test",
 					state: "ready",
 					action: "work",
 					data: { profile: "integration-test" },
@@ -253,10 +273,9 @@ it("should block Integration-test Task readiness until implementation-gate child
 			id: "integration-test",
 			title: "Integration Test",
 			workflow: {
-				kind: "task",
+				kind: "task:work:integration-test",
 				state: "ready",
 				action: "work",
-				subkind: "work",
 				profile: "integration-test",
 			},
 			blocking: [
@@ -268,7 +287,7 @@ it("should block Integration-test Task readiness until implementation-gate child
 							id: "open-task",
 							title: "Open Task",
 							workflow: {
-								kind: "task",
+								kind: "task:work",
 								state: "ready",
 								action: "work",
 								profile: "implement",
@@ -301,7 +320,7 @@ it("should block Merge Task readiness until implementation and integration-test 
 				id: "open-task",
 				title: "Open Task",
 				workflow: {
-					kind: "task",
+					kind: "task:work",
 					state: "ready",
 					action: "work",
 					data: { profile: "review" },
@@ -312,7 +331,7 @@ it("should block Merge Task readiness until implementation and integration-test 
 				id: "open-integration",
 				title: "Open Integration",
 				workflow: {
-					kind: "task",
+					kind: "task:work:integration-test",
 					state: "ready",
 					action: "work",
 					data: { profile: "integration-test" },
@@ -323,7 +342,7 @@ it("should block Merge Task readiness until implementation and integration-test 
 				id: "done-integration",
 				title: "Done Integration",
 				workflow: {
-					kind: "task",
+					kind: "task:work:integration-test",
 					state: "done",
 					action: "none",
 					data: { profile: "integration-test" },
@@ -334,7 +353,7 @@ it("should block Merge Task readiness until implementation and integration-test 
 				id: "merge",
 				title: "Merge",
 				workflow: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "ready",
 					action: "work",
 					data: { profile: "merge" },
@@ -424,7 +443,17 @@ it("should validate the bundled agent-workflow module through the manifest valid
 		data: {
 			manifest: "w1",
 			version: "v1",
-			kinds: ["spec", "wayfinder", "task", "grilling"],
+			kinds: [
+				"spec",
+				"wayfinder",
+				"task",
+				"task:work",
+				"task:research",
+				"task:prototype",
+				"task:work:integration-test",
+				"task:work:merge",
+				"grilling",
+			],
 		},
 	});
 });
@@ -546,7 +575,7 @@ it("should complete planned agent-workflow Specs after children are done without
 		await execute(["spec", "planned", created.issue.id], { tracker }),
 	);
 	const task = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: created.issue.id,
@@ -616,7 +645,7 @@ it("should create agent-workflow Tasks under Specs with routing profiles and dep
 		}),
 	) as { issue: { id: string } };
 	const blocker = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
@@ -628,7 +657,7 @@ it("should create agent-workflow Tasks under Specs with routing profiles and dep
 	) as { issue: { id: string } };
 
 	const created = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
@@ -650,8 +679,8 @@ it("should create agent-workflow Tasks under Specs with routing profiles and dep
 
 	expect(created.issue.body).toContain("Profile: implement");
 	expect(created.issue.workflow).toMatchObject({
-		data: { subkind: "work", profile: "implement" },
-		kind: "task",
+		data: { profile: "implement" },
+		kind: "task:work",
 		state: "ready",
 		action: "work",
 	});
@@ -684,7 +713,7 @@ it("should create agent-workflow Tasks under Specs with routing profiles and dep
 	);
 });
 
-it("should store Task subkind as workflow data without changing lifecycle readiness", async () => {
+it("should create concrete Research Tasks without legacy subkind workflow data", async () => {
 	const tracker = createInMemoryTracker();
 	const spec = assertSuccess(
 		await execute(["create", "spec", "--input", "-"], {
@@ -694,25 +723,25 @@ it("should store Task subkind as workflow data without changing lifecycle readin
 	) as { issue: { id: string } };
 
 	const research = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:research", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
 				title: "Research",
 				description: "Research the approach.",
 				profile: "implement",
-				subkind: "research",
 			}),
 		}),
 	) as { issue: { id: string; workflow: Record<string, unknown> } };
 
 	expect(research.issue.workflow).toMatchObject({
-		kind: "task",
+		kind: "task:research",
 		state: "ready",
 		action: "work",
-		data: { subkind: "research" },
+		data: { profile: "implement" },
 	});
 	expect(research.issue.workflow).not.toHaveProperty("subkind");
+	expect(research.issue.workflow).not.toHaveProperty("data.subkind");
 
 	const ready = assertSuccess(await execute(["ready"], { tracker })) as {
 		items: Array<{ id: string; workflow: Record<string, unknown> }>;
@@ -721,10 +750,10 @@ it("should store Task subkind as workflow data without changing lifecycle readin
 		(item) => item.id === research.issue.id,
 	);
 	expect(readyResearch?.workflow).toMatchObject({
-		kind: "task",
+		kind: "task:research",
 		state: "ready",
 		action: "work",
-		subkind: "research",
+		profile: "implement",
 	});
 	expect(readyResearch?.workflow).not.toHaveProperty("data");
 });
@@ -749,14 +778,13 @@ it("should create Tasks and Specs under Wayfinder maps without offering the Wayf
 		}),
 	) as { issue: { id: string; relationships: { parent?: string } } };
 	const task = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:research", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				parent: wayfinder.issue.id,
 				title: "Explore route",
 				description: "Research the route.",
 				profile: "research",
-				subkind: "research",
 			}),
 		}),
 	) as { issue: { id: string; relationships: { parent?: string } } };
@@ -783,7 +811,7 @@ it("should run public Wayfinder lifecycle commands with completion summary after
 		}),
 	) as { issue: { id: string } };
 	const task = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				parent: wayfinder.issue.id,
@@ -850,7 +878,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 		}),
 	) as { issue: { id: string } };
 	const task = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				parent: wayfinder.issue.id,
@@ -891,7 +919,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 	);
 	await writeFile(bodyFile, "# Updated map from file", "utf8");
 	const fileTask = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				parent: wayfinder.issue.id,
@@ -922,7 +950,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 	expect(completedFromFile.log.message).toBe("Applied succeed.");
 
 	const invalidRevisionTask = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				parent: wayfinder.issue.id,
@@ -983,7 +1011,7 @@ it("should validate Wayfinder child terminal outcomes and allow coarse map body 
 	);
 
 	const outOfScopeTask = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				parent: wayfinder.issue.id,
@@ -1114,7 +1142,7 @@ it("should reject Grilling parents that are not Spec or Wayfinder issues", async
 		}),
 	) as { issue: { id: string } };
 	const task = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
@@ -1166,7 +1194,7 @@ it("should record generated agent-workflow Task provenance without blocking read
 		}),
 	) as { issue: { id: string } };
 	const source = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
@@ -1178,7 +1206,7 @@ it("should record generated agent-workflow Task provenance without blocking read
 	) as { issue: { id: string } };
 
 	const created = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
@@ -1233,7 +1261,7 @@ it("should reject invalid agent-workflow Task create relationships before tracke
 		}),
 	) as { issue: { id: string } };
 	const otherSpecTask = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: notTask.issue.id,
@@ -1281,7 +1309,7 @@ it("should reject invalid agent-workflow Task create relationships before tracke
 		},
 	]) {
 		const before = await tracker.listIssues();
-		const envelope = await execute(["create", "task", "--input", "-"], {
+		const envelope = await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify(input),
 		});
@@ -1294,7 +1322,7 @@ it("should reject invalid agent-workflow Task create relationships before tracke
 it("should reject missing agent-workflow Task create fields before tracker mutation", async () => {
 	const tracker = createInMemoryTracker();
 
-	const envelope = await execute(["create", "task", "--input", "-"], {
+	const envelope = await execute(["create", "task:work", "--input", "-"], {
 		tracker,
 		stdin: JSON.stringify({ title: "Missing fields" }),
 	});
@@ -1315,7 +1343,7 @@ it("should run agent-workflow Task start, succeed, fail, recover, and escalate t
 		}),
 	) as { issue: { id: string } };
 	const created = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,
@@ -1327,7 +1355,7 @@ it("should run agent-workflow Task start, succeed, fail, recover, and escalate t
 	) as { issue: { id: string; workflow: Record<string, string> } };
 
 	expect(created.issue.workflow).toMatchObject({
-		kind: "task",
+		kind: "task:work",
 		state: "ready",
 		action: "work",
 	});
@@ -1358,7 +1386,7 @@ it("should run agent-workflow Task start, succeed, fail, recover, and escalate t
 	).toMatchObject({ issue: { workflow: { state: "done", action: "none" } } });
 
 	const failedTask = assertSuccess(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			stdin: JSON.stringify({
 				spec: spec.issue.id,

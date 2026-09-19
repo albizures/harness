@@ -9,14 +9,7 @@ const states = [
 	"need-human",
 	"waiting-human",
 ] as const;
-const actions = [
-	"planning",
-	"work",
-	"discuss",
-	"integration-test",
-	"merge",
-	"none",
-] as const;
+const actions = ["planning", "work", "discuss", "none"] as const;
 const events = [
 	"start",
 	"succeed",
@@ -26,7 +19,13 @@ const events = [
 	"pause",
 	"resume",
 ] as const;
-const taskSubkinds = ["work", "research", "prototype"] as const;
+const taskKinds = [
+	"task:work",
+	"task:research",
+	"task:prototype",
+	"task:work:integration-test",
+	"task:work:merge",
+] as const;
 
 const createInput = z
 	.strictObject({
@@ -39,16 +38,25 @@ const createInput = z
 		(input) => input.body !== undefined || input.content !== undefined,
 		"Either body or content is required.",
 	);
+const taskBaseCreateInputShape = {
+	spec: z.string().trim().min(1).optional(),
+	parent: z.string().trim().min(1).optional(),
+	title: z.string().trim().min(1),
+	description: z.string().trim().min(1),
+	profile: z.string().trim().min(1),
+	dependsOn: z.array(z.string().trim().min(1)).optional(),
+	generatedBy: z.string().trim().min(1).optional(),
+} as const;
+const directTaskCreateInput = z
+	.strictObject(taskBaseCreateInputShape)
+	.refine(
+		(input) => input.spec !== undefined || input.parent !== undefined,
+		"Either spec or parent is required.",
+	);
 const taskCreateInput = z
 	.strictObject({
-		spec: z.string().trim().min(1).optional(),
-		parent: z.string().trim().min(1).optional(),
-		title: z.string().trim().min(1),
-		description: z.string().trim().min(1),
-		profile: z.string().trim().min(1),
-		subkind: z.enum(taskSubkinds).optional(),
-		dependsOn: z.array(z.string().trim().min(1)).optional(),
-		generatedBy: z.string().trim().min(1).optional(),
+		...taskBaseCreateInputShape,
+		kind: z.enum(taskKinds),
 	})
 	.refine(
 		(input) => input.spec !== undefined || input.parent !== undefined,
@@ -156,27 +164,25 @@ export const agentWorkflowManifest = defineManifest({
 			{ kind: "task", state: "ready", action: "work" },
 		],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
-		profileGroups: [
+		kindGroups: [
 			{
 				name: "implementation-gate",
-				profiles: ["implement", "review"],
+				kinds: ["task:work"],
 			},
 		],
 		relationshipPolicies: [
 			{
 				relationship: "siblings",
 				where: {
-					kind: "task",
+					kind: "task:work:integration-test",
 					state: "ready",
 					action: "work",
-					profile: "integration-test",
 				},
 				siblings: {
 					all: {
-						kind: "task",
+						kindGroup: "implementation-gate",
 						state: "done",
 						action: "none",
-						profileGroup: "implementation-gate",
 					},
 				},
 				gate: "implementation-gate",
@@ -184,17 +190,15 @@ export const agentWorkflowManifest = defineManifest({
 			{
 				relationship: "siblings",
 				where: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "ready",
 					action: "work",
-					profile: "merge",
 				},
 				siblings: {
 					all: {
-						kind: "task",
+						kindGroup: "implementation-gate",
 						state: "done",
 						action: "none",
-						profileGroup: "implementation-gate",
 					},
 				},
 				gate: "implementation-gate",
@@ -202,17 +206,15 @@ export const agentWorkflowManifest = defineManifest({
 			{
 				relationship: "siblings",
 				where: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "ready",
 					action: "work",
-					profile: "merge",
 				},
 				siblings: {
 					all: {
-						kind: "task",
+						kind: "task:work:integration-test",
 						state: "done",
 						action: "none",
-						profile: "integration-test",
 					},
 					min: 1,
 				},
@@ -241,8 +243,27 @@ export const agentWorkflowManifest = defineManifest({
 			id: "task",
 			label: "Task",
 			initial: { state: "ready", action: "work" },
-			subkinds: [...taskSubkinds],
 			transitions: [...workTransitions],
+		},
+		{
+			id: "task:work",
+			label: "Work Task",
+		},
+		{
+			id: "task:research",
+			label: "Research Task",
+		},
+		{
+			id: "task:prototype",
+			label: "Prototype Task",
+		},
+		{
+			id: "task:work:integration-test",
+			label: "Integration-test Task",
+		},
+		{
+			id: "task:work:merge",
+			label: "Merge Task",
 		},
 		{
 			id: "grilling",
@@ -323,6 +344,36 @@ export const agentWorkflowManifest = defineManifest({
 			cli: { verb: "create", target: "task" },
 			target: { kind: "task", action: "work" },
 			input: taskCreateInput,
+		},
+		{
+			id: "task-work-create",
+			cli: { verb: "create", target: "task:work" },
+			target: { kind: "task:work", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-research-create",
+			cli: { verb: "create", target: "task:research" },
+			target: { kind: "task:research", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-prototype-create",
+			cli: { verb: "create", target: "task:prototype" },
+			target: { kind: "task:prototype", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-work-integration-test-create",
+			cli: { verb: "create", target: "task:work:integration-test" },
+			target: { kind: "task:work:integration-test", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-work-merge-create",
+			cli: { verb: "create", target: "task:work:merge" },
+			target: { kind: "task:work:merge", action: "work" },
+			input: directTaskCreateInput,
 		},
 		{
 			id: "grilling-create",

@@ -39,6 +39,7 @@ import {
 	workflowCommandByCli,
 	readOption,
 	proseLogMessage,
+	workflowMatchesFilter,
 	workflowTarget,
 } from "./shared.ts";
 
@@ -540,7 +541,7 @@ async function transitionGenericWorkflowCommand(
 	}
 	try {
 		const issue = await tracker.getIssue(issueId);
-		if (!commandTargetMatches(command.target, issue.workflow)) {
+		if (!commandTargetMatches(command.target, issue.workflow, manifest)) {
 			return failure(
 				runtimeFailures.unavailableCommand({
 					id: issueId,
@@ -700,9 +701,10 @@ function commandTargetMatches(
 		state: string;
 		action?: string;
 	},
+	manifest: WorkflowManifest,
 ): boolean {
 	return (
-		target.kind === workflow.kind &&
+		workflowMatchesFilter(workflow, target, manifest) &&
 		(target.state === undefined || target.state === workflow.state) &&
 		(target.action === undefined || target.action === workflow.action)
 	);

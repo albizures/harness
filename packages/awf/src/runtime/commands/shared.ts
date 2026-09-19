@@ -8,6 +8,7 @@ import {
 	type FailureDefinition,
 } from "../envelope.ts";
 import { jsonValueSchema } from "../../shared/json.ts";
+import { createKindRegistry } from "../../domain/manifest/kind-registry.ts";
 import type {
 	ManifestCommand,
 	PayloadZodSchema,
@@ -285,10 +286,11 @@ export function matchesReadinessFilters(
 		state?: string;
 		action?: string;
 	}>,
+	manifest?: WorkflowManifest,
 ): boolean {
 	return filters.some(
 		(filter) =>
-			fieldMatches(filter.kind, workflow.kind) &&
+			kindMatches(filter.kind, workflow.kind, manifest) &&
 			fieldMatches(filter.state, workflow.state) &&
 			fieldMatches(filter.action, workflow.action),
 	);
@@ -299,6 +301,19 @@ export function fieldMatches(
 	actual: string | undefined,
 ): boolean {
 	return expected === undefined || expected === actual;
+}
+
+export function kindMatches(
+	expected: string | undefined,
+	actual: string,
+	manifest?: WorkflowManifest,
+): boolean {
+	if (expected === undefined) {
+		return true;
+	}
+	return manifest === undefined
+		? expected === actual
+		: createKindRegistry(manifest).isMemberOf(actual, expected);
 }
 
 export function validateNamedReadinessFilterDeclarations(
@@ -338,7 +353,7 @@ export function validateNamedReadinessFilterValues(
 				}),
 			);
 		}
-		if (issue.workflow.kind !== declaration.kind) {
+		if (!kindMatches(declaration.kind, issue.workflow.kind, manifest)) {
 			return failure(
 				runtimeFailures.invalidReadyFilter({
 					message: "Readiness filter value has the wrong workflow kind.",
@@ -469,15 +484,23 @@ export function concurrencyBlocking(
 			active: activeIssues.length,
 		});
 	}
-	const kindLimit = manifest.concurrency.perKind?.[kind];
-	const activeForKind = activeIssues.filter(
-		(issue) => issue.workflow.kind === kind,
-	).length;
-	if (kindLimit !== undefined && activeForKind >= kindLimit) {
+	const registry = createKindRegistry(manifest);
+	for (const [family, kindLimit] of Object.entries(
+		manifest.concurrency.perKind ?? {},
+	)) {
+		if (!registry.isMemberOf(kind, family)) {
+			continue;
+		}
+		const activeForKind = activeIssues.filter((issue) =>
+			registry.isMemberOf(issue.workflow.kind, family),
+		).length;
+		if (activeForKind < kindLimit) {
+			continue;
+		}
 		blocking.push({
 			gate: "concurrency",
 			scope: "kind",
-			kind,
+			kind: family,
 			limit: kindLimit,
 			active: activeForKind,
 		});
@@ -520,6 +543,7 @@ function readWorkflowSubkind(
 
 export function relationshipReadinessBlocking(
 	issue: {
+		id?: string;
 		workflow: WorkflowFields;
 		relationships: { parent?: string; children: Array<string> };
 	},
@@ -561,6 +585,12 @@ export function relationshipReadinessBlocking(
 		);
 		const blockedBy = related.flatMap((relatedIssue) =>
 			relatedIssue !== undefined &&
+			workflowSelectsKindFilter(relatedIssue.workflow, rule.all, manifest) &&
+			workflowSelectsKindGroupFilter(
+				relatedIssue.workflow,
+				rule.all,
+				manifest,
+			) &&
 			workflowSelectsProfileFilter(relatedIssue.workflow, rule.all, manifest) &&
 			!workflowMatchesFilter(relatedIssue.workflow, rule.all, manifest)
 				? [relatedIssue]
@@ -610,10 +640,40 @@ export function workflowMatchesFilter(
 	manifest?: WorkflowManifest,
 ): boolean {
 	return (
-		fieldMatches(filter.kind, workflow.kind) &&
+		kindMatches(filter.kind, workflow.kind, manifest) &&
+		workflowSelectsKindGroupFilter(workflow, filter, manifest) &&
 		fieldMatches(filter.state, workflow.state) &&
 		fieldMatches(filter.action, workflow.action) &&
 		workflowSelectsProfileFilter(workflow, filter, manifest)
+	);
+}
+
+function workflowSelectsKindFilter(
+	workflow: WorkflowFields,
+	filter: ManifestWorkflowFilter,
+	manifest?: WorkflowManifest,
+): boolean {
+	return kindMatches(filter.kind, workflow.kind, manifest);
+}
+
+function workflowSelectsKindGroupFilter(
+	workflow: WorkflowFields,
+	filter: ManifestWorkflowFilter,
+	manifest?: WorkflowManifest,
+): boolean {
+	if (filter.kindGroup === undefined) {
+		return true;
+	}
+	const registry =
+		manifest === undefined ? undefined : createKindRegistry(manifest);
+	return (
+		manifest?.readiness?.kindGroups
+			?.find((group) => group.name === filter.kindGroup)
+			?.kinds.some(
+				(kind) =>
+					registry?.isKnown(kind) === true &&
+					registry.getExact(workflow.kind)?.id === kind,
+			) ?? false
 	);
 }
 
@@ -642,13 +702,15 @@ function workflowProfile(workflow: WorkflowFields): string | undefined {
 }
 
 function siblingIds(
-	issue: { relationships: { parent?: string } },
+	issue: { id?: string; relationships: { parent?: string } },
 	byId: Map<string, { relationships: { children: Array<string> } }>,
 ): Array<string> {
 	if (issue.relationships.parent === undefined) {
 		return [];
 	}
-	return byId.get(issue.relationships.parent)?.relationships.children ?? [];
+	return (
+		byId.get(issue.relationships.parent)?.relationships.children ?? []
+	).filter((id) => id !== issue.id);
 }
 
 export function compareReadyIssues(

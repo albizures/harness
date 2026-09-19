@@ -42,6 +42,11 @@ it("should bind the bundled agent-workflow manifest when config is missing", asy
 			"spec",
 			"wayfinder",
 			"task",
+			"task:work",
+			"task:research",
+			"task:prototype",
+			"task:work:integration-test",
+			"task:work:merge",
 			"grilling",
 		]);
 	});

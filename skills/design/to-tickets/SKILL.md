@@ -49,17 +49,17 @@ Give each Task its blocking edges: the other Tasks that must complete before it 
 
 For code work, add these Tasks by default unless the human explicitly opts out:
 
-- **Integration-test Task**: `profile: "integration-test"`, `subkind: "work"`; verifies completed implementation/review work against the parent Spec.
-- **Merge Task**: `profile: "merge"`, `subkind: "work"`; performs the final integration/merge after verification.
+- **Integration-test Task**: create `task:work:integration-test`; set `profile` only for local verification routing.
+- **Merge Task**: create `task:work:merge`; set `profile` only for local merge/release handoff routing.
 
-Rely on AWF readiness gates for these Tasks. Do not model integration test or merge as Spec lifecycle actions. If follow-up implementation or review Tasks are added after an integration pass, add another Integration-test Task before merge to preserve freshness.
+Rely on AWF readiness gates for these Task kinds. Do not model integration test or merge as Spec lifecycle actions or profile conventions. If follow-up implementation or review Tasks are added after an integration pass, add another Integration-test Task before merge to preserve freshness.
 
 ### 5. Quiz the user
 
 Present the proposed breakdown as a numbered list. For each Task, show:
 
 - **Title**: short descriptive name
-- **Profile/subkind**: routing profile and durable subkind
+- **Task kind/profile**: concrete Task kind and routing profile
 - **Blocked by**: which proposed Tasks must complete first, if any
 - **What it delivers**: the end-to-end behaviour this Task makes work
 
@@ -68,7 +68,7 @@ Ask the user:
 - Does the granularity feel right?
 - Are the blocking edges correct?
 - Should any Tasks be merged or split further?
-- Are the profiles right for this repo's agents/humans?
+- Are the Task kinds and routing profiles right for this repo's agents/humans?
 
 Iterate until the user approves the breakdown. Do not publish unapproved Tasks.
 
@@ -76,7 +76,7 @@ Iterate until the user approves the breakdown. Do not publish unapproved Tasks.
 
 Publish the approved breakdown under the existing Spec with the public Task creation command and current input shape from the Agent Workflow reference. Create blockers before dependents so dependency fields can reference real AWF ids.
 
-For each Task, include the approved title, description, routing profile, durable subkind, dependency edges, and provenance where relevant, using the field names defined by the Agent Workflow reference. Preserve every approved blocking edge.
+For each Task, use the approved concrete Task creation command and include the title, description, routing profile, dependency edges, and provenance where relevant, using the field names defined by the Agent Workflow reference. Preserve every approved blocking edge.
 
 Publishing is complete only when every approved Task exists under the parent Spec, every approved blocker is represented by an AWF dependency edge, and the created ids are reported to the user.
 
