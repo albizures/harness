@@ -13,13 +13,9 @@ A category inside the skill catalog that groups related skills by user outcome, 
 _Avoid_: skill package, category package, bundle
 
 **Workflow skill group**:
-A skill group for meta-skills that help users coordinate agent sessions, choose agent flows, operate AWF-backed planning artifacts, or transform work artifacts so agents can operate more effectively.
+A skill group for meta-skills that help users coordinate agent sessions, choose agent flows, operate Forge workflow records, or transform work artifacts so agents can operate more effectively.
 _Avoid_: engineering skill group, design skill group, miscellaneous skill group
 
-**Agent Workflow reference**:
-The canonical skill document that defines how agents operate AWF-backed Specs, Tasks, Wayfinders, and Grilling issues through public AWF behavior.
-_Avoid_: duplicated AWF command table, local AWF schema reference
-
-**Filesystem-backed AWF operation**:
-The workflow-skill operating mode where AWF stores Workflow issues as readable Markdown files under `.awf/tracker`, configured explicitly by the repository `awf.config.ts` or used through AWF's no-config fallback.
-_Avoid_: GitHub-backed default, AWF GitHub prerequisite, duplicated command reference
+**Forge reference**:
+The canonical skill document that defines how agents operate Forge Specs, Tasks, Wayfinders, Grilling, initiatives, dependencies, readiness, lifecycle, comments, and history through public Forge CLI behavior.
+_Avoid_: duplicated Forge command table, local workflow schema reference

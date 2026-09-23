@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
-import { runCli } from "./cli.ts";
+import { isCliEntrypoint, runCli } from "./cli.ts";
 
 const packageRoot = new URL("../", import.meta.url);
 
@@ -50,12 +51,25 @@ test("when the package is created, it should expose the forge binary and checks"
 		await readFile(new URL("package.json", packageRoot), "utf8"),
 	);
 	assert.equal(manifest.name, "@albizures/forge");
-	assert.equal(manifest.bin.forge, "./src/cli.ts");
+	assert.equal(manifest.bin.forge, "./dist/cli.js");
+	assert.equal(manifest.exports["."], "./dist/index.js");
+	assert.deepEqual(manifest.files, ["dist"]);
+	assert.equal(manifest.scripts.build, "tsc -p tsconfig.build.json");
 	assert.equal(
 		manifest.scripts.typecheck,
 		"tsc --noEmit --project tsconfig.json",
 	);
 	assert.equal(manifest.scripts.test, "node --test");
+});
+
+test("when the binary is launched through a symlink, it should still run as the CLI entrypoint", async () => {
+	const temp = await mkdtemp(path.join(os.tmpdir(), "forge-cli-entrypoint-"));
+	const target = path.join(temp, "cli.js");
+	const link = path.join(temp, "forge");
+	await writeFile(target, "");
+	await symlink(target, link);
+
+	assert.equal(isCliEntrypoint(pathToFileURL(target).href, link), true);
 });
 
 test("when help is requested, it should describe the Phase 2 command surface", async () => {

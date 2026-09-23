@@ -6,5 +6,5 @@ These skills help users coordinate agent sessions, choose agent flows, or transf
 
 Available workflow skills:
 
-- `agent-workflow/` — operate bundled AWF `agent-workflow` Specs, Tasks, Wayfinders, and Grilling issues through the public AWF CLI.
+- `forge/` — operate Forge Specs, Tasks, Wayfinders, Grilling, initiatives, dependencies, readiness, lifecycle, and comments through the global Forge CLI.
 - `handoff/` — capture concise session handoffs without duplicating canonical artifacts.

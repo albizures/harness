@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { text as readStreamText } from "node:stream/consumers";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
 	decodeConfigSetInput,
@@ -1563,6 +1565,24 @@ function isStoreDoctorReport(value: unknown): value is {
 	);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+export function isCliEntrypoint(
+	metaUrl = import.meta.url,
+	argv1 = process.argv[1],
+) {
+	if (argv1 === undefined) {
+		return false;
+	}
+
+	try {
+		return (
+			pathToFileURL(realpathSync(fileURLToPath(metaUrl))).href ===
+			pathToFileURL(realpathSync(argv1)).href
+		);
+	} catch {
+		return metaUrl === pathToFileURL(argv1).href;
+	}
+}
+
+if (isCliEntrypoint()) {
 	process.exitCode = await runCli(process.argv.slice(2));
 }

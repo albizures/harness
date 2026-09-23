@@ -1,10 +1,10 @@
-# Issue tracker: GitHub
+# Issue tracker: GitHub and Forge
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for direct GitHub issue operations that are **not** managed by AWF planning workflows.
+Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for direct GitHub issue operations that are **not** managed by Forge workflow records.
 
-AWF-backed planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use the installed `agent-workflow` skill as the Agent Workflow reference, resolving its local `SKILL.md` from the active skill catalog or installed skill location. Load the `GITHUB-SETUP.md` file beside that `SKILL.md` only when configuring or validating GitHub-backed AWF setup.
+Forge planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use `skills/workflow/forge/SKILL.md` as the Forge reference for command shapes, scope, parent/child relationships, dependencies, readiness, history, comments, and lifecycle rules.
 
-## Direct GitHub conventions for non-AWF work
+## Direct GitHub conventions for non-Forge work
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
@@ -27,14 +27,10 @@ When set to `yes`, PRs run through the same labels and states as issues, using t
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
-## When a non-AWF skill says "publish to the issue tracker"
+## When a non-Forge skill says "publish to the issue tracker"
 
-Create a GitHub issue with `gh issue create` unless that skill explicitly opts into AWF.
+Create a GitHub issue with `gh issue create` unless that skill explicitly opts into Forge.
 
-## When a non-AWF skill says "fetch the relevant ticket"
+## When a non-Forge skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments` unless the ticket is an AWF Workflow issue, in which case use the public AWF inspection/history commands from the Agent Workflow reference.
-
-## AWF-backed planning workflows
-
-For AWF Specs, Tasks, Wayfinders, and Grilling issues, use `skills/workflow/agent-workflow/SKILL.md` for command shapes, input shapes, parent/child relationships, dependencies, readiness, history, and lifecycle rules.
+Run `gh issue view <number> --comments` unless the ticket is a Forge workflow record, in which case use Forge inspection/history commands from the Forge reference.
