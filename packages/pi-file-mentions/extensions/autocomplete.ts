@@ -55,19 +55,25 @@ export function createFileMentionAutocompleteProvider(
 			current.shouldTriggerFileCompletion?.bind(current),
 		async getSuggestions(lines, cursorLine, cursorCol, options) {
 			const activeQuery = extractActiveAtQuery(lines, cursorLine, cursorCol);
+			if (
+				isEmptyInputAtMentionContext(lines, cursorLine, cursorCol) &&
+				(!activeQuery || isBareAtQuery(activeQuery))
+			) {
+				return null;
+			}
 			if (!activeQuery || isBareAtQuery(activeQuery)) {
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
 
 			try {
-				const index = await indexProvider.getIndex();
+				const index = indexProvider.getCachedIndex();
 				if (!index || options.signal.aborted) {
-					return current.getSuggestions(lines, cursorLine, cursorCol, options);
+					return null;
 				}
 
 				const suggestions = matchFileMentions(index, activeQuery.query);
 				if (suggestions.length === 0) {
-					return current.getSuggestions(lines, cursorLine, cursorCol, options);
+					return null;
 				}
 
 				return {
@@ -86,7 +92,7 @@ export function createFileMentionAutocompleteProvider(
 					}),
 				};
 			} catch {
-				return current.getSuggestions(lines, cursorLine, cursorCol, options);
+				return null;
 			}
 		},
 		applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
@@ -130,24 +136,24 @@ export function extractActiveAtQuery(
 }
 
 function findActiveAtIndex(beforeCursor: string): number {
-	for (
-		let index = beforeCursor.lastIndexOf("@");
-		index >= 0;
-		index = beforeCursor.lastIndexOf("@", index - 1)
-	) {
+	let index = beforeCursor.lastIndexOf("@");
+	while (index >= 0) {
 		const previous = beforeCursor[index - 1];
-		if (index > 0 && !/\s/.test(previous)) {
-			continue;
+		if (index === 0 || /\s/.test(previous)) {
+			const prefixAfterAt = beforeCursor.slice(index + 1);
+			const quote = prefixAfterAt[0];
+			if (quote === '"' || quote === "'") {
+				return isActiveQuotedPrefix(prefixAfterAt, quote) ? index : -1;
+			}
+			if (!/\s/.test(prefixAfterAt)) {
+				return index;
+			}
 		}
 
-		const prefixAfterAt = beforeCursor.slice(index + 1);
-		const quote = prefixAfterAt[0];
-		if (quote === '"' || quote === "'") {
-			return isActiveQuotedPrefix(prefixAfterAt, quote) ? index : -1;
+		if (index === 0) {
+			break;
 		}
-		if (!/\s/.test(prefixAfterAt)) {
-			return index;
-		}
+		index = beforeCursor.lastIndexOf("@", index - 1);
 	}
 	return -1;
 }
@@ -174,6 +180,24 @@ function isActiveQuotedPrefix(prefixAfterAt: string, quote: string): boolean {
 function isBareAtQuery(activeQuery: ActiveAtQuery): boolean {
 	const query = activeQuery.query.trim();
 	return query === "" || query === '"' || query === "'";
+}
+
+function isEmptyInputAtMentionContext(
+	lines: Array<string>,
+	cursorLine: number,
+	cursorCol: number,
+): boolean {
+	const beforeCursor = (lines[cursorLine] ?? "").slice(0, cursorCol);
+	if (!beforeCursor.startsWith("@")) {
+		return false;
+	}
+
+	return lines.every((line, index) => {
+		if (index === cursorLine) {
+			return line.slice(cursorCol).trim() === "";
+		}
+		return line.trim() === "";
+	});
 }
 
 function replacePrefixAtCursor(

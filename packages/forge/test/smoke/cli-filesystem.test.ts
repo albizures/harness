@@ -11,6 +11,8 @@ import {
 	runPackagedForge,
 } from "./packaged-cli-harness.ts";
 
+const SLOW_PACKAGED_CLI_TEST_TIMEOUT_MS = 15_000;
+
 it("when the packaged CLI registers a project and creates a spec, it should persist the expected filesystem artifacts", async () => {
 	const workspace = await createForgeSmokeWorkspace();
 
@@ -161,113 +163,117 @@ it("when the packaged CLI creates a review task, it should persist task and rela
 	expect(relationships["2"]?.parent).toBe(1);
 });
 
-it("when the packaged CLI mutates lifecycle and comments, it should persist filesystem history artifacts", async () => {
-	const workspace = await createForgeSmokeWorkspace();
+it(
+	"when the packaged CLI mutates lifecycle and comments, it should persist filesystem history artifacts",
+	async () => {
+		const workspace = await createForgeSmokeWorkspace();
 
-	let result = await runPackagedForge(workspace, [
-		"project",
-		"add",
-		"harness",
-		"--root",
-		workspace.projectRoot,
-		"--name",
-		"Harness",
-	]);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
+		let result = await runPackagedForge(workspace, [
+			"project",
+			"add",
+			"harness",
+			"--root",
+			workspace.projectRoot,
+			"--name",
+			"Harness",
+		]);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
 
-	result = await runPackagedForge(
-		workspace,
-		["new", "spec", "--title", "Lifecycle spec", "--body", "-", "--json"],
-		{ cwd: workspace.nestedCwd, input: "Spec body\n" },
-	);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
-	expect(JSON.parse(result.stdout)).toMatchObject({ id: 1 });
+		result = await runPackagedForge(
+			workspace,
+			["new", "spec", "--title", "Lifecycle spec", "--body", "-", "--json"],
+			{ cwd: workspace.nestedCwd, input: "Spec body\n" },
+		);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
+		expect(JSON.parse(result.stdout)).toMatchObject({ id: 1 });
 
-	result = await runPackagedForge(
-		workspace,
-		[
-			"new",
-			"task",
-			"--title",
-			"Lifecycle task",
-			"--description",
-			"-",
-			"--parent",
+		result = await runPackagedForge(
+			workspace,
+			[
+				"new",
+				"task",
+				"--title",
+				"Lifecycle task",
+				"--description",
+				"-",
+				"--parent",
+				"1",
+				"--json",
+			],
+			{ input: "Task description\n" },
+		);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
+		expect(JSON.parse(result.stdout)).toMatchObject({ id: 2 });
+
+		result = await runPackagedForge(workspace, ["start", "2"]);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
+
+		result = await runPackagedForge(workspace, [
+			"done",
+			"2",
+			"--resolution",
+			"completed",
+		]);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
+
+		const taskRecord = await readPersistedRecord(
+			workspace,
+			"records/task/000/000002.md",
+		);
+		expect(taskRecord.frontmatter).toMatchObject({
+			id: 2,
+			state: "done",
+			resolution: "completed",
+		});
+
+		expect(
+			(await readdir(path.join(workspace.store, "updates/000/000002"))).sort(),
+		).toEqual(["0001-create.json", "0002-start.json", "0003-done.json"]);
+
+		result = await runPackagedForge(workspace, [
+			"comment",
 			"1",
-			"--json",
-		],
-		{ input: "Task description\n" },
-	);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
-	expect(JSON.parse(result.stdout)).toMatchObject({ id: 2 });
+			"--message",
+			"Manual smoke comment",
+		]);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
 
-	result = await runPackagedForge(workspace, ["start", "2"]);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
+		await expect(
+			readdir(path.join(workspace.store, "comments/000/000001")),
+		).resolves.toEqual(["0001.md"]);
 
-	result = await runPackagedForge(workspace, [
-		"done",
-		"2",
-		"--resolution",
-		"completed",
-	]);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
+		result = await runPackagedForge(workspace, ["comments", "1", "--json"]);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
+		const comments = JSON.parse(result.stdout) as Array<{ body: string }>;
+		expect(comments).toMatchObject([{ body: "Manual smoke comment\n" }]);
 
-	const taskRecord = await readPersistedRecord(
-		workspace,
-		"records/task/000/000002.md",
-	);
-	expect(taskRecord.frontmatter).toMatchObject({
-		id: 2,
-		state: "done",
-		resolution: "completed",
-	});
-
-	expect(
-		(await readdir(path.join(workspace.store, "updates/000/000002"))).sort(),
-	).toEqual(["0001-create.json", "0002-start.json", "0003-done.json"]);
-
-	result = await runPackagedForge(workspace, [
-		"comment",
-		"1",
-		"--message",
-		"Manual smoke comment",
-	]);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
-
-	await expect(
-		readdir(path.join(workspace.store, "comments/000/000001")),
-	).resolves.toEqual(["0001.md"]);
-
-	result = await runPackagedForge(workspace, ["comments", "1", "--json"]);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
-	const comments = JSON.parse(result.stdout) as Array<{ body: string }>;
-	expect(comments).toMatchObject([{ body: "Manual smoke comment\n" }]);
-
-	result = await runPackagedForge(workspace, ["history", "1", "--json"]);
-	expectPackagedForgeExit(result, 0);
-	expect(result.stderr).toBe("");
-	const history = JSON.parse(result.stdout) as Array<{
-		kind: string;
-		comment?: { body: string };
-		update?: { type: string };
-	}>;
-	expect(history).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: "update",
-				update: expect.objectContaining({ type: "create" }),
-			}),
-			expect.objectContaining({
-				kind: "comment",
-				comment: expect.objectContaining({ body: "Manual smoke comment\n" }),
-			}),
-		]),
-	);
-});
+		result = await runPackagedForge(workspace, ["history", "1", "--json"]);
+		expectPackagedForgeExit(result, 0);
+		expect(result.stderr).toBe("");
+		const history = JSON.parse(result.stdout) as Array<{
+			kind: string;
+			comment?: { body: string };
+			update?: { type: string };
+		}>;
+		expect(history).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "update",
+					update: expect.objectContaining({ type: "create" }),
+				}),
+				expect.objectContaining({
+					kind: "comment",
+					comment: expect.objectContaining({ body: "Manual smoke comment\n" }),
+				}),
+			]),
+		);
+	},
+	SLOW_PACKAGED_CLI_TEST_TIMEOUT_MS,
+);

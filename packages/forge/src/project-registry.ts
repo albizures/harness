@@ -1,5 +1,7 @@
-import { readdir } from "node:fs/promises";
 import path from "node:path";
+
+import { FileSystem } from "@effect/platform/FileSystem";
+import { Effect } from "effect";
 
 import {
 	decodeProjectRegistryEntry,
@@ -10,10 +12,11 @@ import {
 } from "./domain.ts";
 import { ForgeError } from "./errors.ts";
 import {
-	readJson,
-	removeFileIfExists,
-	writeJsonFile,
+	readJsonEffect,
+	removeFileIfExistsEffect,
+	writeJsonFileEffect,
 } from "./filesystem-store.ts";
+import { runForgePromise } from "./runtime.ts";
 import { projectFilePath, storeRootPaths } from "./store-paths.ts";
 
 const jsonExtensionLength = ".json".length;
@@ -22,55 +25,66 @@ export type ProjectRegistry = {
 	readonly projects: ReadonlyArray<ProjectRegistryEntry>;
 };
 
-export async function listProjects(
+export function listProjects(
 	storePath: AbsolutePath,
 ): Promise<ReadonlyArray<ProjectRegistryEntry>> {
-	const projectsDirectory = storeRootPaths(storePath).projects;
-	let files: Array<string>;
-	try {
-		files = await readdir(projectsDirectory);
-	} catch (error) {
-		throw new ForgeError({
-			kind: "store-invalid",
-			message: "Forge store projects directory is missing or unreadable.",
-			cause: error,
-			details: { projectsDirectory },
-		});
-	}
-	const entries = await Promise.all(
-		files
-			.filter((file) => file.endsWith(".json"))
-			.sort()
-			.map((file) =>
-				readProjectFile(
-					storePath,
-					parseProjectId(file.slice(0, -jsonExtensionLength)),
-				),
-			),
-	);
-	return entries.sort((left, right) => left.id.localeCompare(right.id));
+	return runForgePromise(listProjectsEffect(storePath));
 }
 
-export async function readProject(
+export function listProjectsEffect(storePath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const projectsDirectory = storeRootPaths(storePath).projects;
+		const files = yield* readDirectoryEffect(projectsDirectory).pipe(
+			Effect.mapError(
+				(error) =>
+					new ForgeError({
+						kind: "store-invalid",
+						message: "Forge store projects directory is missing or unreadable.",
+						cause: error,
+						details: { projectsDirectory },
+					}),
+			),
+		);
+		const entries = yield* Effect.all(
+			files
+				.filter((file) => file.endsWith(".json"))
+				.sort()
+				.map((file) =>
+					readProjectFileEffect(
+						storePath,
+						parseProjectId(file.slice(0, -jsonExtensionLength)),
+					),
+				),
+			{ concurrency: "unbounded" },
+		);
+		return entries.sort((left, right) => left.id.localeCompare(right.id));
+	});
+}
+
+export function readProject(
 	storePath: AbsolutePath,
 	id: ProjectId,
 ): Promise<ProjectRegistryEntry> {
-	try {
-		return await readProjectFile(storePath, id);
-	} catch (error) {
-		if (isMissingFile(error)) {
-			throw new ForgeError({
-				kind: "project-not-found",
-				message: `Project '${id}' is not registered.`,
-				cause: error,
-				details: { id },
-			});
-		}
-		throw error;
-	}
+	return runForgePromise(readProjectEffect(storePath, id));
 }
 
-export async function addProject(options: {
+export function readProjectEffect(storePath: AbsolutePath, id: ProjectId) {
+	return readProjectFileEffect(storePath, id).pipe(
+		Effect.mapError((error) => {
+			if (isMissingFile(error)) {
+				return new ForgeError({
+					kind: "project-not-found",
+					message: `Project '${id}' is not registered.`,
+					cause: error,
+					details: { id },
+				});
+			}
+			return error;
+		}),
+	);
+}
+
+export function addProject(options: {
 	readonly storePath: AbsolutePath;
 	readonly id: ProjectId;
 	readonly root: AbsolutePath;
@@ -78,96 +92,160 @@ export async function addProject(options: {
 	readonly remote?: string;
 	readonly now?: Date;
 }): Promise<ProjectRegistryEntry> {
-	const filePath = projectFilePath(options.storePath, options.id);
-	if (await fileExists(filePath)) {
-		throw new ForgeError({
-			kind: "project-exists",
-			message: `Project '${options.id}' is already registered.`,
-			details: { id: options.id },
-		});
-	}
-	const now = iso(options.now ?? new Date());
-	const project = decodeProjectRegistryEntry({
-		id: options.id,
-		name: options.name ?? titleizeProjectId(options.id),
-		roots: [normalizeRoot(options.root)],
-		remote: options.remote,
-		createdAt: now,
-		updatedAt: now,
-	});
-	await writeJsonFile(filePath, project);
-	return project;
+	return runForgePromise(addProjectEffect(options));
 }
 
-export async function addProjectRoot(options: {
+export function addProjectEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly id: ProjectId;
+	readonly root: AbsolutePath;
+	readonly name?: string;
+	readonly remote?: string;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const filePath = projectFilePath(options.storePath, options.id);
+		if (yield* fileExistsEffect(filePath)) {
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "project-exists",
+					message: `Project '${options.id}' is already registered.`,
+					details: { id: options.id },
+				}),
+			);
+		}
+		const now = iso(options.now ?? new Date());
+		const project = yield* decodeProjectRegistryEntryEffect({
+			id: options.id,
+			name: options.name ?? titleizeProjectId(options.id),
+			roots: [normalizeRoot(options.root)],
+			remote: options.remote,
+			createdAt: now,
+			updatedAt: now,
+		});
+		yield* writeJsonFileEffect(filePath, project);
+		return project;
+	});
+}
+
+export function addProjectRoot(options: {
 	readonly storePath: AbsolutePath;
 	readonly id: ProjectId;
 	readonly root: AbsolutePath;
 	readonly now?: Date;
 }): Promise<ProjectRegistryEntry> {
-	const project = await readProject(options.storePath, options.id);
-	const root = normalizeRoot(options.root);
-	if (project.roots.includes(root)) {
-		return project;
-	}
-	return writeProject(options.storePath, {
-		...project,
-		roots: [...project.roots, root].sort(),
-		updatedAt: iso(options.now ?? new Date()),
+	return runForgePromise(addProjectRootEffect(options));
+}
+
+export function addProjectRootEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly id: ProjectId;
+	readonly root: AbsolutePath;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const project = yield* readProjectEffect(options.storePath, options.id);
+		const root = normalizeRoot(options.root);
+		if (project.roots.includes(root)) {
+			return project;
+		}
+		return yield* writeProjectEffect(options.storePath, {
+			...project,
+			roots: [...project.roots, root].sort(),
+			updatedAt: iso(options.now ?? new Date()),
+		});
 	});
 }
 
-export async function removeProjectRoot(options: {
+export function removeProjectRoot(options: {
 	readonly storePath: AbsolutePath;
 	readonly id: ProjectId;
 	readonly root: AbsolutePath;
 	readonly now?: Date;
 }): Promise<ProjectRegistryEntry> {
-	const project = await readProject(options.storePath, options.id);
-	const root = normalizeRoot(options.root);
-	const roots = project.roots.filter((candidate) => candidate !== root);
-	if (roots.length === project.roots.length) {
-		return project;
-	}
-	if (roots.length === 0) {
-		throw new ForgeError({
-			kind: "project-invalid",
-			message: "A project must keep at least one registered root.",
-			details: { id: options.id, root },
+	return runForgePromise(removeProjectRootEffect(options));
+}
+
+export function removeProjectRootEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly id: ProjectId;
+	readonly root: AbsolutePath;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const project = yield* readProjectEffect(options.storePath, options.id);
+		const root = normalizeRoot(options.root);
+		const roots = project.roots.filter((candidate) => candidate !== root);
+		if (roots.length === project.roots.length) {
+			return project;
+		}
+		if (roots.length === 0) {
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "project-invalid",
+					message: "A project must keep at least one registered root.",
+					details: { id: options.id, root },
+				}),
+			);
+		}
+		return yield* writeProjectEffect(options.storePath, {
+			...project,
+			roots,
+			updatedAt: iso(options.now ?? new Date()),
 		});
-	}
-	return writeProject(options.storePath, {
-		...project,
-		roots,
-		updatedAt: iso(options.now ?? new Date()),
 	});
 }
 
-export async function removeProject(options: {
+export function removeProject(options: {
 	readonly storePath: AbsolutePath;
 	readonly id: ProjectId;
 }): Promise<void> {
-	await readProject(options.storePath, options.id);
-	const records = await readProjectRecordReferences(
-		options.storePath,
-		options.id,
-	);
-	if (records.length > 0) {
-		throw new ForgeError({
-			kind: "project-invalid",
-			message:
-				"Project has indexed records and cannot be removed. Edit roots instead.",
-			details: { id: options.id, records },
-		});
-	}
-	await removeFileIfExists(projectFilePath(options.storePath, options.id));
+	return runForgePromise(removeProjectEffect(options));
 }
 
-export async function inferProjectByPath(options: {
+export function removeProjectEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly id: ProjectId;
+}) {
+	return Effect.gen(function* () {
+		yield* readProjectEffect(options.storePath, options.id);
+		const records = yield* readProjectRecordReferencesEffect(
+			options.storePath,
+			options.id,
+		);
+		if (records.length > 0) {
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "project-invalid",
+					message:
+						"Project has indexed records and cannot be removed. Edit roots instead.",
+					details: { id: options.id, records },
+				}),
+			);
+		}
+		yield* removeFileIfExistsEffect(
+			projectFilePath(options.storePath, options.id),
+		);
+	});
+}
+
+export function inferProjectByPath(options: {
 	readonly storePath: AbsolutePath;
 	readonly cwd: AbsolutePath;
 }): Promise<ProjectRegistryEntry | undefined> {
-	return findProjectForPath(await listProjects(options.storePath), options.cwd);
+	return runForgePromise(inferProjectByPathEffect(options));
+}
+
+export function inferProjectByPathEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly cwd: AbsolutePath;
+}) {
+	return Effect.gen(function* () {
+		return findProjectForPath(
+			yield* listProjectsEffect(options.storePath),
+			options.cwd,
+		);
+	});
 }
 
 export function findProjectForPath(
@@ -188,34 +266,52 @@ export function findProjectForPath(
 	return match?.project;
 }
 
-async function readProjectFile(
-	storePath: AbsolutePath,
-	id: ProjectId,
-): Promise<ProjectRegistryEntry> {
-	return decodeProjectRegistryEntry(
-		await readJson(projectFilePath(storePath, id)),
-	);
+function readProjectFileEffect(storePath: AbsolutePath, id: ProjectId) {
+	return Effect.gen(function* () {
+		const value = yield* readJsonEffect(projectFilePath(storePath, id));
+		return yield* decodeProjectRegistryEntryEffect(value);
+	});
 }
 
-async function readProjectRecordReferences(
+function readProjectRecordReferencesEffect(
 	storePath: AbsolutePath,
 	id: ProjectId,
-): Promise<ReadonlyArray<unknown>> {
-	const value = await readJson(storeRootPaths(storePath).byProjectIndex);
-	if (typeof value !== "object" || value === null || !(id in value)) {
-		return [];
-	}
-	const records = (value as Record<string, unknown>)[id];
-	return Array.isArray(records) ? records : [];
+) {
+	return Effect.gen(function* () {
+		const value = yield* readJsonEffect(
+			storeRootPaths(storePath).byProjectIndex,
+		);
+		if (typeof value !== "object" || value === null || !(id in value)) {
+			return [];
+		}
+		const records = (value as Record<string, unknown>)[id];
+		return Array.isArray(records) ? records : [];
+	});
 }
 
-async function writeProject(
+function writeProjectEffect(
 	storePath: AbsolutePath,
 	project: ProjectRegistryEntry,
-): Promise<ProjectRegistryEntry> {
-	const decoded = decodeProjectRegistryEntry(project);
-	await writeJsonFile(projectFilePath(storePath, project.id), decoded);
-	return decoded;
+) {
+	return Effect.gen(function* () {
+		const decoded = yield* decodeProjectRegistryEntryEffect(project);
+		yield* writeJsonFileEffect(projectFilePath(storePath, project.id), decoded);
+		return decoded;
+	});
+}
+
+function decodeProjectRegistryEntryEffect(value: unknown) {
+	return Effect.try({
+		try: () => decodeProjectRegistryEntry(value),
+		catch: (error) => error,
+	});
+}
+
+function readDirectoryEffect(directoryPath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		return yield* fileSystem.readDirectory(directoryPath);
+	});
 }
 
 function normalizeRoot(root: AbsolutePath): AbsolutePath {
@@ -240,24 +336,30 @@ function titleizeProjectId(id: ProjectId): string {
 		.join(" ");
 }
 
-async function fileExists(filePath: AbsolutePath): Promise<boolean> {
-	try {
-		await readJson(filePath);
-		return true;
-	} catch (error) {
-		if (isMissingFile(error)) {
-			return false;
-		}
-		throw error;
-	}
+function fileExistsEffect(filePath: AbsolutePath) {
+	return readJsonEffect(filePath).pipe(
+		Effect.as(true),
+		Effect.catchAll((error) => {
+			if (isMissingFile(error)) {
+				return Effect.succeed(false);
+			}
+			return Effect.fail(error);
+		}),
+	);
 }
 
 function isMissingFile(error: unknown): boolean {
 	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		error.code === "ENOENT"
+		(typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			error.code === "ENOENT") ||
+		(typeof error === "object" &&
+			error !== null &&
+			"_tag" in error &&
+			error._tag === "SystemError" &&
+			"reason" in error &&
+			error.reason === "NotFound")
 	);
 }
 

@@ -1,12 +1,7 @@
-import {
-	mkdir,
-	readdir,
-	readFile,
-	rename,
-	stat,
-	writeFile,
-} from "node:fs/promises";
 import path from "node:path";
+
+import { FileSystem } from "@effect/platform/FileSystem";
+import { Effect } from "effect";
 import { parseDocument, stringify } from "yaml";
 
 import type { AbsolutePath, IsoDateTime, ProjectId } from "./domain.ts";
@@ -46,10 +41,11 @@ import {
 	type WorkflowRecord,
 } from "./record-domain.ts";
 import {
-	readJson,
-	readStoreManifest,
-	writeJsonFile,
+	readJsonEffect,
+	readStoreManifestEffect,
+	writeJsonFileEffect,
 } from "./filesystem-store.ts";
+import { runForgePromise } from "./runtime.ts";
 import {
 	commentFilePath,
 	recordFilePath,
@@ -146,441 +142,734 @@ const recordKindsForStorage = [
 	"grilling",
 ] as const;
 
-export async function createWorkflowRecord(options: {
+export function createWorkflowRecord(options: {
 	readonly storePath: AbsolutePath;
 	readonly input: CreateWorkflowRecordInput;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const now = iso(options.now ?? new Date());
-	const manifest = await readStoreManifest(options.storePath);
-	const allocation = allocateRecordId({ manifest, now: options.now });
-	const { body, ...frontmatterInput } = options.input;
-	const record = parseRecordFrontmatter({
-		...frontmatterInput,
-		id: allocation.recordId,
-		state: "ready",
-		resolution: null,
-		createdAt: now,
-		updatedAt: now,
-	});
-	const withBody = { ...record, body } satisfies WorkflowRecord;
-
-	await assertRecordPathIsFree(options.storePath, withBody.id);
-	await validateRecordReferences(options.storePath, withBody);
-
-	await writeJsonFile(
-		storeRootPaths(options.storePath).manifest,
-		allocation.manifest,
-	);
-	await writeRecordFile(options.storePath, withBody);
-	await rebuildRecordIndexes(options.storePath);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: withBody.id,
-		type: "create",
-		summary: "Created record.",
-		data: { kind: withBody.kind },
-		now: options.now,
-	});
-	return withBody;
+	return runForgePromise(createWorkflowRecordEffect(options));
 }
 
-export async function readWorkflowRecord(
+export function createWorkflowRecordEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly input: CreateWorkflowRecordInput;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const now = iso(options.now ?? new Date());
+		const manifest = yield* readStoreManifestEffect(options.storePath);
+		const allocation = allocateRecordId({ manifest, now: options.now });
+		const { body, ...frontmatterInput } = options.input;
+		const record = yield* Effect.try({
+			try: () =>
+				parseRecordFrontmatter({
+					...frontmatterInput,
+					id: allocation.recordId,
+					state: "ready",
+					resolution: null,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			catch: (error) => error,
+		});
+		const withBody = { ...record, body } satisfies WorkflowRecord;
+
+		yield* assertRecordPathIsFreeEffect(options.storePath, withBody.id);
+		yield* validateRecordReferencesEffect(options.storePath, withBody);
+
+		yield* writeJsonFileEffect(
+			storeRootPaths(options.storePath).manifest,
+			allocation.manifest,
+		);
+		yield* writeRecordFileEffect(options.storePath, withBody);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: withBody.id,
+			type: "create",
+			summary: "Created record.",
+			data: { kind: withBody.kind },
+			now: options.now,
+		});
+		return withBody;
+	});
+}
+
+export function readWorkflowRecord(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 ): Promise<WorkflowRecord> {
-	const locator = await locateWorkflowRecord(storePath, recordId);
-	return readWorkflowRecordAtPath(storePath, locator.path, {
-		expectedId: recordId,
-		expectedKind: locator.kind,
+	return runForgePromise(readWorkflowRecordEffect(storePath, recordId));
+}
+
+export function readWorkflowRecordEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+) {
+	return Effect.gen(function* () {
+		const locator = yield* locateWorkflowRecordEffect(storePath, recordId);
+		return yield* readWorkflowRecordAtPathEffect(storePath, locator.path, {
+			expectedId: recordId,
+			expectedKind: locator.kind,
+		});
 	});
 }
 
-export async function locateWorkflowRecord(
+export function locateWorkflowRecord(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 ): Promise<RecordLocator> {
-	const index = await readByIdIndex(storePath);
-	const locator = index[String(recordId)];
-	if (locator === undefined) {
-		throw new ForgeError({
-			kind: "record-not-found",
-			message: `Record '${recordId}' was not found.`,
-			details: { recordId },
-		});
-	}
-	return locator;
+	return runForgePromise(locateWorkflowRecordEffect(storePath, recordId));
 }
 
-export async function listWorkflowRecords(
+export function locateWorkflowRecordEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+) {
+	return Effect.gen(function* () {
+		const index = yield* readByIdIndexEffect(storePath);
+		const locator = index[String(recordId)];
+		if (locator === undefined) {
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "record-not-found",
+					message: `Record '${recordId}' was not found.`,
+					details: { recordId },
+				}),
+			);
+		}
+		return locator;
+	});
+}
+
+export function listWorkflowRecords(
 	storePath: AbsolutePath,
 ): Promise<Array<WorkflowRecord>> {
 	return readAllWorkflowRecords(storePath);
 }
 
-export async function readRecordRelationships(
+export function listWorkflowRecordsEffect(storePath: AbsolutePath) {
+	return readAllWorkflowRecordsEffect(storePath);
+}
+
+export function readRecordRelationships(
 	storePath: AbsolutePath,
 ): Promise<RelationshipRecordIndex> {
-	return (await readJson(
+	return runForgePromise(readRecordRelationshipsEffect(storePath));
+}
+
+export function readRecordRelationshipsEffect(storePath: AbsolutePath) {
+	return readJsonEffect(
 		storeRootPaths(storePath).relationshipsIndex,
-	)) as RelationshipRecordIndex;
+	) as Effect.Effect<RelationshipRecordIndex, unknown, FileSystem>;
 }
 
-export async function addWorkflowRecordDependency(options: {
+export function addWorkflowRecordDependency(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly dependsOn: RecordId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const records = await readAllWorkflowRecords(options.storePath);
-	const record = requireRecordFromList(records, options.recordId);
-	const dependsOn = requireRecordFromList(records, options.dependsOn);
-	if (record.dependsOn.includes(options.dependsOn)) {
-		return record;
-	}
-	const updated: WorkflowRecord = {
-		...record,
-		dependsOn: sortedUnique([...record.dependsOn, options.dependsOn]),
-		updatedAt: iso(options.now ?? new Date()),
-	};
-	validateDependencyEdge({
-		record: updated,
-		dependsOn,
-		records: records.map((candidate) =>
-			candidate.id === updated.id ? updated : candidate,
-		),
-	});
-	await writeRecordFile(options.storePath, updated);
-	await rebuildRecordIndexes(options.storePath);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: updated.id,
-		type: "dependency-add",
-		summary: `Added dependency ${options.dependsOn}.`,
-		data: { dependsOn: options.dependsOn },
-		now: options.now,
-	});
-	return updated;
+	return runForgePromise(addWorkflowRecordDependencyEffect(options));
 }
 
-export async function removeWorkflowRecordDependency(options: {
+export function addWorkflowRecordDependencyEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly dependsOn: RecordId;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+		const { record, updated } = yield* Effect.try({
+			try: () => {
+				const record = requireRecordFromList(records, options.recordId);
+				const dependsOn = requireRecordFromList(records, options.dependsOn);
+				if (record.dependsOn.includes(options.dependsOn)) {
+					return { record, dependsOn, updated: record };
+				}
+				const updated: WorkflowRecord = {
+					...record,
+					dependsOn: sortedUnique([...record.dependsOn, options.dependsOn]),
+					updatedAt: iso(options.now ?? new Date()),
+				};
+				validateDependencyEdge({
+					record: updated,
+					dependsOn,
+					records: records.map((candidate) =>
+						candidate.id === updated.id ? updated : candidate,
+					),
+				});
+				return { record, dependsOn, updated };
+			},
+			catch: (error) => error,
+		});
+		if (updated === record) {
+			return record;
+		}
+		yield* writeRecordFileEffect(options.storePath, updated);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: updated.id,
+			type: "dependency-add",
+			summary: `Added dependency ${options.dependsOn}.`,
+			data: { dependsOn: options.dependsOn },
+			now: options.now,
+		});
+		return updated;
+	});
+}
+
+export function removeWorkflowRecordDependency(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly dependsOn: RecordId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const record = await readWorkflowRecord(options.storePath, options.recordId);
-	if (!record.dependsOn.includes(options.dependsOn)) {
-		return record;
-	}
-	const updated: WorkflowRecord = {
-		...record,
-		dependsOn: record.dependsOn.filter((id) => id !== options.dependsOn),
-		updatedAt: iso(options.now ?? new Date()),
-	};
-	await writeRecordFile(options.storePath, updated);
-	await rebuildRecordIndexes(options.storePath);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: updated.id,
-		type: "dependency-remove",
-		summary: `Removed dependency ${options.dependsOn}.`,
-		data: { dependsOn: options.dependsOn },
-		now: options.now,
-	});
-	return updated;
+	return runForgePromise(removeWorkflowRecordDependencyEffect(options));
 }
 
-export async function attachWorkflowRecordToInitiative(options: {
+export function removeWorkflowRecordDependencyEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly dependsOn: RecordId;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const record = yield* readWorkflowRecordEffect(
+			options.storePath,
+			options.recordId,
+		);
+		if (!record.dependsOn.includes(options.dependsOn)) {
+			return record;
+		}
+		const updated: WorkflowRecord = {
+			...record,
+			dependsOn: record.dependsOn.filter((id) => id !== options.dependsOn),
+			updatedAt: iso(options.now ?? new Date()),
+		};
+		yield* writeRecordFileEffect(options.storePath, updated);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: updated.id,
+			type: "dependency-remove",
+			summary: `Removed dependency ${options.dependsOn}.`,
+			data: { dependsOn: options.dependsOn },
+			now: options.now,
+		});
+		return updated;
+	});
+}
+
+export function attachWorkflowRecordToInitiative(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly initiativeId: RecordId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const records = await readAllWorkflowRecords(options.storePath);
-	const record = requireRecordFromList(records, options.recordId);
-	const initiative = requireRecordFromList(records, options.initiativeId);
-	if (record.initiative === options.initiativeId) {
-		return record;
-	}
-	const updated: WorkflowRecord = {
-		...record,
-		initiative: options.initiativeId,
-		updatedAt: iso(options.now ?? new Date()),
-	};
-	validateInitiativeMembership(updated, initiative);
-	await writeRecordFile(options.storePath, updated);
-	await rebuildRecordIndexes(options.storePath);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: updated.id,
-		type: "initiative-attach",
-		summary: `Attached to initiative ${options.initiativeId}.`,
-		data: { initiative: options.initiativeId },
-		now: options.now,
-	});
-	return updated;
+	return runForgePromise(attachWorkflowRecordToInitiativeEffect(options));
 }
 
-export async function detachWorkflowRecordFromInitiative(options: {
+export function attachWorkflowRecordToInitiativeEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly initiativeId: RecordId;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+		const { record, updated } = yield* Effect.try({
+			try: () => {
+				const record = requireRecordFromList(records, options.recordId);
+				const initiative = requireRecordFromList(records, options.initiativeId);
+				if (record.initiative === options.initiativeId) {
+					return { record, updated: record };
+				}
+				const updated: WorkflowRecord = {
+					...record,
+					initiative: options.initiativeId,
+					updatedAt: iso(options.now ?? new Date()),
+				};
+				validateInitiativeMembership(updated, initiative);
+				return { record, updated };
+			},
+			catch: (error) => error,
+		});
+		if (updated === record) {
+			return record;
+		}
+		yield* writeRecordFileEffect(options.storePath, updated);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: updated.id,
+			type: "initiative-attach",
+			summary: `Attached to initiative ${options.initiativeId}.`,
+			data: { initiative: options.initiativeId },
+			now: options.now,
+		});
+		return updated;
+	});
+}
+
+export function detachWorkflowRecordFromInitiative(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly initiativeId: RecordId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const record = await readWorkflowRecord(options.storePath, options.recordId);
-	if (record.initiative !== options.initiativeId) {
-		return record;
-	}
-	const updated: WorkflowRecord = {
-		...record,
-		initiative: null,
-		updatedAt: iso(options.now ?? new Date()),
-	};
-	await writeRecordFile(options.storePath, updated);
-	await rebuildRecordIndexes(options.storePath);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: updated.id,
-		type: "initiative-detach",
-		summary: `Detached from initiative ${options.initiativeId}.`,
-		data: { initiative: options.initiativeId },
-		now: options.now,
-	});
-	return updated;
+	return runForgePromise(detachWorkflowRecordFromInitiativeEffect(options));
 }
 
-export async function addInitiativeDeclaredProject(options: {
+export function detachWorkflowRecordFromInitiativeEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly initiativeId: RecordId;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const record = yield* readWorkflowRecordEffect(
+			options.storePath,
+			options.recordId,
+		);
+		if (record.initiative !== options.initiativeId) {
+			return record;
+		}
+		const updated: WorkflowRecord = {
+			...record,
+			initiative: null,
+			updatedAt: iso(options.now ?? new Date()),
+		};
+		yield* writeRecordFileEffect(options.storePath, updated);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: updated.id,
+			type: "initiative-detach",
+			summary: `Detached from initiative ${options.initiativeId}.`,
+			data: { initiative: options.initiativeId },
+			now: options.now,
+		});
+		return updated;
+	});
+}
+
+export function addInitiativeDeclaredProject(options: {
 	readonly storePath: AbsolutePath;
 	readonly initiativeId: RecordId;
 	readonly project: ProjectId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	return mutateInitiativeDeclaredProjects({
+	return runForgePromise(addInitiativeDeclaredProjectEffect(options));
+}
+
+export function addInitiativeDeclaredProjectEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly initiativeId: RecordId;
+	readonly project: ProjectId;
+	readonly now?: Date;
+}) {
+	return mutateInitiativeDeclaredProjectsEffect({
 		...options,
 		operation: "add",
 	});
 }
 
-export async function removeInitiativeDeclaredProject(options: {
+export function removeInitiativeDeclaredProject(options: {
 	readonly storePath: AbsolutePath;
 	readonly initiativeId: RecordId;
 	readonly project: ProjectId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	return mutateInitiativeDeclaredProjects({
+	return runForgePromise(removeInitiativeDeclaredProjectEffect(options));
+}
+
+export function removeInitiativeDeclaredProjectEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly initiativeId: RecordId;
+	readonly project: ProjectId;
+	readonly now?: Date;
+}) {
+	return mutateInitiativeDeclaredProjectsEffect({
 		...options,
 		operation: "remove",
 	});
 }
 
-export async function readRecordTree(
+export function readRecordTree(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 ): Promise<RecordTreeNode> {
-	const records = await readAllWorkflowRecords(storePath);
-	return buildRecordTree(requireRecordFromList(records, recordId), records);
+	return runForgePromise(readRecordTreeEffect(storePath, recordId));
 }
 
-export async function readRecordDependencyView(
+export function readRecordTreeEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(storePath);
+		return yield* Effect.try({
+			try: () =>
+				buildRecordTree(requireRecordFromList(records, recordId), records),
+			catch: (error) => error,
+		});
+	});
+}
+
+export function readRecordDependencyView(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 ): Promise<RecordDependencyView> {
-	const records = await readAllWorkflowRecords(storePath);
-	return buildRecordDependencyView(
-		requireRecordFromList(records, recordId),
-		records,
-	);
+	return runForgePromise(readRecordDependencyViewEffect(storePath, recordId));
 }
 
-export async function startWorkflowRecord(options: {
+export function readRecordDependencyViewEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(storePath);
+		return yield* Effect.try({
+			try: () =>
+				buildRecordDependencyView(
+					requireRecordFromList(records, recordId),
+					records,
+				),
+			catch: (error) => error,
+		});
+	});
+}
+
+export function startWorkflowRecord(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const records = await readAllWorkflowRecords(options.storePath);
-	const record = requireRecordFromList(records, options.recordId);
-	const result = startRecordLifecycle(record, records, options.now);
-	if (!result.changed) {
-		return record;
-	}
-	const updated = { ...record, ...result.record };
-	await writeRecordFile(options.storePath, updated);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: record.id,
-		type: "start",
-		summary: "Started record.",
-		data: { state: "in-progress" },
-		now: options.now,
-	});
-	await rebuildRecordIndexes(options.storePath);
-	return updated;
+	return runForgePromise(startWorkflowRecordEffect(options));
 }
 
-export async function completeWorkflowRecord(options: {
+export function startWorkflowRecordEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+		const { record, result } = yield* Effect.try({
+			try: () => {
+				const record = requireRecordFromList(records, options.recordId);
+				return {
+					record,
+					result: startRecordLifecycle(record, records, options.now),
+				};
+			},
+			catch: (error) => error,
+		});
+		if (!result.changed) {
+			return record;
+		}
+		const updated = { ...record, ...result.record };
+		yield* writeRecordFileEffect(options.storePath, updated);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: record.id,
+			type: "start",
+			summary: "Started record.",
+			data: { state: "in-progress" },
+			now: options.now,
+		});
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		return updated;
+	});
+}
+
+export function completeWorkflowRecord(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly resolution: string;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const records = await readAllWorkflowRecords(options.storePath);
-	const record = requireRecordFromList(records, options.recordId);
-	const result = completeRecordLifecycle(
-		record,
-		records,
-		options.resolution,
-		options.now,
-	);
-	if (!result.changed) {
-		return record;
-	}
-	const updated = { ...record, ...result.record };
-	await writeRecordFile(options.storePath, updated);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: record.id,
-		type: "done",
-		summary: `Completed record with resolution ${options.resolution}.`,
-		data: { resolution: result.record.resolution },
-		now: options.now,
-	});
-	await rebuildRecordIndexes(options.storePath);
-	return updated;
+	return runForgePromise(completeWorkflowRecordEffect(options));
 }
 
-export async function addRecordComment(options: {
+export function completeWorkflowRecordEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly resolution: string;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+		const { record, result } = yield* Effect.try({
+			try: () => {
+				const record = requireRecordFromList(records, options.recordId);
+				return {
+					record,
+					result: completeRecordLifecycle(
+						record,
+						records,
+						options.resolution,
+						options.now,
+					),
+				};
+			},
+			catch: (error) => error,
+		});
+		if (!result.changed) {
+			return record;
+		}
+		const updated = { ...record, ...result.record };
+		yield* writeRecordFileEffect(options.storePath, updated);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: record.id,
+			type: "done",
+			summary: `Completed record with resolution ${options.resolution}.`,
+			data: { resolution: result.record.resolution },
+			now: options.now,
+		});
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		return updated;
+	});
+}
+
+export function addRecordComment(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly body: string;
 	readonly now?: Date;
 }): Promise<RecordComment> {
-	await readWorkflowRecord(options.storePath, options.recordId);
-	const comments = await listRecordComments(
-		options.storePath,
-		options.recordId,
-	);
-	const now = iso(options.now ?? new Date());
-	const comment = parseRecordComment({
-		id: allocateNextCommentId(options.recordId, comments),
-		recordId: options.recordId,
-		createdAt: now,
-		updatedAt: now,
-		body: options.body,
-	});
-	await writeCommentFile(options.storePath, comment);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: options.recordId,
-		type: "comment",
-		summary: `Added comment ${comment.id}.`,
-		data: { commentId: comment.id },
-		now: options.now,
-	});
-	return comment;
+	return runForgePromise(addRecordCommentEffect(options));
 }
 
-export async function listRecordComments(
+export function addRecordCommentEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly body: string;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		yield* readWorkflowRecordEffect(options.storePath, options.recordId);
+		const comments = yield* readRecordCommentsFromDiskEffect(
+			options.storePath,
+			options.recordId,
+		);
+		const now = iso(options.now ?? new Date());
+		const comment = yield* Effect.try({
+			try: () =>
+				parseRecordComment({
+					id: allocateNextCommentId(options.recordId, comments),
+					recordId: options.recordId,
+					createdAt: now,
+					updatedAt: now,
+					body: options.body,
+				}),
+			catch: (error) => error,
+		});
+		yield* writeCommentFileEffect(options.storePath, comment);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: options.recordId,
+			type: "comment",
+			summary: `Added comment ${comment.id}.`,
+			data: { commentId: comment.id },
+			now: options.now,
+		});
+		return comment;
+	});
+}
+
+export function listRecordComments(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 ): Promise<Array<RecordComment>> {
-	await readWorkflowRecord(storePath, recordId);
-	return readRecordCommentsFromDisk(storePath, recordId);
+	return runForgePromise(listRecordCommentsEffect(storePath, recordId));
 }
 
-export async function replaceRecordCommentFromEditedMarkdown(options: {
+export function listRecordCommentsEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+) {
+	return Effect.gen(function* () {
+		yield* readWorkflowRecordEffect(storePath, recordId);
+		return yield* readRecordCommentsFromDiskEffect(storePath, recordId);
+	});
+}
+
+export function replaceRecordCommentFromEditedMarkdown(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly commentId: CommentId;
 	readonly markdown: string;
 	readonly now?: Date;
 }): Promise<RecordComment> {
-	const before = await readRecordComment(
-		options.storePath,
-		options.recordId,
-		options.commentId,
-	);
-	const parsed = parseRecordCommentMarkdown(options.markdown, {
-		expectedRecordId: options.recordId,
-		expectedCommentId: options.commentId,
-	});
-	validateCommentEdit(before, parsed);
-	const edited = { ...parsed, updatedAt: iso(options.now ?? new Date()) };
-	await writeCommentFile(options.storePath, edited);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: options.recordId,
-		type: "comment-edit",
-		summary: `Edited comment ${options.commentId}.`,
-		data: { commentId: options.commentId },
-		now: options.now,
-	});
-	return edited;
+	return runForgePromise(replaceRecordCommentFromEditedMarkdownEffect(options));
 }
 
-export async function listRecordUpdates(
+export function replaceRecordCommentFromEditedMarkdownEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly commentId: CommentId;
+	readonly markdown: string;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const before = yield* readRecordCommentEffect(
+			options.storePath,
+			options.recordId,
+			options.commentId,
+		);
+		const edited = yield* Effect.try({
+			try: () => {
+				const parsed = parseRecordCommentMarkdown(options.markdown, {
+					expectedRecordId: options.recordId,
+					expectedCommentId: options.commentId,
+				});
+				validateCommentEdit(before, parsed);
+				return { ...parsed, updatedAt: iso(options.now ?? new Date()) };
+			},
+			catch: (error) => error,
+		});
+		yield* writeCommentFileEffect(options.storePath, edited);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: options.recordId,
+			type: "comment-edit",
+			summary: `Edited comment ${options.commentId}.`,
+			data: { commentId: options.commentId },
+			now: options.now,
+		});
+		return edited;
+	});
+}
+
+export function listRecordUpdates(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 ): Promise<Array<RecordUpdate>> {
-	await readWorkflowRecord(storePath, recordId);
-	return readRecordUpdatesFromDisk(storePath, recordId);
+	return runForgePromise(listRecordUpdatesEffect(storePath, recordId));
 }
 
-export async function listRecordHistory(
+export function listRecordUpdatesEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
-): Promise<ReadonlyArray<RecordHistoryEntry>> {
-	return buildCombinedRecordHistory({
-		comments: await listRecordComments(storePath, recordId),
-		updates: await listRecordUpdates(storePath, recordId),
+) {
+	return Effect.gen(function* () {
+		yield* readWorkflowRecordEffect(storePath, recordId);
+		return yield* readRecordUpdatesFromDiskEffect(storePath, recordId);
 	});
 }
 
-export async function listWorkflowRecordReadiness(
+export function listRecordHistory(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+): Promise<ReadonlyArray<RecordHistoryEntry>> {
+	return runForgePromise(listRecordHistoryEffect(storePath, recordId));
+}
+
+export function listRecordHistoryEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+) {
+	return Effect.gen(function* () {
+		return buildCombinedRecordHistory({
+			comments: yield* listRecordCommentsEffect(storePath, recordId),
+			updates: yield* listRecordUpdatesEffect(storePath, recordId),
+		});
+	});
+}
+
+export function listWorkflowRecordReadiness(
 	storePath: AbsolutePath,
 	options: WorkflowRecordReadinessQueryOptions = {},
 ): Promise<Array<ReadinessDiagnosis>> {
-	const records = await readAllWorkflowRecords(storePath);
-	return records
-		.filter((record) => recordIsReadinessCandidate(record, records, options))
-		.map((record) => diagnoseRecordReadiness(record, records))
-		.filter((diagnosis) => diagnosis.ready !== (options.blocked === true));
+	return runForgePromise(listWorkflowRecordReadinessEffect(storePath, options));
 }
 
-export async function selectNextWorkflowRecord(
+export function listWorkflowRecordReadinessEffect(
+	storePath: AbsolutePath,
+	options: WorkflowRecordReadinessQueryOptions = {},
+) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(storePath);
+		return records
+			.filter((record) => recordIsReadinessCandidate(record, records, options))
+			.map((record) => diagnoseRecordReadiness(record, records))
+			.filter((diagnosis) => diagnosis.ready !== (options.blocked === true));
+	});
+}
+
+export function selectNextWorkflowRecord(
 	storePath: AbsolutePath,
 	options: NextRecordOptions = {},
 ): Promise<RecordFrontmatter | undefined> {
-	return selectNextRecord(await readAllWorkflowRecords(storePath), options);
+	return runForgePromise(selectNextWorkflowRecordEffect(storePath, options));
 }
 
-export async function replaceWorkflowRecordFromEditedMarkdown(options: {
+export function selectNextWorkflowRecordEffect(
+	storePath: AbsolutePath,
+	options: NextRecordOptions = {},
+) {
+	return Effect.gen(function* () {
+		return selectNextRecord(
+			yield* readAllWorkflowRecordsEffect(storePath),
+			options,
+		);
+	});
+}
+
+export function replaceWorkflowRecordFromEditedMarkdown(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly markdown: string;
 	readonly now?: Date;
 }): Promise<WorkflowRecord> {
-	const before = await readWorkflowRecord(options.storePath, options.recordId);
-	const parsed = parseWorkflowRecordMarkdown(options.markdown, {
-		expectedId: before.id,
-		expectedKind: before.kind,
+	return runForgePromise(
+		replaceWorkflowRecordFromEditedMarkdownEffect(options),
+	);
+}
+
+export function replaceWorkflowRecordFromEditedMarkdownEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly recordId: RecordId;
+	readonly markdown: string;
+	readonly now?: Date;
+}) {
+	return Effect.gen(function* () {
+		const before = yield* readWorkflowRecordEffect(
+			options.storePath,
+			options.recordId,
+		);
+		const { edited, validation } = yield* Effect.try({
+			try: () => {
+				const parsed = parseWorkflowRecordMarkdown(options.markdown, {
+					expectedId: before.id,
+					expectedKind: before.kind,
+				});
+				const validation = validateFrontmatterEdit(before, parsed);
+				const edited: WorkflowRecord = {
+					...parsed,
+					updatedAt: iso(options.now ?? new Date()),
+				};
+				return { edited, validation };
+			},
+			catch: (error) => error,
+		});
+		yield* writeRecordFileEffect(options.storePath, edited);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: edited.id,
+			type: "edit",
+			summary: "Edited record Markdown.",
+			data: { changedFrontmatter: validation.changed },
+			now: options.now,
+		});
+		return edited;
 	});
-	const validation = validateFrontmatterEdit(before, parsed);
-	const edited: WorkflowRecord = {
-		...parsed,
-		updatedAt: iso(options.now ?? new Date()),
-	};
-	await writeRecordFile(options.storePath, edited);
-	await rebuildRecordIndexes(options.storePath);
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: edited.id,
-		type: "edit",
-		summary: "Edited record Markdown.",
-		data: { changedFrontmatter: validation.changed },
-		now: options.now,
-	});
-	return edited;
 }
 
 export function formatWorkflowRecordMarkdown(record: WorkflowRecord): string {
@@ -646,376 +935,468 @@ export function parseWorkflowRecordMarkdown(
 	return { ...parsed, body };
 }
 
-export async function rebuildRecordIndexes(
-	storePath: AbsolutePath,
-): Promise<void> {
-	const records = await readAllWorkflowRecords(storePath);
-	const byId: Record<string, RecordLocator> = {};
-	const byProject: Record<string, Array<number>> = {};
-	const byInitiative: Record<string, ByInitiativeRecordIndexEntryMutable> = {};
-	const relationships: Record<string, MutableRelationshipRecordIndexEntry> = {};
-
-	for (const record of records) {
-		byId[String(record.id)] = {
-			kind: record.kind,
-			path: recordRelativePath(record.kind, record.id),
-		};
-		for (const project of projectsForRecord(record)) {
-			byProject[project] = byProject[project] ?? [];
-			byProject[project].push(record.id);
-		}
-		if (record.kind === "initiative") {
-			byInitiative[String(record.id)] = byInitiativeEntryFor(record);
-		}
-		if (record.initiative !== null) {
-			const key = String(record.initiative);
-			byInitiative[key] = byInitiative[key] ?? emptyInitiativeEntry();
-			byInitiative[key].members.push(record.id);
-			for (const project of projectsForRecord(record)) {
-				byInitiative[key].projects.push(project);
-			}
-		}
-		relationships[String(record.id)] = {
-			parent: record.parent,
-			children: [],
-			initiative: record.initiative,
-			initiativeMembers: [],
-			dependsOn: [...record.dependsOn],
-			dependents: [],
-			generatedBy: record.generatedBy,
-			generated: [],
-		};
-	}
-
-	for (const record of records) {
-		if (record.parent !== null) {
-			relationships[String(record.parent)]?.children.push(record.id);
-		}
-		if (record.initiative !== null) {
-			relationships[String(record.initiative)]?.initiativeMembers.push(
-				record.id,
-			);
-		}
-		for (const dependency of record.dependsOn) {
-			relationships[String(dependency)]?.dependents.push(record.id);
-		}
-		if (record.generatedBy !== null) {
-			relationships[String(record.generatedBy)]?.generated.push(record.id);
-		}
-	}
-
-	for (const ids of Object.values(byProject)) {
-		ids.sort((left, right) => left - right);
-	}
-	for (const initiative of Object.values(byInitiative)) {
-		initiative.declaredProjects = sortedUnique(initiative.declaredProjects);
-		initiative.members = sortedUnique(initiative.members);
-		initiative.projects = sortedUnique(initiative.projects);
-	}
-	for (const relationship of Object.values(relationships)) {
-		relationship.children = sortedUnique(relationship.children);
-		relationship.initiativeMembers = sortedUnique(
-			relationship.initiativeMembers,
-		);
-		relationship.dependents = sortedUnique(relationship.dependents);
-		relationship.generated = sortedUnique(relationship.generated);
-	}
-
-	const paths = storeRootPaths(storePath);
-	await writeJsonFile(paths.byIdIndex, sortRecordObject(byId));
-	await writeJsonFile(paths.byProjectIndex, sortRecordObject(byProject));
-	await writeJsonFile(paths.byInitiativeIndex, sortRecordObject(byInitiative));
-	await writeJsonFile(
-		paths.relationshipsIndex,
-		sortRecordObject(relationships),
-	);
+export function rebuildRecordIndexes(storePath: AbsolutePath): Promise<void> {
+	return runForgePromise(rebuildRecordIndexesEffect(storePath));
 }
 
-async function mutateInitiativeDeclaredProjects(options: {
+export function rebuildRecordIndexesEffect(storePath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(storePath);
+		const byId: Record<string, RecordLocator> = {};
+		const byProject: Record<string, Array<number>> = {};
+		const byInitiative: Record<string, ByInitiativeRecordIndexEntryMutable> =
+			{};
+		const relationships: Record<string, MutableRelationshipRecordIndexEntry> =
+			{};
+
+		for (const record of records) {
+			byId[String(record.id)] = {
+				kind: record.kind,
+				path: recordRelativePath(record.kind, record.id),
+			};
+			for (const project of projectsForRecord(record)) {
+				byProject[project] = byProject[project] ?? [];
+				byProject[project].push(record.id);
+			}
+			if (record.kind === "initiative") {
+				byInitiative[String(record.id)] = byInitiativeEntryFor(record);
+			}
+			if (record.initiative !== null) {
+				const key = String(record.initiative);
+				byInitiative[key] = byInitiative[key] ?? emptyInitiativeEntry();
+				byInitiative[key].members.push(record.id);
+				for (const project of projectsForRecord(record)) {
+					byInitiative[key].projects.push(project);
+				}
+			}
+			relationships[String(record.id)] = {
+				parent: record.parent,
+				children: [],
+				initiative: record.initiative,
+				initiativeMembers: [],
+				dependsOn: [...record.dependsOn],
+				dependents: [],
+				generatedBy: record.generatedBy,
+				generated: [],
+			};
+		}
+
+		for (const record of records) {
+			if (record.parent !== null) {
+				relationships[String(record.parent)]?.children.push(record.id);
+			}
+			if (record.initiative !== null) {
+				relationships[String(record.initiative)]?.initiativeMembers.push(
+					record.id,
+				);
+			}
+			for (const dependency of record.dependsOn) {
+				relationships[String(dependency)]?.dependents.push(record.id);
+			}
+			if (record.generatedBy !== null) {
+				relationships[String(record.generatedBy)]?.generated.push(record.id);
+			}
+		}
+
+		for (const ids of Object.values(byProject)) {
+			ids.sort((left, right) => left - right);
+		}
+		for (const initiative of Object.values(byInitiative)) {
+			initiative.declaredProjects = sortedUnique(initiative.declaredProjects);
+			initiative.members = sortedUnique(initiative.members);
+			initiative.projects = sortedUnique(initiative.projects);
+		}
+		for (const relationship of Object.values(relationships)) {
+			relationship.children = sortedUnique(relationship.children);
+			relationship.initiativeMembers = sortedUnique(
+				relationship.initiativeMembers,
+			);
+			relationship.dependents = sortedUnique(relationship.dependents);
+			relationship.generated = sortedUnique(relationship.generated);
+		}
+
+		const paths = storeRootPaths(storePath);
+		yield* writeJsonFileEffect(paths.byIdIndex, sortRecordObject(byId));
+		yield* writeJsonFileEffect(
+			paths.byProjectIndex,
+			sortRecordObject(byProject),
+		);
+		yield* writeJsonFileEffect(
+			paths.byInitiativeIndex,
+			sortRecordObject(byInitiative),
+		);
+		yield* writeJsonFileEffect(
+			paths.relationshipsIndex,
+			sortRecordObject(relationships),
+		);
+	});
+}
+
+function mutateInitiativeDeclaredProjectsEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly initiativeId: RecordId;
 	readonly project: ProjectId;
 	readonly operation: "add" | "remove";
 	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	const records = await readAllWorkflowRecords(options.storePath);
-	const before = requireRecordFromList(records, options.initiativeId);
-	if (before.kind !== "initiative" || before.scope.type !== "project-set") {
-		validateInitiativeDeclaredProjectsEdit(before, before, records);
-	}
-	const beforeProjects =
-		before.scope.type === "project-set" ? before.scope.projects : [];
-	const afterProjects =
-		options.operation === "add"
-			? sortedUnique([...beforeProjects, options.project])
-			: beforeProjects.filter((project) => project !== options.project);
-	if (sameProjectIds(beforeProjects, afterProjects)) {
-		return before;
-	}
-	const validationAfter: WorkflowRecord = {
-		...before,
-		scope: { type: "project-set", projects: afterProjects },
-	};
-	const validation = validateInitiativeDeclaredProjectsEdit(
-		before,
-		validationAfter,
-		records,
-	);
-	const updated: WorkflowRecord = {
-		...validationAfter,
-		updatedAt: iso(options.now ?? new Date()),
-	};
-	await writeRecordFile(options.storePath, updated);
-	await rebuildRecordIndexes(options.storePath);
-	const changedProjects =
-		options.operation === "add" ? validation.added : validation.removed;
-	await appendRecordUpdate({
-		storePath: options.storePath,
-		recordId: updated.id,
-		type: `initiative-project-${options.operation}`,
-		summary: `${options.operation === "add" ? "Added" : "Removed"} initiative project ${options.project}.`,
-		data: { projects: changedProjects },
-		now: options.now,
+}) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+		const result = yield* Effect.try({
+			try: () => {
+				const before = requireRecordFromList(records, options.initiativeId);
+				if (
+					before.kind !== "initiative" ||
+					before.scope.type !== "project-set"
+				) {
+					validateInitiativeDeclaredProjectsEdit(before, before, records);
+				}
+				const beforeProjects =
+					before.scope.type === "project-set" ? before.scope.projects : [];
+				const afterProjects =
+					options.operation === "add"
+						? sortedUnique([...beforeProjects, options.project])
+						: beforeProjects.filter((project) => project !== options.project);
+				if (sameProjectIds(beforeProjects, afterProjects)) {
+					return { before, updated: before, changedProjects: [] };
+				}
+				const validationAfter: WorkflowRecord = {
+					...before,
+					scope: { type: "project-set", projects: afterProjects },
+				};
+				const validation = validateInitiativeDeclaredProjectsEdit(
+					before,
+					validationAfter,
+					records,
+				);
+				const updated: WorkflowRecord = {
+					...validationAfter,
+					updatedAt: iso(options.now ?? new Date()),
+				};
+				return {
+					before,
+					updated,
+					changedProjects:
+						options.operation === "add" ? validation.added : validation.removed,
+				};
+			},
+			catch: (error) => error,
+		});
+		if (result.updated === result.before) {
+			return result.before;
+		}
+		yield* writeRecordFileEffect(options.storePath, result.updated);
+		yield* rebuildRecordIndexesEffect(options.storePath);
+		yield* appendRecordUpdateEffect({
+			storePath: options.storePath,
+			recordId: result.updated.id,
+			type: `initiative-project-${options.operation}`,
+			summary: `${options.operation === "add" ? "Added" : "Removed"} initiative project ${options.project}.`,
+			data: { projects: result.changedProjects },
+			now: options.now,
+		});
+		return result.updated;
 	});
-	return updated;
 }
 
-async function validateRecordReferences(
+function validateRecordReferencesEffect(
 	storePath: AbsolutePath,
 	record: WorkflowRecord,
-): Promise<void> {
-	const records = await readAllWorkflowRecords(storePath);
-	if (record.parent !== null) {
-		validateRecordPlacement(record, {
-			parent: requireRecordFromList(records, record.parent),
+) {
+	return Effect.gen(function* () {
+		const records = yield* readAllWorkflowRecordsEffect(storePath);
+		yield* Effect.try({
+			try: () => {
+				if (record.parent !== null) {
+					validateRecordPlacement(record, {
+						parent: requireRecordFromList(records, record.parent),
+					});
+				}
+				for (const dependencyId of record.dependsOn) {
+					validateDependencyEdge({
+						record,
+						dependsOn: requireRecordFromList(records, dependencyId),
+						records: [...records, record],
+					});
+				}
+				if (record.generatedBy !== null) {
+					requireRecordFromList(records, record.generatedBy);
+				}
+				if (record.initiative !== null) {
+					validateInitiativeMembership(
+						record,
+						requireRecordFromList(records, record.initiative),
+					);
+				}
+			},
+			catch: (error) => error,
 		});
-	}
-	for (const dependencyId of record.dependsOn) {
-		validateDependencyEdge({
-			record,
-			dependsOn: requireRecordFromList(records, dependencyId),
-			records: [...records, record],
-		});
-	}
-	if (record.generatedBy !== null) {
-		requireRecordFromList(records, record.generatedBy);
-	}
-	if (record.initiative !== null) {
-		validateInitiativeMembership(
-			record,
-			requireRecordFromList(records, record.initiative),
-		);
-	}
+	});
 }
 
-async function assertRecordPathIsFree(
+function assertRecordPathIsFreeEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
-): Promise<void> {
-	for (const candidateKind of recordKindsForStorage) {
-		const targetPath = recordFilePath(storePath, candidateKind, recordId);
-		try {
-			await stat(targetPath);
-		} catch (error) {
-			if (isMissingFile(error)) {
+) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		for (const candidateKind of recordKindsForStorage) {
+			const targetPath = recordFilePath(storePath, candidateKind, recordId);
+			const exists = yield* fileSystem.stat(targetPath).pipe(
+				Effect.map(() => true),
+				Effect.catchIf(isMissingFile, () => Effect.succeed(false)),
+			);
+			if (!exists) {
 				continue;
 			}
-			throw error;
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "store-invalid",
+					message: `Store manifest nextRecordId conflicts with existing record file '${targetPath}'. Run forge store doctor.`,
+					details: { recordId, path: targetPath },
+				}),
+			);
 		}
-		throw new ForgeError({
-			kind: "store-invalid",
-			message: `Store manifest nextRecordId conflicts with existing record file '${targetPath}'. Run forge store doctor.`,
-			details: { recordId, path: targetPath },
-		});
-	}
+	});
 }
 
-async function writeRecordFile(
+function writeRecordFileEffect(
 	storePath: AbsolutePath,
 	record: WorkflowRecord,
-): Promise<void> {
+) {
 	const filePath = recordFilePath(storePath, record.kind, record.id);
-	await writeAtomicTextFile(filePath, formatWorkflowRecordMarkdown(record));
+	return writeAtomicTextFileEffect(
+		filePath,
+		formatWorkflowRecordMarkdown(record),
+	);
 }
 
-async function appendRecordUpdate(options: {
+function appendRecordUpdateEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly type: string;
 	readonly summary: string;
 	readonly data?: Readonly<Record<string, unknown>> | null;
 	readonly now?: Date;
-}): Promise<RecordUpdate> {
-	await readWorkflowRecord(options.storePath, options.recordId);
-	const update = createRecordUpdate({
-		recordId: options.recordId,
-		updates: await readRecordUpdatesFromDisk(
-			options.storePath,
-			options.recordId,
-		),
-		type: options.type,
-		summary: options.summary,
-		data: options.data,
-		now: options.now,
+}) {
+	return Effect.gen(function* () {
+		yield* readWorkflowRecordEffect(options.storePath, options.recordId);
+		const update = createRecordUpdate({
+			recordId: options.recordId,
+			updates: yield* readRecordUpdatesFromDiskEffect(
+				options.storePath,
+				options.recordId,
+			),
+			type: options.type,
+			summary: options.summary,
+			data: options.data,
+			now: options.now,
+		});
+		yield* writeJsonFileEffect(
+			updateFilePath(
+				options.storePath,
+				options.recordId,
+				update.sequence,
+				update.type,
+			),
+			formatRecordUpdateJson(update),
+		);
+		return update;
 	});
-	await writeJsonFile(
-		updateFilePath(
-			options.storePath,
-			options.recordId,
-			update.sequence,
-			update.type,
-		),
-		formatRecordUpdateJson(update),
-	);
-	return update;
 }
 
-async function readRecordComment(
+function readRecordCommentEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
 	commentId: CommentId,
-): Promise<RecordComment> {
-	return parseRecordCommentMarkdown(
-		await readFile(commentFilePath(storePath, recordId, commentId), "utf8"),
-		{ expectedRecordId: recordId, expectedCommentId: commentId },
-	);
+) {
+	return Effect.gen(function* () {
+		const markdown = yield* readFileStringEffect(
+			commentFilePath(storePath, recordId, commentId),
+		);
+		return yield* Effect.try({
+			try: () =>
+				parseRecordCommentMarkdown(markdown, {
+					expectedRecordId: recordId,
+					expectedCommentId: commentId,
+				}),
+			catch: (error) => error,
+		});
+	});
 }
 
-async function writeCommentFile(
+function writeCommentFileEffect(
 	storePath: AbsolutePath,
 	comment: RecordComment,
-): Promise<void> {
-	await writeAtomicTextFile(
+) {
+	return writeAtomicTextFileEffect(
 		commentFilePath(storePath, comment.recordId, comment.id),
 		formatRecordCommentMarkdown(comment),
 	);
 }
 
-async function writeAtomicTextFile(
-	filePath: AbsolutePath,
-	content: string,
-): Promise<void> {
-	await mkdir(path.dirname(filePath), { recursive: true });
-	const temporaryPath = parseAbsolutePath(
-		`${filePath}.tmp-${process.pid}-${Date.now()}`,
-		"temporaryPath",
-	);
-	await writeFile(temporaryPath, content, "utf8");
-	await rename(temporaryPath, filePath);
+function writeAtomicTextFileEffect(filePath: AbsolutePath, content: string) {
+	return Effect.gen(function* () {
+		const temporaryPath = parseAbsolutePath(
+			`${filePath}.tmp-${process.pid}-${Date.now()}`,
+			"temporaryPath",
+		);
+		yield* Effect.gen(function* () {
+			const fileSystem = yield* FileSystem;
+			yield* fileSystem.makeDirectory(path.dirname(filePath), {
+				recursive: true,
+			});
+			yield* fileSystem.writeFileString(temporaryPath, content);
+			yield* fileSystem.rename(temporaryPath, filePath);
+		}).pipe(
+			Effect.ensuring(
+				Effect.gen(function* () {
+					const fileSystem = yield* FileSystem;
+					yield* fileSystem
+						.remove(temporaryPath, { recursive: false })
+						.pipe(Effect.catchIf(isMissingFile, () => Effect.void));
+				}).pipe(Effect.ignore),
+			),
+		);
+	});
 }
 
-async function readByIdIndex(
-	storePath: AbsolutePath,
-): Promise<ByIdRecordIndex> {
-	return (await readJson(
-		storeRootPaths(storePath).byIdIndex,
-	)) as ByIdRecordIndex;
+function readByIdIndexEffect(storePath: AbsolutePath) {
+	return readJsonEffect(storeRootPaths(storePath).byIdIndex) as Effect.Effect<
+		ByIdRecordIndex,
+		unknown,
+		FileSystem
+	>;
 }
 
-async function readRecordCommentsFromDisk(
+function readRecordCommentsFromDiskEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
-): Promise<Array<RecordComment>> {
-	const commentsDirectory = path.dirname(
-		commentFilePath(storePath, recordId, 1 as CommentId),
-	);
-	let files: Array<string>;
-	try {
-		files = await readdir(commentsDirectory);
-	} catch (error) {
-		if (isMissingFile(error)) {
-			return [];
-		}
-		throw error;
-	}
-	const comments = await Promise.all(
-		files
-			.filter((file) => file.endsWith(".md"))
-			.map(async (file) =>
-				parseRecordCommentMarkdown(
-					await readFile(path.join(commentsDirectory, file), "utf8"),
+) {
+	return Effect.gen(function* () {
+		const commentsDirectory = parseAbsolutePath(
+			path.dirname(commentFilePath(storePath, recordId, 1 as CommentId)),
+		);
+		const files = yield* readDirectoryEffect(commentsDirectory).pipe(
+			Effect.catchAll((error) => {
+				if (isMissingFile(error)) {
+					return Effect.succeed([]);
+				}
+				return Effect.fail(error);
+			}),
+		);
+		const comments = yield* Effect.all(
+			files
+				.filter((file) => file.endsWith(".md"))
+				.map((file) =>
+					Effect.gen(function* () {
+						const markdown = yield* readFileStringEffect(
+							parseAbsolutePath(path.join(commentsDirectory, file)),
+						);
+						return yield* Effect.try({
+							try: () => parseRecordCommentMarkdown(markdown),
+							catch: (error) => error,
+						});
+					}),
 				),
-			),
-	);
-	return comments.sort((left, right) => left.id - right.id);
+			{ concurrency: "unbounded" },
+		);
+		return comments.sort((left, right) => left.id - right.id);
+	});
 }
 
-async function readRecordUpdatesFromDisk(
+function readRecordUpdatesFromDiskEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
-): Promise<Array<RecordUpdate>> {
-	const updatesDirectory = path.dirname(
-		updateFilePath(storePath, recordId, 1, "x"),
-	);
-	let files: Array<string>;
-	try {
-		files = await readdir(updatesDirectory);
-	} catch (error) {
-		if (isMissingFile(error)) {
-			return [];
-		}
-		throw error;
-	}
-	const updates = await Promise.all(
-		files
-			.filter((file) => file.endsWith(".json"))
-			.map(async (file) =>
-				parseRecordUpdateJson(
-					await readJson(parseAbsolutePath(path.join(updatesDirectory, file))),
-					recordId,
+) {
+	return Effect.gen(function* () {
+		const updatesDirectory = parseAbsolutePath(
+			path.dirname(updateFilePath(storePath, recordId, 1, "x")),
+		);
+		const files = yield* readDirectoryEffect(updatesDirectory).pipe(
+			Effect.catchAll((error) => {
+				if (isMissingFile(error)) {
+					return Effect.succeed([]);
+				}
+				return Effect.fail(error);
+			}),
+		);
+		const updates = yield* Effect.all(
+			files
+				.filter((file) => file.endsWith(".json"))
+				.map((file) =>
+					Effect.gen(function* () {
+						const value = yield* readJsonEffect(
+							parseAbsolutePath(path.join(updatesDirectory, file)),
+						);
+						return yield* Effect.try({
+							try: () => parseRecordUpdateJson(value, recordId),
+							catch: (error) => error,
+						});
+					}),
 				),
-			),
-	);
-	return updates.sort((left, right) => left.sequence - right.sequence);
+			{ concurrency: "unbounded" },
+		);
+		return updates.sort((left, right) => left.sequence - right.sequence);
+	});
 }
 
-async function readAllWorkflowRecords(
+function readAllWorkflowRecords(
 	storePath: AbsolutePath,
 ): Promise<Array<WorkflowRecord>> {
-	const paths = storeRootPaths(storePath);
-	const records: Array<WorkflowRecord> = [];
-	for (const kind of recordKindsForStorage) {
-		const kindDirectory = path.join(paths.records, kind);
-		let shards: Array<string>;
-		try {
-			shards = await readdir(kindDirectory);
-		} catch (error) {
-			if (isMissingFile(error)) {
-				continue;
-			}
-			throw error;
-		}
-		for (const shard of shards) {
-			const shardDirectory = path.join(kindDirectory, shard);
-			const files = await readdir(shardDirectory);
-			for (const file of files.filter((candidate) =>
-				candidate.endsWith(".md"),
-			)) {
-				const record = await readWorkflowRecordAtPath(
-					storePath,
-					path.relative(paths.root, path.join(shardDirectory, file)),
-					{ expectedKind: kind },
-				);
-				records.push(record);
-			}
-		}
-	}
-	return records.sort((left, right) => left.id - right.id);
+	return runForgePromise(readAllWorkflowRecordsEffect(storePath));
 }
 
-async function readWorkflowRecordAtPath(
+function readAllWorkflowRecordsEffect(storePath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const paths = storeRootPaths(storePath);
+		const records: Array<WorkflowRecord> = [];
+		for (const kind of recordKindsForStorage) {
+			const kindDirectory = parseAbsolutePath(path.join(paths.records, kind));
+			const shards = yield* readDirectoryEffect(kindDirectory).pipe(
+				Effect.catchAll((error) => {
+					if (isMissingFile(error)) {
+						return Effect.succeed([]);
+					}
+					return Effect.fail(error);
+				}),
+			);
+			for (const shard of shards) {
+				const shardDirectory = parseAbsolutePath(
+					path.join(kindDirectory, shard),
+				);
+				const files = yield* readDirectoryEffect(shardDirectory);
+				for (const file of files.filter((candidate) =>
+					candidate.endsWith(".md"),
+				)) {
+					const record = yield* readWorkflowRecordAtPathEffect(
+						storePath,
+						path.relative(paths.root, path.join(shardDirectory, file)),
+						{ expectedKind: kind },
+					);
+					records.push(record);
+				}
+			}
+		}
+		return records.sort((left, right) => left.id - right.id);
+	});
+}
+
+function readWorkflowRecordAtPathEffect(
 	storePath: AbsolutePath,
 	relativePath: string,
 	expectations: {
 		readonly expectedId?: RecordId;
 		readonly expectedKind?: RecordKind;
 	},
-): Promise<WorkflowRecord> {
-	const filePath = parseAbsolutePath(path.join(storePath, relativePath));
-	return parseWorkflowRecordMarkdown(
-		await readFile(filePath, "utf8"),
-		expectations,
-	);
+) {
+	return Effect.gen(function* () {
+		const filePath = parseAbsolutePath(path.join(storePath, relativePath));
+		const markdown = yield* readFileStringEffect(filePath);
+		return yield* Effect.try({
+			try: () => parseWorkflowRecordMarkdown(markdown, expectations),
+			catch: (error) => error,
+		});
+	});
 }
 
 export function formatRecordCommentMarkdown(comment: RecordComment): string {
@@ -1293,11 +1674,31 @@ function sortRecordObject<T>(object: Record<string, T>): Record<string, T> {
 	);
 }
 
+function readFileStringEffect(filePath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		return yield* fileSystem.readFileString(filePath, "utf8");
+	});
+}
+
+function readDirectoryEffect(directoryPath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		return yield* fileSystem.readDirectory(directoryPath);
+	});
+}
+
 function isMissingFile(error: unknown): boolean {
 	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		(error as { readonly code?: string }).code === "ENOENT"
+		(typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			(error as { readonly code?: string }).code === "ENOENT") ||
+		(typeof error === "object" &&
+			error !== null &&
+			"_tag" in error &&
+			error._tag === "SystemError" &&
+			"reason" in error &&
+			error.reason === "NotFound")
 	);
 }

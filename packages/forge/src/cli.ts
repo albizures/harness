@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { text as readStreamText } from "node:stream/consumers";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import * as Command from "@effect/platform/Command";
+import { Effect } from "effect";
 
 import {
 	decodeConfigSetInput,
@@ -73,6 +75,7 @@ import {
 	selectNextWorkflowRecord,
 	startWorkflowRecord,
 } from "./record-store.ts";
+import { runForgeMain, runForgePromise } from "./runtime.ts";
 import { recordFilePath } from "./store-paths.ts";
 
 export type CliOptions = {
@@ -172,6 +175,18 @@ const commandHelp: Record<string, string> = {
 	projects: `Usage:\n  forge projects\n`,
 	here: `Usage:\n  forge here\n`,
 };
+
+type ExitCodeTarget = { exitCode?: string | number | null | undefined };
+
+export function runCliMain(
+	argv: ReadonlyArray<string> = process.argv.slice(2),
+	options: CliOptions = {},
+	exitCodeTarget: ExitCodeTarget = process,
+): Effect.Effect<void> {
+	return Effect.promise(async () => {
+		exitCodeTarget.exitCode = await runCli(argv, options);
+	});
+}
 
 export async function runCli(
 	argv: ReadonlyArray<string>,
@@ -1387,26 +1402,37 @@ async function runEditor(
 	filePath: AbsolutePath,
 	parsed: Parsed,
 ): Promise<void> {
+	return runForgePromise(runEditorEffect(filePath, parsed));
+}
+
+function runEditorEffect(filePath: AbsolutePath, parsed: Parsed) {
 	const editor = parsed.env?.EDITOR ?? process.env.EDITOR;
 	if (editor === undefined || editor.trim() === "") {
-		throw usage("EDITOR must be set to edit records.");
+		return Effect.fail(usage("EDITOR must be set to edit records."));
 	}
-	await new Promise<void>((resolve, reject) => {
-		const child = spawn(editor, [filePath], { stdio: "inherit", shell: true });
-		child.on("error", reject);
-		child.on("exit", (code) => {
-			if (code === 0) {
-				resolve();
-			} else {
-				reject(
-					new ForgeError({
-						kind: "config-invalid",
-						message: `Editor exited with code ${code}.`,
-					}),
-				);
-			}
-		});
-	});
+	return Command.make(`${editor} ${shellQuote(filePath)}`).pipe(
+		Command.runInShell(true),
+		Command.stdin("inherit"),
+		Command.stdout("inherit"),
+		Command.stderr("inherit"),
+		Command.env(parsed.env),
+		Command.exitCode,
+		Effect.flatMap((exitCode) => {
+			const code = Number(exitCode);
+			return code === 0
+				? Effect.void
+				: Effect.fail(
+						new ForgeError({
+							kind: "config-invalid",
+							message: `Editor exited with code ${code}.`,
+						}),
+					);
+		}),
+	);
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 async function resolveStorePath(parsed: Parsed) {
@@ -1584,5 +1610,5 @@ export function isCliEntrypoint(
 }
 
 if (isCliEntrypoint()) {
-	process.exitCode = await runCli(process.argv.slice(2));
+	runForgeMain(runCliMain());
 }

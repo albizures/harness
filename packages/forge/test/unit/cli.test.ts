@@ -5,7 +5,8 @@ import { Readable } from "node:stream";
 import { expect, it } from "vitest";
 import { pathToFileURL } from "node:url";
 
-import { isCliEntrypoint, runCli } from "../../src/cli.ts";
+import { isCliEntrypoint, runCli, runCliMain } from "../../src/cli.ts";
+import { runForgePromise } from "../../src/runtime.ts";
 
 const packageRoot = new URL("../../", import.meta.url);
 
@@ -70,6 +71,24 @@ it("when the binary is launched through a symlink, it should still run as the CL
 	await symlink(target, link);
 
 	expect(isCliEntrypoint(pathToFileURL(target).href, link)).toBe(true);
+});
+
+it("when the CLI main effect runs, it should set the process exit code through the Forge runtime", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const processState: { exitCode?: string | number } = {};
+
+	await runForgePromise(
+		runCliMain(
+			["--help"],
+			{ stdout: stdout.stream, stderr: stderr.stream, env: { HOME: "/tmp" } },
+			processState,
+		),
+	);
+
+	expect(processState.exitCode).toBe(0);
+	expect(stdout.text()).toMatch(/Forge personal workflow CLI/);
+	expect(stderr.text()).toBe("");
 });
 
 it("when help is requested, it should describe the Phase 2 command surface", async () => {

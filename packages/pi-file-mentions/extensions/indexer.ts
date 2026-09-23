@@ -6,6 +6,7 @@ import type { FileMentionIndex, FileMentionIndexEntry } from "./matcher.ts";
 
 const DEFAULT_MAX_ENTRIES = 10_000;
 const COMMAND_OUTPUT_MAX_BUFFER_BYTES = 10_485_760;
+const COMMAND_TIMEOUT_MS = 2_000;
 const SKIPPED_NODE_DIRECTORIES = new Set([
 	".git",
 	"node_modules",
@@ -29,6 +30,7 @@ export type BuildFileMentionIndexOptions = {
 
 export type FileMentionIndexProvider = {
 	getIndex: () => Promise<FileMentionIndex | null>;
+	getCachedIndex: () => FileMentionIndex | null;
 	refresh: () => Promise<FileMentionIndex | null>;
 	clear: () => void;
 };
@@ -48,7 +50,11 @@ export async function buildFileMentionIndex(
 	const run = options.run ?? runCommand;
 
 	try {
-		return normalizeIndex(cwd, await collectWithFd(cwd, run), maxEntries);
+		return normalizeIndex(
+			cwd,
+			await collectWithFd(cwd, run, maxEntries),
+			maxEntries,
+		);
 	} catch {
 		// Fall through to the next backend so autocomplete can stay quiet.
 	}
@@ -77,11 +83,14 @@ export function createFileMentionIndexProvider(
 	const build =
 		options.build ?? ((root) => buildFileMentionIndex({ cwd: root }));
 	let cached: Promise<FileMentionIndex | null> | null = null;
+	let readyIndex: FileMentionIndex | null = null;
 
 	async function load(): Promise<FileMentionIndex | null> {
 		try {
-			return await build(cwd);
+			readyIndex = await build(cwd);
+			return readyIndex;
 		} catch {
+			readyIndex = null;
 			return null;
 		}
 	}
@@ -91,12 +100,14 @@ export function createFileMentionIndexProvider(
 			cached ??= load();
 			return cached;
 		},
+		getCachedIndex: () => readyIndex,
 		refresh: () => {
 			cached = load();
 			return cached;
 		},
 		clear: () => {
 			cached = null;
+			readyIndex = null;
 		},
 	};
 }
@@ -108,7 +119,9 @@ async function runCommand(
 ): Promise<{ stdout: string }> {
 	const { stdout } = await execFileAsync(command, args, {
 		cwd: options.cwd,
+		killSignal: "SIGKILL",
 		maxBuffer: COMMAND_OUTPUT_MAX_BUFFER_BYTES,
+		timeout: COMMAND_TIMEOUT_MS,
 	});
 	return { stdout: stdout.toString() };
 }
@@ -116,15 +129,24 @@ async function runCommand(
 async function collectWithFd(
 	cwd: string,
 	run: CommandRunner,
+	maxEntries: number,
 ): Promise<Array<Pick<FileMentionIndexEntry, "kind" | "path">>> {
+	const maxResults = String(maxEntries);
 	const directoryOutput = await run(
 		"fd",
-		["--type", "directory", "--strip-cwd-prefix", "."],
+		[
+			"--type",
+			"directory",
+			"--strip-cwd-prefix",
+			"--max-results",
+			maxResults,
+			".",
+		],
 		{ cwd },
 	);
 	const fileOutput = await run(
 		"fd",
-		["--type", "file", "--strip-cwd-prefix", "."],
+		["--type", "file", "--strip-cwd-prefix", "--max-results", maxResults, "."],
 		{
 			cwd,
 		},

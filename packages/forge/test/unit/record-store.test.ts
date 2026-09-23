@@ -1,9 +1,11 @@
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Cause, Effect, Exit } from "effect";
 import { expect, it } from "vitest";
 
 import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
+import { isForgeError } from "../../src/errors.ts";
 import {
 	ensureStoreRoot,
 	readStoreManifest,
@@ -12,27 +14,35 @@ import type { RecordId } from "../../src/record-domain.ts";
 import {
 	addInitiativeDeclaredProject,
 	addRecordComment,
+	addRecordCommentEffect,
 	addWorkflowRecordDependency,
 	attachWorkflowRecordToInitiative,
 	completeWorkflowRecord,
 	createWorkflowRecord,
+	createWorkflowRecordEffect,
 	formatRecordCommentMarkdown,
 	formatWorkflowRecordMarkdown,
 	listRecordComments,
 	listRecordHistory,
+	listRecordHistoryEffect,
 	listRecordUpdates,
 	listWorkflowRecordReadiness,
+	listWorkflowRecordReadinessEffect,
+	listWorkflowRecordsEffect,
 	parseWorkflowRecordMarkdown,
 	readRecordDependencyView,
 	readRecordTree,
 	readWorkflowRecord,
+	readWorkflowRecordEffect,
 	removeInitiativeDeclaredProject,
 	removeWorkflowRecordDependency,
 	replaceRecordCommentFromEditedMarkdown,
 	replaceWorkflowRecordFromEditedMarkdown,
 	selectNextWorkflowRecord,
 	startWorkflowRecord,
+	startWorkflowRecordEffect,
 } from "../../src/record-store.ts";
+import { runForgePromise } from "../../src/runtime.ts";
 import {
 	paddedRecordId,
 	recordFilePath,
@@ -42,6 +52,18 @@ import {
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 const laterDate = new Date("2026-09-20T00:00:00.000Z");
 const doneUpdateSequence = 3;
+const missingRecordId = 999 as RecordId;
+
+function failureFromExit(exit: Exit.Exit<unknown, unknown>) {
+	if (!Exit.isFailure(exit)) {
+		throw new Error("Expected Effect to fail.");
+	}
+	const failure = Cause.failureOption(exit.cause);
+	if (failure._tag !== "Some") {
+		throw new Error("Expected typed Effect failure.");
+	}
+	return failure.value;
+}
 
 async function tempStore() {
 	const storePath = parseAbsolutePath(
@@ -687,6 +709,168 @@ it("when querying initiative scoped navigation, it should include initiative rec
 			})
 		)?.id,
 	).toBe(initiative.id);
+});
+
+it("when using Effect read APIs, it should read records, history, readiness, and lists", async () => {
+	const storePath = await tempStore();
+	const spec = await createWorkflowRecord({
+		storePath,
+		now: fixedDate,
+		input: {
+			title: "Effect-read spec",
+			kind: "spec",
+			subkind: null,
+			scope: { type: "project", project: parseProjectId("harness") },
+			parent: null,
+			initiative: null,
+			dependsOn: [],
+			generatedBy: null,
+			tags: [],
+			profile: null,
+			body: "Spec body\n",
+		},
+	});
+	const task = await createWorkflowRecord({
+		storePath,
+		now: fixedDate,
+		input: {
+			title: "Effect-read task",
+			kind: "task",
+			subkind: null,
+			scope: spec.scope,
+			parent: spec.id,
+			initiative: null,
+			dependsOn: [],
+			generatedBy: null,
+			tags: [],
+			profile: null,
+			body: "Task body\n",
+		},
+	});
+	await addRecordComment({
+		storePath,
+		recordId: task.id,
+		body: "Effect comment\n",
+		now: laterDate,
+	});
+
+	expect(
+		(await runForgePromise(listWorkflowRecordsEffect(storePath))).map(
+			(record) => record.id,
+		),
+	).toEqual([spec.id, task.id]);
+	expect(
+		(await runForgePromise(readWorkflowRecordEffect(storePath, task.id))).body,
+	).toBe("Task body\n");
+	expect(
+		(await runForgePromise(listRecordHistoryEffect(storePath, task.id))).map(
+			(entry) => entry.kind,
+		),
+	).toEqual(["update", "update", "comment"]);
+	expect(
+		(await runForgePromise(listWorkflowRecordReadinessEffect(storePath))).map(
+			(diagnosis) => diagnosis.recordId,
+		),
+	).toEqual([task.id]);
+});
+
+it("when using Effect mutation APIs, it should persist records, lifecycle, comments, and indexes", async () => {
+	const storePath = await tempStore();
+
+	const created = await runForgePromise(
+		createWorkflowRecordEffect({
+			storePath,
+			now: fixedDate,
+			input: {
+				title: "Effect-created spec",
+				kind: "spec",
+				subkind: null,
+				scope: { type: "project", project: parseProjectId("harness") },
+				parent: null,
+				initiative: null,
+				dependsOn: [],
+				generatedBy: null,
+				tags: [],
+				profile: null,
+				body: "Created through Effect.\n",
+			},
+		}),
+	);
+	const started = await runForgePromise(
+		startWorkflowRecordEffect({
+			storePath,
+			recordId: created.id,
+			now: laterDate,
+		}),
+	);
+	const comment = await runForgePromise(
+		addRecordCommentEffect({
+			storePath,
+			recordId: created.id,
+			body: "Mutated through Effect.\n",
+			now: laterDate,
+		}),
+	);
+
+	expect(created.id).toBe(1);
+	expect(started.state).toBe("in-progress");
+	expect(comment.id).toBe(1);
+	expect((await readWorkflowRecord(storePath, created.id)).body).toBe(
+		"Created through Effect.\n",
+	);
+	expect(
+		JSON.parse(await readFile(storeRootPaths(storePath).byIdIndex, "utf8")),
+	).toEqual({
+		"1": { kind: "spec", path: "records/spec/000/000001.md" },
+	});
+});
+
+it("when the Effect create API has invalid references, it should fail with a ForgeError", async () => {
+	const storePath = await tempStore();
+
+	const exit = await runForgePromise(
+		Effect.exit(
+			createWorkflowRecordEffect({
+				storePath,
+				now: fixedDate,
+				input: {
+					title: "Missing parent task",
+					kind: "task",
+					subkind: null,
+					scope: { type: "project", project: parseProjectId("harness") },
+					parent: missingRecordId,
+					initiative: null,
+					dependsOn: [],
+					generatedBy: null,
+					tags: [],
+					profile: null,
+					body: "Cannot place this task.\n",
+				},
+			}),
+		),
+	);
+	const error = failureFromExit(exit);
+
+	expect(isForgeError(error)).toBe(true);
+	if (isForgeError(error)) {
+		expect(error.kind).toBe("record-not-found");
+		expect(error.details).toEqual({ recordId: missingRecordId });
+	}
+});
+
+it("when the Effect read API misses a record, it should fail with a record-not-found ForgeError", async () => {
+	const storePath = await tempStore();
+
+	const exit = await runForgePromise(
+		Effect.exit(readWorkflowRecordEffect(storePath, missingRecordId)),
+	);
+	const error = failureFromExit(exit);
+
+	expect(isForgeError(error)).toBe(true);
+	if (isForgeError(error)) {
+		expect(error.kind).toBe("record-not-found");
+		expect(error.details).toEqual({ recordId: missingRecordId });
+	}
 });
 
 it("when querying relationship and readiness views, it should return deterministic store-backed results", async () => {

@@ -64,6 +64,7 @@ export function registerFileMentionsExtension(
 
 	pi.on("session_start", (_event, ctx) => {
 		const indexProvider = getProvider(ctx.cwd);
+		void indexProvider.getIndex();
 		ctx.ui.addAutocompleteProvider((current) =>
 			createFileMentionAutocompleteProvider(current, indexProvider),
 		);

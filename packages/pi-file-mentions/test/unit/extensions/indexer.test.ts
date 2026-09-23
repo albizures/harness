@@ -22,6 +22,8 @@ test("when fd is available, the File Mention Index uses fd output and stores nor
 	const index = await buildFileMentionIndex({ cwd: "/repo", run });
 
 	expect(calls.map((call) => call.command)).toEqual(["fd", "fd"]);
+	expect(calls[0]?.args).toContain("--max-results");
+	expect(calls[1]?.args).toContain("--max-results");
 	expect(index?.entries).toEqual([
 		{ kind: "directory", path: "docs/guide", depth: 2, basename: "guide" },
 		{
@@ -100,9 +102,11 @@ test("when a session asks repeatedly, the lazy provider builds once and reuses t
 		},
 	});
 
+	expect(provider.getCachedIndex()).toBe(null);
 	const first = await provider.getIndex();
 	const second = await provider.getIndex();
 
+	expect(provider.getCachedIndex()).toBe(first);
 	expect(first).toBe(second);
 	expect(buildCount).toBe(1);
 });

@@ -27,6 +27,7 @@ function createProvider(indexLabel: string): FileMentionIndexProvider & {
 	return {
 		refreshCount: 0,
 		getIndex: async () => ({ projectRoot: indexLabel, entries: [] }),
+		getCachedIndex: () => ({ projectRoot: indexLabel, entries: [] }),
 		refresh: async function () {
 			this.refreshCount += 1;
 			return { projectRoot: indexLabel, entries: [] };
@@ -109,6 +110,7 @@ test("when the refresh command cannot rebuild the File Mention Index, it reports
 	registerFileMentionsExtension(pi as any, {
 		createIndexProvider: () => ({
 			getIndex: async () => null,
+			getCachedIndex: () => null,
 			refresh: async () => null,
 			clear: () => {},
 		}),

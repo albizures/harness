@@ -44,6 +44,7 @@ function indexProvider(
 ): FileMentionIndexProvider {
 	return {
 		getIndex: async () => index,
+		getCachedIndex: () => index,
 		refresh: async () => index,
 		clear: () => undefined,
 	};
@@ -116,7 +117,7 @@ test("when applying a smart File Mention, the prepared insertion value replaces 
 	expect(native.applyCalls).toBe(0);
 });
 
-test("when the @ query is bare or smart matching is empty, native autocomplete is used as fallback", async () => {
+test("when the @ query is bare, native autocomplete is used as fallback", async () => {
 	const native = currentProvider([{ value: "native", label: "native" }]);
 	const provider = createFileMentionAutocompleteProvider(
 		native,
@@ -126,13 +127,65 @@ test("when the @ query is bare or smart matching is empty, native autocomplete i
 	const bare = await provider.getSuggestions(["open @"], 0, 6, {
 		signal: new AbortController().signal,
 	});
-	const empty = await provider.getSuggestions(["open @zzz"], 0, 9, {
+
+	expect(native.suggestionCalls).toBe(1);
+	expect(bare?.items).toEqual([{ value: "native", label: "native" }]);
+});
+
+test("when smart matching is empty, native @ autocomplete is not used as fallback", async () => {
+	const native = currentProvider([{ value: "native", label: "native" }]);
+	const provider = createFileMentionAutocompleteProvider(
+		native,
+		indexProvider(index),
+	);
+
+	const result = await provider.getSuggestions(["open @zzz"], 0, 9, {
 		signal: new AbortController().signal,
 	});
 
-	expect(native.suggestionCalls).toBe(2);
-	expect(bare?.items).toEqual([{ value: "native", label: "native" }]);
-	expect(empty?.items).toEqual([{ value: "native", label: "native" }]);
+	expect(result).toBe(null);
+	expect(native.suggestionCalls).toBe(0);
+});
+
+test("when the File Mention Index is not ready, autocomplete cancels without starting indexing", async () => {
+	const native = currentProvider([{ value: "native", label: "native" }]);
+	let getIndexCalls = 0;
+	const provider = createFileMentionAutocompleteProvider(native, {
+		getIndex: async () => {
+			getIndexCalls += 1;
+			return index;
+		},
+		getCachedIndex: () => null,
+		refresh: async () => null,
+		clear: () => undefined,
+	});
+
+	const result = await provider.getSuggestions(["@forge"], 0, 6, {
+		signal: new AbortController().signal,
+	});
+
+	expect(result).toBe(null);
+	expect(getIndexCalls).toBe(0);
+	expect(native.suggestionCalls).toBe(0);
+});
+
+test("when an otherwise empty input is in an @ mention context, native autocomplete is not used", async () => {
+	const native = currentProvider([{ value: "native", label: "native" }]);
+	const provider = createFileMentionAutocompleteProvider(
+		native,
+		indexProvider(index),
+	);
+
+	const bare = await provider.getSuggestions(["@"], 0, 1, {
+		signal: new AbortController().signal,
+	});
+	const spaced = await provider.getSuggestions(["@ "], 0, 2, {
+		signal: new AbortController().signal,
+	});
+
+	expect(bare).toBe(null);
+	expect(spaced).toBe(null);
+	expect(native.suggestionCalls).toBe(0);
 });
 
 test("when not in an active @ file mention query, native autocomplete handles the request", async () => {
