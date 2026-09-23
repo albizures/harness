@@ -6,6 +6,7 @@ Harness uses multiple domain contexts. Keep shared repository vocabulary in the 
 
 - [Harness](./CONTEXT.md) — shared repo-wide vocabulary for Pi packages, package development, and releases.
 - [AWF](./packages/awf/CONTEXT.md) — vocabulary owned by the `@albizures/awf` workflow runtime and CLI package.
+- [Forge](./packages/forge/CONTEXT.md) — vocabulary owned by the `@albizures/forge` personal global workflow CLI package.
 - [Pi Context Inspector](./packages/pi-context-inspector/CONTEXT.md) — vocabulary owned by the `@albizures/pi-context-inspector` package.
 - [Pi Exit Command](./packages/pi-exit-command/CONTEXT.md) — vocabulary owned by the `@albizures/pi-exit-command` package.
 - [Pi Footer Status](./packages/pi-footer-status/CONTEXT.md) — vocabulary owned by the `@albizures/pi-footer-status` package.
