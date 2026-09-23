@@ -10,6 +10,7 @@ Harness uses multiple domain contexts. Keep shared repository vocabulary in the 
 - [Pi Context Inspector](./packages/pi-context-inspector/CONTEXT.md) — vocabulary owned by the `@albizures/pi-context-inspector` package.
 - [Pi Exit Command](./packages/pi-exit-command/CONTEXT.md) — vocabulary owned by the `@albizures/pi-exit-command` package.
 - [Pi Footer Status](./packages/pi-footer-status/CONTEXT.md) — vocabulary owned by the `@albizures/pi-footer-status` package.
+- [Pi File Mentions](./packages/pi-file-mentions/CONTEXT.md) — vocabulary owned by the `@albizures/pi-file-mentions` package.
 - [Pi Suggested Replies](./packages/pi-suggested-replies/CONTEXT.md) — vocabulary owned by the `@albizures/pi-suggested-replies` package.
 - [Skills](./skills/CONTEXT.md) — vocabulary owned by the shared skill catalog under `skills/`.
 
