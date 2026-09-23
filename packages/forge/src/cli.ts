@@ -136,7 +136,8 @@ Commands:
   forge initiative project add <initiative> <project>
   forge initiative project remove <initiative> <project>
   forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]
-  forge ready [--blocked] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
+  forge ready [--json] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
+  forge ready --blocked [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
   forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
   forge tree <record>
   forge deps <record>
@@ -166,7 +167,7 @@ const commandHelp: Record<string, string> = {
 	initiatives: `Usage:\n  forge initiatives [--project <id>|--all-records]\n`,
 	initiative: `Usage:\n  forge initiative attach <initiative> <record>\n  forge initiative detach <initiative> <record>\n  forge initiative project add <initiative> <project>\n  forge initiative project remove <initiative> <project>\n`,
 	list: `Usage:\n  forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]\n`,
-	ready: `Usage:\n  forge ready [--blocked] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n`,
+	ready: `Usage:\n  forge ready [--json] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n  forge ready --blocked [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n\nJSON output is not supported with --blocked.\n`,
 	next: `Usage:\n  forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n`,
 	tree: `Usage:\n  forge tree <record>\n`,
 	deps: `Usage:\n  forge deps <record>\n  forge deps add <record> --depends-on <id>\n  forge deps remove <record> --depends-on <id>\n`,
@@ -732,6 +733,9 @@ async function runReady(
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.ready);
 	}
+	if (parsed.presentation === "json" && parsed.flags.blocked === true) {
+		throw usage("forge ready --json cannot be combined with --blocked.");
+	}
 	const storePath = await readyStore(parsed);
 	const records = await listWorkflowRecords(storePath);
 	const options = await navigationQueryOptions(parsed, storePath);
@@ -742,7 +746,7 @@ async function runReady(
 		planning: parsed.flags.planning === true,
 	});
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, diagnoses);
+		return present(stdout, parsed, readyJsonContract(diagnoses, records));
 	}
 	writeOut(
 		stdout,
@@ -1207,6 +1211,34 @@ function formatShownRecord(
 	]
 		.filter((line) => line !== undefined)
 		.join("\n");
+}
+
+function readyJsonContract(
+	diagnoses: ReadonlyArray<ReadinessDiagnosis>,
+	records: ReadonlyArray<WorkflowRecord>,
+): {
+	readonly records: ReadonlyArray<
+		Pick<WorkflowRecord, "id" | "kind" | "state" | "title">
+	>;
+} {
+	const byId = new Map(records.map((record) => [record.id, record]));
+	return {
+		records: diagnoses.map((diagnosis) => {
+			const record = byId.get(diagnosis.recordId);
+			if (record === undefined) {
+				throw new ForgeError({
+					kind: "record-not-found",
+					message: `Record '${diagnosis.recordId}' was not found.`,
+				});
+			}
+			return {
+				id: record.id,
+				kind: record.kind,
+				state: record.state,
+				title: record.title,
+			};
+		}),
+	};
 }
 
 function formatReadinessDiagnoses(

@@ -622,6 +622,142 @@ it("when Phase 3 navigation commands run, they should mutate dependencies and se
 	expect(JSON.parse(stdout.text()).dependsOn).toEqual([]);
 });
 
+it("when ready JSON is requested, it should emit the structured ready record contract", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-ready-json-home-"),
+	);
+	const store = path.join(home, "store");
+	const env = { HOME: home };
+	const specId = 1;
+	const readyTaskId = 2;
+	const grillingId = 4;
+
+	for (const args of [
+		[
+			"new",
+			"spec",
+			"--title",
+			"Ready JSON spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		[
+			"new",
+			"task",
+			"--title",
+			"First ready task",
+			"--description",
+			"First body",
+			"--parent",
+			"1",
+		],
+		[
+			"new",
+			"task",
+			"--title",
+			"Blocked task",
+			"--description",
+			"Blocked body",
+			"--parent",
+			"1",
+			"--depends-on",
+			"2",
+		],
+		[
+			"new",
+			"grilling",
+			"--title",
+			"Human checkpoint",
+			"--description",
+			"Question",
+			"--parent",
+			"1",
+		],
+	] as const) {
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
+	}
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(["ready", "--project", "harness", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stderr.text()).toBe("");
+	expect(stdout.text()).toMatch(/^\{\n\t"records": \[/);
+	expect(stdout.text().endsWith("\n")).toBe(true);
+	expect(JSON.parse(stdout.text())).toEqual({
+		records: [
+			{
+				id: readyTaskId,
+				kind: "task",
+				state: "ready",
+				title: "First ready task",
+			},
+		],
+	});
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(
+			["ready", "--planning", "--project", "harness", "--json"],
+			{ home, store, stdout: stdout.stream, env },
+		),
+	).toBe(0);
+	expect(
+		JSON.parse(stdout.text()).records.map(
+			(record: { id: number }) => record.id,
+		),
+	).toEqual([specId, readyTaskId]);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(
+			["ready", "--include-hitl", "--project", "harness", "--json"],
+			{ home, store, stdout: stdout.stream, env },
+		),
+	).toBe(0);
+	expect(
+		JSON.parse(stdout.text()).records.map(
+			(record: { id: number }) => record.id,
+		),
+	).toEqual([readyTaskId, grillingId]);
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			["ready", "--blocked", "--project", "harness", "--json"],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).not.toBe(0);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(
+		/ready --json cannot be combined with --blocked/,
+	);
+});
+
+it("when ready help is requested, it should document JSON output and the blocked incompatibility", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["ready", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	expect(code).toBe(0);
+	expect(stdout.text()).toMatch(/forge ready \[--json\]/);
+	expect(stdout.text()).toMatch(/JSON output is not supported with --blocked/);
+	expect(stderr.text()).toBe("");
+});
+
 it("when Phase 5 initiative CLI commands run, they should create groups, mutate membership, and filter navigation", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-phase5-home-"));
 	const store = path.join(home, "store");
