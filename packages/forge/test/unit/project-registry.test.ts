@@ -1,22 +1,21 @@
-import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { expect, it } from "vitest";
 
-import { parseAbsolutePath, parseProjectId } from "./domain.ts";
-import { ensureStoreRoot } from "./filesystem-store.ts";
+import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
+import { ensureStoreRoot } from "../../src/filesystem-store.ts";
 import {
 	addProject,
 	addProjectRoot,
 	findProjectForPath,
 	listProjects,
 	removeProjectRoot,
-} from "./project-registry.ts";
+} from "../../src/project-registry.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 
-test("when adding projects and roots, it should persist registry entries", async () => {
+it("when adding projects and roots, it should persist registry entries", async () => {
 	const storePath = parseAbsolutePath(
 		await mkdtemp(path.join(os.tmpdir(), "forge-projects-")),
 	);
@@ -29,8 +28,8 @@ test("when adding projects and roots, it should persist registry entries", async
 		remote: "git@github.com:albizures/harness.git",
 		now: fixedDate,
 	});
-	assert.equal(project.name, "Harness");
-	assert.deepEqual(project.roots, [harnessRoot]);
+	expect(project.name).toBe("Harness");
+	expect(project.roots).toEqual([harnessRoot]);
 
 	await addProjectRoot({
 		storePath,
@@ -38,7 +37,7 @@ test("when adding projects and roots, it should persist registry entries", async
 		root: parseAbsolutePath("/home/a/src/harness"),
 		now: fixedDate,
 	});
-	assert.equal((await listProjects(storePath))[0]?.roots.length, 2);
+	expect((await listProjects(storePath))[0]?.roots.length).toBe(2);
 
 	await removeProjectRoot({
 		storePath,
@@ -46,10 +45,10 @@ test("when adding projects and roots, it should persist registry entries", async
 		root: parseAbsolutePath("/home/a/src/harness"),
 		now: fixedDate,
 	});
-	assert.deepEqual((await listProjects(storePath))[0]?.roots, [harnessRoot]);
+	expect((await listProjects(storePath))[0]?.roots).toEqual([harnessRoot]);
 });
 
-test("when inferring a project, it should use the longest matching root", () => {
+it("when inferring a project, it should use the longest matching root", () => {
 	const cwd = parseAbsolutePath("/work/repo/packages/app/src");
 	const project = findProjectForPath(
 		[
@@ -70,5 +69,5 @@ test("when inferring a project, it should use the longest matching root", () => 
 		],
 		cwd,
 	);
-	assert.equal(project?.id, "app");
+	expect(project?.id).toBe("app");
 });

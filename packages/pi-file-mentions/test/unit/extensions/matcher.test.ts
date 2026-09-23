@@ -1,11 +1,10 @@
 // biome-ignore-all lint/style/noMagicNumbers: Test literals define matcher scoring and cap behavior.
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
 	matchFileMentions,
 	prepareFileMentionInsertion,
 	type FileMentionIndex,
-} from "./matcher.ts";
+} from "../../../extensions/matcher.ts";
 
 type TestIndexEntry = FileMentionIndex["entries"][number];
 
@@ -38,19 +37,17 @@ const index: FileMentionIndex = {
 test("when matching folders, basename matches outrank path-only matches", () => {
 	const suggestions = matchFileMentions(index, "button");
 
-	assert.deepEqual(
+	expect(
 		suggestions
 			.filter((item) => item.kind === "folder")
 			.map((item) => item.path),
-		["src/components/Button", "packages/button-kit"],
-	);
+	).toEqual(["src/components/Button", "packages/button-kit"]);
 });
 
 test("when expanding matched folders, recursive files appear below their folder", () => {
 	const suggestions = matchFileMentions(index, "button");
 
-	assert.deepEqual(
-		suggestions.slice(0, 4).map((item) => [item.kind, item.path]),
+	expect(suggestions.slice(0, 4).map((item) => [item.kind, item.path])).toEqual(
 		[
 			["folder", "src/components/Button"],
 			["file", "src/components/Button/index.ts"],
@@ -62,19 +59,18 @@ test("when expanding matched folders, recursive files appear below their folder"
 
 test("when an ancestor folder matches, descendant folders are not included unless independently matched", () => {
 	const srcSuggestions = matchFileMentions(index, "src");
-	assert.deepEqual(
+	expect(
 		srcSuggestions
 			.filter((item) => item.kind === "folder")
 			.map((item) => item.path),
-		["src"],
-	);
+	).toEqual(["src"]);
 
 	const buttonSuggestions = matchFileMentions(index, "button");
-	assert.ok(
+	expect(
 		buttonSuggestions.some(
 			(item) => item.kind === "folder" && item.path === "src/components/Button",
 		),
-	);
+	).toBeTruthy();
 });
 
 test("when applying caps, only five folders, twenty files per folder, and fifty total suggestions are returned", () => {
@@ -97,13 +93,13 @@ test("when applying caps, only five folders, twenty files per folder, and fifty 
 
 	const suggestions = matchFileMentions(cappedIndex, "target");
 
-	assert.equal(suggestions.length, 50);
-	assert.equal(suggestions.filter((item) => item.kind === "folder").length, 5);
+	expect(suggestions.length).toBe(50);
+	expect(suggestions.filter((item) => item.kind === "folder").length).toBe(5);
 	for (const folder of suggestions.filter((item) => item.kind === "folder")) {
-		assert.ok(
+		expect(
 			suggestions.filter((item) => item.matchedFolderPath === folder.path)
 				.length <= 20,
-		);
+		).toBeTruthy();
 	}
 });
 
@@ -121,7 +117,7 @@ test("when ordering files under a matched folder, shallow and short paths win be
 		"lib",
 	).map((item) => item.path);
 
-	assert.deepEqual(ordered, [
+	expect(ordered).toEqual([
 		"src/lib",
 		"src/lib/z.ts",
 		"src/lib/a-long-name.ts",
@@ -132,8 +128,8 @@ test("when ordering files under a matched folder, shallow and short paths win be
 test("when matching an absolute query, folders are matched against absolute paths", () => {
 	const suggestions = matchFileMentions(index, "/repo/src/components/but");
 
-	assert.equal(suggestions[0]?.path, "src/components/Button");
-	assert.equal(suggestions[0]?.insertText, "@/repo/src/components/Button");
+	expect(suggestions[0]?.path).toBe("src/components/Button");
+	expect(suggestions[0]?.insertText).toBe("@/repo/src/components/Button");
 });
 
 test("when preparing insertion values, absolute queries stay absolute and relative queries stay relative", () => {
@@ -145,12 +141,10 @@ test("when preparing insertion values, absolute queries stay absolute and relati
 		insertText: "",
 	};
 
-	assert.equal(
+	expect(
 		prepareFileMentionInsertion("/repo/src/com", suggestion).insertText,
-		"@/repo/src/components/Button/index.ts",
-	);
-	assert.equal(
-		prepareFileMentionInsertion("src/com", suggestion).insertText,
+	).toBe("@/repo/src/components/Button/index.ts");
+	expect(prepareFileMentionInsertion("src/com", suggestion).insertText).toBe(
 		"@src/components/Button/index.ts",
 	);
 });
@@ -164,22 +158,19 @@ test("when paths contain spaces or the query is quoted, insertion uses quoted fi
 		insertText: "",
 	};
 
-	assert.equal(
-		prepareFileMentionInsertion("docs/quo", suggestion).insertText,
+	expect(prepareFileMentionInsertion("docs/quo", suggestion).insertText).toBe(
 		'@"docs/quoted file.md"',
 	);
-	assert.equal(
+	expect(
 		prepareFileMentionInsertion('"docs/quo', {
 			...suggestion,
 			path: "docs/plain.md",
 		}).insertText,
-		'@"docs/plain.md"',
-	);
-	assert.equal(
+	).toBe('@"docs/plain.md"');
+	expect(
 		prepareFileMentionInsertion("docs/quo", {
 			...suggestion,
 			path: 'docs/has "quote".md',
 		}).insertText,
-		'@"docs/has \\"quote\\".md"',
-	);
+	).toBe('@"docs/has \\"quote\\".md"');
 });

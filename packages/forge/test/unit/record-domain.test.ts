@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, it } from "vitest";
 
 import {
 	allocateNextCommentId,
@@ -23,7 +22,7 @@ import {
 	validateInitiativeDeclaredProjectsEdit,
 	validateInitiativeMembership,
 	validateRecordPlacement,
-} from "./record-domain.ts";
+} from "../../src/record-domain.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 const allocatedRecordId = 67;
@@ -49,11 +48,11 @@ const baseSpec = {
 	updatedAt: fixedDate.toISOString(),
 };
 
-test("when parsing spec frontmatter, it should accept the canonical record snapshot", () => {
-	assert.deepEqual(parseRecordFrontmatter(baseSpec), baseSpec);
+it("when parsing spec frontmatter, it should accept the canonical record snapshot", () => {
+	expect(parseRecordFrontmatter(baseSpec)).toEqual(baseSpec);
 });
 
-test("when allocating a record id, it should use and advance the global manifest counter", () => {
+it("when allocating a record id, it should use and advance the global manifest counter", () => {
 	const result = allocateRecordId({
 		manifest: {
 			schemaVersion: 1,
@@ -64,45 +63,39 @@ test("when allocating a record id, it should use and advance the global manifest
 		now: new Date("2026-09-20T00:00:00.000Z"),
 	});
 
-	assert.equal(result.recordId, allocatedRecordId);
-	assert.equal(result.manifest.nextRecordId, nextRecordIdAfterAllocation);
-	assert.equal(result.manifest.updatedAt, "2026-09-20T00:00:00.000Z");
+	expect(result.recordId).toBe(allocatedRecordId);
+	expect(result.manifest.nextRecordId).toBe(nextRecordIdAfterAllocation);
+	expect(result.manifest.updatedAt).toBe("2026-09-20T00:00:00.000Z");
 });
 
-test("when parsing invalid placement fields, it should reject the frontmatter with a record validation error", () => {
-	assert.throws(
-		() =>
-			parseRecordFrontmatter({
-				...baseSpec,
-				scope: { type: "global" },
-			}),
-		/record-kind 'spec' requires project scope/,
-	);
+it("when parsing invalid placement fields, it should reject the frontmatter with a record validation error", () => {
+	expect(() =>
+		parseRecordFrontmatter({
+			...baseSpec,
+			scope: { type: "global" },
+		}),
+	).toThrow(/record-kind 'spec' requires project scope/);
 
-	assert.throws(
-		() =>
-			parseRecordFrontmatter({
-				...baseSpec,
-				kind: "task",
-				subkind: "research",
-			}),
-		/record-kind 'task' requires a parent/,
-	);
+	expect(() =>
+		parseRecordFrontmatter({
+			...baseSpec,
+			kind: "task",
+			subkind: "research",
+		}),
+	).toThrow(/record-kind 'task' requires a parent/);
 
-	assert.throws(
-		() =>
-			parseRecordFrontmatter({
-				...baseSpec,
-				id: 15,
-				kind: "grilling",
-				parent: 12,
-				initiative: 16,
-			}),
-		/only spec and wayfinder records may belong to an initiative/,
-	);
+	expect(() =>
+		parseRecordFrontmatter({
+			...baseSpec,
+			id: 15,
+			kind: "grilling",
+			parent: 12,
+			initiative: 16,
+		}),
+	).toThrow(/only spec and wayfinder records may belong to an initiative/);
 });
 
-test("when validating parent placement, it should enforce compatible child scopes", () => {
+it("when validating parent placement, it should enforce compatible child scopes", () => {
 	const parent = parseRecordFrontmatter({
 		...baseSpec,
 		kind: "wayfinder",
@@ -116,7 +109,7 @@ test("when validating parent placement, it should enforce compatible child scope
 		parent: parent.id,
 		scope: { type: "project", project: "harness" },
 	});
-	assert.doesNotThrow(() => validateRecordPlacement(child, { parent }));
+	expect(() => validateRecordPlacement(child, { parent })).not.toThrow();
 
 	const outsiderChild = parseRecordFrontmatter({
 		...baseSpec,
@@ -126,42 +119,40 @@ test("when validating parent placement, it should enforce compatible child scope
 		parent: parent.id,
 		scope: { type: "project", project: "forge" },
 	});
-	assert.throws(
-		() => validateRecordPlacement(outsiderChild, { parent }),
+	expect(() => validateRecordPlacement(outsiderChild, { parent })).toThrow(
 		/child scope is not compatible with parent scope/,
 	);
 });
 
-test("when validating frontmatter edits, it should allow editable metadata and reject immutable fields", () => {
+it("when validating frontmatter edits, it should allow editable metadata and reject immutable fields", () => {
 	const before = parseRecordFrontmatter(baseSpec);
-	assert.deepEqual(
+	expect(
 		validateFrontmatterEdit(before, {
 			...before,
 			title: "Updated title",
 			tags: ["phase-2"],
 			profile: "implement",
 		}),
-		{
-			changed: ["title", "tags", "profile"],
-		},
-	);
+	).toEqual({
+		changed: ["title", "tags", "profile"],
+	});
 
-	assert.throws(
-		() =>
-			validateFrontmatterEdit(before, {
-				...before,
-				state: "done",
-			}),
-		/field 'state' is not editable through record frontmatter edits/,
+	expect(() =>
+		validateFrontmatterEdit(before, {
+			...before,
+			state: "done",
+		}),
+	).toThrow(/field 'state' is not editable through record frontmatter edits/);
+});
+
+it("when parsing record ids, it should require positive safe integers", () => {
+	expect(parseRecordId(1)).toBe(1);
+	expect(() => parseRecordId(0)).toThrow(
+		/record id must be a positive integer/,
 	);
 });
 
-test("when parsing record ids, it should require positive safe integers", () => {
-	assert.equal(parseRecordId(1), 1);
-	assert.throws(() => parseRecordId(0), /record id must be a positive integer/);
-});
-
-test("when validating initiative membership, it should require a declared project", () => {
+it("when validating initiative membership, it should require a declared project", () => {
 	const initiative = parseRecordFrontmatter({
 		...baseSpec,
 		kind: "initiative",
@@ -179,14 +170,13 @@ test("when validating initiative membership, it should require a declared projec
 		scope: { type: "project", project: "forge" },
 	});
 
-	assert.doesNotThrow(() => validateInitiativeMembership(member, initiative));
-	assert.throws(
-		() => validateInitiativeMembership(outsider, initiative),
+	expect(() => validateInitiativeMembership(member, initiative)).not.toThrow();
+	expect(() => validateInitiativeMembership(outsider, initiative)).toThrow(
 		/initiative does not declare project 'forge'/,
 	);
 });
 
-test("when editing initiative declared projects, it should protect projects with open members", () => {
+it("when editing initiative declared projects, it should protect projects with open members", () => {
 	const initiative = parseRecordFrontmatter({
 		...baseSpec,
 		kind: "initiative",
@@ -207,24 +197,21 @@ test("when editing initiative declared projects, it should protect projects with
 		scope: { type: "project-set", projects: ["docs-site", "harness", "forge"] },
 	});
 
-	assert.deepEqual(
+	expect(
 		validateInitiativeDeclaredProjectsEdit(initiative, afterAdd, [
 			initiative,
 			member,
 		]),
-		{ added: ["forge"], removed: [] },
-	);
-	assert.throws(
-		() =>
-			validateInitiativeDeclaredProjectsEdit(initiative, after, [
-				initiative,
-				member,
-			]),
-		/cannot remove declared project 'harness' while member 13 uses it/,
-	);
+	).toEqual({ added: ["forge"], removed: [] });
+	expect(() =>
+		validateInitiativeDeclaredProjectsEdit(initiative, after, [
+			initiative,
+			member,
+		]),
+	).toThrow(/cannot remove declared project 'harness' while member 13 uses it/);
 });
 
-test("when validating a dependency edge, it should reject parent-child edges, incompatible scopes, and cycles", () => {
+it("when validating a dependency edge, it should reject parent-child edges, incompatible scopes, and cycles", () => {
 	const parent = parseRecordFrontmatter(baseSpec);
 	const child = parseRecordFrontmatter({
 		...baseSpec,
@@ -244,36 +231,32 @@ test("when validating a dependency edge, it should reject parent-child edges, in
 		scope: { type: "project", project: "other" },
 	});
 
-	assert.throws(
-		() =>
-			validateDependencyEdge({
-				record: child,
-				dependsOn: parent,
-				records: [parent, child, sibling, outsider],
-			}),
+	expect(() =>
+		validateDependencyEdge({
+			record: child,
+			dependsOn: parent,
+			records: [parent, child, sibling, outsider],
+		}),
+	).toThrow(
 		/direct dependency edges between parents and children are disallowed/,
 	);
-	assert.throws(
-		() =>
-			validateDependencyEdge({
-				record: child,
-				dependsOn: outsider,
-				records: [parent, child, sibling, outsider],
-			}),
-		/dependency scopes are not compatible/,
-	);
-	assert.throws(
-		() =>
-			validateDependencyEdge({
-				record: sibling,
-				dependsOn: child,
-				records: [{ ...child, dependsOn: [sibling.id] }, sibling],
-			}),
-		/dependency would create a cycle/,
-	);
+	expect(() =>
+		validateDependencyEdge({
+			record: child,
+			dependsOn: outsider,
+			records: [parent, child, sibling, outsider],
+		}),
+	).toThrow(/dependency scopes are not compatible/);
+	expect(() =>
+		validateDependencyEdge({
+			record: sibling,
+			dependsOn: child,
+			records: [{ ...child, dependsOn: [sibling.id] }, sibling],
+		}),
+	).toThrow(/dependency would create a cycle/);
 });
 
-test("when validating cross-project dependencies, it should allow shared initiative members", () => {
+it("when validating cross-project dependencies, it should allow shared initiative members", () => {
 	const initiative = parseRecordFrontmatter({
 		...baseSpec,
 		kind: "initiative",
@@ -291,16 +274,16 @@ test("when validating cross-project dependencies, it should allow shared initiat
 		scope: { type: "project", project: "docs-site" },
 	});
 
-	assert.doesNotThrow(() =>
+	expect(() =>
 		validateDependencyEdge({
 			record: docsSpec,
 			dependsOn: harnessSpec,
 			records: [initiative, harnessSpec, docsSpec],
 		}),
-	);
+	).not.toThrow();
 });
 
-test("when diagnosing readiness, it should report dependency and parent availability blockers", () => {
+it("when diagnosing readiness, it should report dependency and parent availability blockers", () => {
 	const parent = parseRecordFrontmatter({
 		...baseSpec,
 		state: "done",
@@ -319,28 +302,25 @@ test("when diagnosing readiness, it should report dependency and parent availabi
 		dependsOn: [dependency.id],
 	});
 
-	assert.deepEqual(
-		diagnoseRecordReadiness(child, [parent, dependency, child]),
-		{
-			recordId: child.id,
-			ready: false,
-			reasons: [
-				{
-					kind: "dependency-open",
-					recordId: dependency.id,
-					message: "Dependency 13 is ready, not done.",
-				},
-				{
-					kind: "parent-done",
-					recordId: parent.id,
-					message: "Parent 12 is done, so child 14 is no longer executable.",
-				},
-			],
-		},
-	);
+	expect(diagnoseRecordReadiness(child, [parent, dependency, child])).toEqual({
+		recordId: child.id,
+		ready: false,
+		reasons: [
+			{
+				kind: "dependency-open",
+				recordId: dependency.id,
+				message: "Dependency 13 is ready, not done.",
+			},
+			{
+				kind: "parent-done",
+				recordId: parent.id,
+				message: "Parent 12 is done, so child 14 is no longer executable.",
+			},
+		],
+	});
 });
 
-test("when diagnosing initiative readiness, it should require member work", () => {
+it("when diagnosing initiative readiness, it should require member work", () => {
 	const initiative = parseRecordFrontmatter({
 		...baseSpec,
 		kind: "initiative",
@@ -354,7 +334,7 @@ test("when diagnosing initiative readiness, it should require member work", () =
 		scope: { type: "project-set", projects: ["docs-site", "harness"] },
 	});
 
-	assert.deepEqual(diagnoseRecordReadiness(initiative, [initiative]), {
+	expect(diagnoseRecordReadiness(initiative, [initiative])).toEqual({
 		recordId: initiative.id,
 		ready: false,
 		reasons: [
@@ -366,13 +346,12 @@ test("when diagnosing initiative readiness, it should require member work", () =
 			},
 		],
 	});
-	assert.equal(
+	expect(
 		diagnoseRecordReadiness(initiative, [initiative, wayfinder]).ready,
-		true,
-	);
+	).toBe(true);
 });
 
-test("when starting a record lifecycle, it should validate readiness and be idempotent", () => {
+it("when starting a record lifecycle, it should validate readiness and be idempotent", () => {
 	const ready = parseRecordFrontmatter(baseSpec);
 	const blocked = parseRecordFrontmatter({
 		...baseSpec,
@@ -388,7 +367,7 @@ test("when starting a record lifecycle, it should validate readiness and be idem
 		title: "Open dependency",
 	});
 
-	assert.deepEqual(startRecordLifecycle(ready, [ready], fixedDate), {
+	expect(startRecordLifecycle(ready, [ready], fixedDate)).toEqual({
 		record: {
 			...ready,
 			state: "in-progress",
@@ -396,21 +375,19 @@ test("when starting a record lifecycle, it should validate readiness and be idem
 		},
 		changed: true,
 	});
-	assert.deepEqual(
+	expect(
 		startRecordLifecycle(
 			{ ...ready, state: "in-progress" },
 			[{ ...ready, state: "in-progress" }],
 			fixedDate,
 		),
-		{ record: { ...ready, state: "in-progress" }, changed: false },
-	);
-	assert.throws(
-		() => startRecordLifecycle(blocked, [ready, blocked, openDependency]),
-		/Record 13 is blocked and cannot be started/,
-	);
+	).toEqual({ record: { ...ready, state: "in-progress" }, changed: false });
+	expect(() =>
+		startRecordLifecycle(blocked, [ready, blocked, openDependency]),
+	).toThrow(/Record 13 is blocked and cannot be started/);
 });
 
-test("when completing an initiative lifecycle, it should require terminal members", () => {
+it("when completing an initiative lifecycle, it should require terminal members", () => {
 	const initiative = parseRecordFrontmatter({
 		...baseSpec,
 		kind: "initiative",
@@ -427,35 +404,28 @@ test("when completing an initiative lifecycle, it should require terminal member
 		resolution: "completed",
 	});
 
-	assert.throws(
-		() =>
-			completeRecordLifecycle(
-				initiative,
-				[initiative, memberSpec],
-				"completed",
-			),
-		/initiative records cannot be done while member 13 is ready/,
-	);
-	assert.deepEqual(
+	expect(() =>
+		completeRecordLifecycle(initiative, [initiative, memberSpec], "completed"),
+	).toThrow(/initiative records cannot be done while member 13 is ready/);
+	expect(
 		completeRecordLifecycle(
 			initiative,
 			[initiative, doneMemberSpec],
 			"completed",
 			fixedDate,
 		),
-		{
-			record: {
-				...initiative,
-				state: "done",
-				resolution: "completed",
-				updatedAt: fixedDate.toISOString(),
-			},
-			changed: true,
+	).toEqual({
+		record: {
+			...initiative,
+			state: "done",
+			resolution: "completed",
+			updatedAt: fixedDate.toISOString(),
 		},
-	);
+		changed: true,
+	});
 });
 
-test("when completing a record lifecycle, it should require valid resolutions, be idempotent, and enforce child gates", () => {
+it("when completing a record lifecycle, it should require valid resolutions, be idempotent, and enforce child gates", () => {
 	const spec = parseRecordFrontmatter(baseSpec);
 	const openChild = parseRecordFrontmatter({
 		...baseSpec,
@@ -469,49 +439,43 @@ test("when completing a record lifecycle, it should require valid resolutions, b
 		resolution: "completed",
 	});
 
-	assert.throws(
-		() => completeRecordLifecycle(spec, [spec], "Completed"),
+	expect(() => completeRecordLifecycle(spec, [spec], "Completed")).toThrow(
 		/resolution must be lowercase kebab-case/,
 	);
-	assert.throws(
-		() => completeRecordLifecycle(spec, [spec, openChild], "completed"),
-		/spec records cannot be done while child 13 is ready/,
-	);
-	assert.deepEqual(
+	expect(() =>
+		completeRecordLifecycle(spec, [spec, openChild], "completed"),
+	).toThrow(/spec records cannot be done while child 13 is ready/);
+	expect(
 		completeRecordLifecycle(spec, [spec, doneChild], "completed", fixedDate),
-		{
-			record: {
-				...spec,
-				state: "done",
-				resolution: "completed",
-				updatedAt: fixedDate.toISOString(),
-			},
-			changed: true,
+	).toEqual({
+		record: {
+			...spec,
+			state: "done",
+			resolution: "completed",
+			updatedAt: fixedDate.toISOString(),
 		},
-	);
-	assert.deepEqual(
+		changed: true,
+	});
+	expect(
 		completeRecordLifecycle(
 			{ ...spec, state: "done", resolution: "completed" },
 			[{ ...spec, state: "done", resolution: "completed" }],
 			"completed",
 		),
-		{
-			record: { ...spec, state: "done", resolution: "completed" },
-			changed: false,
-		},
-	);
-	assert.throws(
-		() =>
-			completeRecordLifecycle(
-				{ ...spec, state: "done", resolution: "completed" },
-				[{ ...spec, state: "done", resolution: "completed" }],
-				"superseded",
-			),
-		/Done record 12 already has resolution 'completed'/,
-	);
+	).toEqual({
+		record: { ...spec, state: "done", resolution: "completed" },
+		changed: false,
+	});
+	expect(() =>
+		completeRecordLifecycle(
+			{ ...spec, state: "done", resolution: "completed" },
+			[{ ...spec, state: "done", resolution: "completed" }],
+			"superseded",
+		),
+	).toThrow(/Done record 12 already has resolution 'completed'/);
 });
 
-test("when handling comments and updates, it should validate identity, edits, and combined history order", () => {
+it("when handling comments and updates, it should validate identity, edits, and combined history order", () => {
 	const comment = parseRecordComment({
 		id: 1,
 		recordId: baseSpec.id,
@@ -520,27 +484,22 @@ test("when handling comments and updates, it should validate identity, edits, an
 		body: "Initial note",
 	});
 	const edited = { ...comment, body: "Edited note" };
-	assert.equal(
-		allocateNextCommentId(comment.recordId, [comment]),
+	expect(allocateNextCommentId(comment.recordId, [comment])).toBe(
 		secondCommentId,
 	);
-	assert.deepEqual(validateCommentEdit(comment, edited), edited);
-	assert.throws(
-		() =>
-			validateCommentEdit(comment, parseRecordComment({ ...edited, id: 2 })),
-		/comment frontmatter field 'id' is not editable/,
-	);
-	assert.throws(
-		() =>
-			validateCommentEdit(
-				comment,
-				parseRecordComment({
-					...edited,
-					updatedAt: "2026-09-20T00:00:00.000Z",
-				}),
-			),
-		/comment frontmatter field 'updatedAt' is not editable/,
-	);
+	expect(validateCommentEdit(comment, edited)).toEqual(edited);
+	expect(() =>
+		validateCommentEdit(comment, parseRecordComment({ ...edited, id: 2 })),
+	).toThrow(/comment frontmatter field 'id' is not editable/);
+	expect(() =>
+		validateCommentEdit(
+			comment,
+			parseRecordComment({
+				...edited,
+				updatedAt: "2026-09-20T00:00:00.000Z",
+			}),
+		),
+	).toThrow(/comment frontmatter field 'updatedAt' is not editable/);
 	const update = createRecordUpdate({
 		recordId: comment.recordId,
 		updates: [],
@@ -548,23 +507,22 @@ test("when handling comments and updates, it should validate identity, edits, an
 		summary: "Created record",
 		now: new Date("2026-09-18T00:00:00.000Z"),
 	});
-	assert.deepEqual(
+	expect(
 		buildCombinedRecordHistory({
 			comments: [comment],
 			updates: [update],
 		}),
-		[
-			{
-				kind: "update",
-				createdAt: update.createdAt,
-				update,
-			},
-			{ kind: "comment", createdAt: fixedDate.toISOString(), comment },
-		],
-	);
+	).toEqual([
+		{
+			kind: "update",
+			createdAt: update.createdAt,
+			update,
+		},
+		{ kind: "comment", createdAt: fixedDate.toISOString(), comment },
+	]);
 });
 
-test("when selecting next work, it should use executable candidates then oldest record id", () => {
+it("when selecting next work, it should use executable candidates then oldest record id", () => {
 	const spec = parseRecordFrontmatter(baseSpec);
 	const doneDependency = parseRecordFrontmatter({
 		...baseSpec,
@@ -587,35 +545,33 @@ test("when selecting next work, it should use executable candidates then oldest 
 		parent: spec.id,
 	});
 
-	assert.equal(
-		selectNextRecord([spec, doneDependency, task, grilling])?.id,
+	expect(selectNextRecord([spec, doneDependency, task, grilling])?.id).toBe(
 		task.id,
 	);
-	assert.equal(
+	expect(
 		selectNextRecord([spec, doneDependency, task, grilling], {
 			includeHitl: true,
 			planning: true,
 		})?.id,
-		spec.id,
-	);
-	assert.deepEqual(buildDependencyGraph([task, doneDependency]), {
+	).toBe(spec.id);
+	expect(buildDependencyGraph([task, doneDependency])).toEqual({
 		[String(doneDependency.id)]: { dependsOn: [], dependents: [task.id] },
 		[String(task.id)]: { dependsOn: [doneDependency.id], dependents: [] },
 	});
-	assert.deepEqual(buildRecordTree(spec, [spec, task, grilling]), {
+	expect(buildRecordTree(spec, [spec, task, grilling])).toEqual({
 		record: spec,
 		children: [
 			{ record: task, children: [] },
 			{ record: grilling, children: [] },
 		],
 	});
-	assert.deepEqual(buildRecordDependencyView(task, [task, doneDependency]), {
+	expect(buildRecordDependencyView(task, [task, doneDependency])).toEqual({
 		record: task,
 		dependsOn: [doneDependency],
 		dependents: [],
 		missingDependencies: [],
 	});
-	assert.deepEqual(relationshipIndexRequirementFields, [
+	expect(relationshipIndexRequirementFields).toEqual([
 		"parent",
 		"children",
 		"initiative",

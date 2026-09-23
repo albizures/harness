@@ -16,6 +16,11 @@ import {
 	manifest,
 } from "../../../../src/workflows/agent-workflow/index.ts";
 
+const agentWorkflowModulePath = new URL(
+	"../../../../src/workflows/agent-workflow/index.ts",
+	import.meta.url,
+).pathname;
+
 function execute(
 	args: Parameters<typeof rawExecute>[0],
 	options: Parameters<typeof rawExecute>[1] = {},
@@ -435,7 +440,7 @@ it("should validate the bundled agent-workflow module through the manifest valid
 	const configPath = join(cwd, "awf.config.ts");
 	await writeFile(
 		configPath,
-		`export { agentWorkflowManifest as manifest } from "${join(process.cwd(), "src/workflows/agent-workflow/index.ts")}";\n`,
+		`export { agentWorkflowManifest as manifest } from ${JSON.stringify(agentWorkflowModulePath)};\n`,
 	);
 
 	expect(await validateManifestCommand(configPath)).toEqual({

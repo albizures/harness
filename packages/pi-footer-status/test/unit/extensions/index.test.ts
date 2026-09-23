@@ -1,9 +1,11 @@
 // biome-ignore-all lint/style/noMagicNumbers: Test literals describe expected rendering behavior.
 // biome-ignore-all lint/suspicious/noExplicitAny: Tests use partial extension API fixtures.
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderContextFillBar, renderFooter } from "./index.ts";
+import {
+	renderContextFillBar,
+	renderFooter,
+} from "../../../extensions/index.ts";
 
 const identityTheme = {
 	fg: (_color: string, text: string) => text,
@@ -71,14 +73,13 @@ test("renderFooter preserves default-like footer lines and inserts the Context f
 		120,
 	);
 
-	assert.equal(lines.length, 4);
-	assert.equal(lines[0], "~/work/repo (main) • named-session");
-	assert.match(
-		lines[1],
+	expect(lines.length).toBe(4);
+	expect(lines[0]).toBe("~/work/repo (main) • named-session");
+	expect(lines[1]).toMatch(
 		/↑1\.2k ↓345 R100 W50 CH7\.4% \$0\.012 40\.0%\/128k \(auto\)\s+gpt-test • medium/,
 	);
-	assert.equal(lines[2], "context ████████░░░░░░░░░░░░ 40.0%/128k");
-	assert.equal(lines[3], "first second");
+	expect(lines[2]).toBe("context ████████░░░░░░░░░░░░ 40.0%/128k");
+	expect(lines[3]).toBe("first second");
 });
 
 test("renderContextFillBar uses fixed 20-cell known-usage bars with required rounding behavior", () => {
@@ -90,14 +91,13 @@ test("renderContextFillBar uses fixed 20-cell known-usage bars with required rou
 	];
 
 	for (const { percent, expected } of cases) {
-		assert.equal(
+		expect(
 			renderContextFillBar(
 				{ percent, contextWindow: 100000 },
 				identityTheme,
 				120,
 			),
-			`context ${expected}`,
-		);
+		).toBe(`context ${expected}`);
 	}
 });
 
@@ -107,35 +107,33 @@ test("renderContextFillBar applies severity colors at the same thresholds as Pi 
 		taggedTheme,
 		200,
 	);
-	assert.match(normal, /<accent>█/);
-	assert.match(normal, /<dim>░/);
-	assert.match(normal, /<accent>40\.0%\/100k<\/accent>/);
+	expect(normal).toMatch(/<accent>█/);
+	expect(normal).toMatch(/<dim>░/);
+	expect(normal).toMatch(/<accent>40\.0%\/100k<\/accent>/);
 
 	const warning = renderContextFillBar(
 		{ percent: 70.1, contextWindow: 100000 },
 		taggedTheme,
 		200,
 	);
-	assert.match(warning, /<warning>█/);
-	assert.match(warning, /<dim>░/);
-	assert.match(warning, /<warning>70\.1%\/100k<\/warning>/);
+	expect(warning).toMatch(/<warning>█/);
+	expect(warning).toMatch(/<dim>░/);
+	expect(warning).toMatch(/<warning>70\.1%\/100k<\/warning>/);
 
-	assert.match(
+	expect(
 		renderContextFillBar(
 			{ percent: 90.1, contextWindow: 100000 },
 			taggedTheme,
 			200,
 		),
-		/<error>█/,
-	);
-	assert.match(
+	).toMatch(/<error>█/);
+	expect(
 		renderContextFillBar(
 			{ percent: 90.1, contextWindow: 100000 },
 			taggedTheme,
 			200,
 		),
-		/<error>90\.1%\/100k<\/error>/,
-	);
+	).toMatch(/<error>90\.1%\/100k<\/error>/);
 });
 
 test("renderContextFillBar renders unknown usage as a static dim placeholder with ? percentage", () => {
@@ -145,16 +143,16 @@ test("renderContextFillBar renders unknown usage as a static dim placeholder wit
 		120,
 	);
 
-	assert.equal(line, "context ░░░░░░░░░░░░░░░░░░░░ ?/200k");
+	expect(line).toBe("context ░░░░░░░░░░░░░░░░░░░░ ?/200k");
 
 	const styledLine = renderContextFillBar(
 		{ percent: undefined, contextWindow: 200000 },
 		taggedTheme,
 		200,
 	);
-	assert.match(styledLine, /<dim>░░░░░░░░░░░░░░░░░░░░<\/dim>/);
-	assert.match(styledLine, /\?\/200k/);
-	assert.doesNotMatch(styledLine, /<accent>|<warning>|<error>/);
+	expect(styledLine).toMatch(/<dim>░░░░░░░░░░░░░░░░░░░░<\/dim>/);
+	expect(styledLine).toMatch(/\?\/200k/);
+	expect(styledLine).not.toMatch(/<accent>|<warning>|<error>/);
 });
 
 test("renderFooter renders unknown Context fill bar line without auto-compaction text", () => {
@@ -166,8 +164,8 @@ test("renderFooter renders unknown Context fill bar line without auto-compaction
 		120,
 	);
 
-	assert.equal(lines[2], "context ░░░░░░░░░░░░░░░░░░░░ ?/128k");
-	assert.doesNotMatch(lines[2], /auto/);
+	expect(lines[2]).toBe("context ░░░░░░░░░░░░░░░░░░░░ ?/128k");
+	expect(lines[2]).not.toMatch(/auto/);
 });
 
 test("renderFooter truncates all rendered lines to terminal width", () => {
@@ -183,8 +181,8 @@ test("renderFooter truncates all rendered lines to terminal width", () => {
 		24,
 	);
 
-	assert.ok(lines.length >= 4);
+	expect(lines.length >= 4).toBeTruthy();
 	for (const line of lines) {
-		assert.ok(visibleWidth(line) <= 24, `${line} exceeded width`);
+		expect(visibleWidth(line) <= 24, `${line} exceeded width`).toBeTruthy();
 	}
 });

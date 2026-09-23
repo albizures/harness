@@ -1,14 +1,13 @@
-import assert from "node:assert/strict";
 import { chmod, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
-import test from "node:test";
+import { expect, it } from "vitest";
 import { pathToFileURL } from "node:url";
 
-import { isCliEntrypoint, runCli } from "./cli.ts";
+import { isCliEntrypoint, runCli } from "../../src/cli.ts";
 
-const packageRoot = new URL("../", import.meta.url);
+const packageRoot = new URL("../../", import.meta.url);
 
 function capture() {
 	let text = "";
@@ -46,33 +45,34 @@ async function runTempStoreCli(
 	});
 }
 
-test("when the package is created, it should expose the forge binary and checks", async () => {
+it("when the package is created, it should expose the forge binary and checks", async () => {
 	const manifest = JSON.parse(
 		await readFile(new URL("package.json", packageRoot), "utf8"),
 	);
-	assert.equal(manifest.name, "@albizures/forge");
-	assert.equal(manifest.bin.forge, "./dist/cli.js");
-	assert.equal(manifest.exports["."], "./dist/index.js");
-	assert.deepEqual(manifest.files, ["dist"]);
-	assert.equal(manifest.scripts.build, "tsc -p tsconfig.build.json");
-	assert.equal(
-		manifest.scripts.typecheck,
+	expect(manifest.name).toBe("@albizures/forge");
+	expect(manifest.bin.forge).toBe("./dist/cli.js");
+	expect(manifest.exports["."]).toBe("./dist/index.js");
+	expect(manifest.files).toEqual(["dist"]);
+	expect(manifest.scripts.build).toBe("tsc -p tsconfig.build.json");
+	expect(manifest.scripts.typecheck).toBe(
 		"tsc --noEmit --project tsconfig.json",
 	);
-	assert.equal(manifest.scripts.test, "node --test");
+	expect(manifest.scripts.test).toBe(
+		"vitest run --config ../../vitest.config.mts",
+	);
 });
 
-test("when the binary is launched through a symlink, it should still run as the CLI entrypoint", async () => {
+it("when the binary is launched through a symlink, it should still run as the CLI entrypoint", async () => {
 	const temp = await mkdtemp(path.join(os.tmpdir(), "forge-cli-entrypoint-"));
 	const target = path.join(temp, "cli.js");
 	const link = path.join(temp, "forge");
 	await writeFile(target, "");
 	await symlink(target, link);
 
-	assert.equal(isCliEntrypoint(pathToFileURL(target).href, link), true);
+	expect(isCliEntrypoint(pathToFileURL(target).href, link)).toBe(true);
 });
 
-test("when help is requested, it should describe the Phase 2 command surface", async () => {
+it("when help is requested, it should describe the Phase 2 command surface", async () => {
 	const stdout = capture();
 	const stderr = capture();
 	const code = await runCli(["--help"], {
@@ -80,21 +80,21 @@ test("when help is requested, it should describe the Phase 2 command surface", a
 		stderr: stderr.stream,
 		env: { HOME: "/tmp" },
 	});
-	assert.equal(code, 0);
-	assert.match(stdout.text(), /forge config get/);
-	assert.match(stdout.text(), /forge project add/);
-	assert.match(stdout.text(), /forge new spec/);
-	assert.match(stdout.text(), /forge show/);
-	assert.equal(stderr.text(), "");
+	expect(code).toBe(0);
+	expect(stdout.text()).toMatch(/forge config get/);
+	expect(stdout.text()).toMatch(/forge project add/);
+	expect(stdout.text()).toMatch(/forge new spec/);
+	expect(stdout.text()).toMatch(/forge show/);
+	expect(stderr.text()).toBe("");
 });
 
-test("when record CLI commands run, they should create, inspect, and list workflow records", async () => {
+it("when record CLI commands run, they should create, inspect, and list workflow records", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-record-home-"));
 	const store = path.join(home, "store");
 	const env = { HOME: home };
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(
 			[
 				"--store",
@@ -111,14 +111,13 @@ test("when record CLI commands run, they should create, inspect, and list workfl
 			],
 			{ stdout: stdout.stream, env },
 		),
-		0,
-	);
+	).toBe(0);
 	const spec = JSON.parse(stdout.text());
-	assert.equal(spec.id, 1);
-	assert.equal(spec.kind, "spec");
+	expect(spec.id).toBe(1);
+	expect(spec.kind).toBe("spec");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(
 			[
 				"--store",
@@ -137,45 +136,41 @@ test("when record CLI commands run, they should create, inspect, and list workfl
 			],
 			{ stdout: stdout.stream, env, stdin: Readable.from(["Task body\n"]) },
 		),
-		0,
-	);
+	).toBe(0);
 	const task = JSON.parse(stdout.text());
-	assert.equal(task.id, 2);
-	assert.equal(task.body, "Task body\n");
-	assert.equal(task.subkind, "review");
+	expect(task.id).toBe(2);
+	expect(task.body).toBe("Task body\n");
+	expect(task.subkind).toBe("review");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["--store", store, "show", "1", "--json"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).relationships.children, [2]);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).relationships.children).toEqual([2]);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["--store", store, "list", "--kind", "task"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /2\ttask\tready\tWrite tests/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/2\ttask\tready\tWrite tests/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["--store", store, "open", "2"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /records\/task\/000\/000002\.md/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/records\/task\/000\/000002\.md/);
 });
 
-test("when temp-store record commands run, they should cover creation, inspection, and guarded edits", async () => {
+it("when temp-store record commands run, they should cover creation, inspection, and guarded edits", async () => {
 	const home = await mkdtemp(
 		path.join(os.tmpdir(), "forge-cli-temp-store-home-"),
 	);
@@ -190,7 +185,7 @@ test("when temp-store record commands run, they should cover creation, inspectio
 	const executableFileMode = 0o755;
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			[
 				"project",
@@ -204,11 +199,10 @@ test("when temp-store record commands run, they should cover creation, inspectio
 			],
 			{ home, store, stdout: stdout.stream },
 		),
-		0,
-	);
+	).toBe(0);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			[
 				"new",
@@ -221,14 +215,13 @@ test("when temp-store record commands run, they should cover creation, inspectio
 			],
 			{ home, store, cwd: nestedCwd, stdout: stdout.stream },
 		),
-		0,
-	);
+	).toBe(0);
 	const spec = JSON.parse(stdout.text());
-	assert.equal(spec.id, specId);
-	assert.deepEqual(spec.scope, { type: "project", project: "harness" });
+	expect(spec.id).toBe(specId);
+	expect(spec.scope).toEqual({ type: "project", project: "harness" });
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			[
 				"new",
@@ -243,12 +236,11 @@ test("when temp-store record commands run, they should cover creation, inspectio
 			],
 			{ home, store, stdout: stdout.stream },
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).id, wayfinderId);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).id).toBe(wayfinderId);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			[
 				"new",
@@ -263,14 +255,13 @@ test("when temp-store record commands run, they should cover creation, inspectio
 			],
 			{ home, store, stdout: stdout.stream },
 		),
-		0,
-	);
+	).toBe(0);
 	const task = JSON.parse(stdout.text());
-	assert.equal(task.id, taskId);
-	assert.deepEqual(task.dependsOn, []);
+	expect(task.id).toBe(taskId);
+	expect(task.dependsOn).toEqual([]);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			[
 				"new",
@@ -285,12 +276,11 @@ test("when temp-store record commands run, they should cover creation, inspectio
 			],
 			{ home, store, stdout: stdout.stream },
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).id, grillingId);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).id).toBe(grillingId);
 
 	const stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(
 			[
 				"new",
@@ -304,48 +294,44 @@ test("when temp-store record commands run, they should cover creation, inspectio
 			],
 			{ home, store, stderr: stderr.stream },
 		),
-		0,
-	);
-	assert.match(stderr.text(), /parent must be a spec or wayfinder/);
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(/parent must be a spec or wayfinder/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["show", "1", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 		}),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).relationships.children, [
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).relationships.children).toEqual([
 		taskId,
 		grillingId,
 	]);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["list", "--project", "harness"], {
 			home,
 			store,
 			stdout: stdout.stream,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /1\tspec\tready\tInferred project spec/);
-	assert.match(stdout.text(), /3\ttask\tready\tImplementation task/);
-	assert.match(stdout.text(), /4\tgrilling\tready\tClarify scope/);
-	assert.doesNotMatch(stdout.text(), /Global wayfinder/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/1\tspec\tready\tInferred project spec/);
+	expect(stdout.text()).toMatch(/3\ttask\tready\tImplementation task/);
+	expect(stdout.text()).toMatch(/4\tgrilling\tready\tClarify scope/);
+	expect(stdout.text()).not.toMatch(/Global wayfinder/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["open", "3"], {
 			home,
 			store,
 			stdout: stdout.stream,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /records\/task\/000\/000003\.md/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/records\/task\/000\/000003\.md/);
 
 	const editor = path.join(home, "forge-test-editor.cjs");
 	await writeFile(
@@ -380,21 +366,20 @@ fs.writeFileSync(file, text);
 	stdout = capture();
 	process.env.FORGE_TEST_EDIT_MODE = "title-body";
 	try {
-		assert.equal(
+		expect(
 			await runTempStoreCli(["edit", "3", "--json"], {
 				home,
 				store,
 				stdout: stdout.stream,
 				env: { ...env, EDITOR: editor },
 			}),
-			0,
-		);
+		).toBe(0);
 	} finally {
 		delete process.env.FORGE_TEST_EDIT_MODE;
 	}
 	const edited = JSON.parse(stdout.text()).record;
-	assert.equal(edited.title, "Edited task");
-	assert.equal(edited.body, "Edited task body\n");
+	expect(edited.title).toBe("Edited task");
+	expect(edited.body).toBe("Edited task body\n");
 
 	for (const [mode, rejection] of [
 		["immutable", /record file id '999' does not match expected id '3'/],
@@ -404,23 +389,22 @@ fs.writeFileSync(file, text);
 		const editStderr = capture();
 		process.env.FORGE_TEST_EDIT_MODE = mode;
 		try {
-			assert.notEqual(
+			expect(
 				await runTempStoreCli(["edit", "3"], {
 					home,
 					store,
 					stderr: editStderr.stream,
 					env: { ...env, EDITOR: editor },
 				}),
-				0,
-			);
+			).not.toBe(0);
 		} finally {
 			delete process.env.FORGE_TEST_EDIT_MODE;
 		}
-		assert.match(editStderr.text(), rejection);
+		expect(editStderr.text()).toMatch(rejection);
 	}
 });
 
-test("when Phase 3 navigation commands run, they should mutate dependencies and select ready work", async () => {
+it("when Phase 3 navigation commands run, they should mutate dependencies and select ready work", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-phase3-home-"));
 	const store = path.join(home, "store");
 	const env = { HOME: home };
@@ -467,120 +451,111 @@ test("when Phase 3 navigation commands run, they should mutate dependencies and 
 			"1",
 		],
 	] as const) {
-		assert.equal(await runTempStoreCli(args, { home, store, env }), 0);
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
 	}
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["deps", "add", "3", "--depends-on", "2", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).dependsOn, [2]);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).dependsOn).toEqual([2]);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["deps", "3"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /3\ttask\tready\tSecond task/);
-	assert.match(stdout.text(), /dependsOn\t2\ttask\tready\tFirst task/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/3\ttask\tready\tSecond task/);
+	expect(stdout.text()).toMatch(/dependsOn\t2\ttask\tready\tFirst task/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["ready", "--blocked", "--project", "harness"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /3\ttask\tblocked\tSecond task/);
-	assert.match(stdout.text(), /Dependency 2 is ready, not done\./);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/3\ttask\tblocked\tSecond task/);
+	expect(stdout.text()).toMatch(/Dependency 2 is ready, not done\./);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["ready", "--project", "harness"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /2\ttask\tready\tFirst task/);
-	assert.doesNotMatch(stdout.text(), /Second task/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/2\ttask\tready\tFirst task/);
+	expect(stdout.text()).not.toMatch(/Second task/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["ready", "--include-hitl", "--project", "harness"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /4\tgrilling\tready\tHuman checkpoint/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/4\tgrilling\tready\tHuman checkpoint/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["next", "--project", "harness", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).id, 2);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).id).toBe(2);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["next", "--include-hitl", "--project", "harness"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /2\ttask\tready\tFirst task/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/2\ttask\tready\tFirst task/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["tree", "1"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /1\tspec\tready\tPhase 3 spec/);
-	assert.match(stdout.text(), / {2}3\ttask\tready\tSecond task/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/1\tspec\tready\tPhase 3 spec/);
+	expect(stdout.text()).toMatch(/ {2}3\ttask\tready\tSecond task/);
 
 	const cycleStderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["deps", "add", "2", "--depends-on", "3"], {
 			home,
 			store,
 			stderr: cycleStderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(cycleStderr.text(), /dependency would create a cycle/);
+	).not.toBe(0);
+	expect(cycleStderr.text()).toMatch(/dependency would create a cycle/);
 
 	for (const args of [
 		[
@@ -604,33 +579,31 @@ test("when Phase 3 navigation commands run, they should mutate dependencies and 
 			"5",
 		],
 	] as const) {
-		assert.equal(await runTempStoreCli(args, { home, store, env }), 0);
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
 	}
 
 	const scopeStderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["deps", "add", "6", "--depends-on", "2"], {
 			home,
 			store,
 			stderr: scopeStderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(scopeStderr.text(), /dependency scopes are not compatible/);
+	).not.toBe(0);
+	expect(scopeStderr.text()).toMatch(/dependency scopes are not compatible/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			["deps", "remove", "3", "--depends-on", "2", "--json"],
 			{ home, store, stdout: stdout.stream, env },
 		),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).dependsOn, []);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).dependsOn).toEqual([]);
 });
 
-test("when Phase 5 initiative CLI commands run, they should create groups, mutate membership, and filter navigation", async () => {
+it("when Phase 5 initiative CLI commands run, they should create groups, mutate membership, and filter navigation", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-phase5-home-"));
 	const store = path.join(home, "store");
 	const env = { HOME: home };
@@ -669,36 +642,34 @@ test("when Phase 5 initiative CLI commands run, they should create groups, mutat
 			"1",
 		],
 	] as const) {
-		assert.equal(await runTempStoreCli(args, { home, store, env }), 0);
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
 	}
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["initiatives", "--project", "harness"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /1\tinitiative\tready\tCross-project launch/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/1\tinitiative\tready\tCross-project launch/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["list", "--initiative", "1"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /2\tspec\tready\tHarness spec/);
-	assert.match(stdout.text(), /3\twayfinder\tready\tShared route/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/2\tspec\tready\tHarness spec/);
+	expect(stdout.text()).toMatch(/3\twayfinder\tready\tShared route/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			[
 				"new",
@@ -713,36 +684,33 @@ test("when Phase 5 initiative CLI commands run, they should create groups, mutat
 			],
 			{ home, store, stdout: stdout.stream, env },
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).initiative, null);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).initiative).toBe(null);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["initiative", "attach", "1", "4", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).initiative, 1);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).initiative).toBe(1);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["deps", "add", "4", "--depends-on", "2", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).dependsOn, [2]);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).dependsOn).toEqual([2]);
 
 	let stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(
 			["initiative", "project", "remove", "1", "docs-site"],
 			{
@@ -752,27 +720,24 @@ test("when Phase 5 initiative CLI commands run, they should create groups, mutat
 				env,
 			},
 		),
-		0,
-	);
-	assert.match(
-		stderr.text(),
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(
 		/cannot remove declared project 'docs-site' while member 4 uses it/,
 	);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["initiative", "detach", "1", "4", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).initiative, null);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).initiative).toBe(null);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			["initiative", "project", "remove", "1", "docs-site", "--json"],
 			{
@@ -782,12 +747,11 @@ test("when Phase 5 initiative CLI commands run, they should create groups, mutat
 				env,
 			},
 		),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).scope.projects, ["harness"]);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).scope.projects).toEqual(["harness"]);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			["initiative", "project", "add", "1", "docs-site", "--json"],
 			{
@@ -797,36 +761,33 @@ test("when Phase 5 initiative CLI commands run, they should create groups, mutat
 				env,
 			},
 		),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()).scope.projects, [
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).scope.projects).toEqual([
 		"docs-site",
 		"harness",
 	]);
 
-	assert.equal(
+	expect(
 		await runTempStoreCli(["deps", "remove", "4", "--depends-on", "2"], {
 			home,
 			store,
 			env,
 		}),
-		0,
-	);
+	).toBe(0);
 
 	stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["deps", "add", "4", "--depends-on", "2"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stderr.text(), /dependency scopes are not compatible/);
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(/dependency scopes are not compatible/);
 });
 
-test("when Phase 5 initiative delivery runs, it should gate lifecycle and select first deliverables", async () => {
+it("when Phase 5 initiative delivery runs, it should gate lifecycle and select first deliverables", async () => {
 	const home = await mkdtemp(
 		path.join(os.tmpdir(), "forge-cli-phase5-delivery-home-"),
 	);
@@ -896,85 +857,78 @@ test("when Phase 5 initiative delivery runs, it should gate lifecycle and select
 			firstHarnessTaskId,
 		],
 	] as const) {
-		assert.equal(await runTempStoreCli(args, { home, store, env }), 0);
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
 	}
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["ready", "--initiative", initiativeId], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /3\ttask\tready\tFirst harness task/);
-	assert.doesNotMatch(stdout.text(), /5\ttask\tready\tFirst docs task/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/3\ttask\tready\tFirst harness task/);
+	expect(stdout.text()).not.toMatch(/5\ttask\tready\tFirst docs task/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["next", "--initiative", initiativeId, "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).id, Number(firstHarnessTaskId));
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).id).toBe(Number(firstHarnessTaskId));
 
 	let stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["done", initiativeId, "--resolution", "completed"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(
-		stderr.text(),
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(
 		/initiative records cannot be done while member 2 is ready/,
 	);
 
 	for (const id of [firstHarnessTaskId, harnessSpecId] as const) {
-		assert.equal(
+		expect(
 			await runTempStoreCli(["done", id, "--resolution", "completed"], {
 				home,
 				store,
 				env,
 			}),
-			0,
-		);
+		).toBe(0);
 	}
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["ready", "--initiative", initiativeId], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /5\ttask\tready\tFirst docs task/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/5\ttask\tready\tFirst docs task/);
 
 	for (const id of [firstDocsTaskId, docsSpecId] as const) {
-		assert.equal(
+		expect(
 			await runTempStoreCli(["done", id, "--resolution", "completed"], {
 				home,
 				store,
 				env,
 			}),
-			0,
-		);
+		).toBe(0);
 	}
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			["done", initiativeId, "--resolution", "completed", "--json"],
 			{
@@ -984,24 +938,22 @@ test("when Phase 5 initiative delivery runs, it should gate lifecycle and select
 				env,
 			},
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).state, "done");
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).state).toBe("done");
 
 	stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["start", firstDocsTaskId], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stderr.text(), /Done record 5 cannot be started\./);
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(/Done record 5 cannot be started\./);
 });
 
-test("when Phase 4 lifecycle and history commands run, they should mutate records and present narrative streams", async () => {
+it("when Phase 4 lifecycle and history commands run, they should mutate records and present narrative streams", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-phase4-home-"));
 	const store = path.join(home, "store");
 	const note = path.join(home, "note.md");
@@ -1052,62 +1004,57 @@ test("when Phase 4 lifecycle and history commands run, they should mutate record
 			"1",
 		],
 	] as const) {
-		assert.equal(await runTempStoreCli(args, { home, store, env }), 0);
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
 	}
 
 	let stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["done", "1", "--resolution", "completed"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(
-		stderr.text(),
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(
 		/spec records cannot be done while child 2 is ready/,
 	);
 
 	stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["start", "3"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stderr.text(), /Dependency 2 is ready, not done\./);
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(/Dependency 2 is ready, not done\./);
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["start", "2", "--json"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).state, "in-progress");
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).state).toBe("in-progress");
 
 	stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["done", "2", "--resolution", "Not Valid"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stderr.text(), /resolution must be lowercase kebab-case/);
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(/resolution must be lowercase kebab-case/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			["done", "2", "--resolution", "completed", "--json"],
 			{
@@ -1117,69 +1064,62 @@ test("when Phase 4 lifecycle and history commands run, they should mutate record
 				env,
 			},
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).resolution, "completed");
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).resolution).toBe("completed");
 
 	stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["done", "2", "--resolution", "changed"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stderr.text(), /already has resolution 'completed'/);
-	assert.equal(
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(/already has resolution 'completed'/);
+	expect(
 		await runTempStoreCli(["done", "3", "--resolution", "completed"], {
 			home,
 			store,
 			env,
 		}),
-		0,
-	);
+	).toBe(0);
 
 	stderr = capture();
-	assert.notEqual(
+	expect(
 		await runTempStoreCli(["done", "1", "--resolution", "completed"], {
 			home,
 			store,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(
-		stderr.text(),
+	).not.toBe(0);
+	expect(stderr.text()).toMatch(
 		/spec records cannot be done while child 4 is ready/,
 	);
-	assert.equal(
+	expect(
 		await runTempStoreCli(["done", "4", "--resolution", "answered"], {
 			home,
 			store,
 			env,
 		}),
-		0,
-	);
+	).toBe(0);
 
 	await writeFile(note, "File note\n", "utf8");
 	for (const args of [
 		["comment", "1", "--message", "Inline note"],
 		["comment", "1", "--message-file", note],
 	] as const) {
-		assert.equal(await runTempStoreCli(args, { home, store, env }), 0);
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
 	}
-	assert.equal(
+	expect(
 		await runTempStoreCli(["comment", "1", "--message", "-"], {
 			home,
 			store,
 			stdin: Readable.from(["Stdin note\n"]),
 			env,
 		}),
-		0,
-	);
+	).toBe(0);
 
 	const editor = path.join(home, "forge-comment-editor.cjs");
 	await writeFile(
@@ -1195,58 +1135,54 @@ fs.writeFileSync(file, text);
 	);
 	await chmod(editor, executableFileMode);
 
-	assert.equal(
+	expect(
 		await runTempStoreCli(["comment", "edit", "1", "1"], {
 			home,
 			store,
 			env: { ...env, EDITOR: editor },
 		}),
-		0,
-	);
+	).toBe(0);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["comments", "1"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /comment 1\t/);
-	assert.match(stdout.text(), /Edited inline note/);
-	assert.match(stdout.text(), /File note/);
-	assert.match(stdout.text(), /Stdin note/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/comment 1\t/);
+	expect(stdout.text()).toMatch(/Edited inline note/);
+	expect(stdout.text()).toMatch(/File note/);
+	expect(stdout.text()).toMatch(/Stdin note/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["updates", "1"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /update 1\t.*create\tCreated record\./);
-	assert.match(stdout.text(), /comment-edit\tEdited comment 1\./);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/update 1\t.*create\tCreated record\./);
+	expect(stdout.text()).toMatch(/comment-edit\tEdited comment 1\./);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["history", "1"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /\[update\].*Created record\./);
-	assert.match(stdout.text(), /\[comment\] 1/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/\[update\].*Created record\./);
+	expect(stdout.text()).toMatch(/\[comment\] 1/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(
 			["done", "1", "--resolution", "completed", "--json"],
 			{
@@ -1256,81 +1192,74 @@ fs.writeFileSync(file, text);
 				env,
 			},
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).state, "done");
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).state).toBe("done");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runTempStoreCli(["show", "1"], {
 			home,
 			store,
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /Recent comments/);
-	assert.match(stdout.text(), /Recent updates/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Recent comments/);
+	expect(stdout.text()).toMatch(/Recent updates/);
 });
 
-test("when config and store commands run, they should write config and present store state", async () => {
+it("when config and store commands run, they should write config and present store state", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-home-"));
 	const store = path.join(home, "store");
 	const env = { HOME: home };
 
 	let stdout = capture();
 	const stderr = capture();
-	assert.equal(
+	expect(
 		await runCli(["config", "set", "storePath", store, "--json"], {
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			env,
 		}),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()), {
+	).toBe(0);
+	expect(JSON.parse(stdout.text())).toEqual({
 		updated: true,
 		storePath: store,
 	});
-	assert.equal(stderr.text(), "");
+	expect(stderr.text()).toBe("");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["config", "get", "--json"], { stdout: stdout.stream, env }),
-		0,
-	);
-	assert.deepEqual(JSON.parse(stdout.text()), { storePath: store });
+	).toBe(0);
+	expect(JSON.parse(stdout.text())).toEqual({ storePath: store });
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["config", "get", "storePath"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(stdout.text(), `${store}\n`);
+	).toBe(0);
+	expect(stdout.text()).toBe(`${store}\n`);
 
 	stdout = capture();
-	assert.equal(
-		await runCli(["store", "path"], { stdout: stdout.stream, env }),
+	expect(await runCli(["store", "path"], { stdout: stdout.stream, env })).toBe(
 		0,
 	);
-	assert.equal(stdout.text(), `${store}\n`);
+	expect(stdout.text()).toBe(`${store}\n`);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["store", "doctor", "--json"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).ok, true);
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).ok).toBe(true);
 });
 
-test("when project commands run, they should register roots and infer the current project", async () => {
+it("when project commands run, they should register roots and infer the current project", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-project-home-"));
 	const store = path.join(home, "store");
 	const projectRoot = path.join(home, "repo");
@@ -1338,7 +1267,7 @@ test("when project commands run, they should register roots and infer the curren
 	const env = { HOME: home };
 
 	let stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(
 			[
 				"--store",
@@ -1356,32 +1285,29 @@ test("when project commands run, they should register roots and infer the curren
 			],
 			{ stdout: stdout.stream, env },
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).name, "Harness Repo");
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).name).toBe("Harness Repo");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(
 			["--store", store, "project", "root", "add", "harness", nestedRoot],
 			{ stdout: stdout.stream, env },
 		),
-		0,
-	);
-	assert.match(stdout.text(), /harness\tHarness Repo/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/harness\tHarness Repo/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["--store", store, "projects"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.match(stdout.text(), /harness\tHarness Repo/);
+	).toBe(0);
+	expect(stdout.text()).toMatch(/harness\tHarness Repo/);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(
 			[
 				"--store",
@@ -1396,12 +1322,11 @@ test("when project commands run, they should register roots and infer the curren
 				env,
 			},
 		),
-		0,
-	);
-	assert.equal(JSON.parse(stdout.text()).id, "harness");
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).id).toBe("harness");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(
 			["--store", store, "project", "root", "remove", "harness", nestedRoot],
 			{
@@ -1409,27 +1334,24 @@ test("when project commands run, they should register roots and infer the curren
 				env,
 			},
 		),
-		0,
-	);
-	assert.equal(stdout.text().includes(nestedRoot), false);
+	).toBe(0);
+	expect(stdout.text().includes(nestedRoot)).toBe(false);
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["--store", store, "project", "remove", "harness"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(stdout.text(), "Removed project harness.\n");
+	).toBe(0);
+	expect(stdout.text()).toBe("Removed project harness.\n");
 
 	stdout = capture();
-	assert.equal(
+	expect(
 		await runCli(["--store", store, "projects"], {
 			stdout: stdout.stream,
 			env,
 		}),
-		0,
-	);
-	assert.equal(stdout.text(), "No projects registered.\n");
+	).toBe(0);
+	expect(stdout.text()).toBe("No projects registered.\n");
 });

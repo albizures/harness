@@ -1,12 +1,14 @@
-import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { expect, it } from "vitest";
 
-import { parseAbsolutePath, parseProjectId } from "./domain.ts";
-import { ensureStoreRoot, readStoreManifest } from "./filesystem-store.ts";
-import type { RecordId } from "./record-domain.ts";
+import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
+import {
+	ensureStoreRoot,
+	readStoreManifest,
+} from "../../src/filesystem-store.ts";
+import type { RecordId } from "../../src/record-domain.ts";
 import {
 	addInitiativeDeclaredProject,
 	addRecordComment,
@@ -30,12 +32,12 @@ import {
 	replaceWorkflowRecordFromEditedMarkdown,
 	selectNextWorkflowRecord,
 	startWorkflowRecord,
-} from "./record-store.ts";
+} from "../../src/record-store.ts";
 import {
 	paddedRecordId,
 	recordFilePath,
 	storeRootPaths,
-} from "./store-paths.ts";
+} from "../../src/store-paths.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 const laterDate = new Date("2026-09-20T00:00:00.000Z");
@@ -49,7 +51,7 @@ async function tempStore() {
 	return storePath;
 }
 
-test("when creating a workflow record, it should allocate a global id and write canonical Markdown plus indexes", async () => {
+it("when creating a workflow record, it should allocate a global id and write canonical Markdown plus indexes", async () => {
 	const storePath = await tempStore();
 	const record = await createWorkflowRecord({
 		storePath,
@@ -69,25 +71,24 @@ test("when creating a workflow record, it should allocate a global id and write 
 		},
 	});
 
-	assert.equal(record.id, 1);
-	assert.equal((await readStoreManifest(storePath)).nextRecordId, 2);
+	expect(record.id).toBe(1);
+	expect((await readStoreManifest(storePath)).nextRecordId).toBe(2);
 
 	const filePath = recordFilePath(storePath, "spec", record.id);
-	assert.equal(
-		await readFile(filePath, "utf8"),
+	expect(await readFile(filePath, "utf8")).toBe(
 		`---\nid: 1\ntitle: Implement scoped workflow records\nkind: spec\nsubkind: null\nstate: ready\nresolution: null\nscope:\n  type: project\n  project: harness\nparent: null\ninitiative: null\ndependsOn: []\ngeneratedBy: null\ntags: []\nprofile: null\ncreatedAt: "2026-09-19T00:00:00.000Z"\nupdatedAt: "2026-09-19T00:00:00.000Z"\n---\n\n## Outcome\n\nCreate records.\n`,
 	);
 
 	const paths = storeRootPaths(storePath);
-	assert.deepEqual(JSON.parse(await readFile(paths.byIdIndex, "utf8")), {
+	expect(JSON.parse(await readFile(paths.byIdIndex, "utf8"))).toEqual({
 		"1": { kind: "spec", path: "records/spec/000/000001.md" },
 	});
-	assert.deepEqual(JSON.parse(await readFile(paths.byProjectIndex, "utf8")), {
+	expect(JSON.parse(await readFile(paths.byProjectIndex, "utf8"))).toEqual({
 		harness: [1],
 	});
 });
 
-test("when creating a child record, it should persist parent/scope validation and relationship indexes", async () => {
+it("when creating a child record, it should persist parent/scope validation and relationship indexes", async () => {
 	const storePath = await tempStore();
 	const parent = await createWorkflowRecord({
 		storePath,
@@ -124,15 +125,15 @@ test("when creating a child record, it should persist parent/scope validation an
 		},
 	});
 
-	assert.equal(child.id, 2);
+	expect(child.id).toBe(2);
 	const relationships = JSON.parse(
 		await readFile(storeRootPaths(storePath).relationshipsIndex, "utf8"),
 	);
-	assert.deepEqual(relationships["1"].children, [2]);
-	assert.deepEqual(relationships["2"].parent, 1);
+	expect(relationships["1"].children).toEqual([2]);
+	expect(relationships["2"].parent).toEqual(1);
 
-	await assert.rejects(
-		() =>
+	await expect(
+		(() =>
 			createWorkflowRecord({
 				storePath,
 				now: laterDate,
@@ -149,19 +150,18 @@ test("when creating a child record, it should persist parent/scope validation an
 					profile: null,
 					body: "Nope.\n",
 				},
-			}),
-		/child scope is not compatible with parent scope/,
-	);
+			}))(),
+	).rejects.toThrow(/child scope is not compatible with parent scope/);
 });
 
-test("when the manifest allocation conflicts with an existing record file, it should fail loudly", async () => {
+it("when the manifest allocation conflicts with an existing record file, it should fail loudly", async () => {
 	const storePath = await tempStore();
 	const conflictingPath = recordFilePath(storePath, "wayfinder", 1 as RecordId);
 	await mkdir(path.dirname(conflictingPath), { recursive: true });
 	await writeFile(conflictingPath, "already here", "utf8");
 
-	await assert.rejects(
-		() =>
+	await expect(
+		(() =>
 			createWorkflowRecord({
 				storePath,
 				now: fixedDate,
@@ -178,12 +178,13 @@ test("when the manifest allocation conflicts with an existing record file, it sh
 					profile: null,
 					body: "Body\n",
 				},
-			}),
+			}))(),
+	).rejects.toThrow(
 		/nextRecordId conflicts with existing record file.*forge store doctor/,
 	);
 });
 
-test("when editing record Markdown, it should accept body and editable frontmatter but reject immutable changes", async () => {
+it("when editing record Markdown, it should accept body and editable frontmatter but reject immutable changes", async () => {
 	const storePath = await tempStore();
 	const created = await createWorkflowRecord({
 		storePath,
@@ -216,16 +217,15 @@ test("when editing record Markdown, it should accept body and editable frontmatt
 		now: laterDate,
 	});
 
-	assert.equal(edited.title, "Edited spec");
-	assert.deepEqual(edited.tags, ["phase-2"]);
-	assert.equal(edited.updatedAt, laterDate.toISOString());
-	assert.equal(
-		(await readWorkflowRecord(storePath, created.id)).body,
+	expect(edited.title).toBe("Edited spec");
+	expect(edited.tags).toEqual(["phase-2"]);
+	expect(edited.updatedAt).toBe(laterDate.toISOString());
+	expect((await readWorkflowRecord(storePath, created.id)).body).toBe(
 		"Edited body\n",
 	);
 
-	await assert.rejects(
-		() =>
+	await expect(
+		(() =>
 			replaceWorkflowRecordFromEditedMarkdown({
 				storePath,
 				recordId: created.id,
@@ -235,30 +235,29 @@ test("when editing record Markdown, it should accept body and editable frontmatt
 					resolution: "completed",
 				}),
 				now: laterDate,
-			}),
+			}))(),
+	).rejects.toThrow(
 		/field 'state' is not editable through record frontmatter edits/,
 	);
 });
 
-test("when parsing record Markdown, it should validate filename kind and id", async () => {
+it("when parsing record Markdown, it should validate filename kind and id", async () => {
 	const parsed = parseWorkflowRecordMarkdown(
 		`---\nid: 1\ntitle: Parsed\nkind: wayfinder\nsubkind: null\nstate: ready\nresolution: null\nscope:\n  type: global\nparent: null\ninitiative: null\ndependsOn: []\ngeneratedBy: null\ntags: []\nprofile: null\ncreatedAt: "2026-09-19T00:00:00.000Z"\nupdatedAt: "2026-09-19T00:00:00.000Z"\n---\n\nBody\n`,
 		{ expectedId: 1 as RecordId, expectedKind: "wayfinder" },
 	);
-	assert.equal(parsed.body, "Body\n");
+	expect(parsed.body).toBe("Body\n");
 
-	assert.equal(paddedRecordId(parsed.id), "000001");
-	assert.throws(
-		() =>
-			parseWorkflowRecordMarkdown(formatWorkflowRecordMarkdown(parsed), {
-				expectedId: 2 as RecordId,
-				expectedKind: "wayfinder",
-			}),
-		/record file id '1' does not match expected id '2'/,
-	);
+	expect(paddedRecordId(parsed.id)).toBe("000001");
+	expect(() =>
+		parseWorkflowRecordMarkdown(formatWorkflowRecordMarkdown(parsed), {
+			expectedId: 2 as RecordId,
+			expectedKind: "wayfinder",
+		}),
+	).toThrow(/record file id '1' does not match expected id '2'/);
 });
 
-test("when mutating dependencies, it should persist validated edges and rebuild relationship indexes", async () => {
+it("when mutating dependencies, it should persist validated edges and rebuild relationship indexes", async () => {
 	const storePath = await tempStore();
 	const parent = await createWorkflowRecord({
 		storePath,
@@ -319,17 +318,16 @@ test("when mutating dependencies, it should persist validated edges and rebuild 
 		now: laterDate,
 	});
 
-	assert.deepEqual(updated.dependsOn, [blocker.id]);
-	assert.equal(updated.updatedAt, laterDate.toISOString());
-	assert.deepEqual(
-		(await readWorkflowRecord(storePath, blocked.id)).dependsOn,
-		[blocker.id],
-	);
+	expect(updated.dependsOn).toEqual([blocker.id]);
+	expect(updated.updatedAt).toBe(laterDate.toISOString());
+	expect((await readWorkflowRecord(storePath, blocked.id)).dependsOn).toEqual([
+		blocker.id,
+	]);
 	let relationships = JSON.parse(
 		await readFile(storeRootPaths(storePath).relationshipsIndex, "utf8"),
 	);
-	assert.deepEqual(relationships[String(blocker.id)].dependents, [blocked.id]);
-	assert.deepEqual(relationships[String(blocked.id)].dependsOn, [blocker.id]);
+	expect(relationships[String(blocker.id)].dependents).toEqual([blocked.id]);
+	expect(relationships[String(blocked.id)].dependsOn).toEqual([blocker.id]);
 
 	await removeWorkflowRecordDependency({
 		storePath,
@@ -337,27 +335,27 @@ test("when mutating dependencies, it should persist validated edges and rebuild 
 		dependsOn: blocker.id,
 		now: laterDate,
 	});
-	assert.deepEqual(
-		(await readWorkflowRecord(storePath, blocked.id)).dependsOn,
+	expect((await readWorkflowRecord(storePath, blocked.id)).dependsOn).toEqual(
 		[],
 	);
 	relationships = JSON.parse(
 		await readFile(storeRootPaths(storePath).relationshipsIndex, "utf8"),
 	);
-	assert.deepEqual(relationships[String(blocker.id)].dependents, []);
+	expect(relationships[String(blocker.id)].dependents).toEqual([]);
 
-	await assert.rejects(
-		() =>
+	await expect(
+		(() =>
 			addWorkflowRecordDependency({
 				storePath,
 				recordId: blocked.id,
 				dependsOn: parent.id,
-			}),
+			}))(),
+	).rejects.toThrow(
 		/direct dependency edges between parents and children are disallowed/,
 	);
 });
 
-test("when creating dependency edges, it should reject missing dependencies, incompatible scopes, and cycles", async () => {
+it("when creating dependency edges, it should reject missing dependencies, incompatible scopes, and cycles", async () => {
 	const storePath = await tempStore();
 	const parent = await createWorkflowRecord({
 		storePath,
@@ -424,36 +422,33 @@ test("when creating dependency edges, it should reject missing dependencies, inc
 		},
 	});
 
-	await assert.rejects(
-		() =>
+	await expect(
+		(() =>
 			addWorkflowRecordDependency({
 				storePath,
 				recordId: first.id,
 				dependsOn: 999 as RecordId,
-			}),
-		/Record '999' was not found/,
-	);
-	await assert.rejects(
-		() =>
+			}))(),
+	).rejects.toThrow(/Record '999' was not found/);
+	await expect(
+		(() =>
 			addWorkflowRecordDependency({
 				storePath,
 				recordId: first.id,
 				dependsOn: outsider.id,
-			}),
-		/dependency scopes are not compatible/,
-	);
-	await assert.rejects(
-		() =>
+			}))(),
+	).rejects.toThrow(/dependency scopes are not compatible/);
+	await expect(
+		(() =>
 			addWorkflowRecordDependency({
 				storePath,
 				recordId: first.id,
 				dependsOn: second.id,
-			}),
-		/dependency would create a cycle/,
-	);
+			}))(),
+	).rejects.toThrow(/dependency would create a cycle/);
 });
 
-test("when persisting lifecycle transitions, it should update the record and append ordered updates", async () => {
+it("when persisting lifecycle transitions, it should update the record and append ordered updates", async () => {
 	const storePath = await tempStore();
 	const spec = await createWorkflowRecord({
 		storePath,
@@ -478,11 +473,10 @@ test("when persisting lifecycle transitions, it should update the record and app
 		recordId: spec.id,
 		now: laterDate,
 	});
-	assert.equal(started.state, "in-progress");
-	assert.equal(
+	expect(started.state).toBe("in-progress");
+	expect(
 		(await startWorkflowRecord({ storePath, recordId: spec.id })).state,
-		"in-progress",
-	);
+	).toBe("in-progress");
 
 	const done = await completeWorkflowRecord({
 		storePath,
@@ -490,22 +484,21 @@ test("when persisting lifecycle transitions, it should update the record and app
 		resolution: "completed",
 		now: new Date("2026-09-21T00:00:00.000Z"),
 	});
-	assert.equal(done.state, "done");
-	assert.equal(done.resolution, "completed");
-	assert.deepEqual(
+	expect(done.state).toBe("done");
+	expect(done.resolution).toBe("completed");
+	expect(
 		(await listRecordUpdates(storePath, spec.id)).map((update) => [
 			update.sequence,
 			update.type,
 		]),
-		[
-			[1, "create"],
-			[2, "start"],
-			[doneUpdateSequence, "done"],
-		],
-	);
+	).toEqual([
+		[1, "create"],
+		[2, "start"],
+		[doneUpdateSequence, "done"],
+	]);
 });
 
-test("when persisting comments, it should store editable comment files and combine history with updates", async () => {
+it("when persisting comments, it should store editable comment files and combine history with updates", async () => {
 	const storePath = await tempStore();
 	const spec = await createWorkflowRecord({
 		storePath,
@@ -530,7 +523,7 @@ test("when persisting comments, it should store editable comment files and combi
 		body: "Manual note\n",
 		now: laterDate,
 	});
-	assert.deepEqual((await listRecordComments(storePath, spec.id))[0], comment);
+	expect((await listRecordComments(storePath, spec.id))[0]).toEqual(comment);
 
 	const edited = await replaceRecordCommentFromEditedMarkdown({
 		storePath,
@@ -542,25 +535,23 @@ test("when persisting comments, it should store editable comment files and combi
 		}),
 		now: new Date("2026-09-21T00:00:00.000Z"),
 	});
-	assert.equal(edited.body, "Edited note\n");
-	assert.equal(edited.updatedAt, "2026-09-21T00:00:00.000Z");
-	await assert.rejects(
-		() =>
+	expect(edited.body).toBe("Edited note\n");
+	expect(edited.updatedAt).toBe("2026-09-21T00:00:00.000Z");
+	await expect(
+		(() =>
 			replaceRecordCommentFromEditedMarkdown({
 				storePath,
 				recordId: spec.id,
 				commentId: comment.id,
 				markdown: formatRecordCommentMarkdown({ ...edited, id: 2 as never }),
-			}),
-		/comment id '2' does not match expected id '1'/,
-	);
-	assert.deepEqual(
+			}))(),
+	).rejects.toThrow(/comment id '2' does not match expected id '1'/);
+	expect(
 		(await listRecordHistory(storePath, spec.id)).map((entry) => entry.kind),
-		["update", "update", "comment", "update"],
-	);
+	).toEqual(["update", "update", "comment", "update"]);
 });
 
-test("when mutating initiative membership and declared projects, it should persist indexes and history events", async () => {
+it("when mutating initiative membership and declared projects, it should persist indexes and history events", async () => {
 	const storePath = await tempStore();
 	const initiative = await createWorkflowRecord({
 		storePath,
@@ -611,43 +602,38 @@ test("when mutating initiative membership and declared projects, it should persi
 	});
 
 	const paths = storeRootPaths(storePath);
-	assert.deepEqual(
-		JSON.parse(await readFile(paths.byInitiativeIndex, "utf8")),
-		{
-			"1": {
-				declaredProjects: ["docs", "harness"],
-				members: [spec.id],
-				projects: ["harness"],
-			},
+	expect(JSON.parse(await readFile(paths.byInitiativeIndex, "utf8"))).toEqual({
+		"1": {
+			declaredProjects: ["docs", "harness"],
+			members: [spec.id],
+			projects: ["harness"],
 		},
-	);
-	assert.deepEqual(
+	});
+	expect(
 		JSON.parse(await readFile(paths.relationshipsIndex, "utf8"))["1"]
 			.initiativeMembers,
-		[spec.id],
-	);
-	assert.deepEqual(
+	).toEqual([spec.id]);
+	expect(
 		(await listRecordUpdates(storePath, spec.id)).map((update) => update.type),
-		["create", "initiative-attach"],
-	);
-	assert.deepEqual(
+	).toEqual(["create", "initiative-attach"]);
+	expect(
 		(await listRecordUpdates(storePath, initiative.id)).map(
 			(update) => update.type,
 		),
-		["create", "initiative-project-add"],
-	);
-	await assert.rejects(
-		() =>
+	).toEqual(["create", "initiative-project-add"]);
+	await expect(
+		(() =>
 			removeInitiativeDeclaredProject({
 				storePath,
 				initiativeId: initiative.id,
 				project: parseProjectId("harness"),
-			}),
+			}))(),
+	).rejects.toThrow(
 		/cannot remove declared project 'harness' while member 2 uses it/,
 	);
 });
 
-test("when querying initiative scoped navigation, it should include initiative records and members", async () => {
+it("when querying initiative scoped navigation, it should include initiative records and members", async () => {
 	const storePath = await tempStore();
 	const initiative = await createWorkflowRecord({
 		storePath,
@@ -685,27 +671,25 @@ test("when querying initiative scoped navigation, it should include initiative r
 		},
 	});
 
-	assert.deepEqual(
+	expect(
 		(
 			await listWorkflowRecordReadiness(storePath, {
 				project: parseProjectId("docs"),
 				planning: true,
 			})
 		).map((diagnosis) => diagnosis.recordId),
-		[initiative.id, wayfinder.id],
-	);
-	assert.equal(
+	).toEqual([initiative.id, wayfinder.id]);
+	expect(
 		(
 			await selectNextWorkflowRecord(storePath, {
 				initiative: initiative.id,
 				planning: true,
 			})
 		)?.id,
-		initiative.id,
-	);
+	).toBe(initiative.id);
 });
 
-test("when querying relationship and readiness views, it should return deterministic store-backed results", async () => {
+it("when querying relationship and readiness views, it should return deterministic store-backed results", async () => {
 	const storePath = await tempStore();
 	const spec = await createWorkflowRecord({
 		storePath,
@@ -756,29 +740,25 @@ test("when querying relationship and readiness views, it should return determini
 		},
 	});
 
-	assert.deepEqual(
+	expect(
 		(await readRecordTree(storePath, spec.id)).children.map(
 			(child) => child.record.id,
 		),
-		[blocker.id, blocked.id],
-	);
-	assert.deepEqual(
+	).toEqual([blocker.id, blocked.id]);
+	expect(
 		(await readRecordDependencyView(storePath, blocked.id)).dependsOn.map(
 			(record) => record.id,
 		),
-		[blocker.id],
-	);
-	assert.deepEqual(
+	).toEqual([blocker.id]);
+	expect(
 		(await listWorkflowRecordReadiness(storePath, { blocked: false })).map(
 			(diagnosis) => diagnosis.recordId,
 		),
-		[blocker.id],
-	);
-	assert.deepEqual(
+	).toEqual([blocker.id]);
+	expect(
 		(await listWorkflowRecordReadiness(storePath, { blocked: true })).map(
 			(diagnosis) => diagnosis.recordId,
 		),
-		[blocked.id],
-	);
-	assert.equal((await selectNextWorkflowRecord(storePath))?.id, blocker.id);
+	).toEqual([blocked.id]);
+	expect((await selectNextWorkflowRecord(storePath))?.id).toBe(blocker.id);
 });

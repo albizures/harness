@@ -1,9 +1,8 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: Tests use focused fakes for the Pi extension API.
-import assert from "node:assert/strict";
 import path from "node:path";
-import test from "node:test";
-import { registerFileMentionsExtension } from "./index.ts";
-import type { FileMentionIndexProvider } from "./indexer.ts";
+import { expect, test } from "vitest";
+import { registerFileMentionsExtension } from "../../../extensions/index.ts";
+import type { FileMentionIndexProvider } from "../../../extensions/indexer.ts";
 
 function createPiFake() {
 	const commands = new Map<string, any>();
@@ -69,9 +68,9 @@ test("when the refresh command runs, it rebuilds only the current cwd File Menti
 		},
 	});
 
-	assert.equal(providers.get(firstCwd)?.refreshCount, 0);
-	assert.equal(providers.get(secondCwd)?.refreshCount, 1);
-	assert.deepEqual(notifications, [
+	expect(providers.get(firstCwd)?.refreshCount).toBe(0);
+	expect(providers.get(secondCwd)?.refreshCount).toBe(1);
+	expect(notifications).toEqual([
 		{ message: "File Mentions refreshed.", type: "info" },
 	]);
 });
@@ -94,8 +93,8 @@ test("when the refresh command receives arguments, it rejects them without rebui
 		},
 	});
 
-	assert.equal(provider.refreshCount, 0);
-	assert.deepEqual(notifications, [
+	expect(provider.refreshCount).toBe(0);
+	expect(notifications).toEqual([
 		{
 			message:
 				"Usage: /file-mentions-refresh (path arguments are not supported).",
@@ -125,7 +124,7 @@ test("when the refresh command cannot rebuild the File Mention Index, it reports
 		},
 	});
 
-	assert.deepEqual(notifications, [
+	expect(notifications).toEqual([
 		{ message: "File Mentions refresh failed.", type: "error" },
 	]);
 });

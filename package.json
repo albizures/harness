@@ -11,7 +11,9 @@
 		"format": "biome format --write .",
 		"format:check": "biome format .",
 		"typecheck": "tsc --noEmit",
-		"test": "node --test packages/*/extensions/*.test.ts",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
 		"awf": "node ./packages/awf/dist/cli.js"
 	},
 	"devDependencies": {
@@ -19,6 +21,8 @@
 		"@changesets/cli": "^3.0.2",
 		"@earendil-works/pi-coding-agent": "^0.85.1",
 		"@types/node": "^26.4.1",
-		"typescript": "^7.0.2"
+		"@vitest/coverage-v8": "4.1.10",
+		"typescript": "^7.0.2",
+		"vitest": "^4.1.10"
 	}
 }

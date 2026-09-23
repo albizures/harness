@@ -1,14 +1,13 @@
 // biome-ignore-all lint/style/noMagicNumbers: Test literals define indexing caps and fixture shape.
-import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
 	buildFileMentionIndex,
 	createFileMentionIndexProvider,
 	type CommandRunner,
-} from "./indexer.ts";
+} from "../../../extensions/indexer.ts";
 
 test("when fd is available, the File Mention Index uses fd output and stores normalized metadata", async () => {
 	const calls: Array<{ command: string; args: Array<string> }> = [];
@@ -22,11 +21,8 @@ test("when fd is available, the File Mention Index uses fd output and stores nor
 
 	const index = await buildFileMentionIndex({ cwd: "/repo", run });
 
-	assert.deepEqual(
-		calls.map((call) => call.command),
-		["fd", "fd"],
-	);
-	assert.deepEqual(index?.entries, [
+	expect(calls.map((call) => call.command)).toEqual(["fd", "fd"]);
+	expect(index?.entries).toEqual([
 		{ kind: "directory", path: "docs/guide", depth: 2, basename: "guide" },
 		{
 			kind: "file",
@@ -61,17 +57,14 @@ test("when fd fails, the File Mention Index falls back to git ls-files and infer
 
 	const index = await buildFileMentionIndex({ cwd: "/repo", run });
 
-	assert.deepEqual(calls, ["fd", "git"]);
-	assert.deepEqual(
-		index?.entries.map((entry) => [entry.kind, entry.path]),
-		[
-			["file", "README.md"],
-			["directory", "src"],
-			["file", "src/app.ts"],
-			["directory", "src/lib"],
-			["file", "src/lib/index.ts"],
-		],
-	);
+	expect(calls).toEqual(["fd", "git"]);
+	expect(index?.entries.map((entry) => [entry.kind, entry.path])).toEqual([
+		["file", "README.md"],
+		["directory", "src"],
+		["file", "src/app.ts"],
+		["directory", "src/lib"],
+		["file", "src/lib/index.ts"],
+	]);
 });
 
 test("when command backends fail, the Node fallback skips heavy directories and caps entries", async () => {
@@ -90,14 +83,11 @@ test("when command backends fail, the Node fallback skips heavy directories and 
 
 	const index = await buildFileMentionIndex({ cwd: root, run, maxEntries: 3 });
 
-	assert.deepEqual(
-		index?.entries.map((entry) => [entry.kind, entry.path]),
-		[
-			["directory", "src"],
-			["file", "src/b.ts"],
-			["directory", "src/lib"],
-		],
-	);
+	expect(index?.entries.map((entry) => [entry.kind, entry.path])).toEqual([
+		["directory", "src"],
+		["file", "src/b.ts"],
+		["directory", "src/lib"],
+	]);
 });
 
 test("when a session asks repeatedly, the lazy provider builds once and reuses the File Mention Index", async () => {
@@ -113,8 +103,8 @@ test("when a session asks repeatedly, the lazy provider builds once and reuses t
 	const first = await provider.getIndex();
 	const second = await provider.getIndex();
 
-	assert.equal(first, second);
-	assert.equal(buildCount, 1);
+	expect(first).toBe(second);
+	expect(buildCount).toBe(1);
 });
 
 test("when indexing fails unexpectedly, the lazy provider returns null without throwing", async () => {
@@ -125,5 +115,5 @@ test("when indexing fails unexpectedly, the lazy provider returns null without t
 		},
 	});
 
-	assert.equal(await provider.getIndex(), null);
+	expect(await provider.getIndex()).toBe(null);
 });

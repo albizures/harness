@@ -1,14 +1,13 @@
 // biome-ignore-all lint/style/noMagicNumbers: Test literals define editor cursor positions.
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
 	createFileMentionAutocompleteProvider,
 	extractActiveAtQuery,
 	type AutocompleteItem,
 	type AutocompleteProvider,
-} from "./autocomplete.ts";
-import type { FileMentionIndexProvider } from "./indexer.ts";
-import type { FileMentionIndex } from "./matcher.ts";
+} from "../../../extensions/autocomplete.ts";
+import type { FileMentionIndexProvider } from "../../../extensions/indexer.ts";
+import type { FileMentionIndex } from "../../../extensions/matcher.ts";
 
 function currentProvider(
 	items: Array<AutocompleteItem> = [],
@@ -79,12 +78,12 @@ test("when a non-bare @ query has File Mentions, smart suggestions replace nativ
 		signal: new AbortController().signal,
 	});
 
-	assert.equal(native.suggestionCalls, 0);
-	assert.equal(result?.prefix, "@comp");
-	assert.deepEqual(
-		result?.items.map((item) => item.value),
-		["@src/components", "@src/components/Button.tsx"],
-	);
+	expect(native.suggestionCalls).toBe(0);
+	expect(result?.prefix).toBe("@comp");
+	expect(result?.items.map((item) => item.value)).toEqual([
+		"@src/components",
+		"@src/components/Button.tsx",
+	]);
 });
 
 test("when applying a smart File Mention, the prepared insertion value replaces the active prefix", async () => {
@@ -96,7 +95,10 @@ test("when applying a smart File Mention, the prepared insertion value replaces 
 	const result = await provider.getSuggestions(["open @comp please"], 0, 10, {
 		signal: new AbortController().signal,
 	});
-	assert.ok(result);
+	expect(result).toBeTruthy();
+	if (!result) {
+		throw new Error("expected file mention suggestions");
+	}
 
 	const applied = provider.applyCompletion(
 		["open @comp please"],
@@ -106,12 +108,12 @@ test("when applying a smart File Mention, the prepared insertion value replaces 
 		result.prefix,
 	);
 
-	assert.deepEqual(applied, {
+	expect(applied).toEqual({
 		lines: ["open @src/components please"],
 		cursorLine: 0,
 		cursorCol: 20,
 	});
-	assert.equal(native.applyCalls, 0);
+	expect(native.applyCalls).toBe(0);
 });
 
 test("when the @ query is bare or smart matching is empty, native autocomplete is used as fallback", async () => {
@@ -128,9 +130,9 @@ test("when the @ query is bare or smart matching is empty, native autocomplete i
 		signal: new AbortController().signal,
 	});
 
-	assert.equal(native.suggestionCalls, 2);
-	assert.deepEqual(bare?.items, [{ value: "native", label: "native" }]);
-	assert.deepEqual(empty?.items, [{ value: "native", label: "native" }]);
+	expect(native.suggestionCalls).toBe(2);
+	expect(bare?.items).toEqual([{ value: "native", label: "native" }]);
+	expect(empty?.items).toEqual([{ value: "native", label: "native" }]);
 });
 
 test("when not in an active @ file mention query, native autocomplete handles the request", async () => {
@@ -147,19 +149,19 @@ test("when not in an active @ file mention query, native autocomplete handles th
 		signal: new AbortController().signal,
 	});
 
-	assert.equal(native.suggestionCalls, 2);
+	expect(native.suggestionCalls).toBe(2);
 });
 
 test("when active @ query detection sees token boundaries and quotes, only file mentions match", () => {
-	assert.deepEqual(extractActiveAtQuery(["see @src/lib"], 0, 12), {
+	expect(extractActiveAtQuery(["see @src/lib"], 0, 12)).toEqual({
 		prefix: "@src/lib",
 		query: "src/lib",
 	});
-	assert.deepEqual(extractActiveAtQuery(['see @"docs/my file'], 0, 18), {
+	expect(extractActiveAtQuery(['see @"docs/my file'], 0, 18)).toEqual({
 		prefix: '@"docs/my file',
 		query: '"docs/my file',
 	});
-	assert.equal(extractActiveAtQuery(["see abc@src"], 0, 11), null);
-	assert.equal(extractActiveAtQuery(["see @src and"], 0, 12), null);
-	assert.equal(extractActiveAtQuery(['see @"docs/my file" and'], 0, 24), null);
+	expect(extractActiveAtQuery(["see abc@src"], 0, 11)).toBe(null);
+	expect(extractActiveAtQuery(["see @src and"], 0, 12)).toBe(null);
+	expect(extractActiveAtQuery(['see @"docs/my file" and'], 0, 24)).toBe(null);
 });

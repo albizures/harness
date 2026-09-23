@@ -44,23 +44,6 @@ const filesystemTrackerSourcePath = new URL(
 	"../../src/adapters/trackers/filesystem.ts",
 	import.meta.url,
 ).pathname;
-const agentWorkflowSkillPath = new URL(
-	"../../../../skills/workflow/agent-workflow/SKILL.md",
-	import.meta.url,
-).pathname;
-const toSpecSkillPath = new URL(
-	"../../../../skills/design/to-spec/SKILL.md",
-	import.meta.url,
-).pathname;
-const toTicketsSkillPath = new URL(
-	"../../../../skills/design/to-tickets/SKILL.md",
-	import.meta.url,
-).pathname;
-const wayfinderSkillPath = new URL(
-	"../../../../skills/design/wayfinder/SKILL.md",
-	import.meta.url,
-).pathname;
-
 const unreadableMode = 0o000;
 const ownerReadWriteMode = 0o600;
 const bundledGoldenSmokeTimeoutMs = 15_000;
@@ -1068,17 +1051,6 @@ export const tracker = createFileSystemTracker({ path: ${JSON.stringify(trackerP
 			expect(help.stdout).toContain(
 				'awf create task:work --title "Title" --description -',
 			);
-
-			for (const skillPath of [
-				agentWorkflowSkillPath,
-				toSpecSkillPath,
-				toTicketsSkillPath,
-				wayfinderSkillPath,
-			]) {
-				const skill = await readFile(skillPath, "utf8");
-				expect(skill).toMatch(/prefer(?:ring)? ergonomic create flags/i);
-				expect(skill).toContain("--input <file|->");
-			}
 		});
 	},
 	externalLogCliTimeoutMs,

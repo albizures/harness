@@ -1,7 +1,6 @@
 // biome-ignore-all lint/style/noMagicNumbers: Test literals describe expected widget and parser behavior.
 // biome-ignore-all lint/suspicious/noExplicitAny: Tests use partial extension API fixtures.
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import extension, {
 	MAX_SUGGESTIONS,
 	normalizeSuggestions,
@@ -9,7 +8,7 @@ import extension, {
 	renderSuggestedRepliesWidget,
 	wrapIndex,
 	WIDGET_ID,
-} from "./index.ts";
+} from "../../../extensions/index.ts";
 
 test("registers suggested replies tool, commands, and shortcuts", () => {
 	const tools: Array<any> = [];
@@ -29,9 +28,9 @@ test("registers suggested replies tool, commands, and shortcuts", () => {
 		},
 	} as any);
 
-	assert.equal(tools[0]?.name, "suggest_replies");
-	assert.deepEqual(commands, ["suggested-replies-demo", "suggested-reply"]);
-	assert.deepEqual(shortcuts, ["f7", "f8"]);
+	expect(tools[0]?.name).toBe("suggest_replies");
+	expect(commands).toEqual(["suggested-replies-demo", "suggested-reply"]);
+	expect(shortcuts).toEqual(["f7", "f8"]);
 });
 
 test("tool displays suggestions and returns immediately", async () => {
@@ -66,22 +65,20 @@ test("tool displays suggestions and returns immediately", async () => {
 		ctx,
 	);
 
-	assert.equal(widgetId, WIDGET_ID);
-	assert.match(result.content[0].text, /Suggested replies displayed/);
-	assert.deepEqual(result.details.suggestions, [
+	expect(widgetId).toBe(WIDGET_ID);
+	expect(result.content[0].text).toMatch(/Suggested replies displayed/);
+	expect(result.details.suggestions).toEqual([
 		{ label: "Yes, agree" },
 		{ label: "Show alternatives" },
 	]);
-	assert.match(
-		widgetFactory().render(120).join("\n"),
+	expect(widgetFactory().render(120).join("\n")).toMatch(
 		/┌─+┐\n {2}Suggested replies\n {2}› 1\. Yes, agree/,
 	);
-	assert.match(
+	expect(
 		widgetFactory(undefined, {
 			fg: (_color: "borderMuted", text: string) => `<border>${text}</border>`,
 		}).render(120)[0],
-		/^<border>┌─+┐<\/border>$/,
-	);
+	).toMatch(/^<border>┌─+┐<\/border>$/);
 });
 
 test("normalizes suggestions by trimming, dropping empty labels, and capping at nine", () => {
@@ -94,9 +91,9 @@ test("normalizes suggestions by trimming, dropping empty labels, and capping at 
 
 	const normalized = normalizeSuggestions([{ label: "   " }, ...suggestions]);
 
-	assert.equal(normalized.length, MAX_SUGGESTIONS);
-	assert.deepEqual(normalized[0], { label: "Reply 1" });
-	assert.equal(normalized.at(-1)?.label, "Reply 9");
+	expect(normalized.length).toBe(MAX_SUGGESTIONS);
+	expect(normalized[0]).toEqual({ label: "Reply 1" });
+	expect(normalized.at(-1)?.label).toBe("Reply 9");
 });
 
 test("renders widget with selected marker, one-line suggestions, help text, and truncation", () => {
@@ -111,7 +108,7 @@ test("renders widget with selected marker, one-line suggestions, help text, and 
 		32,
 	);
 
-	assert.deepEqual(lines, [
+	expect(lines).toEqual([
 		"┌──────────────────────────────┐",
 		"  Suggested replies",
 		"    1. Yes, agree",
@@ -121,17 +118,17 @@ test("renders widget with selected marker, one-line suggestions, help text, and 
 });
 
 test("parses /suggested-reply numbers", () => {
-	assert.equal(parseSuggestionNumber("1"), 0);
-	assert.equal(parseSuggestionNumber("9 please"), 8);
-	assert.equal(parseSuggestionNumber("0"), undefined);
-	assert.equal(parseSuggestionNumber("10"), undefined);
-	assert.equal(parseSuggestionNumber("abc"), undefined);
+	expect(parseSuggestionNumber("1")).toBe(0);
+	expect(parseSuggestionNumber("9 please")).toBe(8);
+	expect(parseSuggestionNumber("0")).toBe(undefined);
+	expect(parseSuggestionNumber("10")).toBe(undefined);
+	expect(parseSuggestionNumber("abc")).toBe(undefined);
 });
 
 test("wrapIndex wraps in both directions", () => {
-	assert.equal(wrapIndex(3, 3), 0);
-	assert.equal(wrapIndex(-1, 3), 2);
-	assert.equal(wrapIndex(1, 3), 1);
+	expect(wrapIndex(3, 3)).toBe(0);
+	expect(wrapIndex(-1, 3)).toBe(2);
+	expect(wrapIndex(1, 3)).toBe(1);
 });
 
 test("/suggested-reply inserts the selected suggestion into the editor", async () => {
@@ -170,7 +167,7 @@ test("/suggested-reply inserts the selected suggestion into the editor", async (
 	);
 	await command.handler("2", ctx);
 
-	assert.equal(editorText, "Second");
+	expect(editorText).toBe("Second");
 });
 
 test("function key shortcuts cycle suggestions and replace editor text", async () => {
@@ -207,5 +204,5 @@ test("function key shortcuts cycle suggestions and replace editor text", async (
 	await shortcutHandlers.f8(ctx);
 	await shortcutHandlers.f7(ctx);
 
-	assert.deepEqual(inserted, ["Second", "First"]);
+	expect(inserted).toEqual(["Second", "First"]);
 });

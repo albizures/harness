@@ -4,7 +4,7 @@ Forge is a personal global workflow CLI package.
 
 ## Language
 
-**Global store**: A filesystem-backed store outside project repositories that owns configuration-derived workflow data, registered projects, records, comments, updates, indexes, and write serialization.
+**Global store**: The logical Forge persistence boundary outside project repositories that owns configuration-derived workflow data, registered projects, records, comments, updates, indexes, and write serialization. It is currently filesystem-backed.
 
 **Project registry entry**: A store configuration record for one stable lowercase kebab-case project id, display name, absolute roots, optional remote URL, and optional aliases.
 

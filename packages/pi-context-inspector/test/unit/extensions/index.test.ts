@@ -1,15 +1,14 @@
 // biome-ignore-all lint/style/noMagicNumbers: Test literals describe expected token estimates and layouts.
 // biome-ignore-all lint/suspicious/noExplicitAny: Tests use partial extension API fixtures.
 // biome-ignore-all lint/style/noNonNullAssertion: Tests assert fixtures contain these buckets.
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import extension, {
 	collectContextInspectorInputs,
 	estimateContextAttribution,
 	renderContextInspectorReport,
 	renderTuiContextInspectorReport,
 	showContextInspectorReport,
-} from "./index.ts";
+} from "../../../extensions/index.ts";
 
 function makeCommandContext(overrides: Record<string, unknown> = {}) {
 	return {
@@ -85,9 +84,8 @@ test("registers /context-inspector with the required description", () => {
 		},
 	} as any);
 
-	assert.equal(command.name, "context-inspector");
-	assert.equal(
-		command.description,
+	expect(command.name).toBe("context-inspector");
+	expect(command.description).toBe(
 		"Inspect estimated Pi context usage by source.",
 	);
 });
@@ -114,29 +112,28 @@ test("command collects an active snapshot without waiting for Pi to become idle"
 
 	await command.handler("", ctx);
 
-	assert.equal(collectedWhileActive, true);
+	expect(collectedWhileActive).toBe(true);
 });
 
 test("collectContextInspectorInputs captures model, usage, prompt options, and active context entries", () => {
 	const inputs = collectContextInspectorInputs(makeCommandContext());
 
-	assert.deepEqual(inputs.model, {
+	expect(inputs.model).toEqual({
 		id: "gpt-test",
 		provider: "openai",
 		contextWindow: 128000,
 	});
-	assert.deepEqual(inputs.contextUsage, {
+	expect(inputs.contextUsage).toEqual({
 		tokens: 51200,
 		contextWindow: 128000,
 		percent: 40,
 	});
-	assert.match(inputs.systemPrompt, /Base Pi system prompt text/);
-	assert.equal(
-		inputs.systemPromptOptions.contextFiles?.[0]?.path,
+	expect(inputs.systemPrompt).toMatch(/Base Pi system prompt text/);
+	expect(inputs.systemPromptOptions.contextFiles?.[0]?.path).toBe(
 		"/repo/AGENTS.md",
 	);
-	assert.equal(inputs.entries.length, 3);
-	assert.equal(inputs.idle, false);
+	expect(inputs.entries.length).toBe(3);
+	expect(inputs.idle).toBe(false);
 });
 
 test("estimateContextAttribution uses canonical bucket labels and contributor names without raw snippets", () => {
@@ -144,24 +141,33 @@ test("estimateContextAttribution uses canonical bucket labels and contributor na
 		collectContextInspectorInputs(makeCommandContext()),
 	);
 
-	assert.ok(estimate.buckets.some((bucket) => bucket.name === "System prompt"));
-	assert.ok(
+	expect(
+		estimate.buckets.some((bucket) => bucket.name === "System prompt"),
+	).toBeTruthy();
+	expect(
 		estimate.buckets.some((bucket) => bucket.name === "Tool definitions"),
-	);
-	assert.ok(estimate.buckets.some((bucket) => bucket.name === "Context files"));
-	assert.ok(estimate.buckets.some((bucket) => bucket.name === "Skills"));
-	assert.ok(estimate.buckets.some((bucket) => bucket.name === "User messages"));
-	assert.ok(
+	).toBeTruthy();
+	expect(
+		estimate.buckets.some((bucket) => bucket.name === "Context files"),
+	).toBeTruthy();
+	expect(
+		estimate.buckets.some((bucket) => bucket.name === "Skills"),
+	).toBeTruthy();
+	expect(
+		estimate.buckets.some((bucket) => bucket.name === "User messages"),
+	).toBeTruthy();
+	expect(
 		estimate.buckets.some((bucket) => bucket.name === "Assistant messages"),
-	);
-	assert.ok(estimate.buckets.some((bucket) => bucket.name === "Tool results"));
+	).toBeTruthy();
+	expect(
+		estimate.buckets.some((bucket) => bucket.name === "Tool results"),
+	).toBeTruthy();
 
 	const contextFiles = estimate.buckets.find(
 		(bucket) => bucket.name === "Context files",
 	)!;
-	assert.equal(contextFiles.contributors[0]?.name, "/repo/AGENTS.md");
-	assert.doesNotMatch(
-		JSON.stringify(estimate),
+	expect(contextFiles.contributors[0]?.name).toBe("/repo/AGENTS.md");
+	expect(JSON.stringify(estimate)).not.toMatch(
 		/Project guidance|Read files|Use TDD/,
 	);
 });
@@ -176,7 +182,7 @@ test("showContextInspectorReport opens a read-only scrollable TUI overlay", asyn
 		hasUI: true,
 		ui: {
 			notify: () =>
-				assert.fail(
+				expect.fail(
 					"TUI mode with UI should use the overlay, not fallback notification",
 				),
 			custom: async (factory: any, customOptions: any) => {
@@ -206,46 +212,43 @@ test("showContextInspectorReport opens a read-only scrollable TUI overlay", asyn
 
 	await showContextInspectorReport(ctx, report);
 
-	assert.equal(options.overlay, true);
-	assert.equal(options.overlayOptions.anchor, "center");
-	assert.equal(options.overlayOptions.maxHeight, "80%");
+	expect(options.overlay).toBe(true);
+	expect(options.overlayOptions.anchor).toBe("center");
+	expect(options.overlayOptions.maxHeight).toBe("80%");
 	const initialRender = component.render(80);
-	assert.match(initialRender[0], /^┌─+┐$/);
-	assert.match(initialRender.at(-1), /^└─+┘$/);
-	assert.match(initialRender.join("\n"), /│ Context Inspector\s+│/);
-	assert.match(
-		initialRender.join("\n"),
+	expect(initialRender[0]).toMatch(/^┌─+┐$/);
+	expect(initialRender.at(-1)).toMatch(/^└─+┘$/);
+	expect(initialRender.join("\n")).toMatch(/│ Context Inspector\s+│/);
+	expect(initialRender.join("\n")).toMatch(
 		/│ esc\/enter closes • ↑↓ scroll .* 1-24\/30\s+│/,
 	);
-	assert.match(initialRender.join("\n"), /│ report line 1\s+│/);
-	assert.match(initialRender.join("\n"), /│ report line 24\s+│/);
-	assert.doesNotMatch(initialRender.join("\n"), /report line 25/);
-	assert.equal(
+	expect(initialRender.join("\n")).toMatch(/│ report line 1\s+│/);
+	expect(initialRender.join("\n")).toMatch(/│ report line 24\s+│/);
+	expect(initialRender.join("\n")).not.toMatch(/report line 25/);
+	expect(
 		initialRender.filter((line: string) => /report line \d+/.test(line)).length,
-		24,
-	);
+	).toBe(24);
 
 	component.handleInput("\x1b[B");
-	assert.equal(renderRequests, 1);
-	assert.doesNotMatch(component.render(80).join("\n"), /│ report line 1\s+│/);
-	assert.match(component.render(80).join("\n"), /│ report line 2\s+│/);
+	expect(renderRequests).toBe(1);
+	expect(component.render(80).join("\n")).not.toMatch(/│ report line 1\s+│/);
+	expect(component.render(80).join("\n")).toMatch(/│ report line 2\s+│/);
 
 	component.handleInput("\x1b[A");
-	assert.match(component.render(80).join("\n"), /│ report line 1\s+│/);
+	expect(component.render(80).join("\n")).toMatch(/│ report line 1\s+│/);
 
 	for (let i = 0; i < 100; i += 1) {
 		component.handleInput("\x1b[B");
 	}
 	const lastPageRender = component.render(80).join("\n");
-	assert.match(
-		lastPageRender,
+	expect(lastPageRender).toMatch(
 		/│ esc\/enter closes • ↑↓ scroll .* 7-30\/30\s+│/,
 	);
-	assert.doesNotMatch(lastPageRender, /│ report line 6\s+│/);
-	assert.match(lastPageRender, /│ report line 30\s+│/);
+	expect(lastPageRender).not.toMatch(/│ report line 6\s+│/);
+	expect(lastPageRender).toMatch(/│ report line 30\s+│/);
 
 	component.handleInput("\r");
-	assert.equal(closed, true);
+	expect(closed).toBe(true);
 });
 
 test("showContextInspectorReport uses the styled report in the TUI overlay", async () => {
@@ -255,7 +258,7 @@ test("showContextInspectorReport uses the styled report in the TUI overlay", asy
 		hasUI: true,
 		ui: {
 			notify: () =>
-				assert.fail(
+				expect.fail(
 					"TUI mode with UI should use the overlay, not fallback notification",
 				),
 			custom: async (factory: any) => {
@@ -279,8 +282,8 @@ test("showContextInspectorReport uses the styled report in the TUI overlay", asy
 	});
 
 	const rendered = component.render(120).join("\n");
-	assert.match(rendered, /styled <accent>dynamic value<\/accent>/);
-	assert.doesNotMatch(rendered, /plain value/);
+	expect(rendered).toMatch(/styled <accent>dynamic value<\/accent>/);
+	expect(rendered).not.toMatch(/plain value/);
 });
 
 test("showContextInspectorReport falls back to a compact notification when full TUI display is unavailable", async () => {
@@ -292,7 +295,7 @@ test("showContextInspectorReport falls back to a compact notification when full 
 			notify: (message: string) => {
 				notification = message;
 			},
-			custom: async () => assert.fail("non-TUI mode must not open custom UI"),
+			custom: async () => expect.fail("non-TUI mode must not open custom UI"),
 		},
 	});
 
@@ -303,9 +306,9 @@ test("showContextInspectorReport falls back to a compact notification when full 
 		},
 	});
 
-	assert.match(notification, /^Context Inspector: report ready/);
-	assert.ok(notification.length < 160);
-	assert.doesNotMatch(notification, /verbose body/);
+	expect(notification).toMatch(/^Context Inspector: report ready/);
+	expect(notification.length < 160).toBeTruthy();
+	expect(notification).not.toMatch(/verbose body/);
 });
 
 test("showContextInspectorReport exits quietly when no UI is available", async () => {
@@ -313,8 +316,8 @@ test("showContextInspectorReport exits quietly when no UI is available", async (
 		mode: "print",
 		hasUI: false,
 		ui: {
-			notify: () => assert.fail("no-UI mode must not notify"),
-			custom: async () => assert.fail("no-UI mode must not open custom UI"),
+			notify: () => expect.fail("no-UI mode must not notify"),
+			custom: async () => expect.fail("no-UI mode must not open custom UI"),
 		},
 	});
 
@@ -341,26 +344,23 @@ test("renderTuiContextInspectorReport colors only dynamic values", () => {
 		(value) => `<accent>${value}</accent>`,
 	);
 
-	assert.doesNotMatch(plain, /<accent>/);
-	assert.match(
-		styled,
+	expect(plain).not.toMatch(/<accent>/);
+	expect(styled).toMatch(
 		/Collected: <accent>[^<]+ \(active at collection time\)<\/accent>/,
 	);
-	assert.match(styled, /Model: <accent>unknown<\/accent>/);
-	assert.match(styled, /Context window: <accent>unknown<\/accent>/);
-	assert.match(styled, /Pi authoritative total: <accent>unknown<\/accent>/);
-	assert.match(styled, /Percentage: <accent>unknown<\/accent>/);
-	assert.match(
-		styled,
+	expect(styled).toMatch(/Model: <accent>unknown<\/accent>/);
+	expect(styled).toMatch(/Context window: <accent>unknown<\/accent>/);
+	expect(styled).toMatch(/Pi authoritative total: <accent>unknown<\/accent>/);
+	expect(styled).toMatch(/Percentage: <accent>unknown<\/accent>/);
+	expect(styled).toMatch(
 		/Estimated sum of visible sources: <accent>\d+ tokens<\/accent>/,
 	);
-	assert.match(
-		styled,
+	expect(styled).toMatch(
 		/- System prompt: <accent>~\d+ tokens<\/accent> <accent>\(\d+\.\d%\)<\/accent>/,
 	);
-	assert.doesNotMatch(styled, /<accent>System prompt<\/accent>/);
-	assert.doesNotMatch(styled, /<accent># Context Inspector<\/accent>/);
-	assert.doesNotMatch(styled, /<accent>Point-in-time active context snapshot/);
+	expect(styled).not.toMatch(/<accent>System prompt<\/accent>/);
+	expect(styled).not.toMatch(/<accent># Context Inspector<\/accent>/);
+	expect(styled).not.toMatch(/<accent>Point-in-time active context snapshot/);
 });
 
 test("renderContextInspectorReport shows known Pi total and frames attribution as estimated", () => {
@@ -371,12 +371,12 @@ test("renderContextInspectorReport shows known Pi total and frames attribution a
 		),
 	);
 
-	assert.match(report, /Point-in-time active context snapshot/);
-	assert.match(report, /Model: openai\/gpt-test/);
-	assert.match(report, /Context window: 128k tokens/);
-	assert.match(report, /Pi authoritative total: 51k tokens \(40\.0%\)/);
-	assert.match(report, /Source attribution below is estimated/);
-	assert.match(report, /\(\d+\.\d%\)/);
+	expect(report).toMatch(/Point-in-time active context snapshot/);
+	expect(report).toMatch(/Model: openai\/gpt-test/);
+	expect(report).toMatch(/Context window: 128k tokens/);
+	expect(report).toMatch(/Pi authoritative total: 51k tokens \(40\.0%\)/);
+	expect(report).toMatch(/Source attribution below is estimated/);
+	expect(report).toMatch(/\(\d+\.\d%\)/);
 });
 
 test("known Pi total scales bucket estimates and shares use the authoritative total", () => {
@@ -396,18 +396,17 @@ test("known Pi total scales bucket estimates and shares use the authoritative to
 
 	const estimate = estimateContextAttribution(inputs);
 
-	assert.equal(estimate.estimatedTotalTokens, 60);
-	assert.deepEqual(
+	expect(estimate.estimatedTotalTokens).toBe(60);
+	expect(
 		estimate.buckets.map((bucket) => [
 			bucket.name,
 			bucket.estimatedTokens,
 			bucket.sharePercent,
 		]),
-		[
-			["Context files", 40, 66.66666666666666],
-			["Skills", 20, 33.33333333333333],
-		],
-	);
+	).toEqual([
+		["Context files", 40, 66.66666666666666],
+		["Skills", 20, 33.33333333333333],
+	]);
 });
 
 test("unknown total leaves estimates unscaled and shares use the unscaled estimate total", () => {
@@ -432,23 +431,21 @@ test("unknown total leaves estimates unscaled and shares use the unscaled estima
 	const estimate = estimateContextAttribution(inputs);
 	const report = renderContextInspectorReport(inputs, estimate);
 
-	assert.equal(estimate.estimatedTotalTokens, 15);
-	assert.deepEqual(
+	expect(estimate.estimatedTotalTokens).toBe(15);
+	expect(
 		estimate.buckets.map((bucket) => [
 			bucket.name,
 			bucket.estimatedTokens,
 			bucket.sharePercent,
 		]),
-		[
-			["Context files", 10, 66.66666666666666],
-			["Skills", 5, 33.33333333333333],
-		],
-	);
-	assert.match(report, /Pi authoritative total: unknown/);
-	assert.match(report, /Percentage: unknown/);
-	assert.match(report, /Context window: 200k tokens/);
-	assert.match(
-		report,
+	).toEqual([
+		["Context files", 10, 66.66666666666666],
+		["Skills", 5, 33.33333333333333],
+	]);
+	expect(report).toMatch(/Pi authoritative total: unknown/);
+	expect(report).toMatch(/Percentage: unknown/);
+	expect(report).toMatch(/Context window: 200k tokens/);
+	expect(report).toMatch(
 		/Pi total is unknown; source shares use the unscaled visible-source estimate as their denominator\./,
 	);
 });
@@ -482,22 +479,19 @@ test("zero buckets are hidden and nonzero buckets are sorted by estimated token 
 
 	const estimate = estimateContextAttribution(inputs);
 
-	assert.deepEqual(
+	expect(
 		estimate.buckets.map((bucket) => [bucket.name, bucket.estimatedTokens]),
-		[
-			["Skills", 4],
-			["Context files", 2],
-			["User messages", 1],
-		],
-	);
-	assert.equal(
-		estimate.buckets.some((bucket) => bucket.estimatedTokens === 0),
+	).toEqual([
+		["Skills", 4],
+		["Context files", 2],
+		["User messages", 1],
+	]);
+	expect(estimate.buckets.some((bucket) => bucket.estimatedTokens === 0)).toBe(
 		false,
 	);
-	assert.equal(
+	expect(
 		estimate.buckets.some((bucket) => bucket.name === "System prompt"),
-		false,
-	);
+	).toBe(false);
 });
 
 test("System prompt attribution excludes prompt sources with dedicated buckets", () => {
@@ -533,25 +527,24 @@ test("System prompt attribution excludes prompt sources with dedicated buckets",
 		estimate.buckets.map((bucket) => [bucket.name, bucket]),
 	);
 
-	assert.ok(
+	expect(
 		byName["System prompt"].estimatedTokens <
 			byName["Tool definitions"].estimatedTokens,
-	);
-	assert.ok(
+	).toBeTruthy();
+	expect(
 		byName["System prompt"].estimatedTokens <
 			byName["Context files"].estimatedTokens,
-	);
-	assert.ok(
+	).toBeTruthy();
+	expect(
 		byName["System prompt"].estimatedTokens < byName.Skills.estimatedTokens,
-	);
-	assert.deepEqual(
+	).toBeTruthy();
+	expect(
 		byName["System prompt"].contributors.map((item) => item.name).sort(),
-		[
-			"Appended system prompt",
-			"Base Pi system prompt text",
-			"Prompt guidelines",
-		],
-	);
+	).toEqual([
+		"Appended system prompt",
+		"Base Pi system prompt text",
+		"Prompt guidelines",
+	]);
 });
 
 test("System prompt bucket is omitted when all prompt text belongs to dedicated files, skills, and tools", () => {
@@ -575,10 +568,9 @@ test("System prompt bucket is omitted when all prompt text belongs to dedicated 
 
 	const estimate = estimateContextAttribution(inputs);
 
-	assert.equal(
+	expect(
 		estimate.buckets.some((bucket) => bucket.name === "System prompt"),
-		false,
-	);
+	).toBe(false);
 });
 
 test("Tool definitions ignore snippets for tools that are not active", () => {
@@ -600,11 +592,8 @@ test("Tool definitions ignore snippets for tools that are not active", () => {
 		(bucket) => bucket.name === "Tool definitions",
 	)!;
 
-	assert.deepEqual(
-		tools.contributors.map((item) => item.name),
-		["read"],
-	);
-	assert.doesNotMatch(JSON.stringify(estimate), /write|inactive raw snippet/);
+	expect(tools.contributors.map((item) => item.name)).toEqual(["read"]);
+	expect(JSON.stringify(estimate)).not.toMatch(/write|inactive raw snippet/);
 });
 
 test("Tool definitions use active tool names and report caveats about provider schemas", () => {
@@ -623,17 +612,16 @@ test("Tool definitions use active tool names and report caveats about provider s
 	const tools = estimate.buckets.find(
 		(bucket) => bucket.name === "Tool definitions",
 	)!;
-	assert.deepEqual(tools.contributors.map((item) => item.name).sort(), [
+	expect(tools.contributors.map((item) => item.name).sort()).toEqual([
 		"customTool",
 		"read",
 	]);
 
 	const report = renderContextInspectorReport(inputs, estimate);
-	assert.match(
-		report,
+	expect(report).toMatch(
 		/Tool definitions are estimated from prompt-visible names and snippets, not provider-serialized schemas\./,
 	);
-	assert.doesNotMatch(report, /Read files without exposing this raw snippet/);
+	expect(report).not.toMatch(/Read files without exposing this raw snippet/);
 });
 
 test("contributor names are safe names or paths", () => {
@@ -653,10 +641,10 @@ test("contributor names are safe names or paths", () => {
 	);
 
 	const serialized = JSON.stringify(estimateContextAttribution(inputs));
-	assert.doesNotMatch(serialized, /\n|RAW CONTENT|raw file body|raw body/);
-	assert.match(serialized, /"read"/);
-	assert.match(serialized, /\/repo\/SECRET\.md/);
-	assert.match(serialized, /"skill"/);
+	expect(serialized).not.toMatch(/\n|RAW CONTENT|raw file body|raw body/);
+	expect(serialized).toMatch(/"read"/);
+	expect(serialized).toMatch(/\/repo\/SECRET\.md/);
+	expect(serialized).toMatch(/"skill"/);
 });
 
 test("conversation attribution uses only active branch context entries", () => {
@@ -708,11 +696,10 @@ test("conversation attribution uses only active branch context entries", () => {
 		estimate.buckets.map((bucket) => [bucket.name, bucket]),
 	);
 
-	assert.ok(byName["User messages"].estimatedTokens > 0);
-	assert.ok(byName["Assistant messages"].estimatedTokens > 0);
-	assert.ok(byName["Tool results"].estimatedTokens > 0);
-	assert.doesNotMatch(
-		JSON.stringify(estimate),
+	expect(byName["User messages"].estimatedTokens > 0).toBeTruthy();
+	expect(byName["Assistant messages"].estimatedTokens > 0).toBeTruthy();
+	expect(byName["Tool results"].estimatedTokens > 0).toBeTruthy();
+	expect(JSON.stringify(estimate)).not.toMatch(
 		/abandoned branch|active user request|active assistant reply|active tool output/,
 	);
 });
@@ -749,15 +736,15 @@ test("compaction attribution counts summary text and retained active messages, n
 		estimate.buckets.map((bucket) => [bucket.name, bucket]),
 	);
 
-	assert.ok(byName["Compactions and summaries"].estimatedTokens < 1000);
-	assert.equal(
-		byName["Compactions and summaries"].contributors[0]?.name,
+	expect(
+		byName["Compactions and summaries"].estimatedTokens < 1000,
+	).toBeTruthy();
+	expect(byName["Compactions and summaries"].contributors[0]?.name).toBe(
 		"compaction",
 	);
-	assert.ok(byName["User messages"].estimatedTokens > 0);
-	assert.ok(byName["Assistant messages"].estimatedTokens > 0);
-	assert.doesNotMatch(
-		JSON.stringify(estimate),
+	expect(byName["User messages"].estimatedTokens > 0).toBeTruthy();
+	expect(byName["Assistant messages"].estimatedTokens > 0).toBeTruthy();
+	expect(JSON.stringify(estimate)).not.toMatch(
 		/100000|retained user text|retained assistant text|short remaining summary/,
 	);
 });
@@ -782,9 +769,8 @@ test("custom context messages are attributed to other active entries with safe c
 		(bucket) => bucket.name === "Other active entries",
 	)!;
 
-	assert.equal(other.contributors[0]?.name, "extension");
-	assert.doesNotMatch(
-		JSON.stringify(estimate),
+	expect(other.contributors[0]?.name).toBe("extension");
+	expect(JSON.stringify(estimate)).not.toMatch(
 		/raw custom label|custom message body/,
 	);
 });
@@ -828,12 +814,11 @@ test("message and tool-result contributors use labels without raw content snippe
 	const estimate = estimateContextAttribution(inputs);
 	const serialized = JSON.stringify(estimate);
 
-	assert.match(serialized, /user message/);
-	assert.match(serialized, /assistant message/);
-	assert.match(serialized, /bash/);
-	assert.match(serialized, /tool result/);
-	assert.doesNotMatch(
-		serialized,
+	expect(serialized).toMatch(/user message/);
+	expect(serialized).toMatch(/assistant message/);
+	expect(serialized).toMatch(/bash/);
+	expect(serialized).toMatch(/tool result/);
+	expect(serialized).not.toMatch(
 		/secret user snippet|secret assistant snippet|secret tool output|secret tool label|anonymous tool output/,
 	);
 });
@@ -874,12 +859,12 @@ test("rendered contributor lists are capped at five and shown only for materiall
 		estimateContextAttribution(inputs),
 	);
 
-	assert.match(report, /- Context files: ~\d/);
-	assert.match(report, / {2}- \/repo\/context-1\.md: ~\d/);
-	assert.match(report, / {2}- \/repo\/context-5\.md: ~\d/);
-	assert.doesNotMatch(report, / {2}- \/repo\/context-6\.md: ~\d/);
-	assert.match(report, /- User messages: ~4 tokens/);
-	assert.doesNotMatch(report, / {2}- user message:/);
+	expect(report).toMatch(/- Context files: ~\d/);
+	expect(report).toMatch(/ {2}- \/repo\/context-1\.md: ~\d/);
+	expect(report).toMatch(/ {2}- \/repo\/context-5\.md: ~\d/);
+	expect(report).not.toMatch(/ {2}- \/repo\/context-6\.md: ~\d/);
+	expect(report).toMatch(/- User messages: ~4 tokens/);
+	expect(report).not.toMatch(/ {2}- user message:/);
 });
 
 test("recommendations are read-only plain text for large context files, skills, and tool results", () => {
@@ -924,25 +909,20 @@ test("recommendations are read-only plain text for large context files, skills, 
 		estimateContextAttribution(inputs),
 	);
 
-	assert.match(report, /## Read-only recommendations/);
-	assert.match(
-		report,
+	expect(report).toMatch(/## Read-only recommendations/);
+	expect(report).toMatch(
 		/Large tool results: review whether bulky outputs still need to remain in active context/,
 	);
-	assert.match(
-		report,
+	expect(report).toMatch(
 		/Large context files: consider whether the current project context can be narrowed/,
 	);
-	assert.match(
-		report,
+	expect(report).toMatch(
 		/Large skills: consider whether every loaded skill is relevant to the current task/,
 	);
-	assert.doesNotMatch(
-		report,
+	expect(report).not.toMatch(
 		/button|click|trigger|compact now|edit|apply|prune/i,
 	);
-	assert.doesNotMatch(
-		report,
+	expect(report).not.toMatch(
 		/context file context file|skill body skill body|tool output tool output/,
 	);
 });
