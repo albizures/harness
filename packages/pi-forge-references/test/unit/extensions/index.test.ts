@@ -13,6 +13,7 @@ function createNativeProvider(): AutocompleteProvider & {
 	applyCalls: number;
 } {
 	return {
+		triggerCharacters: ["/"],
 		calls: 0,
 		applyCalls: 0,
 		getSuggestions: async function () {
@@ -33,6 +34,7 @@ function createNativeProvider(): AutocompleteProvider & {
 const AUDIT_TASK_ID = 35;
 const PACKAGE_TASK_ID = 43;
 const FORGE_TASK_REFERENCE_CURSOR_COL = 13;
+const REGISTERED_PROVIDER_REFERENCE_CURSOR_COL = 7;
 const INLINE_TOKEN_CURSOR_COL = 9;
 const MARKDOWN_HEADING_CURSOR_COL = 5;
 const ALPHA_TASK_ID = 12;
@@ -84,6 +86,15 @@ describe("Forge References autocomplete", () => {
 			],
 		});
 		expect(native.calls).toBe(0);
+	});
+
+	it("should preserve existing trigger characters and add the Forge reference trigger", () => {
+		const native = createNativeProvider();
+		const provider = createForgeReferencesAutocompleteProvider(native, {
+			getReadyTasks: async () => [],
+		});
+
+		expect(provider.triggerCharacters).toEqual(["/", "#"]);
 	});
 
 	it("should fall back to the existing provider outside a Forge reference token", async () => {
@@ -316,10 +327,16 @@ describe("createForgeReadyTaskProvider", () => {
 });
 
 describe("registerForgeReferencesExtension", () => {
-	it("should register an autocomplete provider for session start", () => {
+	it("should register an autocomplete provider for session start without querying Forge", () => {
 		const handlers = new Map<string, any>();
 		const autocompleteProviders: Array<any> = [];
-		const taskProvider = { getReadyTasks: async () => [] };
+		let readyTaskCalls = 0;
+		const taskProvider = {
+			getReadyTasks: async () => {
+				readyTaskCalls += 1;
+				return [];
+			},
+		};
 		const pi = {
 			on: (event: string, handler: any) => handlers.set(event, handler),
 		};
@@ -340,6 +357,57 @@ describe("registerForgeReferencesExtension", () => {
 		);
 
 		expect(autocompleteProviders).toHaveLength(1);
+		expect(readyTaskCalls).toBe(0);
+	});
+
+	it("should query Forge only after registered autocomplete receives an active reference token", async () => {
+		const handlers = new Map<string, any>();
+		const autocompleteProviderFactories: Array<
+			(current: AutocompleteProvider) => AutocompleteProvider
+		> = [];
+		let readyTaskCalls = 0;
+		const taskProvider = {
+			getReadyTasks: async () => {
+				readyTaskCalls += 1;
+				return [createTask(PACKAGE_TASK_ID, "Create package skeleton")];
+			},
+		};
+		const pi = {
+			on: (event: string, handler: any) => handlers.set(event, handler),
+		};
+
+		registerForgeReferencesExtension(pi as any, {
+			createTaskProvider: () => taskProvider,
+		});
+		handlers.get("session_start")(
+			{},
+			{
+				cwd: "/repo",
+				mode: "tui",
+				ui: {
+					addAutocompleteProvider: (provider: any) =>
+						autocompleteProviderFactories.push(provider),
+				},
+			},
+		);
+
+		const provider = autocompleteProviderFactories[0](createNativeProvider());
+
+		expect(readyTaskCalls).toBe(0);
+		expect(
+			await provider.getSuggestions(
+				["task #4"],
+				0,
+				REGISTERED_PROVIDER_REFERENCE_CURSOR_COL,
+				{
+					signal: new AbortController().signal,
+				},
+			),
+		).toEqual({
+			prefix: "#4",
+			items: [{ value: "#43", label: "#43 Create package skeleton" }],
+		});
+		expect(readyTaskCalls).toBe(1);
 	});
 
 	it("should not register an autocomplete provider outside TUI mode", () => {

@@ -47,7 +47,7 @@ forge open <record>
 forge edit <record>
 ```
 
-Use `--json` for JSON output, `--plain` for tabular/plain output, `--store <absolute-path>` to override the configured store for tests or one-off runs, and `--cwd <absolute-path>` to test project inference for project-scoped commands.
+Use `--json` for JSON output, `--store <absolute-path>` to override the configured store for tests or one-off runs, and `--cwd <absolute-path>` to test project inference for project-scoped commands.
 
 ## Store setup
 

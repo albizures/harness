@@ -370,17 +370,14 @@ Agents should rely on the record snapshot plus updates for authoritative workflo
 
 ```text
 -C, --cwd <path>            Run as if from another directory
--p, --project <id>          Override inferred project context or filter by project where supported
+--project <id>              Override inferred project context or filter by project where supported
 --projects <ids>            Use a comma-separated project set where supported
 --initiative <id>           Use or filter by initiative where supported
 --scope <scope>             Structured scope, e.g. project:harness or project-set:a,b
 --all-records               Include all records where supported
 --store <path>              Override configured store path for tests/migration
 --json                      Emit machine-readable output
---plain                     Disable color/formatting
--q, --quiet                 Print only essential output
--v, --verbose               Include more detail
--h, --help                  Show help
+-h, --help                  Show generated help
 ```
 
 Scope flags are command-specific. Creation/mutation commands reject incompatible scope flags unless the command explicitly defines how they combine. Inspection/listing commands may combine flags as filters, for example `forge list --initiative 12 --project harness`.

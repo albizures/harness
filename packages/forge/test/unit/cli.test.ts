@@ -61,6 +61,7 @@ it("when the package is created, it should expose the forge binary and checks", 
 	expect(manifest.scripts.test).toBe(
 		"vitest run --config ../../vitest.config.mts",
 	);
+	expect(manifest.dependencies["@effect/cli"]).toEqual(expect.any(String));
 });
 
 it("when the binary is launched through a symlink, it should still run as the CLI entrypoint", async () => {
@@ -124,7 +125,73 @@ describe("when CLI commands use Promise-facing file adapters", () => {
 	});
 });
 
-it("when help is requested, it should describe the Phase 2 command surface", async () => {
+it("when the root command surface is invalid, it should use native Effect CLI errors", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["--plain"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Received unknown argument: '--plain'/);
+	expect(stderr.text()).not.toMatch(/forge: Unknown flag/);
+});
+
+it("when unsupported flags follow known commands, it should use native Effect CLI errors", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["ready", "--plain", "x"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Received unknown argument: '--plain'/);
+	expect(stderr.text()).not.toMatch(/forge: Unknown flag/);
+});
+
+it("when an unknown subcommand is supplied, it should use native Effect CLI validation", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["config", "nope"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Invalid subcommand: nope/);
+	expect(stderr.text()).not.toMatch(/Usage: forge config/);
+});
+
+it("when injected runCli options are supplied, root flags parsed by the command surface should preserve them", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-injected-home-"),
+	);
+	const store = path.join(home, "store");
+	const cwd = path.join(home, "workspace");
+	const stdout = capture();
+	const stderr = capture();
+
+	const code = await runCli(["--store", store, "--cwd", cwd, "store", "path"], {
+		cwd: "/should/not/win",
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: home },
+	});
+
+	expect(code).toBe(0);
+	expect(stdout.text()).toContain(store);
+	expect(stderr.text()).toBe("");
+});
+
+it("when help is requested, it should describe the generated Effect CLI command surface", async () => {
 	const stdout = capture();
 	const stderr = capture();
 	const code = await runCli(["--help"], {
@@ -132,11 +199,14 @@ it("when help is requested, it should describe the Phase 2 command surface", asy
 		stderr: stderr.stream,
 		env: { HOME: "/tmp" },
 	});
+	const help = stdout.text();
 	expect(code).toBe(0);
-	expect(stdout.text()).toMatch(/forge config get/);
-	expect(stdout.text()).toMatch(/forge project add/);
-	expect(stdout.text()).toMatch(/forge new spec/);
-	expect(stdout.text()).toMatch(/forge show/);
+	expect(help).toMatch(/Forge personal workflow CLI/);
+	expect(help).toMatch(/COMMANDS/);
+	expect(help).toMatch(/config get/);
+	expect(help).toMatch(/project add/);
+	expect(help).toMatch(/new spec/);
+	expect(help).toMatch(/show/);
 	expect(stderr.text()).toBe("");
 });
 
@@ -777,7 +847,7 @@ it("when ready JSON is requested, it should emit the structured ready record con
 	);
 });
 
-it("when ready help is requested, it should document JSON output and the blocked incompatibility", async () => {
+it("when ready help is requested, it should use generated help and document the blocked incompatibility", async () => {
 	const stdout = capture();
 	const stderr = capture();
 	const code = await runCli(["ready", "--help"], {
@@ -786,7 +856,8 @@ it("when ready help is requested, it should document JSON output and the blocked
 		env: { HOME: "/tmp" },
 	});
 	expect(code).toBe(0);
-	expect(stdout.text()).toMatch(/forge ready \[--json\]/);
+	expect(stdout.text()).toMatch(/DESCRIPTION/);
+	expect(stdout.text()).toMatch(/--blocked/);
 	expect(stdout.text()).toMatch(/JSON output is not supported with --blocked/);
 	expect(stderr.text()).toBe("");
 });

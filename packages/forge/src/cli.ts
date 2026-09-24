@@ -4,8 +4,16 @@ import process from "node:process";
 import { text as readStreamText } from "node:stream/consumers";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import * as Command from "@effect/platform/Command";
+import * as PlatformCommand from "@effect/platform/Command";
 import { FileSystem } from "@effect/platform/FileSystem";
+import * as NodeContext from "@effect/platform-node/NodeContext";
+import * as Args from "@effect/cli/Args";
+import * as CliApp from "@effect/cli/CliApp";
+import * as CliCommand from "@effect/cli/Command";
+import * as CliConfig from "@effect/cli/CliConfig";
+import * as HelpDoc from "@effect/cli/HelpDoc";
+import * as Options from "@effect/cli/Options";
+import * as ValidationError from "@effect/cli/ValidationError";
 import { Effect } from "effect";
 
 import {
@@ -88,96 +96,373 @@ export type CliOptions = {
 	readonly stderr?: Pick<NodeJS.WriteStream, "write">;
 };
 
-type Presentation = "human" | "json" | "plain";
+type Presentation = "human" | "json";
 
 type FlagValue = string | boolean | ReadonlyArray<string>;
 
-type Parsed = {
-	readonly positionals: ReadonlyArray<string>;
-	readonly flags: Readonly<Record<string, FlagValue>>;
+type CliInvocationContext = {
 	readonly presentation: Presentation;
 	readonly cwd: string;
 	readonly homeDirectory: string;
 	readonly storeOverride?: string;
 	readonly stdin: NodeJS.ReadableStream;
+	readonly stdout: Pick<NodeJS.WriteStream, "write">;
+	readonly stderr: Pick<NodeJS.WriteStream, "write">;
 	readonly env: NodeJS.ProcessEnv;
 };
 
-const helpText = `Forge personal workflow CLI
+type Parsed = CliInvocationContext & {
+	readonly positionals: ReadonlyArray<string>;
+	readonly flags: Readonly<Record<string, FlagValue>>;
+};
 
-Usage:
-  forge [--json|--plain] [--store <path>] [--cwd <path>] <command>
+const forgeRootOptions = {
+	json: Options.boolean("json").pipe(
+		Options.withDescription("Render command output as JSON."),
+	),
+	store: Options.text("store").pipe(
+		Options.optional,
+		Options.withDescription("Override the Forge store path."),
+	),
+	cwd: Options.text("cwd").pipe(
+		Options.withAlias("C"),
+		Options.optional,
+		Options.withDescription("Override the invocation working directory."),
+	),
+};
 
-Commands:
-  forge config get [storePath]
-  forge config set storePath <absolute-path>
-  forge store path
-  forge store doctor
-  forge project add <id> --root <path> [--name <name>] [--remote <url>]
-  forge project root add <id> <path>
-  forge project root remove <id> <path>
-  forge project remove <id>
-  forge new initiative --title <title> (--body <md>|--body-file <file>|--body -) --projects <ids>
-  forge new wayfinder --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>|--projects <ids>|--initiative <id>|--scope global]
-  forge new spec --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>] [--initiative <id>] [--generated-by <id>]
-  forge new task --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--kind research|prototype|review] [--depends-on <id>]...
-  forge new grilling --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--depends-on <id>]...
-  forge show <record>
-  forge start <record>
-  forge done <record> --resolution <slug>
-  forge comment <record> --message <md>
-  forge comment <record> --message-file <file>
-  forge comment <record> --message -
-  forge comment edit <record> <comment-id>
-  forge comments <record>
-  forge updates <record>
-  forge history <record>
-  forge initiatives [--project <id>|--all-records]
-  forge initiative attach <initiative> <record>
-  forge initiative detach <initiative> <record>
-  forge initiative project add <initiative> <project>
-  forge initiative project remove <initiative> <project>
-  forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]
-  forge ready [--json] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
-  forge ready --blocked [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
-  forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
-  forge tree <record>
-  forge deps <record>
-  forge deps add <record> --depends-on <id>
-  forge deps remove <record> --depends-on <id>
-  forge open <record>
-  forge edit <record>
-  forge projects
-  forge here
-`;
+const forgeRootOptionsParser = Options.all(forgeRootOptions);
+
+const presentationOptions = {
+	json: Options.boolean("json").pipe(
+		Options.withDescription("Render command output as JSON."),
+	),
+};
+
+const configCommand = CliCommand.make("config").pipe(
+	CliCommand.withDescription("Read or update Forge CLI configuration."),
+	CliCommand.withSubcommands([
+		CliCommand.make("get", {
+			key: Args.optional(Args.text({ name: "storePath" })),
+			...presentationOptions,
+		}).pipe(
+			CliCommand.withDescription("Print the Forge config or a config value."),
+		),
+		CliCommand.make("set", {
+			key: Args.text({ name: "storePath" }),
+			value: Args.text({ name: "absolute-path" }),
+			...presentationOptions,
+		}).pipe(CliCommand.withDescription("Set a Forge config value.")),
+	]),
+);
+
+const storeCommand = CliCommand.make("store").pipe(
+	CliCommand.withDescription("Inspect the configured Forge store."),
+	CliCommand.withSubcommands([
+		CliCommand.make("path").pipe(
+			CliCommand.withDescription("Print the active Forge store path."),
+		),
+		CliCommand.make("doctor").pipe(
+			CliCommand.withDescription("Validate the active Forge store."),
+		),
+	]),
+);
+
+const projectCommand = CliCommand.make("project").pipe(
+	CliCommand.withDescription("Register and maintain Forge projects."),
+	CliCommand.withSubcommands([
+		CliCommand.make("add", {
+			id: Args.text({ name: "id" }),
+			root: Options.text("root").pipe(
+				Options.withDescription("Project root path."),
+			),
+			name: Options.text("name").pipe(
+				Options.optional,
+				Options.withDescription("Human-readable project name."),
+			),
+			remote: Options.text("remote").pipe(
+				Options.optional,
+				Options.withDescription("Project remote URL."),
+			),
+		}).pipe(CliCommand.withDescription("Register a Forge project.")),
+		CliCommand.make("root").pipe(
+			CliCommand.withDescription("Add or remove project roots."),
+			CliCommand.withSubcommands([
+				CliCommand.make("add", {
+					id: Args.text({ name: "id" }),
+					root: Args.text({ name: "path" }),
+				}).pipe(CliCommand.withDescription("Add a root to a project.")),
+				CliCommand.make("remove", {
+					id: Args.text({ name: "id" }),
+					root: Args.text({ name: "path" }),
+				}).pipe(CliCommand.withDescription("Remove a root from a project.")),
+			]),
+		),
+		CliCommand.make("remove", {
+			id: Args.text({ name: "id" }),
+		}).pipe(CliCommand.withDescription("Remove a Forge project.")),
+	]),
+);
+
+const projectsCommand = CliCommand.make("projects").pipe(
+	CliCommand.withDescription("List registered Forge projects."),
+);
+
+const hereCommand = CliCommand.make("here").pipe(
+	CliCommand.withDescription(
+		"Infer the Forge project for the current directory.",
+	),
+);
+
+const recordArg = Args.text({ name: "record" });
+const bodyOptions = {
+	body: Options.text("body").pipe(Options.optional),
+	bodyFile: Options.text("body-file").pipe(Options.optional),
+};
+const descriptionOptions = {
+	description: Options.text("description").pipe(Options.optional),
+	descriptionFile: Options.text("description-file").pipe(Options.optional),
+};
+const newScopeOptions = {
+	project: Options.text("project").pipe(Options.optional),
+	projects: Options.text("projects").pipe(Options.optional),
+	initiative: Options.text("initiative").pipe(Options.optional),
+	scope: Options.text("scope").pipe(Options.optional),
+};
+const titleOption = Options.text("title");
+const dependsOnOption = Options.text("depends-on").pipe(
+	Options.repeated,
+	Options.withDescription("Record dependency id; may be repeated."),
+);
+const newRecordCommand = (
+	kind: "initiative" | "wayfinder" | "spec" | "task" | "grilling",
+) => {
+	if (kind === "task" || kind === "grilling") {
+		return CliCommand.make(kind, {
+			title: titleOption,
+			...descriptionOptions,
+			parent: Options.text("parent"),
+			kind: Options.choice("kind", [
+				"research",
+				"prototype",
+				"review",
+			] as const).pipe(Options.optional),
+			dependsOn: dependsOnOption,
+		});
+	}
+	return CliCommand.make(kind, {
+		title: titleOption,
+		...bodyOptions,
+		...newScopeOptions,
+		generatedBy: Options.text("generated-by").pipe(Options.optional),
+	});
+};
+const newCommand = CliCommand.make("new").pipe(
+	CliCommand.withDescription("Create Forge records."),
+	CliCommand.withSubcommands([
+		newRecordCommand("initiative"),
+		newRecordCommand("wayfinder"),
+		newRecordCommand("spec"),
+		newRecordCommand("task"),
+		newRecordCommand("grilling"),
+	]),
+);
+const showCommand = CliCommand.make("show", { record: recordArg, ...presentationOptions }).pipe(
+	CliCommand.withDescription("Show a Forge record."),
+);
+const startCommand = CliCommand.make("start", { record: recordArg, ...presentationOptions }).pipe(
+	CliCommand.withDescription("Start a Forge record."),
+);
+const doneCommand = CliCommand.make("done", {
+	record: recordArg,
+	resolution: Options.text("resolution"),
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Complete a Forge record."));
+const commentCommand = CliCommand.make("comment", {
+	record: Args.optional(recordArg),
+	message: Options.text("message").pipe(Options.optional),
+	messageFile: Options.text("message-file").pipe(Options.optional),
+}).pipe(
+	CliCommand.withDescription("Add or edit record comments."),
+	CliCommand.withSubcommands([
+		CliCommand.make("edit", {
+			record: recordArg,
+			comment: Args.text({ name: "comment" }),
+		}).pipe(CliCommand.withDescription("Edit a record comment.")),
+	]),
+);
+const commentsCommand = CliCommand.make("comments", { record: recordArg }).pipe(
+	CliCommand.withDescription("List record comments."),
+);
+const updatesCommand = CliCommand.make("updates", { record: recordArg }).pipe(
+	CliCommand.withDescription("List record updates."),
+);
+const historyCommand = CliCommand.make("history", { record: recordArg }).pipe(
+	CliCommand.withDescription("List record history."),
+);
+const openCommand = CliCommand.make("open", { record: recordArg }).pipe(
+	CliCommand.withDescription("Open a record file."),
+);
+const editCommand = CliCommand.make("edit", { record: recordArg }).pipe(
+	CliCommand.withDescription("Edit a record file."),
+);
+
+const navigationScopeOptions = {
+	project: Options.text("project").pipe(Options.optional),
+	initiative: Options.text("initiative").pipe(Options.optional),
+	allRecords: Options.boolean("all-records"),
+};
+const navigationWorkOptions = {
+	includeHitl: Options.boolean("include-hitl"),
+	planning: Options.boolean("planning"),
+};
+const initiativesCommand = CliCommand.make("initiatives", {
+	project: Options.text("project").pipe(Options.optional),
+	allRecords: Options.boolean("all-records"),
+}).pipe(CliCommand.withDescription("List initiative records."));
+const initiativeCommand = CliCommand.make("initiative").pipe(
+	CliCommand.withDescription("Maintain initiative membership."),
+	CliCommand.withSubcommands([
+		CliCommand.make("attach", {
+			initiative: Args.text({ name: "initiative" }),
+			record: recordArg,
+		}),
+		CliCommand.make("detach", {
+			initiative: Args.text({ name: "initiative" }),
+			record: recordArg,
+		}),
+		CliCommand.make("project").pipe(
+			CliCommand.withSubcommands([
+				CliCommand.make("add", {
+					initiative: Args.text({ name: "initiative" }),
+					project: Args.text({ name: "project" }),
+				}),
+				CliCommand.make("remove", {
+					initiative: Args.text({ name: "initiative" }),
+					project: Args.text({ name: "project" }),
+				}),
+			]),
+		),
+	]),
+);
+const listCommand = CliCommand.make("list", {
+	state: Options.text("state").pipe(Options.optional),
+	kind: Options.text("kind").pipe(Options.optional),
+	...navigationScopeOptions,
+}).pipe(CliCommand.withDescription("List workflow records."));
+const readyCommand = CliCommand.make("ready", {
+	blocked: Options.boolean("blocked").pipe(
+		Options.withDescription(
+			"List blocked records. JSON output is not supported with --blocked.",
+		),
+	),
+	...navigationWorkOptions,
+	...navigationScopeOptions,
+}).pipe(CliCommand.withDescription("List ready or blocked workflow records."));
+const nextCommand = CliCommand.make("next", {
+	...navigationWorkOptions,
+	...navigationScopeOptions,
+}).pipe(CliCommand.withDescription("Select the next workflow record."));
+const treeCommand = CliCommand.make("tree", { record: recordArg }).pipe(
+	CliCommand.withDescription("Show a record tree."),
+);
+const depsCommand = CliCommand.make("deps", {
+	record: Args.optional(recordArg),
+}).pipe(
+	CliCommand.withDescription("Show or mutate dependencies."),
+	CliCommand.withSubcommands([
+		CliCommand.make("add", {
+			record: recordArg,
+			dependsOn: Options.text("depends-on"),
+		}),
+		CliCommand.make("remove", {
+			record: recordArg,
+			dependsOn: Options.text("depends-on"),
+		}),
+	]),
+);
+
+const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
+	CliCommand.withDescription("Forge personal workflow CLI"),
+	CliCommand.withSubcommands([
+		configCommand,
+		storeCommand,
+		projectCommand,
+		newCommand,
+		showCommand,
+		startCommand,
+		doneCommand,
+		commentCommand,
+		commentsCommand,
+		updatesCommand,
+		historyCommand,
+		initiativesCommand,
+		initiativeCommand,
+		listCommand,
+		readyCommand,
+		nextCommand,
+		treeCommand,
+		depsCommand,
+		openCommand,
+		editCommand,
+		projectsCommand,
+		hereCommand,
+	]),
+);
+
+const helpText = `${HelpDoc.toAnsiText(
+	CliCommand.getHelp(forgeRootCommand, CliConfig.defaultConfig),
+)}\n`;
+
+const forgeCliApp = CliApp.make({
+	name: "forge",
+	version: "0.0.0",
+	command: forgeRootCommand.descriptor,
+});
 
 const recentCommentLimit = 3;
 const recentUpdateLimit = 5;
 
-const commandHelp: Record<string, string> = {
-	config: `Usage:\n  forge config get [storePath]\n  forge config set storePath <absolute-path>\n`,
-	store: `Usage:\n  forge store path\n  forge store doctor\n`,
-	project: `Usage:\n  forge project add <id> --root <path> [--name <name>] [--remote <url>]\n  forge project root add <id> <path>\n  forge project root remove <id> <path>\n  forge project remove <id>\n`,
-	new: `Usage:\n  forge new initiative --title <title> (--body <md>|--body-file <file>|--body -) --projects <ids>\n  forge new wayfinder --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>|--projects <ids>|--initiative <id>|--scope global]\n  forge new spec --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>] [--initiative <id>] [--generated-by <id>]\n  forge new task --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--kind research|prototype|review] [--depends-on <id>]...\n  forge new grilling --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--depends-on <id>]...\n`,
-	show: `Usage:\n  forge show <record>\n`,
-	start: `Usage:\n  forge start <record>\n`,
-	done: `Usage:\n  forge done <record> --resolution <slug>\n`,
-	comment: `Usage:\n  forge comment <record> --message <md>\n  forge comment <record> --message-file <file>\n  forge comment <record> --message -\n  forge comment edit <record> <comment-id>\n`,
-	comments: `Usage:\n  forge comments <record>\n`,
-	updates: `Usage:\n  forge updates <record>\n`,
-	history: `Usage:\n  forge history <record>\n`,
-	initiatives: `Usage:\n  forge initiatives [--project <id>|--all-records]\n`,
-	initiative: `Usage:\n  forge initiative attach <initiative> <record>\n  forge initiative detach <initiative> <record>\n  forge initiative project add <initiative> <project>\n  forge initiative project remove <initiative> <project>\n`,
-	list: `Usage:\n  forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]\n`,
-	ready: `Usage:\n  forge ready [--json] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n  forge ready --blocked [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n\nJSON output is not supported with --blocked.\n`,
-	next: `Usage:\n  forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]\n`,
-	tree: `Usage:\n  forge tree <record>\n`,
-	deps: `Usage:\n  forge deps <record>\n  forge deps add <record> --depends-on <id>\n  forge deps remove <record> --depends-on <id>\n`,
-	open: `Usage:\n  forge open <record>\n`,
-	edit: `Usage:\n  forge edit <record>\n`,
-	projects: `Usage:\n  forge projects\n`,
-	here: `Usage:\n  forge here\n`,
-};
+const commandDescriptors = new Map<string, unknown>([
+	["config", configCommand],
+	["store", storeCommand],
+	["project", projectCommand],
+	["new", newCommand],
+	["show", showCommand],
+	["start", startCommand],
+	["done", doneCommand],
+	["comment", commentCommand],
+	["comments", commentsCommand],
+	["updates", updatesCommand],
+	["history", historyCommand],
+	["initiatives", initiativesCommand],
+	["initiative", initiativeCommand],
+	["list", listCommand],
+	["ready", readyCommand],
+	["next", nextCommand],
+	["tree", treeCommand],
+	["deps", depsCommand],
+	["open", openCommand],
+	["edit", editCommand],
+	["projects", projectsCommand],
+	["here", hereCommand],
+]);
+
+function helpForCommand(command: string): string {
+	const descriptor = commandDescriptors.get(command);
+	return descriptor === undefined
+		? helpText
+		: `${HelpDoc.toAnsiText(
+				CliCommand.getHelp(
+					descriptor as Parameters<typeof CliCommand.getHelp>[0],
+					CliConfig.defaultConfig,
+				),
+			)}\n`;
+}
+
+const commandHelp: Record<string, string> = new Proxy(Object.create(null), {
+	get: (_target, property) => helpForCommand(String(property)),
+});
 
 type ExitCodeTarget = { exitCode?: string | number | null | undefined };
 
@@ -195,13 +480,14 @@ export async function runCli(
 	argv: ReadonlyArray<string>,
 	options: CliOptions = {},
 ): Promise<number> {
-	const stdout = options.stdout ?? process.stdout;
 	const stderr = options.stderr ?? process.stderr;
 	try {
-		const parsed = parseArgs(argv, options);
+		await validateRootInvocation(argv);
+		const context = await createInvocationContext(argv, options);
+		const parsed = parseArgs(argv, context);
 		const [command, subcommand, ...rest] = parsed.positionals;
 		if (command === undefined) {
-			writeOut(stdout, helpText);
+			writeOut(context.stdout, helpText);
 			return 0;
 		}
 		if (
@@ -209,55 +495,55 @@ export async function runCli(
 			subcommand === "help" ||
 			rest.includes("help")
 		) {
-			writeOut(stdout, commandHelp[command] ?? helpText);
+			writeOut(context.stdout, helpForCommand(command));
 			return 0;
 		}
 
 		switch (command) {
 			case "config":
-				return await runConfig(parsed, subcommand, rest, stdout);
+				return await runConfig(parsed, subcommand, rest);
 			case "store":
-				return await runStore(parsed, subcommand, stdout);
+				return await runStore(parsed, subcommand);
 			case "project":
-				return await runProject(parsed, subcommand, rest, stdout);
+				return await runProject(parsed, subcommand, rest);
 			case "new":
-				return await runNew(parsed, subcommand, rest, stdout);
+				return await runNew(parsed, subcommand, rest);
 			case "show":
-				return await runShow(parsed, subcommand, rest, stdout);
+				return await runShow(parsed, subcommand, rest);
 			case "start":
-				return await runStart(parsed, subcommand, rest, stdout);
+				return await runStart(parsed, subcommand, rest);
 			case "done":
-				return await runDone(parsed, subcommand, rest, stdout);
+				return await runDone(parsed, subcommand, rest);
 			case "comment":
-				return await runComment(parsed, subcommand, rest, stdout);
+				return await runComment(parsed, subcommand, rest);
 			case "comments":
-				return await runComments(parsed, subcommand, rest, stdout);
+				return await runComments(parsed, subcommand, rest);
 			case "updates":
-				return await runUpdates(parsed, subcommand, rest, stdout);
+				return await runUpdates(parsed, subcommand, rest);
 			case "history":
-				return await runHistory(parsed, subcommand, rest, stdout);
+				return await runHistory(parsed, subcommand, rest);
 			case "initiatives":
-				return await runInitiatives(parsed, subcommand, rest, stdout);
+				return await runInitiatives(parsed, subcommand, rest);
 			case "initiative":
-				return await runInitiative(parsed, subcommand, rest, stdout);
+				return await runInitiative(parsed, subcommand, rest);
 			case "list":
-				return await runList(parsed, subcommand, rest, stdout);
+				return await runList(parsed, subcommand, rest);
 			case "ready":
-				return await runReady(parsed, subcommand, rest, stdout);
+				return await runReady(parsed, subcommand, rest);
 			case "next":
-				return await runNext(parsed, subcommand, rest, stdout);
+				return await runNext(parsed, subcommand, rest);
 			case "tree":
-				return await runTree(parsed, subcommand, rest, stdout);
+				return await runTree(parsed, subcommand, rest);
 			case "deps":
-				return await runDeps(parsed, subcommand, rest, stdout);
+				return await runDeps(parsed, subcommand, rest);
 			case "open":
-				return await runOpen(parsed, subcommand, rest, stdout);
+				return await runOpen(parsed, subcommand, rest);
 			case "edit":
-				return await runEdit(parsed, subcommand, rest, stdout);
+				return await runEdit(parsed, subcommand, rest);
 			case "projects":
-				return await runProjects(parsed, stdout);
+				return await runProjects(parsed);
 			case "here":
-				return await runHere(parsed, stdout);
+				return await runHere(parsed);
 			default:
 				throw usage(`Unknown command '${command}'. Run forge --help.`);
 		}
@@ -271,7 +557,6 @@ async function runConfig(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const homeDirectory = parseAbsolutePath(
 		parsed.homeDirectory,
@@ -289,11 +574,7 @@ async function runConfig(
 					? undefined
 					: parseAbsolutePath(parsed.storeOverride, "storePath"),
 		});
-		return present(
-			stdout,
-			parsed,
-			key === "storePath" ? config.storePath : config,
-		);
+		return present(parsed, key === "storePath" ? config.storePath : config);
 	}
 	if (subcommand === "set") {
 		const [key, value] = rest;
@@ -304,23 +585,22 @@ async function runConfig(
 		const config = { storePath: input.value };
 		await writeForgeConfig({ homeDirectory, config });
 		await ensureStoreRoot({ storePath: input.value });
-		return present(stdout, parsed, { updated: true, ...config });
+		return present(parsed, { updated: true, ...config });
 	}
-	throw usage(commandHelp.config);
+	throw new NativeCliError(`Invalid subcommand: ${subcommand ?? ""}`);
 }
 
 async function runStore(
 	parsed: Parsed,
 	subcommand: string | undefined,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const storePath = await resolveStorePath(parsed);
 	if (subcommand === "path") {
-		return present(stdout, parsed, storePath);
+		return present(parsed, storePath);
 	}
 	if (subcommand === "doctor") {
 		const report = await storeDoctor({ storePath });
-		return present(stdout, parsed, report, report.ok ? 0 : 2);
+		return present(parsed, report, report.ok ? 0 : 2);
 	}
 	throw usage(commandHelp.store);
 }
@@ -329,7 +609,6 @@ async function runProject(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "add") {
@@ -355,7 +634,7 @@ async function runProject(
 			name: getOptionalStringFlag(parsed, "name"),
 			remote: getOptionalStringFlag(parsed, "remote"),
 		});
-		return present(stdout, parsed, await addProject({ storePath, ...input }));
+		return present(parsed, await addProject({ storePath, ...input }));
 	}
 	if (subcommand === "root") {
 		const rootCommandArity = 3;
@@ -372,7 +651,6 @@ async function runProject(
 		}
 		const input = decodeProjectRootInput({ id, root });
 		return present(
-			stdout,
 			parsed,
 			operation === "add"
 				? await addProjectRoot({ storePath, ...input })
@@ -385,7 +663,7 @@ async function runProject(
 			throw usage("Usage: forge project remove <id>");
 		}
 		await removeProject({ storePath, id: parseProjectId(id) });
-		return present(stdout, parsed, { removed: id });
+		return present(parsed, { removed: id });
 	}
 	throw usage(commandHelp.project);
 }
@@ -394,7 +672,6 @@ async function runNew(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	if (rest.length > 0) {
 		throw usage(commandHelp.new);
@@ -454,14 +731,13 @@ async function runNew(
 			body,
 		},
 	});
-	return present(stdout, parsed, record);
+	return present(parsed, record);
 }
 
 async function runShow(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.show);
 	const storePath = await readyStore(parsed);
@@ -478,9 +754,9 @@ async function runShow(
 		),
 	};
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, shown);
+		return present(parsed, shown);
 	}
-	writeOut(stdout, `${formatShownRecord(shown)}\n`);
+	writeOut(parsed.stdout, `${formatShownRecord(shown)}\n`);
 	return 0;
 }
 
@@ -488,11 +764,9 @@ async function runStart(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.start);
 	return present(
-		stdout,
 		parsed,
 		await startWorkflowRecord({
 			storePath: await readyStore(parsed),
@@ -505,12 +779,10 @@ async function runDone(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.done);
 	const resolution = getRequiredFlag(parsed, "resolution", commandHelp.done);
 	return present(
-		stdout,
 		parsed,
 		await completeWorkflowRecord({
 			storePath: await readyStore(parsed),
@@ -524,7 +796,6 @@ async function runComment(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "edit") {
@@ -550,7 +821,7 @@ async function runComment(
 			commentId,
 			markdown,
 		});
-		return present(stdout, parsed, { updated: true, comment: edited });
+		return present(parsed, { updated: true, comment: edited });
 	}
 	const id = singleRecordId(subcommand, rest, commandHelp.comment);
 	const comment = await addRecordComment({
@@ -558,21 +829,20 @@ async function runComment(
 		recordId: id,
 		body: await readProse(parsed, "message"),
 	});
-	return present(stdout, parsed, comment);
+	return present(parsed, comment);
 }
 
 async function runComments(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.comments);
 	const comments = await listRecordComments(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, comments);
+		return present(parsed, comments);
 	}
-	writeOut(stdout, `${formatRecordComments(comments)}\n`);
+	writeOut(parsed.stdout, `${formatRecordComments(comments)}\n`);
 	return 0;
 }
 
@@ -580,14 +850,13 @@ async function runUpdates(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.updates);
 	const updates = await listRecordUpdates(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, updates);
+		return present(parsed, updates);
 	}
-	writeOut(stdout, `${formatRecordUpdates(updates)}\n`);
+	writeOut(parsed.stdout, `${formatRecordUpdates(updates)}\n`);
 	return 0;
 }
 
@@ -595,14 +864,13 @@ async function runHistory(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.history);
 	const history = await listRecordHistory(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, history);
+		return present(parsed, history);
 	}
-	writeOut(stdout, `${formatRecordHistory(history)}\n`);
+	writeOut(parsed.stdout, `${formatRecordHistory(history)}\n`);
 	return 0;
 }
 
@@ -610,7 +878,6 @@ async function runInitiatives(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.initiatives);
@@ -624,7 +891,6 @@ async function runInitiatives(
 			? await inferProjectIdForCwd(parsed, storePath)
 			: undefined);
 	return present(
-		stdout,
 		parsed,
 		records.filter(
 			(record) =>
@@ -638,7 +904,6 @@ async function runInitiative(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "attach" || subcommand === "detach") {
@@ -652,7 +917,6 @@ async function runInitiative(
 			recordId: parseRecordId(Number(record)),
 		};
 		return present(
-			stdout,
 			parsed,
 			subcommand === "attach"
 				? await attachWorkflowRecordToInitiative(input)
@@ -675,7 +939,6 @@ async function runInitiative(
 			project: parseProjectId(project),
 		};
 		return present(
-			stdout,
 			parsed,
 			operation === "add"
 				? await addInitiativeDeclaredProject(input)
@@ -689,7 +952,6 @@ async function runList(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.list);
@@ -708,7 +970,6 @@ async function runList(
 			? await inferProjectIdForCwd(parsed, storePath)
 			: undefined);
 	return present(
-		stdout,
 		parsed,
 		records.filter(
 			(record) =>
@@ -725,7 +986,6 @@ async function runReady(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.ready);
@@ -743,10 +1003,10 @@ async function runReady(
 		planning: parsed.flags.planning === true,
 	});
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, readyJsonContract(diagnoses, records));
+		return present(parsed, readyJsonContract(diagnoses, records));
 	}
 	writeOut(
-		stdout,
+		parsed.stdout,
 		`${formatReadinessDiagnoses(diagnoses, records, parsed.flags.blocked === true)}\n`,
 	);
 	return 0;
@@ -756,7 +1016,6 @@ async function runNext(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.next);
@@ -767,21 +1026,20 @@ async function runNext(
 		includeHitl: parsed.flags["include-hitl"] === true,
 		planning: parsed.flags.planning === true,
 	});
-	return present(stdout, parsed, record ?? null);
+	return present(parsed, record ?? null);
 }
 
 async function runTree(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.tree);
 	const tree = await readRecordTree(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, tree);
+		return present(parsed, tree);
 	}
-	writeOut(stdout, `${formatRecordTree(tree)}\n`);
+	writeOut(parsed.stdout, `${formatRecordTree(tree)}\n`);
 	return 0;
 }
 
@@ -789,7 +1047,6 @@ async function runDeps(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "add" || subcommand === "remove") {
@@ -804,7 +1061,6 @@ async function runDeps(
 			dependsOn: parseRecordId(Number(dependsOn)),
 		};
 		return present(
-			stdout,
 			parsed,
 			subcommand === "add"
 				? await addWorkflowRecordDependency(input)
@@ -814,9 +1070,9 @@ async function runDeps(
 	const id = singleRecordId(subcommand, rest, commandHelp.deps);
 	const view = await readRecordDependencyView(storePath, id);
 	if (parsed.presentation === "json") {
-		return present(stdout, parsed, view);
+		return present(parsed, view);
 	}
-	writeOut(stdout, `${formatDependencyView(view)}\n`);
+	writeOut(parsed.stdout, `${formatDependencyView(view)}\n`);
 	return 0;
 }
 
@@ -824,19 +1080,17 @@ async function runOpen(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.open);
 	const storePath = await readyStore(parsed);
 	const locator = await locateWorkflowRecord(storePath, id);
-	return present(stdout, parsed, recordFilePath(storePath, locator.kind, id));
+	return present(parsed, recordFilePath(storePath, locator.kind, id));
 }
 
 async function runEdit(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-	stdout: Pick<NodeJS.WriteStream, "write">,
 ): Promise<number> {
 	const id = singleRecordId(subcommand, rest, commandHelp.edit);
 	const storePath = await readyStore(parsed);
@@ -856,20 +1110,14 @@ async function runEdit(
 		recordId: id,
 		markdown,
 	});
-	return present(stdout, parsed, { updated: true, record: edited });
+	return present(parsed, { updated: true, record: edited });
 }
 
-async function runProjects(
-	parsed: Parsed,
-	stdout: Pick<NodeJS.WriteStream, "write">,
-): Promise<number> {
-	return present(stdout, parsed, await listProjects(await readyStore(parsed)));
+async function runProjects(parsed: Parsed): Promise<number> {
+	return present(parsed, await listProjects(await readyStore(parsed)));
 }
 
-async function runHere(
-	parsed: Parsed,
-	stdout: Pick<NodeJS.WriteStream, "write">,
-): Promise<number> {
+async function runHere(parsed: Parsed): Promise<number> {
 	const project = await inferProjectByPath({
 		storePath: await readyStore(parsed),
 		cwd: parseAbsolutePath(parsed.cwd, "cwd"),
@@ -881,10 +1129,81 @@ async function runHere(
 				"No registered project matches the current directory. Run `forge project add <id> --root <path>`.",
 		});
 	}
-	return present(stdout, parsed, project);
+	return present(parsed, project);
 }
 
-function parseArgs(argv: ReadonlyArray<string>, options: CliOptions): Parsed {
+async function createInvocationContext(
+	argv: ReadonlyArray<string>,
+	options: CliOptions,
+): Promise<CliInvocationContext> {
+	const stdout = options.stdout ?? process.stdout;
+	const stderr = options.stderr ?? process.stderr;
+	const rootOptions = await parseRootInvocationOptions(argv);
+	const env = options.env ?? process.env;
+	const homeDirectory = env.FORGE_HOME ?? env.HOME ?? process.env.HOME;
+	if (homeDirectory === undefined) {
+		throw usage("HOME must be set.");
+	}
+	return {
+		presentation: rootOptions.json === true ? "json" : "human",
+		cwd: rootOptions.cwd ?? options.cwd ?? process.cwd(),
+		homeDirectory,
+		storeOverride: rootOptions.store,
+		stdin: options.stdin ?? process.stdin,
+		stdout,
+		stderr,
+		env,
+	};
+}
+
+type RootOptions = {
+	json: boolean;
+	store?: string;
+	cwd?: string;
+};
+
+async function parseRootInvocationOptions(
+	argv: ReadonlyArray<string>,
+): Promise<RootOptions> {
+	const parsed: RootOptions = { json: false };
+	for (let index = 0; index < argv.length; index += 1) {
+		const token = argv[index];
+		if (token === "--json") {
+			parsed.json = true;
+			continue;
+		}
+		if (token === "--store" || token === "--cwd" || token === "-C") {
+			const value = argv[index + 1];
+			if (value === undefined || (value.startsWith("-") && value !== "-")) {
+				throw new NativeCliError(`Flag ${token} requires a value.`);
+			}
+			if (token === "--store") {
+				parsed.store = value;
+			} else {
+				parsed.cwd = value;
+			}
+			index += 1;
+		}
+	}
+	return parsed;
+}
+
+async function validateRootInvocation(
+	_argv: ReadonlyArray<string>,
+): Promise<void> {
+	return Promise.resolve();
+}
+
+function isRemovedCompatibilityFlag(token: string): boolean {
+	return token === "--plain" || token === "--quiet" || token === "--verbose";
+}
+
+class NativeCliError extends Error {}
+
+function parseArgs(
+	argv: ReadonlyArray<string>,
+	context: CliInvocationContext,
+): Parsed {
 	const flags: Record<string, FlagValue> = {};
 	const positionals: Array<string> = [];
 	let index = 0;
@@ -898,13 +1217,10 @@ function parseArgs(argv: ReadonlyArray<string>, options: CliOptions): Parsed {
 			index += 1;
 			continue;
 		}
-		const flagName = flagAlias(token);
+		const flagName = parseFlagName(token);
 		if (
 			flagName === "help" ||
 			flagName === "json" ||
-			flagName === "plain" ||
-			flagName === "quiet" ||
-			flagName === "verbose" ||
 			flagName === "all-records" ||
 			flagName === "blocked" ||
 			flagName === "include-hitl" ||
@@ -928,100 +1244,29 @@ function parseArgs(argv: ReadonlyArray<string>, options: CliOptions): Parsed {
 		}
 		index += 2;
 	}
-	const cwd = stringFlag(flags.cwd) ?? options.cwd ?? process.cwd();
-	const env = options.env ?? process.env;
-	const homeDirectory = env.FORGE_HOME ?? env.HOME ?? process.env.HOME;
-	if (homeDirectory === undefined) {
-		throw usage("HOME must be set.");
-	}
-	let presentation: Presentation = "human";
-	if (flags.json === true) {
-		presentation = "json";
-	} else if (flags.plain === true) {
-		presentation = "plain";
-	}
 	return {
+		...context,
+		presentation:
+			context.presentation === "json" || flags.json === true ? "json" : "human",
 		positionals,
 		flags,
-		presentation,
-		cwd,
-		homeDirectory,
-		storeOverride: stringFlag(flags.store),
-		stdin: options.stdin ?? process.stdin,
-		env,
 	};
 }
 
-function flagAlias(token: string): string {
+function parseFlagName(token: string): string {
 	switch (token) {
 		case "-h":
-		case "--help":
 			return "help";
 		case "-C":
-		case "--cwd":
 			return "cwd";
-		case "--store":
-			return "store";
-		case "--json":
-			return "json";
-		case "--plain":
-			return "plain";
-		case "-q":
-		case "--quiet":
-			return "quiet";
-		case "-v":
-		case "--verbose":
-			return "verbose";
-		case "--root":
-			return "root";
-		case "--name":
-			return "name";
-		case "--remote":
-			return "remote";
-		case "--title":
-			return "title";
-		case "--body":
-			return "body";
-		case "--body-file":
-			return "body-file";
-		case "--description":
-			return "description";
-		case "--description-file":
-			return "description-file";
-		case "--parent":
-			return "parent";
-		case "--kind":
-			return "kind";
-		case "--depends-on":
-			return "depends-on";
-		case "--project":
-			return "project";
-		case "--projects":
-			return "projects";
-		case "--initiative":
-			return "initiative";
-		case "--scope":
-			return "scope";
-		case "--generated-by":
-			return "generated-by";
-		case "--resolution":
-			return "resolution";
-		case "--message":
-			return "message";
-		case "--message-file":
-			return "message-file";
-		case "--state":
-			return "state";
-		case "--blocked":
-			return "blocked";
-		case "--include-hitl":
-			return "include-hitl";
-		case "--planning":
-			return "planning";
-		case "--all-records":
-			return "all-records";
 		default:
-			throw usage(`Unknown flag '${token}'.`);
+			if (isRemovedCompatibilityFlag(token)) {
+				throw new NativeCliError(`Received unknown argument: '${token}'`);
+			}
+			if (token.startsWith("--")) {
+				return token.slice(2);
+			}
+			throw new NativeCliError(`Received unknown argument: '${token}'`);
 	}
 }
 
@@ -1489,13 +1734,13 @@ function runEditorEffect(filePath: AbsolutePath, parsed: Parsed) {
 	if (editor === undefined || editor.trim() === "") {
 		return Effect.fail(usage("EDITOR must be set to edit records."));
 	}
-	return Command.make(`${editor} ${shellQuote(filePath)}`).pipe(
-		Command.runInShell(true),
-		Command.stdin("inherit"),
-		Command.stdout("inherit"),
-		Command.stderr("inherit"),
-		Command.env(parsed.env),
-		Command.exitCode,
+	return PlatformCommand.make(`${editor} ${shellQuote(filePath)}`).pipe(
+		PlatformCommand.runInShell(true),
+		PlatformCommand.stdin("inherit"),
+		PlatformCommand.stdout("inherit"),
+		PlatformCommand.stderr("inherit"),
+		PlatformCommand.env(parsed.env),
+		PlatformCommand.exitCode,
 		Effect.flatMap((exitCode) => {
 			const code = Number(exitCode);
 			return code === 0
@@ -1532,16 +1777,15 @@ async function readyStore(parsed: Parsed) {
 }
 
 function present(
-	stdout: Pick<NodeJS.WriteStream, "write">,
-	parsed: Parsed,
+	parsed: Pick<CliInvocationContext, "presentation" | "stdout">,
 	value: unknown,
 	code = 0,
 ): number {
 	if (parsed.presentation === "json") {
-		writeOut(stdout, `${JSON.stringify(value, null, "\t")}\n`);
+		writeOut(parsed.stdout, `${JSON.stringify(value, null, "\t")}\n`);
 		return code;
 	}
-	writeOut(stdout, `${formatHuman(value)}\n`);
+	writeOut(parsed.stdout, `${formatHuman(value)}\n`);
 	return code;
 }
 
@@ -1579,6 +1823,12 @@ function formatHuman(value: unknown): string {
 }
 
 function formatError(error: unknown): string {
+	if (error instanceof NativeCliError) {
+		return error.message;
+	}
+	if (ValidationError.isValidationError(error)) {
+		return `${HelpDoc.toAnsiText(error.error)}\n`;
+	}
 	if (isForgeError(error)) {
 		return `forge: ${error.message}`;
 	}

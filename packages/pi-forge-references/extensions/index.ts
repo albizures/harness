@@ -12,6 +12,7 @@ export type AutocompleteSuggestions = {
 };
 
 export type AutocompleteProvider = {
+	triggerCharacters?: Array<string>;
 	getSuggestions: (
 		lines: Array<string>,
 		cursorLine: number,
@@ -311,6 +312,10 @@ export function createForgeReferencesAutocompleteProvider(
 	taskProvider: ForgeReadyTaskProvider,
 ): AutocompleteProvider {
 	return {
+		triggerCharacters: Array.from(
+			new Set([...(current.triggerCharacters ?? []), "#"]),
+		),
+
 		async getSuggestions(lines, cursorLine, cursorCol, options) {
 			const currentLine = lines[cursorLine] ?? "";
 			if (isMarkdownHeadingStart(currentLine, cursorCol)) {
@@ -391,7 +396,6 @@ export function registerForgeReferencesExtension(
 				notify,
 			});
 
-		void taskProvider.getReadyTasks();
 		ctx.ui.addAutocompleteProvider((current) =>
 			createForgeReferencesAutocompleteProvider(current, taskProvider),
 		);
