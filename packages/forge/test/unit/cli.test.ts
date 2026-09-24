@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { pathToFileURL } from "node:url";
 
 import { isCliEntrypoint, runCli, runCliMain } from "../../src/cli.ts";
@@ -89,6 +89,39 @@ it("when the CLI main effect runs, it should set the process exit code through t
 	expect(processState.exitCode).toBe(0);
 	expect(stdout.text()).toMatch(/Forge personal workflow CLI/);
 	expect(stderr.text()).toBe("");
+});
+
+describe("when CLI commands use Promise-facing file adapters", () => {
+	it("should read body files while preserving the Promise CLI interface", async () => {
+		const home = await mkdtemp(
+			path.join(os.tmpdir(), "forge-cli-body-file-home-"),
+		);
+		const store = path.join(home, "store");
+		const bodyFile = path.join(home, "body.md");
+		await writeFile(bodyFile, "Body from file\n", "utf8");
+
+		const stdout = capture();
+		const code = await runTempStoreCli(
+			[
+				"new",
+				"spec",
+				"--title",
+				"Promise adapter body",
+				"--body-file",
+				bodyFile,
+				"--project",
+				"harness",
+				"--json",
+			],
+			{ home, store, stdout: stdout.stream },
+		);
+
+		expect(code).toBe(0);
+		expect(JSON.parse(stdout.text())).toMatchObject({
+			kind: "spec",
+			body: "Body from file\n",
+		});
+	});
 });
 
 it("when help is requested, it should describe the Phase 2 command surface", async () => {

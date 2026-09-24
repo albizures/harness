@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { text as readStreamText } from "node:stream/consumers";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import * as Command from "@effect/platform/Command";
+import { FileSystem } from "@effect/platform/FileSystem";
 import { Effect } from "effect";
 
 import {
@@ -22,6 +22,8 @@ import { ForgeError, isForgeError } from "./errors.ts";
 import {
 	ensureStoreRoot,
 	loadForgeConfig,
+	readTextFile,
+	readTextFileEffect,
 	storeDoctor,
 	writeForgeConfig,
 } from "./filesystem-store.ts";
@@ -537,23 +539,18 @@ async function runComment(
 			`${storePath}/comment-${recordId}-${commentId}.edit-${process.pid}-${Date.now()}.md`,
 			"temporaryPath",
 		);
-		await writeFile(
+		const markdown = await editTemporaryFile(
 			temporaryPath,
 			formatRecordCommentMarkdown(existing),
-			"utf8",
+			parsed,
 		);
-		try {
-			await runEditor(temporaryPath, parsed);
-			const edited = await replaceRecordCommentFromEditedMarkdown({
-				storePath,
-				recordId,
-				commentId,
-				markdown: await readFile(temporaryPath, "utf8"),
-			});
-			return present(stdout, parsed, { updated: true, comment: edited });
-		} finally {
-			await rm(temporaryPath, { force: true });
-		}
+		const edited = await replaceRecordCommentFromEditedMarkdown({
+			storePath,
+			recordId,
+			commentId,
+			markdown,
+		});
+		return present(stdout, parsed, { updated: true, comment: edited });
 	}
 	const id = singleRecordId(subcommand, rest, commandHelp.comment);
 	const comment = await addRecordComment({
@@ -849,18 +846,17 @@ async function runEdit(
 		`${filePath}.edit-${process.pid}-${Date.now()}`,
 		"temporaryPath",
 	);
-	await writeFile(temporaryPath, await readFile(filePath, "utf8"), "utf8");
-	try {
-		await runEditor(temporaryPath, parsed);
-		const edited = await replaceWorkflowRecordFromEditedMarkdown({
-			storePath,
-			recordId: id,
-			markdown: await readFile(temporaryPath, "utf8"),
-		});
-		return present(stdout, parsed, { updated: true, record: edited });
-	} finally {
-		await rm(temporaryPath, { force: true });
-	}
+	const markdown = await editTemporaryFile(
+		temporaryPath,
+		await readFileString(filePath),
+		parsed,
+	);
+	const edited = await replaceWorkflowRecordFromEditedMarkdown({
+		storePath,
+		recordId: id,
+		markdown,
+	});
+	return present(stdout, parsed, { updated: true, record: edited });
 }
 
 async function runProjects(
@@ -1096,7 +1092,7 @@ async function readProse(
 		);
 	}
 	if (file !== undefined) {
-		return readFile(file, "utf8");
+		return readTextFile(file);
 	}
 	if (inline === undefined) {
 		throw usage(
@@ -1430,11 +1426,62 @@ function recordHasProject(
 		: false;
 }
 
-async function runEditor(
+async function editTemporaryFile(
 	filePath: AbsolutePath,
+	initialContent: string,
 	parsed: Parsed,
-): Promise<void> {
-	return runForgePromise(runEditorEffect(filePath, parsed));
+): Promise<string> {
+	return runForgePromise(
+		editTemporaryFileEffect(filePath, initialContent, parsed),
+	);
+}
+
+function editTemporaryFileEffect(
+	filePath: AbsolutePath,
+	initialContent: string,
+	parsed: Parsed,
+) {
+	return Effect.gen(function* () {
+		yield* writeFileStringEffect(filePath, initialContent);
+		yield* runEditorEffect(filePath, parsed);
+		return yield* readTextFileEffect(filePath);
+	}).pipe(
+		Effect.ensuring(removeFileIfExistsEffect(filePath).pipe(Effect.ignore)),
+	);
+}
+
+async function readFileString(filePath: AbsolutePath): Promise<string> {
+	return readTextFile(filePath);
+}
+
+function writeFileStringEffect(filePath: AbsolutePath, content: string) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		yield* fileSystem.writeFileString(filePath, content);
+	});
+}
+
+function removeFileIfExistsEffect(filePath: AbsolutePath) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		yield* fileSystem.remove(filePath, { recursive: false }).pipe(
+			Effect.catchIf(
+				(error) => isMissingFileSystemError(error),
+				() => Effect.void,
+			),
+		);
+	});
+}
+
+function isMissingFileSystemError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"_tag" in error &&
+		error._tag === "SystemError" &&
+		"reason" in error &&
+		error.reason === "NotFound"
+	);
 }
 
 function runEditorEffect(filePath: AbsolutePath, parsed: Parsed) {

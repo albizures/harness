@@ -241,13 +241,24 @@ export function storeDoctorEffect(options: {
 	});
 }
 
+export function readTextFile(filePath: string): Promise<string> {
+	return runForgePromise(readTextFileEffect(filePath));
+}
+
+export function readTextFileEffect(filePath: string) {
+	return Effect.gen(function* () {
+		const fileSystem = yield* FileSystem;
+		return yield* fileSystem.readFileString(filePath, "utf8");
+	});
+}
+
 export function readJson(filePath: AbsolutePath): Promise<unknown> {
 	return runForgePromise(readJsonEffect(filePath));
 }
 
 export function readJsonEffect(filePath: AbsolutePath) {
 	return Effect.gen(function* () {
-		const content = yield* readFileStringEffect(filePath).pipe(
+		const content = yield* readTextFileEffect(filePath).pipe(
 			Effect.catchAll((error) => Effect.fail(normalizeMissingFile(error))),
 		);
 		return yield* Effect.try({
@@ -264,13 +275,6 @@ export function readJsonEffect(filePath: AbsolutePath) {
 				return error;
 			},
 		});
-	});
-}
-
-function readFileStringEffect(filePath: AbsolutePath) {
-	return Effect.gen(function* () {
-		const fileSystem = yield* FileSystem;
-		return yield* fileSystem.readFileString(filePath, "utf8");
 	});
 }
 

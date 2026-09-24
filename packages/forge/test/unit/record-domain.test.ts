@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
 	allocateNextCommentId,
@@ -209,6 +209,45 @@ it("when editing initiative declared projects, it should protect projects with o
 			member,
 		]),
 	).toThrow(/cannot remove declared project 'harness' while member 13 uses it/);
+});
+
+describe("when pure domain behavior is exercised", () => {
+	it("should keep record lifecycle transitions synchronous and value-oriented", () => {
+		const record = parseRecordFrontmatter(baseSpec);
+		const started = startRecordLifecycle(record, [record], fixedDate);
+		const completed = completeRecordLifecycle(
+			started.record,
+			[started.record],
+			"implemented",
+			fixedDate,
+		);
+
+		expect(started.record.state).toBe("in-progress");
+		expect(completed.record).toMatchObject({
+			id: record.id,
+			state: "done",
+			resolution: "implemented",
+		});
+	});
+
+	it("should keep dependency graph calculations synchronous and deterministic", () => {
+		const parent = parseRecordFrontmatter(baseSpec);
+		const child = parseRecordFrontmatter({
+			...baseSpec,
+			id: 13,
+			kind: "task",
+			parent: parent.id,
+		});
+
+		expect(buildRecordTree(parent, [parent, child])).toEqual({
+			record: parent,
+			children: [{ record: child, children: [] }],
+		});
+		expect(buildDependencyGraph([parent, child])).toEqual({
+			[parent.id]: { dependsOn: [], dependents: [] },
+			[child.id]: { dependsOn: [], dependents: [] },
+		});
+	});
 });
 
 it("when validating a dependency edge, it should reject parent-child edges, incompatible scopes, and cycles", () => {

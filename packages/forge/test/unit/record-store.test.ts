@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Cause, Effect, Exit } from "effect";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
 import { isForgeError } from "../../src/errors.ts";
@@ -871,6 +871,54 @@ it("when the Effect read API misses a record, it should fail with a record-not-f
 		expect(error.kind).toBe("record-not-found");
 		expect(error.details).toEqual({ recordId: missingRecordId });
 	}
+});
+
+describe("when Promise adapters bridge Effect store operations", () => {
+	it("should expose records created through Promise APIs to Effect readers", async () => {
+		const storePath = await tempStore();
+		const created = await createWorkflowRecord({
+			storePath,
+			now: fixedDate,
+			input: {
+				title: "Promise-created record",
+				kind: "spec",
+				subkind: null,
+				scope: { type: "project", project: parseProjectId("harness") },
+				parent: null,
+				initiative: null,
+				dependsOn: [],
+				generatedBy: null,
+				tags: [],
+				profile: null,
+				body: "Created through Promise adapter.\n",
+			},
+		});
+
+		await startWorkflowRecord({
+			storePath,
+			recordId: created.id,
+			now: laterDate,
+		});
+
+		const effectRead = await runForgePromise(
+			readWorkflowRecordEffect(storePath, created.id),
+		);
+		expect(effectRead).toMatchObject({
+			id: created.id,
+			state: "in-progress",
+			body: "Created through Promise adapter.\n",
+		});
+	});
+
+	it("should reject Promise reads with the same ForgeError kind as the Effect API", async () => {
+		const storePath = await tempStore();
+		await expect(
+			readWorkflowRecord(storePath, missingRecordId),
+		).rejects.toMatchObject({
+			kind: "record-not-found",
+			details: { recordId: missingRecordId },
+		});
+	});
 });
 
 it("when querying relationship and readiness views, it should return deterministic store-backed results", async () => {
