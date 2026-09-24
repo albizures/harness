@@ -1,6 +1,6 @@
 ---
 name: to-tickets
-description: Break an approved plan into Forge Tasks under an existing Spec, preserving blockers and adding verification/merge work for code changes.
+description: Break an approved plan into Forge Tasks under an existing Spec, preserving blockers and adding verification/release work for code changes.
 disable-model-invocation: true
 ---
 
@@ -45,14 +45,14 @@ Give each Task its blocking edges: the other Tasks that must complete before it 
 
 **Wide refactors are the exception to vertical slicing.** Sequence them as expand–contract: expand safely, migrate call sites in green batches, then contract after all callers move. Use an integration branch only when batches cannot stay green alone, and make the final integrate-and-verify work explicit.
 
-### 4. Add verification and merge Tasks for code work
+### 4. Add verification tasks for code work
 
 For code work, add these ordinary Forge Tasks by default unless the human explicitly opts out:
 
 - **Verification Task**: ordinary `forge new task`; title and description say what integration/local verification must run.
-- **Merge Task**: ordinary `forge new task`; title and description say what merge/release handoff must happen.
+- **Release Task**: ordinary `forge new task`; title and description say what release handoff must happen.
 
-Use dependencies to gate verification after implementation/review and merge after verification. If follow-up implementation or review Tasks are added after a verification pass, add another Verification Task before merge to preserve freshness.
+Use dependencies to gate verification after implementation/review and release after verification. If follow-up implementation or review Tasks are added after a verification pass, add another Verification Task before release to preserve freshness.
 
 ### 5. Quiz the user
 

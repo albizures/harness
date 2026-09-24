@@ -6,7 +6,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import * as PlatformCommand from "@effect/platform/Command";
 import { FileSystem } from "@effect/platform/FileSystem";
-import * as NodeContext from "@effect/platform-node/NodeContext";
 import * as Args from "@effect/cli/Args";
 import * as CliApp from "@effect/cli/CliApp";
 import * as CliCommand from "@effect/cli/Command";
@@ -111,6 +110,12 @@ type CliInvocationContext = {
 	readonly env: NodeJS.ProcessEnv;
 };
 
+type CommandOutput = {
+	readonly value: unknown;
+	readonly code: number;
+	readonly human?: string;
+};
+
 type Parsed = CliInvocationContext & {
 	readonly positionals: ReadonlyArray<string>;
 	readonly flags: Readonly<Record<string, FlagValue>>;
@@ -130,8 +135,6 @@ const forgeRootOptions = {
 		Options.withDescription("Override the invocation working directory."),
 	),
 };
-
-const forgeRootOptionsParser = Options.all(forgeRootOptions);
 
 const presentationOptions = {
 	json: Options.boolean("json").pipe(
@@ -267,12 +270,14 @@ const newCommand = CliCommand.make("new").pipe(
 		newRecordCommand("grilling"),
 	]),
 );
-const showCommand = CliCommand.make("show", { record: recordArg, ...presentationOptions }).pipe(
-	CliCommand.withDescription("Show a Forge record."),
-);
-const startCommand = CliCommand.make("start", { record: recordArg, ...presentationOptions }).pipe(
-	CliCommand.withDescription("Start a Forge record."),
-);
+const showCommand = CliCommand.make("show", {
+	record: recordArg,
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Show a Forge record."));
+const startCommand = CliCommand.make("start", {
+	record: recordArg,
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Start a Forge record."));
 const doneCommand = CliCommand.make("done", {
 	record: recordArg,
 	resolution: Options.text("resolution"),
@@ -374,10 +379,12 @@ const depsCommand = CliCommand.make("deps", {
 		CliCommand.make("add", {
 			record: recordArg,
 			dependsOn: Options.text("depends-on"),
+			...presentationOptions,
 		}),
 		CliCommand.make("remove", {
 			record: recordArg,
 			dependsOn: Options.text("depends-on"),
+			...presentationOptions,
 		}),
 	]),
 );
@@ -482,74 +489,81 @@ export async function runCli(
 ): Promise<number> {
 	const stderr = options.stderr ?? process.stderr;
 	try {
-		await validateRootInvocation(argv);
-		const context = await createInvocationContext(argv, options);
-		const parsed = parseArgs(argv, context);
-		const [command, subcommand, ...rest] = parsed.positionals;
-		if (command === undefined) {
-			writeOut(context.stdout, helpText);
+		const baseContext = await createInvocationContext(options);
+		if (isHelpInvocation(argv)) {
+			writeOut(baseContext.stdout, helpForCommand(helpCommandName(argv)));
 			return 0;
 		}
-		if (
-			parsed.flags.help === true ||
-			subcommand === "help" ||
-			rest.includes("help")
-		) {
-			writeOut(context.stdout, helpForCommand(command));
-			return 0;
-		}
-
-		switch (command) {
-			case "config":
-				return await runConfig(parsed, subcommand, rest);
-			case "store":
-				return await runStore(parsed, subcommand);
-			case "project":
-				return await runProject(parsed, subcommand, rest);
-			case "new":
-				return await runNew(parsed, subcommand, rest);
-			case "show":
-				return await runShow(parsed, subcommand, rest);
-			case "start":
-				return await runStart(parsed, subcommand, rest);
-			case "done":
-				return await runDone(parsed, subcommand, rest);
-			case "comment":
-				return await runComment(parsed, subcommand, rest);
-			case "comments":
-				return await runComments(parsed, subcommand, rest);
-			case "updates":
-				return await runUpdates(parsed, subcommand, rest);
-			case "history":
-				return await runHistory(parsed, subcommand, rest);
-			case "initiatives":
-				return await runInitiatives(parsed, subcommand, rest);
-			case "initiative":
-				return await runInitiative(parsed, subcommand, rest);
-			case "list":
-				return await runList(parsed, subcommand, rest);
-			case "ready":
-				return await runReady(parsed, subcommand, rest);
-			case "next":
-				return await runNext(parsed, subcommand, rest);
-			case "tree":
-				return await runTree(parsed, subcommand, rest);
-			case "deps":
-				return await runDeps(parsed, subcommand, rest);
-			case "open":
-				return await runOpen(parsed, subcommand, rest);
-			case "edit":
-				return await runEdit(parsed, subcommand, rest);
-			case "projects":
-				return await runProjects(parsed);
-			case "here":
-				return await runHere(parsed);
-			default:
-				throw usage(`Unknown command '${command}'. Run forge --help.`);
-		}
+		let output: CommandOutput = { value: undefined, code: 0 };
+		await runForgePromise(
+			CliApp.run(forgeCliApp, ["node", "forge", ...argv], (nativeConfig) =>
+				Effect.promise(async () => {
+					const parsed = parsedFromNativeConfig(nativeConfig, baseContext);
+					output = await executeParsedCommand(parsed);
+					renderOutput(parsed, output);
+				}),
+			) as never,
+		);
+		return output.code;
 	} catch (error) {
 		writeOut(stderr, `${formatError(error)}\n`);
 		return isForgeError(error) ? 2 : 1;
+	}
+}
+
+async function executeParsedCommand(parsed: Parsed): Promise<CommandOutput> {
+	const [command, subcommand, ...rest] = parsed.positionals;
+	if (command === undefined) {
+		return present(helpText);
+	}
+
+	switch (command) {
+		case "config":
+			return await runConfig(parsed, subcommand, rest);
+		case "store":
+			return await runStore(parsed, subcommand);
+		case "project":
+			return await runProject(parsed, subcommand, rest);
+		case "new":
+			return await runNew(parsed, subcommand, rest);
+		case "show":
+			return await runShow(parsed, subcommand, rest);
+		case "start":
+			return await runStart(parsed, subcommand, rest);
+		case "done":
+			return await runDone(parsed, subcommand, rest);
+		case "comment":
+			return await runComment(parsed, subcommand, rest);
+		case "comments":
+			return await runComments(parsed, subcommand, rest);
+		case "updates":
+			return await runUpdates(parsed, subcommand, rest);
+		case "history":
+			return await runHistory(parsed, subcommand, rest);
+		case "initiatives":
+			return await runInitiatives(parsed, subcommand, rest);
+		case "initiative":
+			return await runInitiative(parsed, subcommand, rest);
+		case "list":
+			return await runList(parsed, subcommand, rest);
+		case "ready":
+			return await runReady(parsed, subcommand, rest);
+		case "next":
+			return await runNext(parsed, subcommand, rest);
+		case "tree":
+			return await runTree(parsed, subcommand, rest);
+		case "deps":
+			return await runDeps(parsed, subcommand, rest);
+		case "open":
+			return await runOpen(parsed, subcommand, rest);
+		case "edit":
+			return await runEdit(parsed, subcommand, rest);
+		case "projects":
+			return await runProjects(parsed);
+		case "here":
+			return await runHere(parsed);
+		default:
+			throw usage(`Unknown command '${command}'. Run forge --help.`);
 	}
 }
 
@@ -557,7 +571,7 @@ async function runConfig(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const homeDirectory = parseAbsolutePath(
 		parsed.homeDirectory,
 		"homeDirectory",
@@ -574,7 +588,7 @@ async function runConfig(
 					? undefined
 					: parseAbsolutePath(parsed.storeOverride, "storePath"),
 		});
-		return present(parsed, key === "storePath" ? config.storePath : config);
+		return present(key === "storePath" ? config.storePath : config);
 	}
 	if (subcommand === "set") {
 		const [key, value] = rest;
@@ -585,22 +599,22 @@ async function runConfig(
 		const config = { storePath: input.value };
 		await writeForgeConfig({ homeDirectory, config });
 		await ensureStoreRoot({ storePath: input.value });
-		return present(parsed, { updated: true, ...config });
+		return present({ updated: true, ...config });
 	}
-	throw new NativeCliError(`Invalid subcommand: ${subcommand ?? ""}`);
+	throw usage(commandHelp.config);
 }
 
 async function runStore(
 	parsed: Parsed,
 	subcommand: string | undefined,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const storePath = await resolveStorePath(parsed);
 	if (subcommand === "path") {
-		return present(parsed, storePath);
+		return present(storePath);
 	}
 	if (subcommand === "doctor") {
 		const report = await storeDoctor({ storePath });
-		return present(parsed, report, report.ok ? 0 : 2);
+		return present(report, report.ok ? 0 : 2);
 	}
 	throw usage(commandHelp.store);
 }
@@ -609,7 +623,7 @@ async function runProject(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "add") {
 		const [id, ...tail] = rest;
@@ -634,7 +648,7 @@ async function runProject(
 			name: getOptionalStringFlag(parsed, "name"),
 			remote: getOptionalStringFlag(parsed, "remote"),
 		});
-		return present(parsed, await addProject({ storePath, ...input }));
+		return present(await addProject({ storePath, ...input }));
 	}
 	if (subcommand === "root") {
 		const rootCommandArity = 3;
@@ -651,7 +665,6 @@ async function runProject(
 		}
 		const input = decodeProjectRootInput({ id, root });
 		return present(
-			parsed,
 			operation === "add"
 				? await addProjectRoot({ storePath, ...input })
 				: await removeProjectRoot({ storePath, ...input }),
@@ -663,7 +676,7 @@ async function runProject(
 			throw usage("Usage: forge project remove <id>");
 		}
 		await removeProject({ storePath, id: parseProjectId(id) });
-		return present(parsed, { removed: id });
+		return present({ removed: id });
 	}
 	throw usage(commandHelp.project);
 }
@@ -672,7 +685,7 @@ async function runNew(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	if (rest.length > 0) {
 		throw usage(commandHelp.new);
 	}
@@ -731,14 +744,14 @@ async function runNew(
 			body,
 		},
 	});
-	return present(parsed, record);
+	return present(record);
 }
 
 async function runShow(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.show);
 	const storePath = await readyStore(parsed);
 	const record = await readWorkflowRecord(storePath, id);
@@ -754,20 +767,18 @@ async function runShow(
 		),
 	};
 	if (parsed.presentation === "json") {
-		return present(parsed, shown);
+		return present(shown);
 	}
-	writeOut(parsed.stdout, `${formatShownRecord(shown)}\n`);
-	return 0;
+	return present(shown, 0, formatShownRecord(shown));
 }
 
 async function runStart(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.start);
 	return present(
-		parsed,
 		await startWorkflowRecord({
 			storePath: await readyStore(parsed),
 			recordId: id,
@@ -779,11 +790,10 @@ async function runDone(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.done);
 	const resolution = getRequiredFlag(parsed, "resolution", commandHelp.done);
 	return present(
-		parsed,
 		await completeWorkflowRecord({
 			storePath: await readyStore(parsed),
 			recordId: id,
@@ -796,7 +806,7 @@ async function runComment(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "edit") {
 		const [record, comment, ...tail] = rest;
@@ -821,7 +831,7 @@ async function runComment(
 			commentId,
 			markdown,
 		});
-		return present(parsed, { updated: true, comment: edited });
+		return present({ updated: true, comment: edited });
 	}
 	const id = singleRecordId(subcommand, rest, commandHelp.comment);
 	const comment = await addRecordComment({
@@ -829,56 +839,53 @@ async function runComment(
 		recordId: id,
 		body: await readProse(parsed, "message"),
 	});
-	return present(parsed, comment);
+	return present(comment);
 }
 
 async function runComments(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.comments);
 	const comments = await listRecordComments(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(parsed, comments);
+		return present(comments);
 	}
-	writeOut(parsed.stdout, `${formatRecordComments(comments)}\n`);
-	return 0;
+	return present(comments, 0, formatRecordComments(comments));
 }
 
 async function runUpdates(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.updates);
 	const updates = await listRecordUpdates(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(parsed, updates);
+		return present(updates);
 	}
-	writeOut(parsed.stdout, `${formatRecordUpdates(updates)}\n`);
-	return 0;
+	return present(updates, 0, formatRecordUpdates(updates));
 }
 
 async function runHistory(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.history);
 	const history = await listRecordHistory(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(parsed, history);
+		return present(history);
 	}
-	writeOut(parsed.stdout, `${formatRecordHistory(history)}\n`);
-	return 0;
+	return present(history, 0, formatRecordHistory(history));
 }
 
 async function runInitiatives(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.initiatives);
 	}
@@ -891,7 +898,6 @@ async function runInitiatives(
 			? await inferProjectIdForCwd(parsed, storePath)
 			: undefined);
 	return present(
-		parsed,
 		records.filter(
 			(record) =>
 				record.kind === "initiative" &&
@@ -904,7 +910,7 @@ async function runInitiative(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "attach" || subcommand === "detach") {
 		const [initiative, record, ...tail] = rest;
@@ -917,7 +923,6 @@ async function runInitiative(
 			recordId: parseRecordId(Number(record)),
 		};
 		return present(
-			parsed,
 			subcommand === "attach"
 				? await attachWorkflowRecordToInitiative(input)
 				: await detachWorkflowRecordFromInitiative(input),
@@ -939,7 +944,6 @@ async function runInitiative(
 			project: parseProjectId(project),
 		};
 		return present(
-			parsed,
 			operation === "add"
 				? await addInitiativeDeclaredProject(input)
 				: await removeInitiativeDeclaredProject(input),
@@ -952,7 +956,7 @@ async function runList(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.list);
 	}
@@ -970,7 +974,6 @@ async function runList(
 			? await inferProjectIdForCwd(parsed, storePath)
 			: undefined);
 	return present(
-		parsed,
 		records.filter(
 			(record) =>
 				(state === undefined || record.state === state) &&
@@ -986,7 +989,7 @@ async function runReady(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.ready);
 	}
@@ -1003,20 +1006,20 @@ async function runReady(
 		planning: parsed.flags.planning === true,
 	});
 	if (parsed.presentation === "json") {
-		return present(parsed, readyJsonContract(diagnoses, records));
+		return present(readyJsonContract(diagnoses, records));
 	}
-	writeOut(
-		parsed.stdout,
-		`${formatReadinessDiagnoses(diagnoses, records, parsed.flags.blocked === true)}\n`,
+	return present(
+		diagnoses,
+		0,
+		formatReadinessDiagnoses(diagnoses, records, parsed.flags.blocked === true),
 	);
-	return 0;
 }
 
 async function runNext(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.next);
 	}
@@ -1026,28 +1029,27 @@ async function runNext(
 		includeHitl: parsed.flags["include-hitl"] === true,
 		planning: parsed.flags.planning === true,
 	});
-	return present(parsed, record ?? null);
+	return present(record ?? null);
 }
 
 async function runTree(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.tree);
 	const tree = await readRecordTree(await readyStore(parsed), id);
 	if (parsed.presentation === "json") {
-		return present(parsed, tree);
+		return present(tree);
 	}
-	writeOut(parsed.stdout, `${formatRecordTree(tree)}\n`);
-	return 0;
+	return present(tree, 0, formatRecordTree(tree));
 }
 
 async function runDeps(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const storePath = await readyStore(parsed);
 	if (subcommand === "add" || subcommand === "remove") {
 		const [record, ...tail] = rest;
@@ -1061,7 +1063,6 @@ async function runDeps(
 			dependsOn: parseRecordId(Number(dependsOn)),
 		};
 		return present(
-			parsed,
 			subcommand === "add"
 				? await addWorkflowRecordDependency(input)
 				: await removeWorkflowRecordDependency(input),
@@ -1070,28 +1071,27 @@ async function runDeps(
 	const id = singleRecordId(subcommand, rest, commandHelp.deps);
 	const view = await readRecordDependencyView(storePath, id);
 	if (parsed.presentation === "json") {
-		return present(parsed, view);
+		return present(view);
 	}
-	writeOut(parsed.stdout, `${formatDependencyView(view)}\n`);
-	return 0;
+	return present(view, 0, formatDependencyView(view));
 }
 
 async function runOpen(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.open);
 	const storePath = await readyStore(parsed);
 	const locator = await locateWorkflowRecord(storePath, id);
-	return present(parsed, recordFilePath(storePath, locator.kind, id));
+	return present(recordFilePath(storePath, locator.kind, id));
 }
 
 async function runEdit(
 	parsed: Parsed,
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
-): Promise<number> {
+): Promise<CommandOutput> {
 	const id = singleRecordId(subcommand, rest, commandHelp.edit);
 	const storePath = await readyStore(parsed);
 	const locator = await locateWorkflowRecord(storePath, id);
@@ -1110,14 +1110,14 @@ async function runEdit(
 		recordId: id,
 		markdown,
 	});
-	return present(parsed, { updated: true, record: edited });
+	return present({ updated: true, record: edited });
 }
 
-async function runProjects(parsed: Parsed): Promise<number> {
-	return present(parsed, await listProjects(await readyStore(parsed)));
+async function runProjects(parsed: Parsed): Promise<CommandOutput> {
+	return present(await listProjects(await readyStore(parsed)));
 }
 
-async function runHere(parsed: Parsed): Promise<number> {
+async function runHere(parsed: Parsed): Promise<CommandOutput> {
 	const project = await inferProjectByPath({
 		storePath: await readyStore(parsed),
 		cwd: parseAbsolutePath(parsed.cwd, "cwd"),
@@ -1129,26 +1129,23 @@ async function runHere(parsed: Parsed): Promise<number> {
 				"No registered project matches the current directory. Run `forge project add <id> --root <path>`.",
 		});
 	}
-	return present(parsed, project);
+	return present(project);
 }
 
 async function createInvocationContext(
-	argv: ReadonlyArray<string>,
 	options: CliOptions,
 ): Promise<CliInvocationContext> {
 	const stdout = options.stdout ?? process.stdout;
 	const stderr = options.stderr ?? process.stderr;
-	const rootOptions = await parseRootInvocationOptions(argv);
 	const env = options.env ?? process.env;
 	const homeDirectory = env.FORGE_HOME ?? env.HOME ?? process.env.HOME;
 	if (homeDirectory === undefined) {
 		throw usage("HOME must be set.");
 	}
 	return {
-		presentation: rootOptions.json === true ? "json" : "human",
-		cwd: rootOptions.cwd ?? options.cwd ?? process.cwd(),
+		presentation: "human",
+		cwd: options.cwd ?? process.cwd(),
 		homeDirectory,
-		storeOverride: rootOptions.store,
 		stdin: options.stdin ?? process.stdin,
 		stdout,
 		stderr,
@@ -1156,118 +1153,197 @@ async function createInvocationContext(
 	};
 }
 
-type RootOptions = {
-	json: boolean;
-	store?: string;
-	cwd?: string;
-};
+type NativeParsedConfig = Readonly<Record<string, unknown>>;
+type NativeSubcommand = readonly [unknown, NativeParsedConfig];
 
-async function parseRootInvocationOptions(
-	argv: ReadonlyArray<string>,
-): Promise<RootOptions> {
-	const parsed: RootOptions = { json: false };
-	for (let index = 0; index < argv.length; index += 1) {
-		const token = argv[index];
-		if (token === "--json") {
-			parsed.json = true;
-			continue;
-		}
-		if (token === "--store" || token === "--cwd" || token === "-C") {
-			const value = argv[index + 1];
-			if (value === undefined || (value.startsWith("-") && value !== "-")) {
-				throw new NativeCliError(`Flag ${token} requires a value.`);
-			}
-			if (token === "--store") {
-				parsed.store = value;
-			} else {
-				parsed.cwd = value;
-			}
-			index += 1;
-		}
-	}
-	return parsed;
-}
-
-async function validateRootInvocation(
-	_argv: ReadonlyArray<string>,
-): Promise<void> {
-	return Promise.resolve();
-}
-
-function isRemovedCompatibilityFlag(token: string): boolean {
-	return token === "--plain" || token === "--quiet" || token === "--verbose";
-}
-
-class NativeCliError extends Error {}
-
-function parseArgs(
-	argv: ReadonlyArray<string>,
-	context: CliInvocationContext,
+function parsedFromNativeConfig(
+	rootConfig: unknown,
+	baseContext: CliInvocationContext,
 ): Parsed {
-	const flags: Record<string, FlagValue> = {};
-	const positionals: Array<string> = [];
-	let index = 0;
-	while (index < argv.length) {
-		const token = argv[index];
-		if (token === undefined) {
-			break;
-		}
-		if (!token.startsWith("-")) {
-			positionals.push(token);
-			index += 1;
-			continue;
-		}
-		const flagName = parseFlagName(token);
-		if (
-			flagName === "help" ||
-			flagName === "json" ||
-			flagName === "all-records" ||
-			flagName === "blocked" ||
-			flagName === "include-hitl" ||
-			flagName === "planning"
-		) {
-			flags[flagName] = true;
-			index += 1;
-			continue;
-		}
-		const value = argv[index + 1];
-		if (value === undefined || (value.startsWith("-") && value !== "-")) {
-			throw usage(`Flag ${token} requires a value.`);
-		}
-		const current = flags[flagName];
-		if (current === undefined || typeof current === "boolean") {
-			flags[flagName] = value;
-		} else if (typeof current === "string") {
-			flags[flagName] = [current, value];
-		} else {
-			flags[flagName] = [...current, value];
-		}
-		index += 2;
-	}
+	const root = asNativeConfig(rootConfig);
+	const path = collectCommandPath(root);
+	const leaf = path.at(-1)?.config ?? root;
+	const flags = collectNativeFlags(root);
 	return {
-		...context,
-		presentation:
-			context.presentation === "json" || flags.json === true ? "json" : "human",
-		positionals,
+		...baseContext,
+		presentation: flags.json === true ? "json" : "human",
+		cwd: optionalString(root.cwd) ?? baseContext.cwd,
+		storeOverride: optionalString(root.store),
+		positionals: [
+			...path.map((entry) => entry.name),
+			...leafPositionals(
+				path.map((entry) => entry.name),
+				leaf,
+			),
+		],
 		flags,
 	};
 }
 
-function parseFlagName(token: string): string {
-	switch (token) {
-		case "-h":
-			return "help";
-		case "-C":
-			return "cwd";
-		default:
-			if (isRemovedCompatibilityFlag(token)) {
-				throw new NativeCliError(`Received unknown argument: '${token}'`);
-			}
-			if (token.startsWith("--")) {
-				return token.slice(2);
-			}
-			throw new NativeCliError(`Received unknown argument: '${token}'`);
+function asNativeConfig(value: unknown): NativeParsedConfig {
+	return typeof value === "object" && value !== null
+		? (value as NativeParsedConfig)
+		: {};
+}
+
+function collectCommandPath(
+	config: NativeParsedConfig,
+): Array<{ name: string; config: NativeParsedConfig }> {
+	const subcommand = nativeSubcommand(config.subcommand);
+	if (subcommand === undefined) {
+		return [];
 	}
+	const [, subcommandConfig] = subcommand;
+	return [
+		{ name: nativeCommandName(subcommand[0]), config: subcommandConfig },
+		...collectCommandPath(subcommandConfig),
+	];
+}
+
+function nativeSubcommand(value: unknown): NativeSubcommand | undefined {
+	const option = value as { readonly _tag?: string; readonly value?: unknown };
+	if (option?._tag !== "Some" || !Array.isArray(option.value)) {
+		return undefined;
+	}
+	const [, config] = option.value;
+	return [option.value[0], asNativeConfig(config)] as const;
+}
+
+function nativeCommandName(tag: unknown): string {
+	const key = String((tag as { readonly key?: unknown })?.key ?? "");
+	const match = /\(([^)]+)\)$/.exec(key);
+	return match?.[1] ?? key;
+}
+
+function collectNativeFlags(
+	config: NativeParsedConfig,
+): Record<string, FlagValue> {
+	const flags: Record<string, FlagValue> = {};
+	for (const [key, value] of Object.entries(config)) {
+		if (key === "subcommand") {
+			const subcommand = nativeSubcommand(value);
+			if (subcommand !== undefined) {
+				Object.assign(flags, collectNativeFlags(subcommand[1]));
+			}
+			continue;
+		}
+		const flagValue = nativeFlagValue(value);
+		if (flagValue !== undefined) {
+			flags[nativeFlagName(key)] = flagValue;
+		}
+	}
+	return flags;
+}
+
+function nativeFlagValue(value: unknown): FlagValue | undefined {
+	const unwrapped = unwrapNativeOption(value);
+	if (unwrapped === undefined || unwrapped === false) {
+		return undefined;
+	}
+	if (Array.isArray(unwrapped)) {
+		return unwrapped.map(String);
+	}
+	if (typeof unwrapped === "boolean") {
+		return unwrapped;
+	}
+	return String(unwrapped);
+}
+
+function unwrapNativeOption(value: unknown): unknown {
+	const option = value as { readonly _tag?: string; readonly value?: unknown };
+	if (option?._tag === "None") {
+		return undefined;
+	}
+	if (option?._tag === "Some") {
+		return option.value;
+	}
+	return value;
+}
+
+function optionalString(value: unknown): string | undefined {
+	const unwrapped = unwrapNativeOption(value);
+	return unwrapped === undefined ? undefined : String(unwrapped);
+}
+
+function nativeFlagName(key: string): string {
+	return key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function leafPositionals(
+	path: ReadonlyArray<string>,
+	leaf: NativeParsedConfig,
+): ReadonlyArray<string> {
+	const leafString = (key: string) => optionalString(leaf[key]);
+	const present = (...values: Array<string | undefined>) =>
+		values.filter((value): value is string => value !== undefined);
+	const joined = path.join(" ");
+	switch (joined) {
+		case "config get":
+			return present(leafString("key"));
+		case "config set":
+			return present(leafString("key"), leafString("value"));
+		case "project add":
+		case "project remove":
+			return present(leafString("id"));
+		case "project root add":
+		case "project root remove":
+			return present(leafString("id"), leafString("root"));
+		case "show":
+		case "start":
+		case "done":
+		case "comments":
+		case "updates":
+		case "history":
+		case "tree":
+		case "open":
+		case "edit":
+			return present(leafString("record"));
+		case "comment":
+			return present(leafString("record"));
+		case "comment edit":
+			return present(leafString("record"), leafString("comment"));
+		case "initiative attach":
+		case "initiative detach":
+			return present(leafString("initiative"), leafString("record"));
+		case "initiative project add":
+		case "initiative project remove":
+			return present(leafString("initiative"), leafString("project"));
+		case "deps":
+			return present(leafString("record"));
+		case "deps add":
+		case "deps remove":
+			return present(leafString("record"));
+		default:
+			return [];
+	}
+}
+
+function isHelpInvocation(argv: ReadonlyArray<string>): boolean {
+	return argv.includes("--help") || argv.includes("-h");
+}
+
+function helpCommandName(argv: ReadonlyArray<string>): string {
+	let index = 0;
+	while (index < argv.length) {
+		const token = argv[index];
+		if (token === undefined || token === "--help" || token === "-h") {
+			index += 1;
+			continue;
+		}
+		if (token === "--store" || token === "--cwd" || token === "-C") {
+			index += 1;
+			continue;
+		}
+		if (token === "--json") {
+			index += 1;
+			continue;
+		}
+		if (!token.startsWith("-")) {
+			return token;
+		}
+		index += 1;
+	}
+	return "forge";
 }
 
 async function navigationQueryOptions(
@@ -1776,17 +1852,22 @@ async function readyStore(parsed: Parsed) {
 	return storePath;
 }
 
-function present(
+function present(value: unknown, code = 0, human?: string): CommandOutput {
+	return { value, code, human };
+}
+
+function renderOutput(
 	parsed: Pick<CliInvocationContext, "presentation" | "stdout">,
-	value: unknown,
-	code = 0,
-): number {
-	if (parsed.presentation === "json") {
-		writeOut(parsed.stdout, `${JSON.stringify(value, null, "\t")}\n`);
-		return code;
+	output: CommandOutput,
+): void {
+	if (output.value === undefined && output.human === undefined) {
+		return;
 	}
-	writeOut(parsed.stdout, `${formatHuman(value)}\n`);
-	return code;
+	if (parsed.presentation === "json") {
+		writeOut(parsed.stdout, `${JSON.stringify(output.value, null, "\t")}\n`);
+		return;
+	}
+	writeOut(parsed.stdout, `${output.human ?? formatHuman(output.value)}\n`);
 }
 
 function formatHuman(value: unknown): string {
@@ -1823,9 +1904,6 @@ function formatHuman(value: unknown): string {
 }
 
 function formatError(error: unknown): string {
-	if (error instanceof NativeCliError) {
-		return error.message;
-	}
 	if (ValidationError.isValidationError(error)) {
 		return `${HelpDoc.toAnsiText(error.error)}\n`;
 	}

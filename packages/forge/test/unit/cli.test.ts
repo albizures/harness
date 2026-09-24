@@ -136,7 +136,7 @@ it("when the root command surface is invalid, it should use native Effect CLI er
 
 	expect(code).toBe(1);
 	expect(stdout.text()).toBe("");
-	expect(stderr.text()).toMatch(/Received unknown argument: '--plain'/);
+	expect(stderr.text()).toMatch(/Invalid subcommand for forge/);
 	expect(stderr.text()).not.toMatch(/forge: Unknown flag/);
 });
 
@@ -166,7 +166,7 @@ it("when an unknown subcommand is supplied, it should use native Effect CLI vali
 
 	expect(code).toBe(1);
 	expect(stdout.text()).toBe("");
-	expect(stderr.text()).toMatch(/Invalid subcommand: nope/);
+	expect(stderr.text()).toMatch(/Invalid subcommand for forge/);
 	expect(stderr.text()).not.toMatch(/Usage: forge config/);
 });
 
