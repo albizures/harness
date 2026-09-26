@@ -254,6 +254,87 @@ describe("when store commands run through the Effect CLI command surface", () =>
 	});
 });
 
+describe("when project lookup commands run through the Effect CLI command surface", () => {
+	it("should preserve projects listing output and empty registry output", async () => {
+		const home = await mkdtemp(
+			path.join(os.tmpdir(), "forge-cli-projects-effect-"),
+		);
+		const store = path.join(home, "store");
+		const stdout = capture();
+		const stderr = capture();
+
+		expect(
+			await runCli(["--store", store, "projects"], {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env: { HOME: home },
+			}),
+		).toBe(0);
+		expect(stdout.text()).toBe("No projects registered.\n");
+		expect(stderr.text()).toBe("");
+	});
+
+	it("should preserve projects JSON and here JSON current-directory inference", async () => {
+		const home = await mkdtemp(
+			path.join(os.tmpdir(), "forge-cli-here-effect-"),
+		);
+		const store = path.join(home, "store");
+		const root = path.join(home, "repo");
+		const nestedCwd = path.join(root, "packages", "app");
+		const env = { HOME: home };
+		let stdout = capture();
+		let stderr = capture();
+
+		expect(
+			await runCli(
+				[
+					"--store",
+					store,
+					"project",
+					"add",
+					"harness",
+					"--root",
+					root,
+					"--name",
+					"Harness",
+				],
+				{ stdout: stdout.stream, stderr: stderr.stream, env },
+			),
+		).toBe(0);
+		expect(stderr.text()).toBe("");
+
+		stdout = capture();
+		stderr = capture();
+		expect(
+			await runCli(["--store", store, "projects", "--json"], {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env,
+			}),
+		).toBe(0);
+		expect(JSON.parse(stdout.text())).toMatchObject([
+			{ id: "harness", name: "Harness", roots: [root] },
+		]);
+		expect(stderr.text()).toBe("");
+
+		stdout = capture();
+		stderr = capture();
+		expect(
+			await runCli(["--store", store, "-C", nestedCwd, "here", "--json"], {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env,
+			}),
+		).toBe(0);
+		expect(JSON.parse(stdout.text())).toMatchObject({
+			id: "harness",
+			name: "Harness",
+			roots: [root],
+		});
+		expect(stderr.text()).toBe("");
+	});
+});
+
 it("when help is requested, it should describe the generated Effect CLI command surface", async () => {
 	const stdout = capture();
 	const stderr = capture();

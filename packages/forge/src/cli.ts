@@ -44,7 +44,8 @@ import {
 	addProjectRoot,
 	addProjectRootEffect,
 	inferProjectByPath,
-	listProjects,
+	inferProjectByPathEffect,
+	listProjectsEffect,
 	removeProject,
 	removeProjectEffect,
 	removeProjectRoot,
@@ -837,13 +838,16 @@ function runProjectRootEffect(
 	parsed: Parsed,
 ): Effect.Effect<CommandOutput, unknown, FileSystem> {
 	return Effect.gen(function* () {
-		const [id, root] = parsed.positionals.slice(3);
+		const projectRootArgumentsOffset = 3;
+		const [id, root] = parsed.positionals.slice(projectRootArgumentsOffset);
 		const input = yield* decodeProjectRootInputEffect({ id, root });
 		const storePath = yield* readyStoreEffect(parsed);
 		const operation = parsed.positionals[2];
-		const project = yield* (operation === "add"
-			? addProjectRootEffect({ storePath, ...input })
-			: removeProjectRootEffect({ storePath, ...input }));
+		const operationEffect =
+			operation === "add"
+				? addProjectRootEffect({ storePath, ...input })
+				: removeProjectRootEffect({ storePath, ...input });
+		const project = yield* operationEffect;
 		return present(project);
 	});
 }
@@ -1354,31 +1358,34 @@ async function runEdit(
 	return present({ updated: true, record: edited });
 }
 
-function runProjectsEffect(parsed: Parsed): Effect.Effect<CommandOutput> {
-	return Effect.promise(async () => runProjects(parsed));
-}
-
-async function runProjects(parsed: Parsed): Promise<CommandOutput> {
-	return present(await listProjects(await readyStore(parsed)));
-}
-
-function runHereEffect(parsed: Parsed): Effect.Effect<CommandOutput> {
-	return Effect.promise(async () => runHere(parsed));
-}
-
-async function runHere(parsed: Parsed): Promise<CommandOutput> {
-	const project = await inferProjectByPath({
-		storePath: await readyStore(parsed),
-		cwd: parseAbsolutePath(parsed.cwd, "cwd"),
+function runProjectsEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const projects = yield* listProjectsEffect(storePath);
+		return present(projects);
 	});
-	if (project === undefined) {
-		throw new ForgeError({
-			kind: "project-not-found",
-			message:
-				"No registered project matches the current directory. Run `forge project add <id> --root <path>`.",
-		});
-	}
-	return present(project);
+}
+
+function runHereEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const cwd = yield* parseAbsolutePathEffect(parsed.cwd, "cwd");
+		const project = yield* inferProjectByPathEffect({ storePath, cwd });
+		if (project === undefined) {
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "project-not-found",
+					message:
+						"No registered project matches the current directory. Run `forge project add <id> --root <path>`.",
+				}),
+			);
+		}
+		return present(project);
+	});
 }
 
 async function createInvocationContext(
