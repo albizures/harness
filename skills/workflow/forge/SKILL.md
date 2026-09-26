@@ -21,6 +21,14 @@ Before creating project-scoped records, run `forge here` from the repository. If
 
 Use `forge --help` as the live command surface. Common commands for workflow skills:
 
+- `forge config get [storePath]`
+- `forge config set storePath <absolute-path>`
+- `forge store path`
+- `forge store doctor`
+- `forge project add <id> --root <path> [--name <name>] [--remote <url>]`
+- `forge project root add <id> <path>` / `forge project root remove <id> <path>`
+- `forge project remove <id>`
+- `forge projects`
 - `forge here`
 - `forge new spec --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>] [--initiative <id>] [--generated-by <id>]`
 - `forge new wayfinder --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>|--projects <ids>|--initiative <id>|--scope global]`

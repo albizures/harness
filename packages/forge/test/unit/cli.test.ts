@@ -1006,6 +1006,43 @@ it("when ready help is requested, it should use generated help and document the 
 	expect(stderr.text()).toBe("");
 });
 
+it("when project add leaf help is requested, it should use generated leaf help", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["project", "add", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	const help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Register a Forge project/);
+	expect(help).toMatch(/<id>/);
+	expect(help).toMatch(/--root/);
+	expect(help).not.toMatch(/Add or remove project roots/);
+	expect(stderr.text()).toBe("");
+});
+
+it("when project add leaf help is requested after root options, it should ignore root option values while routing help", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(
+		["--store", "/tmp/forge-store", "project", "add", "--help"],
+		{
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: "/tmp" },
+		},
+	);
+	const help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Register a Forge project/);
+	expect(help).toMatch(/<id>/);
+	expect(help).toMatch(/--root/);
+	expect(help).not.toMatch(/Forge personal workflow CLI/);
+	expect(stderr.text()).toBe("");
+});
+
 it("when Phase 5 initiative CLI commands run, they should create groups, mutate membership, and filter navigation", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-phase5-home-"));
 	const store = path.join(home, "store");

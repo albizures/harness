@@ -151,68 +151,68 @@ const presentationOptions = {
 	),
 };
 
+const configGetCommand = CliCommand.make("get", {
+	key: Args.optional(Args.text({ name: "storePath" })),
+	...presentationOptions,
+}).pipe(
+	CliCommand.withDescription("Print the Forge config or a config value."),
+);
+const configSetCommand = CliCommand.make("set", {
+	key: Args.text({ name: "storePath" }),
+	value: Args.text({ name: "absolute-path" }),
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Set a Forge config value."));
 const configCommand = CliCommand.make("config").pipe(
 	CliCommand.withDescription("Read or update Forge CLI configuration."),
-	CliCommand.withSubcommands([
-		CliCommand.make("get", {
-			key: Args.optional(Args.text({ name: "storePath" })),
-			...presentationOptions,
-		}).pipe(
-			CliCommand.withDescription("Print the Forge config or a config value."),
-		),
-		CliCommand.make("set", {
-			key: Args.text({ name: "storePath" }),
-			value: Args.text({ name: "absolute-path" }),
-			...presentationOptions,
-		}).pipe(CliCommand.withDescription("Set a Forge config value.")),
-	]),
+	CliCommand.withSubcommands([configGetCommand, configSetCommand]),
 );
 
+const storePathCommand = CliCommand.make("path").pipe(
+	CliCommand.withDescription("Print the active Forge store path."),
+);
+const storeDoctorCommand = CliCommand.make("doctor").pipe(
+	CliCommand.withDescription("Validate the active Forge store."),
+);
 const storeCommand = CliCommand.make("store").pipe(
 	CliCommand.withDescription("Inspect the configured Forge store."),
-	CliCommand.withSubcommands([
-		CliCommand.make("path").pipe(
-			CliCommand.withDescription("Print the active Forge store path."),
-		),
-		CliCommand.make("doctor").pipe(
-			CliCommand.withDescription("Validate the active Forge store."),
-		),
-	]),
+	CliCommand.withSubcommands([storePathCommand, storeDoctorCommand]),
 );
 
+const projectAddCommand = CliCommand.make("add", {
+	id: Args.text({ name: "id" }),
+	root: Options.text("root").pipe(
+		Options.withDescription("Project root path."),
+	),
+	name: Options.text("name").pipe(
+		Options.optional,
+		Options.withDescription("Human-readable project name."),
+	),
+	remote: Options.text("remote").pipe(
+		Options.optional,
+		Options.withDescription("Project remote URL."),
+	),
+}).pipe(CliCommand.withDescription("Register a Forge project."));
+const projectRootAddCommand = CliCommand.make("add", {
+	id: Args.text({ name: "id" }),
+	root: Args.text({ name: "path" }),
+}).pipe(CliCommand.withDescription("Add a root to a project."));
+const projectRootRemoveCommand = CliCommand.make("remove", {
+	id: Args.text({ name: "id" }),
+	root: Args.text({ name: "path" }),
+}).pipe(CliCommand.withDescription("Remove a root from a project."));
+const projectRootCommand = CliCommand.make("root").pipe(
+	CliCommand.withDescription("Add or remove project roots."),
+	CliCommand.withSubcommands([projectRootAddCommand, projectRootRemoveCommand]),
+);
+const projectRemoveCommand = CliCommand.make("remove", {
+	id: Args.text({ name: "id" }),
+}).pipe(CliCommand.withDescription("Remove a Forge project."));
 const projectCommand = CliCommand.make("project").pipe(
 	CliCommand.withDescription("Register and maintain Forge projects."),
 	CliCommand.withSubcommands([
-		CliCommand.make("add", {
-			id: Args.text({ name: "id" }),
-			root: Options.text("root").pipe(
-				Options.withDescription("Project root path."),
-			),
-			name: Options.text("name").pipe(
-				Options.optional,
-				Options.withDescription("Human-readable project name."),
-			),
-			remote: Options.text("remote").pipe(
-				Options.optional,
-				Options.withDescription("Project remote URL."),
-			),
-		}).pipe(CliCommand.withDescription("Register a Forge project.")),
-		CliCommand.make("root").pipe(
-			CliCommand.withDescription("Add or remove project roots."),
-			CliCommand.withSubcommands([
-				CliCommand.make("add", {
-					id: Args.text({ name: "id" }),
-					root: Args.text({ name: "path" }),
-				}).pipe(CliCommand.withDescription("Add a root to a project.")),
-				CliCommand.make("remove", {
-					id: Args.text({ name: "id" }),
-					root: Args.text({ name: "path" }),
-				}).pipe(CliCommand.withDescription("Remove a root from a project.")),
-			]),
-		),
-		CliCommand.make("remove", {
-			id: Args.text({ name: "id" }),
-		}).pipe(CliCommand.withDescription("Remove a Forge project.")),
+		projectAddCommand,
+		projectRootCommand,
+		projectRemoveCommand,
 	]),
 );
 
@@ -441,8 +441,17 @@ const recentUpdateLimit = 5;
 
 const commandDescriptors = new Map<string, unknown>([
 	["config", configCommand],
+	["config get", configGetCommand],
+	["config set", configSetCommand],
 	["store", storeCommand],
+	["store path", storePathCommand],
+	["store doctor", storeDoctorCommand],
 	["project", projectCommand],
+	["project add", projectAddCommand],
+	["project root", projectRootCommand],
+	["project root add", projectRootAddCommand],
+	["project root remove", projectRootRemoveCommand],
+	["project remove", projectRemoveCommand],
 	["new", newCommand],
 	["show", showCommand],
 	["start", startCommand],
@@ -1579,6 +1588,7 @@ function isHelpInvocation(argv: ReadonlyArray<string>): boolean {
 }
 
 function helpCommandName(argv: ReadonlyArray<string>): string {
+	const commandTokens: Array<string> = [];
 	let index = 0;
 	while (index < argv.length) {
 		const token = argv[index];
@@ -1587,17 +1597,37 @@ function helpCommandName(argv: ReadonlyArray<string>): string {
 			continue;
 		}
 		if (token === "--store" || token === "--cwd" || token === "-C") {
+			index += 2;
+			continue;
+		}
+		if (token === "--log-level" || token === "--completions") {
+			index += 2;
+			continue;
+		}
+		if (
+			token === "--json" ||
+			token === "--wizard" ||
+			token === "--version" ||
+			token.startsWith("--store=") ||
+			token.startsWith("--cwd=") ||
+			token.startsWith("--log-level=") ||
+			token.startsWith("--completions=")
+		) {
 			index += 1;
 			continue;
 		}
-		if (token === "--json") {
+		if (token.startsWith("-")) {
 			index += 1;
 			continue;
 		}
-		if (!token.startsWith("-")) {
-			return token;
-		}
+		commandTokens.push(token);
 		index += 1;
+	}
+	for (let length = commandTokens.length; length > 0; length -= 1) {
+		const candidate = commandTokens.slice(0, length).join(" ");
+		if (commandDescriptors.has(candidate)) {
+			return candidate;
+		}
 	}
 	return "forge";
 }

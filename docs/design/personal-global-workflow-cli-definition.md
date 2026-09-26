@@ -366,21 +366,26 @@ Agents should rely on the record snapshot plus updates for authoritative workflo
 
 ## CLI surface
 
-### Global flags
+### Common options
 
 ```text
 -C, --cwd <path>            Run as if from another directory
+--store <path>              Override configured store path for tests/migration
+--json                      Emit machine-readable output where supported
+-h, --help                  Show generated help
+```
+
+Forge uses generated Effect CLI help and validation. Unsupported legacy no-op flags such as `--plain`, `--quiet`, and `--verbose` are rejected. Scope options are command-specific rather than root-global:
+
+```text
 --project <id>              Override inferred project context or filter by project where supported
 --projects <ids>            Use a comma-separated project set where supported
 --initiative <id>           Use or filter by initiative where supported
 --scope <scope>             Structured scope, e.g. project:harness or project-set:a,b
 --all-records               Include all records where supported
---store <path>              Override configured store path for tests/migration
---json                      Emit machine-readable output
--h, --help                  Show generated help
 ```
 
-Scope flags are command-specific. Creation/mutation commands reject incompatible scope flags unless the command explicitly defines how they combine. Inspection/listing commands may combine flags as filters, for example `forge list --initiative 12 --project harness`.
+Creation/mutation commands reject incompatible scope flags unless the command explicitly defines how they combine. Inspection/listing commands may combine flags as filters, for example `forge list --initiative 12 --project harness`.
 
 ### Creation
 
@@ -405,8 +410,8 @@ forge show <record>
 forge open <record>
 forge edit <record>
 forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]
-forge ready [--blocked] [--project <id>|--initiative <id>|--all-records]
-forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>]
+forge ready [--blocked] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
+forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
 forge tree <record>
 forge deps <record>
 forge here
@@ -461,8 +466,8 @@ forge history <record>
 ### Store and config
 
 ```text
-forge config get [<key>]
-forge config set <key> <value>
+forge config get [storePath]
+forge config set storePath <absolute-path>
 forge store path
 forge store doctor
 forge project add <id> --root <path> [--name <name>] [--remote <url>]
