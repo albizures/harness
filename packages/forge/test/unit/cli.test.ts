@@ -170,6 +170,21 @@ it("when an unknown subcommand is supplied, it should use native Effect CLI vali
 	expect(stderr.text()).not.toMatch(/Usage: forge config/);
 });
 
+it("when config get receives extra positional input, it should use native Effect CLI validation", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["config", "get", "storePath", "extra"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Received unknown argument: 'extra'/);
+	expect(stderr.text()).not.toMatch(/Usage: forge config/);
+});
+
 it("when injected runCli options are supplied, root flags parsed by the command surface should preserve them", async () => {
 	const home = await mkdtemp(
 		path.join(os.tmpdir(), "forge-cli-injected-home-"),
@@ -189,6 +204,54 @@ it("when injected runCli options are supplied, root flags parsed by the command 
 	expect(code).toBe(0);
 	expect(stdout.text()).toContain(store);
 	expect(stderr.text()).toBe("");
+});
+
+describe("when store commands run through the Effect CLI command surface", () => {
+	it("should preserve store path human output", async () => {
+		const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-store-path-"));
+		const store = path.join(home, "store");
+		const stdout = capture();
+		const stderr = capture();
+
+		const code = await runCli(["--store", store, "store", "path"], {
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: home },
+		});
+
+		expect(code).toBe(0);
+		expect(stdout.text()).toBe(`${store}\n`);
+		expect(stderr.text()).toBe("");
+	});
+
+	it("should preserve store doctor JSON output shape and failing exit code", async () => {
+		const home = await mkdtemp(
+			path.join(os.tmpdir(), "forge-cli-store-doctor-"),
+		);
+		const store = path.join(home, "missing-store");
+		const stdout = capture();
+		const stderr = capture();
+
+		const code = await runCli(["--store", store, "store", "doctor", "--json"], {
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: home },
+		});
+
+		expect(code).toBe(2);
+		expect(JSON.parse(stdout.text())).toMatchObject({
+			ok: false,
+			problems: expect.arrayContaining([
+				expect.objectContaining({
+					path: store,
+					message: "Required store directory is missing.",
+					repairable: true,
+				}),
+			]),
+			repaired: [],
+		});
+		expect(stderr.text()).toBe("");
+	});
 });
 
 it("when help is requested, it should describe the generated Effect CLI command surface", async () => {

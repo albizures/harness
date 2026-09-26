@@ -28,19 +28,27 @@ import {
 import { ForgeError, isForgeError } from "./errors.ts";
 import {
 	ensureStoreRoot,
+	ensureStoreRootEffect,
 	loadForgeConfig,
+	loadForgeConfigEffect,
 	readTextFile,
 	readTextFileEffect,
 	storeDoctor,
+	storeDoctorEffect,
 	writeForgeConfig,
+	writeForgeConfigEffect,
 } from "./filesystem-store.ts";
 import {
 	addProject,
+	addProjectEffect,
 	addProjectRoot,
+	addProjectRootEffect,
 	inferProjectByPath,
 	listProjects,
 	removeProject,
+	removeProjectEffect,
 	removeProjectRoot,
+	removeProjectRootEffect,
 } from "./project-registry.ts";
 import {
 	parseRecordId,
@@ -497,9 +505,9 @@ export async function runCli(
 		let output: CommandOutput = { value: undefined, code: 0 };
 		await runForgePromise(
 			CliApp.run(forgeCliApp, ["node", "forge", ...argv], (nativeConfig) =>
-				Effect.promise(async () => {
+				Effect.gen(function* () {
 					const parsed = parsedFromNativeConfig(nativeConfig, baseContext);
-					output = await executeParsedCommand(parsed);
+					output = yield* executeParsedCommandEffect(parsed);
 					renderOutput(parsed, output);
 				}),
 			) as never,
@@ -511,6 +519,64 @@ export async function runCli(
 	}
 }
 
+type CliAction = (
+	parsed: Parsed,
+) => Effect.Effect<CommandOutput, unknown, FileSystem>;
+
+type CliActionRegistration = {
+	readonly path: ReadonlyArray<string>;
+	readonly action: CliAction;
+};
+
+const operationalCliActions: ReadonlyArray<CliActionRegistration> = [
+	{ path: ["project", "root", "add"], action: runProjectRootEffect },
+	{ path: ["project", "root", "remove"], action: runProjectRootEffect },
+	{ path: ["config", "get"], action: runConfigGetEffect },
+	{ path: ["config", "set"], action: runConfigSetEffect },
+	{ path: ["store", "path"], action: runStorePathEffect },
+	{ path: ["store", "doctor"], action: runStoreDoctorEffect },
+	{ path: ["project", "add"], action: runProjectAddEffect },
+	{ path: ["project", "remove"], action: runProjectRemoveEffect },
+	{ path: ["projects"], action: runProjectsEffect },
+	{ path: ["here"], action: runHereEffect },
+	{ path: ["config"], action: runConfigEffect },
+	{ path: ["store"], action: runStoreEffect },
+	{ path: ["project"], action: runProjectEffect },
+];
+
+function executeParsedCommandEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	const action = actionForParsedCommand(parsed);
+	if (action !== undefined) {
+		return action(parsed);
+	}
+	return legacyCommandEffect(parsed);
+}
+
+function actionForParsedCommand(parsed: Parsed): CliAction | undefined {
+	const command = parsed.positionals[0];
+	if (command === undefined) {
+		return () => Effect.succeed(present(helpText));
+	}
+	return operationalCliActions.find((registration) =>
+		commandPathMatches(parsed.positionals, registration.path),
+	)?.action;
+}
+
+function commandPathMatches(
+	positionals: ReadonlyArray<string>,
+	path: ReadonlyArray<string>,
+): boolean {
+	return path.every((segment, index) => positionals[index] === segment);
+}
+
+function legacyCommandEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, never> {
+	return Effect.promise(async () => executeParsedCommand(parsed));
+}
+
 async function executeParsedCommand(parsed: Parsed): Promise<CommandOutput> {
 	const [command, subcommand, ...rest] = parsed.positionals;
 	if (command === undefined) {
@@ -518,12 +584,6 @@ async function executeParsedCommand(parsed: Parsed): Promise<CommandOutput> {
 	}
 
 	switch (command) {
-		case "config":
-			return await runConfig(parsed, subcommand, rest);
-		case "store":
-			return await runStore(parsed, subcommand);
-		case "project":
-			return await runProject(parsed, subcommand, rest);
 		case "new":
 			return await runNew(parsed, subcommand, rest);
 		case "show":
@@ -558,13 +618,118 @@ async function executeParsedCommand(parsed: Parsed): Promise<CommandOutput> {
 			return await runOpen(parsed, subcommand, rest);
 		case "edit":
 			return await runEdit(parsed, subcommand, rest);
-		case "projects":
-			return await runProjects(parsed);
-		case "here":
-			return await runHere(parsed);
 		default:
 			throw usage(`Unknown command '${command}'. Run forge --help.`);
 	}
+}
+
+function runConfigEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, never> {
+	return Effect.promise(async () => {
+		const [, subcommand, ...rest] = parsed.positionals;
+		return await runConfig(parsed, subcommand, rest);
+	});
+}
+
+function runConfigGetEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const homeDirectory = yield* parseAbsolutePathEffect(
+			parsed.homeDirectory,
+			"homeDirectory",
+		);
+		const key = parsed.positionals[2];
+		if (key !== undefined && key !== "storePath") {
+			return yield* Effect.fail(usage("Usage: forge config get [storePath]"));
+		}
+		const storePathOverride =
+			parsed.storeOverride === undefined
+				? undefined
+				: yield* parseAbsolutePathEffect(parsed.storeOverride, "storePath");
+		const config = yield* loadForgeConfigEffect({
+			homeDirectory,
+			storePathOverride,
+		});
+		return present(key === "storePath" ? config.storePath : config);
+	});
+}
+
+function runConfigSetEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const [key, value, ...tail] = parsed.positionals.slice(2);
+		if (key === undefined || value === undefined || tail.length > 0) {
+			return yield* Effect.fail(
+				usage("Usage: forge config set storePath <absolute-path>"),
+			);
+		}
+		const homeDirectory = yield* parseAbsolutePathEffect(
+			parsed.homeDirectory,
+			"homeDirectory",
+		);
+		const input = yield* decodeConfigSetInputEffect({ key, value });
+		const config = { storePath: input.value };
+		yield* writeForgeConfigEffect({ homeDirectory, config });
+		yield* ensureStoreRootEffect({ storePath: input.value });
+		return present({ updated: true, ...config });
+	});
+}
+
+function parseAbsolutePathEffect(value: string, field: string) {
+	return Effect.try({
+		try: () => parseAbsolutePath(value, field),
+		catch: (error) => error,
+	});
+}
+
+function parseProjectIdEffect(value: string | undefined, field: string) {
+	return Effect.try({
+		try: () => {
+			if (value === undefined) {
+				throw usage(`${field} is required.`);
+			}
+			return parseProjectId(value);
+		},
+		catch: (error) => error,
+	});
+}
+
+function decodeConfigSetInputEffect(input: { key: string; value: string }) {
+	return Effect.try({
+		try: () => decodeConfigSetInput(input),
+		catch: (error) => error,
+	});
+}
+
+function decodeProjectAddInputEffect(input: {
+	readonly id: string | undefined;
+	readonly root: FlagValue | undefined;
+	readonly name?: string;
+	readonly remote?: string;
+}) {
+	return Effect.try({
+		try: () =>
+			decodeProjectAddInput({
+				id: input.id,
+				root: stringFlag(input.root),
+				name: input.name,
+				remote: input.remote,
+			}),
+		catch: (error) => error,
+	});
+}
+
+function decodeProjectRootInputEffect(input: {
+	readonly id: string | undefined;
+	readonly root: string | undefined;
+}) {
+	return Effect.try({
+		try: () => decodeProjectRootInput(input),
+		catch: (error) => error,
+	});
 }
 
 async function runConfig(
@@ -604,6 +769,31 @@ async function runConfig(
 	throw usage(commandHelp.config);
 }
 
+function runStoreEffect(parsed: Parsed): Effect.Effect<CommandOutput> {
+	return Effect.promise(async () => {
+		const [, subcommand] = parsed.positionals;
+		return await runStore(parsed, subcommand);
+	});
+}
+
+function runStorePathEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.map(resolveStorePathEffect(parsed), (storePath) =>
+		present(storePath),
+	);
+}
+
+function runStoreDoctorEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* resolveStorePathEffect(parsed);
+		const report = yield* storeDoctorEffect({ storePath });
+		return present(report, report.ok ? 0 : 2);
+	});
+}
+
 async function runStore(
 	parsed: Parsed,
 	subcommand: string | undefined,
@@ -617,6 +807,57 @@ async function runStore(
 		return present(report, report.ok ? 0 : 2);
 	}
 	throw usage(commandHelp.store);
+}
+
+function runProjectEffect(parsed: Parsed): Effect.Effect<CommandOutput> {
+	return Effect.promise(async () => {
+		const [, subcommand, ...rest] = parsed.positionals;
+		return await runProject(parsed, subcommand, rest);
+	});
+}
+
+function runProjectAddEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const [id] = parsed.positionals.slice(2);
+		const input = yield* decodeProjectAddInputEffect({
+			id,
+			root: parsed.flags.root,
+			name: getOptionalStringFlag(parsed, "name"),
+			remote: getOptionalStringFlag(parsed, "remote"),
+		});
+		const storePath = yield* readyStoreEffect(parsed);
+		const project = yield* addProjectEffect({ storePath, ...input });
+		return present(project);
+	});
+}
+
+function runProjectRootEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const [id, root] = parsed.positionals.slice(3);
+		const input = yield* decodeProjectRootInputEffect({ id, root });
+		const storePath = yield* readyStoreEffect(parsed);
+		const operation = parsed.positionals[2];
+		const project = yield* (operation === "add"
+			? addProjectRootEffect({ storePath, ...input })
+			: removeProjectRootEffect({ storePath, ...input }));
+		return present(project);
+	});
+}
+
+function runProjectRemoveEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const [id] = parsed.positionals.slice(2);
+		const storePath = yield* readyStoreEffect(parsed);
+		const projectId = yield* parseProjectIdEffect(id, "id");
+		yield* removeProjectEffect({ storePath, id: projectId });
+		return present({ removed: projectId });
+	});
 }
 
 async function runProject(
@@ -1113,8 +1354,16 @@ async function runEdit(
 	return present({ updated: true, record: edited });
 }
 
+function runProjectsEffect(parsed: Parsed): Effect.Effect<CommandOutput> {
+	return Effect.promise(async () => runProjects(parsed));
+}
+
 async function runProjects(parsed: Parsed): Promise<CommandOutput> {
 	return present(await listProjects(await readyStore(parsed)));
+}
+
+function runHereEffect(parsed: Parsed): Effect.Effect<CommandOutput> {
+	return Effect.promise(async () => runHere(parsed));
 }
 
 async function runHere(parsed: Parsed): Promise<CommandOutput> {
@@ -1846,10 +2095,36 @@ async function resolveStorePath(parsed: Parsed) {
 	).storePath;
 }
 
+function resolveStorePathEffect(
+	parsed: Parsed,
+): Effect.Effect<AbsolutePath, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		if (parsed.storeOverride !== undefined) {
+			return yield* parseAbsolutePathEffect(parsed.storeOverride, "storePath");
+		}
+		const homeDirectory = yield* parseAbsolutePathEffect(
+			parsed.homeDirectory,
+			"homeDirectory",
+		);
+		const config = yield* loadForgeConfigEffect({ homeDirectory });
+		return config.storePath;
+	});
+}
+
 async function readyStore(parsed: Parsed) {
 	const storePath = await resolveStorePath(parsed);
 	await ensureStoreRoot({ storePath });
 	return storePath;
+}
+
+function readyStoreEffect(
+	parsed: Parsed,
+): Effect.Effect<AbsolutePath, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* resolveStorePathEffect(parsed);
+		yield* ensureStoreRootEffect({ storePath });
+		return storePath;
+	});
 }
 
 function present(value: unknown, code = 0, human?: string): CommandOutput {
