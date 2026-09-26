@@ -5,6 +5,7 @@ import { text as readStreamText } from "node:stream/consumers";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import * as PlatformCommand from "@effect/platform/Command";
+import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { FileSystem } from "@effect/platform/FileSystem";
 import * as Args from "@effect/cli/Args";
 import * as CliApp from "@effect/cli/CliApp";
@@ -31,7 +32,6 @@ import {
 	ensureStoreRootEffect,
 	loadForgeConfig,
 	loadForgeConfigEffect,
-	readTextFile,
 	readTextFileEffect,
 	storeDoctor,
 	storeDoctorEffect,
@@ -43,7 +43,6 @@ import {
 	addProjectEffect,
 	addProjectRoot,
 	addProjectRootEffect,
-	inferProjectByPath,
 	inferProjectByPathEffect,
 	listProjectsEffect,
 	removeProject,
@@ -68,30 +67,35 @@ import {
 	type WorkflowRecord,
 } from "./record-domain.ts";
 import {
-	addRecordComment,
-	completeWorkflowRecord,
-	createWorkflowRecord,
-	formatRecordCommentMarkdown,
-	listRecordComments,
-	listRecordHistory,
-	listRecordUpdates,
-	listWorkflowRecords,
-	locateWorkflowRecord,
 	addInitiativeDeclaredProject,
-	addWorkflowRecordDependency,
+	addInitiativeDeclaredProjectEffect,
+	addRecordCommentEffect,
+	addWorkflowRecordDependencyEffect,
 	attachWorkflowRecordToInitiative,
+	attachWorkflowRecordToInitiativeEffect,
+	completeWorkflowRecordEffect,
+	createWorkflowRecordEffect,
 	detachWorkflowRecordFromInitiative,
-	listWorkflowRecordReadiness,
-	readRecordDependencyView,
-	readRecordRelationships,
-	readRecordTree,
-	readWorkflowRecord,
+	detachWorkflowRecordFromInitiativeEffect,
+	formatRecordCommentMarkdown,
+	listRecordCommentsEffect,
+	listRecordHistoryEffect,
+	listRecordUpdatesEffect,
+	listWorkflowRecords,
+	listWorkflowRecordsEffect,
+	locateWorkflowRecordEffect,
+	listWorkflowRecordReadinessEffect,
+	readRecordDependencyViewEffect,
+	readRecordRelationshipsEffect,
+	readRecordTreeEffect,
+	readWorkflowRecordEffect,
 	removeInitiativeDeclaredProject,
-	removeWorkflowRecordDependency,
-	replaceRecordCommentFromEditedMarkdown,
-	replaceWorkflowRecordFromEditedMarkdown,
-	selectNextWorkflowRecord,
-	startWorkflowRecord,
+	removeInitiativeDeclaredProjectEffect,
+	removeWorkflowRecordDependencyEffect,
+	replaceRecordCommentFromEditedMarkdownEffect,
+	replaceWorkflowRecordFromEditedMarkdownEffect,
+	selectNextWorkflowRecordEffect,
+	startWorkflowRecordEffect,
 } from "./record-store.ts";
 import { runForgeMain, runForgePromise } from "./runtime.ts";
 import { recordFilePath } from "./store-paths.ts";
@@ -150,6 +154,8 @@ const presentationOptions = {
 		Options.withDescription("Render command output as JSON."),
 	),
 };
+
+const initiativeProjectPathLength = 3;
 
 const configGetCommand = CliCommand.make("get", {
 	key: Args.optional(Args.text({ name: "storePath" })),
@@ -269,14 +275,19 @@ const newRecordCommand = (
 		generatedBy: Options.text("generated-by").pipe(Options.optional),
 	});
 };
+const newInitiativeCommand = newRecordCommand("initiative");
+const newWayfinderCommand = newRecordCommand("wayfinder");
+const newSpecCommand = newRecordCommand("spec");
+const newTaskCommand = newRecordCommand("task");
+const newGrillingCommand = newRecordCommand("grilling");
 const newCommand = CliCommand.make("new").pipe(
 	CliCommand.withDescription("Create Forge records."),
 	CliCommand.withSubcommands([
-		newRecordCommand("initiative"),
-		newRecordCommand("wayfinder"),
-		newRecordCommand("spec"),
-		newRecordCommand("task"),
-		newRecordCommand("grilling"),
+		newInitiativeCommand,
+		newWayfinderCommand,
+		newSpecCommand,
+		newTaskCommand,
+		newGrillingCommand,
 	]),
 );
 const showCommand = CliCommand.make("show", {
@@ -292,18 +303,17 @@ const doneCommand = CliCommand.make("done", {
 	resolution: Options.text("resolution"),
 	...presentationOptions,
 }).pipe(CliCommand.withDescription("Complete a Forge record."));
+const commentEditCommand = CliCommand.make("edit", {
+	record: recordArg,
+	comment: Args.text({ name: "comment" }),
+}).pipe(CliCommand.withDescription("Edit a record comment."));
 const commentCommand = CliCommand.make("comment", {
 	record: Args.optional(recordArg),
 	message: Options.text("message").pipe(Options.optional),
 	messageFile: Options.text("message-file").pipe(Options.optional),
 }).pipe(
 	CliCommand.withDescription("Add or edit record comments."),
-	CliCommand.withSubcommands([
-		CliCommand.make("edit", {
-			record: recordArg,
-			comment: Args.text({ name: "comment" }),
-		}).pipe(CliCommand.withDescription("Edit a record comment.")),
-	]),
+	CliCommand.withSubcommands([commentEditCommand]),
 );
 const commentsCommand = CliCommand.make("comments", { record: recordArg }).pipe(
 	CliCommand.withDescription("List record comments."),
@@ -333,30 +343,43 @@ const navigationWorkOptions = {
 const initiativesCommand = CliCommand.make("initiatives", {
 	project: Options.text("project").pipe(Options.optional),
 	allRecords: Options.boolean("all-records"),
+	...presentationOptions,
 }).pipe(CliCommand.withDescription("List initiative records."));
+const initiativeAttachCommand = CliCommand.make("attach", {
+	initiative: Args.text({ name: "initiative" }),
+	record: recordArg,
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Attach a record to an initiative."));
+const initiativeDetachCommand = CliCommand.make("detach", {
+	initiative: Args.text({ name: "initiative" }),
+	record: recordArg,
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Detach a record from an initiative."));
+const initiativeProjectAddCommand = CliCommand.make("add", {
+	initiative: Args.text({ name: "initiative" }),
+	project: Args.text({ name: "project" }),
+	...presentationOptions,
+}).pipe(CliCommand.withDescription("Add a declared project to an initiative."));
+const initiativeProjectRemoveCommand = CliCommand.make("remove", {
+	initiative: Args.text({ name: "initiative" }),
+	project: Args.text({ name: "project" }),
+	...presentationOptions,
+}).pipe(
+	CliCommand.withDescription("Remove a declared project from an initiative."),
+);
+const initiativeProjectCommand = CliCommand.make("project").pipe(
+	CliCommand.withDescription("Maintain initiative project declarations."),
+	CliCommand.withSubcommands([
+		initiativeProjectAddCommand,
+		initiativeProjectRemoveCommand,
+	]),
+);
 const initiativeCommand = CliCommand.make("initiative").pipe(
 	CliCommand.withDescription("Maintain initiative membership."),
 	CliCommand.withSubcommands([
-		CliCommand.make("attach", {
-			initiative: Args.text({ name: "initiative" }),
-			record: recordArg,
-		}),
-		CliCommand.make("detach", {
-			initiative: Args.text({ name: "initiative" }),
-			record: recordArg,
-		}),
-		CliCommand.make("project").pipe(
-			CliCommand.withSubcommands([
-				CliCommand.make("add", {
-					initiative: Args.text({ name: "initiative" }),
-					project: Args.text({ name: "project" }),
-				}),
-				CliCommand.make("remove", {
-					initiative: Args.text({ name: "initiative" }),
-					project: Args.text({ name: "project" }),
-				}),
-			]),
-		),
+		initiativeAttachCommand,
+		initiativeDetachCommand,
+		initiativeProjectCommand,
 	]),
 );
 const listCommand = CliCommand.make("list", {
@@ -453,20 +476,33 @@ const commandDescriptors = new Map<string, unknown>([
 	["project root remove", projectRootRemoveCommand],
 	["project remove", projectRemoveCommand],
 	["new", newCommand],
+	["new initiative", newInitiativeCommand],
+	["new wayfinder", newWayfinderCommand],
+	["new spec", newSpecCommand],
+	["new task", newTaskCommand],
+	["new grilling", newGrillingCommand],
 	["show", showCommand],
 	["start", startCommand],
 	["done", doneCommand],
 	["comment", commentCommand],
+	["comment edit", commentEditCommand],
 	["comments", commentsCommand],
 	["updates", updatesCommand],
 	["history", historyCommand],
 	["initiatives", initiativesCommand],
 	["initiative", initiativeCommand],
+	["initiative attach", initiativeAttachCommand],
+	["initiative detach", initiativeDetachCommand],
+	["initiative project", initiativeProjectCommand],
+	["initiative project add", initiativeProjectAddCommand],
+	["initiative project remove", initiativeProjectRemoveCommand],
 	["list", listCommand],
 	["ready", readyCommand],
 	["next", nextCommand],
 	["tree", treeCommand],
 	["deps", depsCommand],
+	["deps add", depsCommand],
+	["deps remove", depsCommand],
 	["open", openCommand],
 	["edit", editCommand],
 	["projects", projectsCommand],
@@ -531,7 +567,7 @@ export async function runCli(
 
 type CliAction = (
 	parsed: Parsed,
-) => Effect.Effect<CommandOutput, unknown, FileSystem>;
+) => Effect.Effect<CommandOutput, unknown, CommandExecutor | FileSystem>;
 
 type CliActionRegistration = {
 	readonly path: ReadonlyArray<string>;
@@ -547,6 +583,33 @@ const operationalCliActions: ReadonlyArray<CliActionRegistration> = [
 	{ path: ["store", "doctor"], action: runStoreDoctorEffect },
 	{ path: ["project", "add"], action: runProjectAddEffect },
 	{ path: ["project", "remove"], action: runProjectRemoveEffect },
+	{ path: ["new", "initiative"], action: runNewEffect },
+	{ path: ["new", "wayfinder"], action: runNewEffect },
+	{ path: ["new", "spec"], action: runNewEffect },
+	{ path: ["new", "task"], action: runNewEffect },
+	{ path: ["new", "grilling"], action: runNewEffect },
+	{ path: ["show"], action: runShowEffect },
+	{ path: ["start"], action: runStartEffect },
+	{ path: ["done"], action: runDoneEffect },
+	{ path: ["comment", "edit"], action: runCommentEffect },
+	{ path: ["comment"], action: runCommentEffect },
+	{ path: ["comments"], action: runCommentsEffect },
+	{ path: ["updates"], action: runUpdatesEffect },
+	{ path: ["history"], action: runHistoryEffect },
+	{ path: ["initiatives"], action: runInitiativesEffect },
+	{ path: ["initiative", "attach"], action: runInitiativeEffect },
+	{ path: ["initiative", "detach"], action: runInitiativeEffect },
+	{ path: ["initiative", "project", "add"], action: runInitiativeEffect },
+	{ path: ["initiative", "project", "remove"], action: runInitiativeEffect },
+	{ path: ["list"], action: runListEffect },
+	{ path: ["ready"], action: runReadyEffect },
+	{ path: ["next"], action: runNextEffect },
+	{ path: ["tree"], action: runTreeEffect },
+	{ path: ["deps", "add"], action: runDepsEffect },
+	{ path: ["deps", "remove"], action: runDepsEffect },
+	{ path: ["deps"], action: runDepsEffect },
+	{ path: ["open"], action: runOpenEffect },
+	{ path: ["edit"], action: runEditEffect },
 	{ path: ["projects"], action: runProjectsEffect },
 	{ path: ["here"], action: runHereEffect },
 	{ path: ["config"], action: runConfigEffect },
@@ -556,7 +619,7 @@ const operationalCliActions: ReadonlyArray<CliActionRegistration> = [
 
 function executeParsedCommandEffect(
 	parsed: Parsed,
-): Effect.Effect<CommandOutput, unknown, FileSystem> {
+): Effect.Effect<CommandOutput, unknown, CommandExecutor | FileSystem> {
 	const action = actionForParsedCommand(parsed);
 	if (action !== undefined) {
 		return action(parsed);
@@ -937,68 +1000,79 @@ async function runProject(
 
 async function runNew(
 	parsed: Parsed,
-	subcommand: string | undefined,
+	_subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
 	if (rest.length > 0) {
 		throw usage(commandHelp.new);
 	}
-	const storePath = await readyStore(parsed);
-	const title = getRequiredFlag(parsed, "title", commandHelp.new);
-	const kind = parseNewKind(subcommand);
-	const parentId =
-		getOptionalStringFlag(parsed, "parent") === undefined
-			? undefined
-			: parseRecordId(Number(getOptionalStringFlag(parsed, "parent")));
-	const parent =
-		parentId === undefined
-			? undefined
-			: await readWorkflowRecord(storePath, parentId);
-	const body = await readProse(
-		parsed,
-		kind === "task" || kind === "grilling" ? "description" : "body",
-	);
-	const explicitProject = getOptionalStringFlag(parsed, "project");
-	const project =
-		explicitProject ??
-		(kind === "spec"
-			? await inferProjectIdForCwd(parsed, storePath)
-			: undefined);
-	const projects = getOptionalStringFlag(parsed, "projects");
-	const initiative = getOptionalStringFlag(parsed, "initiative");
-	const generatedBy = getOptionalStringFlag(parsed, "generated-by");
-	const scope = getOptionalStringFlag(parsed, "scope");
-	const record = await createWorkflowRecord({
-		storePath,
-		input: {
-			title,
-			kind,
-			subkind:
-				kind === "task"
-					? parseTaskSubkind(getOptionalStringFlag(parsed, "kind"))
-					: null,
-			scope: scopeForNewRecord({
+	return runForgePromise(runNewEffect(parsed));
+}
+
+function runNewEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const title = yield* requiredStringFlagEffect(
+			parsed,
+			"title",
+			commandHelp.new,
+		);
+		const kind = yield* parseNewKindEffect(parsed.positionals[1]);
+		const parentId = yield* optionalRecordIdFlagEffect(parsed, "parent");
+		const parent =
+			parentId === undefined
+				? undefined
+				: yield* readWorkflowRecordEffect(storePath, parentId);
+		const body = yield* readProseEffect(
+			parsed,
+			kind === "task" || kind === "grilling" ? "description" : "body",
+		);
+		const explicitProject = getOptionalStringFlag(parsed, "project");
+		const project =
+			explicitProject ??
+			(kind === "spec"
+				? yield* inferProjectIdForCwdEffect(parsed, storePath)
+				: undefined);
+		const projects = getOptionalStringFlag(parsed, "projects");
+		const initiative = getOptionalStringFlag(parsed, "initiative");
+		const generatedBy = getOptionalStringFlag(parsed, "generated-by");
+		const scope = getOptionalStringFlag(parsed, "scope");
+		const recordInput = yield* Effect.try({
+			try: () => ({
+				title,
 				kind,
-				project,
-				projects,
-				initiative,
-				scope,
-				parent,
+				subkind:
+					kind === "task"
+						? parseTaskSubkind(getOptionalStringFlag(parsed, "kind"))
+						: null,
+				scope: scopeForNewRecord({
+					kind,
+					project,
+					projects,
+					initiative,
+					scope,
+					parent,
+				}),
+				parent: parentId ?? null,
+				initiative:
+					initiative === undefined ? null : parseRecordId(Number(initiative)),
+				dependsOn: recordIdsFromFlag(parsed, "depends-on"),
+				generatedBy:
+					generatedBy === undefined ? null : parseRecordId(Number(generatedBy)),
+				tags: [],
+				profile: null,
+				body,
 			}),
-			parent: parentId ?? null,
-			initiative:
-				initiative === undefined ? null : parseRecordId(Number(initiative)),
-			dependsOn: getStringArrayFlag(parsed, "depends-on").map((id) =>
-				parseRecordId(Number(id)),
-			),
-			generatedBy:
-				generatedBy === undefined ? null : parseRecordId(Number(generatedBy)),
-			tags: [],
-			profile: null,
-			body,
-		},
+			catch: (error) => error,
+		});
+		const record = yield* createWorkflowRecordEffect({
+			storePath,
+			input: recordInput,
+		});
+		return present(record);
 	});
-	return present(record);
 }
 
 async function runShow(
@@ -1006,24 +1080,46 @@ async function runShow(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.show);
-	const storePath = await readyStore(parsed);
-	const record = await readWorkflowRecord(storePath, id);
-	const relationships = await readRecordRelationships(storePath);
-	const shown = {
-		...record,
-		relationships: relationships[String(record.id)] ?? null,
-		recentComments: (await listRecordComments(storePath, record.id)).slice(
-			-recentCommentLimit,
-		),
-		recentUpdates: (await listRecordUpdates(storePath, record.id)).slice(
-			-recentUpdateLimit,
-		),
-	};
-	if (parsed.presentation === "json") {
-		return present(shown);
-	}
-	return present(shown, 0, formatShownRecord(shown));
+	return runForgePromise(
+		runShowEffect({
+			...parsed,
+			positionals: [
+				"show",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runShowEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.show,
+		);
+		const storePath = yield* readyStoreEffect(parsed);
+		const record = yield* readWorkflowRecordEffect(storePath, id);
+		const relationships = yield* readRecordRelationshipsEffect(storePath);
+		const recentComments = yield* listRecordCommentsEffect(
+			storePath,
+			record.id,
+		);
+		const recentUpdates = yield* listRecordUpdatesEffect(storePath, record.id);
+		const shown = {
+			...record,
+			relationships: relationships[String(record.id)] ?? null,
+			recentComments: recentComments.slice(-recentCommentLimit),
+			recentUpdates: recentUpdates.slice(-recentUpdateLimit),
+		};
+		if (parsed.presentation === "json") {
+			return present(shown);
+		}
+		return present(shown, 0, formatShownRecord(shown));
+	});
 }
 
 async function runStart(
@@ -1031,11 +1127,14 @@ async function runStart(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.start);
-	return present(
-		await startWorkflowRecord({
-			storePath: await readyStore(parsed),
-			recordId: id,
+	return runForgePromise(
+		runStartEffect({
+			...parsed,
+			positionals: [
+				"start",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
 		}),
 	);
 }
@@ -1045,15 +1144,58 @@ async function runDone(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.done);
-	const resolution = getRequiredFlag(parsed, "resolution", commandHelp.done);
-	return present(
-		await completeWorkflowRecord({
-			storePath: await readyStore(parsed),
-			recordId: id,
-			resolution,
+	return runForgePromise(
+		runDoneEffect({
+			...parsed,
+			positionals: [
+				"done",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
 		}),
 	);
+}
+
+function runStartEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.start,
+		);
+		const storePath = yield* readyStoreEffect(parsed);
+		const record = yield* startWorkflowRecordEffect({
+			storePath,
+			recordId: id,
+		});
+		return present(record);
+	});
+}
+
+function runDoneEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.done,
+		);
+		const resolution = yield* requiredStringFlagEffect(
+			parsed,
+			"resolution",
+			commandHelp.done,
+		);
+		const storePath = yield* readyStoreEffect(parsed);
+		const record = yield* completeWorkflowRecordEffect({
+			storePath,
+			recordId: id,
+			resolution,
+		});
+		return present(record);
+	});
 }
 
 async function runComment(
@@ -1061,39 +1203,66 @@ async function runComment(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const storePath = await readyStore(parsed);
-	if (subcommand === "edit") {
-		const [record, comment, ...tail] = rest;
-		if (record === undefined || comment === undefined || tail.length > 0) {
-			throw usage(commandHelp.comment);
+	return runForgePromise(
+		runCommentEffect({
+			...parsed,
+			positionals: [
+				"comment",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runCommentEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, CommandExecutor | FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const subcommand = parsed.positionals[1];
+		if (subcommand === "edit") {
+			const [record, comment, ...tail] = parsed.positionals.slice(2);
+			if (record === undefined || comment === undefined || tail.length > 0) {
+				return yield* Effect.fail(usage(commandHelp.comment));
+			}
+			const recordId = yield* recordIdFromTextEffect(record);
+			const commentId = yield* parseCommentIdEffect(comment);
+			const existing = yield* findRecordCommentEffect(
+				storePath,
+				recordId,
+				commentId,
+			);
+			const temporaryPath = yield* commentEditTemporaryPathEffect(
+				storePath,
+				recordId,
+				commentId,
+			);
+			const markdown = yield* editTemporaryFileEffect(
+				temporaryPath,
+				formatRecordCommentMarkdown(existing),
+				parsed,
+			);
+			const edited = yield* replaceRecordCommentFromEditedMarkdownEffect({
+				storePath,
+				recordId,
+				commentId,
+				markdown,
+			});
+			return present({ updated: true, comment: edited });
 		}
-		const recordId = parseRecordId(Number(record));
-		const commentId = parseCommentId(comment);
-		const existing = await findRecordComment(storePath, recordId, commentId);
-		const temporaryPath = parseAbsolutePath(
-			`${storePath}/comment-${recordId}-${commentId}.edit-${process.pid}-${Date.now()}.md`,
-			"temporaryPath",
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.comment,
 		);
-		const markdown = await editTemporaryFile(
-			temporaryPath,
-			formatRecordCommentMarkdown(existing),
-			parsed,
-		);
-		const edited = await replaceRecordCommentFromEditedMarkdown({
+		const comment = yield* addRecordCommentEffect({
 			storePath,
-			recordId,
-			commentId,
-			markdown,
+			recordId: id,
+			body: yield* readProseEffect(parsed, "message"),
 		});
-		return present({ updated: true, comment: edited });
-	}
-	const id = singleRecordId(subcommand, rest, commandHelp.comment);
-	const comment = await addRecordComment({
-		storePath,
-		recordId: id,
-		body: await readProse(parsed, "message"),
+		return present(comment);
 	});
-	return present(comment);
 }
 
 async function runComments(
@@ -1101,12 +1270,36 @@ async function runComments(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.comments);
-	const comments = await listRecordComments(await readyStore(parsed), id);
-	if (parsed.presentation === "json") {
-		return present(comments);
-	}
-	return present(comments, 0, formatRecordComments(comments));
+	return runForgePromise(
+		runCommentsEffect({
+			...parsed,
+			positionals: [
+				"comments",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runCommentsEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.comments,
+		);
+		const comments = yield* listRecordCommentsEffect(
+			yield* readyStoreEffect(parsed),
+			id,
+		);
+		if (parsed.presentation === "json") {
+			return present(comments);
+		}
+		return present(comments, 0, formatRecordComments(comments));
+	});
 }
 
 async function runUpdates(
@@ -1114,12 +1307,36 @@ async function runUpdates(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.updates);
-	const updates = await listRecordUpdates(await readyStore(parsed), id);
-	if (parsed.presentation === "json") {
-		return present(updates);
-	}
-	return present(updates, 0, formatRecordUpdates(updates));
+	return runForgePromise(
+		runUpdatesEffect({
+			...parsed,
+			positionals: [
+				"updates",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runUpdatesEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.updates,
+		);
+		const updates = yield* listRecordUpdatesEffect(
+			yield* readyStoreEffect(parsed),
+			id,
+		);
+		if (parsed.presentation === "json") {
+			return present(updates);
+		}
+		return present(updates, 0, formatRecordUpdates(updates));
+	});
 }
 
 async function runHistory(
@@ -1127,12 +1344,36 @@ async function runHistory(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.history);
-	const history = await listRecordHistory(await readyStore(parsed), id);
-	if (parsed.presentation === "json") {
-		return present(history);
-	}
-	return present(history, 0, formatRecordHistory(history));
+	return runForgePromise(
+		runHistoryEffect({
+			...parsed,
+			positionals: [
+				"history",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runHistoryEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.history,
+		);
+		const history = yield* listRecordHistoryEffect(
+			yield* readyStoreEffect(parsed),
+			id,
+		);
+		if (parsed.presentation === "json") {
+			return present(history);
+		}
+		return present(history, 0, formatRecordHistory(history));
+	});
 }
 
 async function runInitiatives(
@@ -1206,6 +1447,84 @@ async function runInitiative(
 	throw usage(commandHelp.initiative);
 }
 
+function runInitiativesEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const records = yield* listWorkflowRecordsEffect(storePath);
+		const explicitProject = getOptionalStringFlag(parsed, "project");
+		const project =
+			explicitProject ??
+			(parsed.flags["all-records"] !== true
+				? yield* inferProjectIdForCwdEffect(parsed, storePath)
+				: undefined);
+		return present(
+			records.filter(
+				(record) =>
+					record.kind === "initiative" &&
+					(project === undefined || recordHasProject(record, records, project)),
+			),
+		);
+	});
+}
+
+function runInitiativeEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const memberPath = parsed.positionals.slice(0, 2).join(" ");
+		const projectPath = parsed.positionals
+			.slice(0, initiativeProjectPathLength)
+			.join(" ");
+		if (
+			memberPath === "initiative attach" ||
+			memberPath === "initiative detach"
+		) {
+			const initiativeId = yield* recordIdFromTextEffect(parsed.positionals[2]);
+			const recordId = yield* recordIdFromTextEffect(parsed.positionals[3]);
+			return present(
+				memberPath === "initiative attach"
+					? yield* attachWorkflowRecordToInitiativeEffect({
+							storePath,
+							initiativeId,
+							recordId,
+						})
+					: yield* detachWorkflowRecordFromInitiativeEffect({
+							storePath,
+							initiativeId,
+							recordId,
+						}),
+			);
+		}
+		if (
+			projectPath === "initiative project add" ||
+			projectPath === "initiative project remove"
+		) {
+			const initiativeId = yield* recordIdFromTextEffect(parsed.positionals[3]);
+			const project = yield* parseProjectIdEffect(
+				parsed.positionals[4],
+				"project",
+			);
+			return present(
+				projectPath === "initiative project add"
+					? yield* addInitiativeDeclaredProjectEffect({
+							storePath,
+							initiativeId,
+							project,
+						})
+					: yield* removeInitiativeDeclaredProjectEffect({
+							storePath,
+							initiativeId,
+							project,
+						}),
+			);
+		}
+		return yield* Effect.fail(usage(commandHelp.initiative));
+	});
+}
+
 async function runList(
 	parsed: Parsed,
 	subcommand: string | undefined,
@@ -1214,29 +1533,44 @@ async function runList(
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.list);
 	}
-	const storePath = await readyStore(parsed);
-	const records = await listWorkflowRecords(storePath);
-	const state = getOptionalStringFlag(parsed, "state");
-	const kind = getOptionalStringFlag(parsed, "kind");
-	const explicitProject = getOptionalStringFlag(parsed, "project");
-	const initiative = getOptionalStringFlag(parsed, "initiative");
-	const initiativeId =
-		initiative === undefined ? undefined : parseRecordId(Number(initiative));
-	const project =
-		explicitProject ??
-		(initiativeId === undefined && parsed.flags["all-records"] !== true
-			? await inferProjectIdForCwd(parsed, storePath)
-			: undefined);
-	return present(
-		records.filter(
-			(record) =>
-				(state === undefined || record.state === state) &&
-				(kind === undefined || record.kind === kind) &&
-				(project === undefined || recordHasProject(record, records, project)) &&
-				(initiativeId === undefined ||
-					recordBelongsToInitiative(record, initiativeId, records)),
-		),
-	);
+	return runForgePromise(runListEffect(parsed));
+}
+
+function runListEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const records = yield* listWorkflowRecordsEffect(storePath);
+		const state = getOptionalStringFlag(parsed, "state");
+		const kind = getOptionalStringFlag(parsed, "kind");
+		const explicitProject = getOptionalStringFlag(parsed, "project");
+		const initiative = getOptionalStringFlag(parsed, "initiative");
+		const initiativeId =
+			initiative === undefined
+				? undefined
+				: yield* recordIdFromTextEffect(initiative);
+		const project =
+			explicitProject ??
+			(initiativeId === undefined && parsed.flags["all-records"] !== true
+				? yield* inferProjectIdForCwdEffect(parsed, storePath)
+				: undefined);
+		const projectId =
+			project === undefined
+				? undefined
+				: yield* parseProjectIdEffect(project, "project");
+		return present(
+			records.filter(
+				(record) =>
+					(state === undefined || record.state === state) &&
+					(kind === undefined || record.kind === kind) &&
+					(projectId === undefined ||
+						recordHasProject(record, records, projectId)) &&
+					(initiativeId === undefined ||
+						recordBelongsToInitiative(record, initiativeId, records)),
+			),
+		);
+	});
 }
 
 async function runReady(
@@ -1247,26 +1581,40 @@ async function runReady(
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.ready);
 	}
-	if (parsed.presentation === "json" && parsed.flags.blocked === true) {
-		throw usage("forge ready --json cannot be combined with --blocked.");
-	}
-	const storePath = await readyStore(parsed);
-	const records = await listWorkflowRecords(storePath);
-	const options = await navigationQueryOptions(parsed, storePath);
-	const diagnoses = await listWorkflowRecordReadiness(storePath, {
-		...options,
-		blocked: parsed.flags.blocked === true,
-		includeHitl: parsed.flags["include-hitl"] === true,
-		planning: parsed.flags.planning === true,
+	return runForgePromise(runReadyEffect(parsed));
+}
+
+function runReadyEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		if (parsed.presentation === "json" && parsed.flags.blocked === true) {
+			return yield* Effect.fail(
+				usage("forge ready --json cannot be combined with --blocked."),
+			);
+		}
+		const storePath = yield* readyStoreEffect(parsed);
+		const records = yield* listWorkflowRecordsEffect(storePath);
+		const options = yield* navigationQueryOptionsEffect(parsed, storePath);
+		const diagnoses = yield* listWorkflowRecordReadinessEffect(storePath, {
+			...options,
+			blocked: parsed.flags.blocked === true,
+			includeHitl: parsed.flags["include-hitl"] === true,
+			planning: parsed.flags.planning === true,
+		});
+		if (parsed.presentation === "json") {
+			return present(readyJsonContract(diagnoses, records));
+		}
+		return present(
+			diagnoses,
+			0,
+			formatReadinessDiagnoses(
+				diagnoses,
+				records,
+				parsed.flags.blocked === true,
+			),
+		);
 	});
-	if (parsed.presentation === "json") {
-		return present(readyJsonContract(diagnoses, records));
-	}
-	return present(
-		diagnoses,
-		0,
-		formatReadinessDiagnoses(diagnoses, records, parsed.flags.blocked === true),
-	);
 }
 
 async function runNext(
@@ -1277,13 +1625,21 @@ async function runNext(
 	if (subcommand !== undefined || rest.length > 0) {
 		throw usage(commandHelp.next);
 	}
-	const storePath = await readyStore(parsed);
-	const record = await selectNextWorkflowRecord(storePath, {
-		...(await navigationQueryOptions(parsed, storePath)),
-		includeHitl: parsed.flags["include-hitl"] === true,
-		planning: parsed.flags.planning === true,
+	return runForgePromise(runNextEffect(parsed));
+}
+
+function runNextEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const record = yield* selectNextWorkflowRecordEffect(storePath, {
+			...(yield* navigationQueryOptionsEffect(parsed, storePath)),
+			includeHitl: parsed.flags["include-hitl"] === true,
+			planning: parsed.flags.planning === true,
+		});
+		return present(record ?? null);
 	});
-	return present(record ?? null);
 }
 
 async function runTree(
@@ -1291,12 +1647,36 @@ async function runTree(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.tree);
-	const tree = await readRecordTree(await readyStore(parsed), id);
-	if (parsed.presentation === "json") {
-		return present(tree);
-	}
-	return present(tree, 0, formatRecordTree(tree));
+	return runForgePromise(
+		runTreeEffect({
+			...parsed,
+			positionals: [
+				"tree",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runTreeEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.tree,
+		);
+		const tree = yield* readRecordTreeEffect(
+			yield* readyStoreEffect(parsed),
+			id,
+		);
+		if (parsed.presentation === "json") {
+			return present(tree);
+		}
+		return present(tree, 0, formatRecordTree(tree));
+	});
 }
 
 async function runDeps(
@@ -1304,30 +1684,56 @@ async function runDeps(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const storePath = await readyStore(parsed);
-	if (subcommand === "add" || subcommand === "remove") {
-		const [record, ...tail] = rest;
-		if (record === undefined || tail.length > 0) {
-			throw usage(commandHelp.deps);
+	return runForgePromise(
+		runDepsEffect({
+			...parsed,
+			positionals: [
+				"deps",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runDepsEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const storePath = yield* readyStoreEffect(parsed);
+		const subcommand = parsed.positionals[1];
+		if (subcommand === "add" || subcommand === "remove") {
+			const [record, ...tail] = parsed.positionals.slice(2);
+			if (record === undefined || tail.length > 0) {
+				return yield* Effect.fail(usage(commandHelp.deps));
+			}
+			const dependsOn = yield* requiredStringFlagEffect(
+				parsed,
+				"depends-on",
+				commandHelp.deps,
+			);
+			const input = {
+				storePath,
+				recordId: yield* recordIdFromTextEffect(record),
+				dependsOn: yield* recordIdFromTextEffect(dependsOn),
+			};
+			const updated =
+				subcommand === "add"
+					? yield* addWorkflowRecordDependencyEffect(input)
+					: yield* removeWorkflowRecordDependencyEffect(input);
+			return present(updated);
 		}
-		const dependsOn = getRequiredFlag(parsed, "depends-on", commandHelp.deps);
-		const input = {
-			storePath,
-			recordId: parseRecordId(Number(record)),
-			dependsOn: parseRecordId(Number(dependsOn)),
-		};
-		return present(
-			subcommand === "add"
-				? await addWorkflowRecordDependency(input)
-				: await removeWorkflowRecordDependency(input),
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.deps,
 		);
-	}
-	const id = singleRecordId(subcommand, rest, commandHelp.deps);
-	const view = await readRecordDependencyView(storePath, id);
-	if (parsed.presentation === "json") {
-		return present(view);
-	}
-	return present(view, 0, formatDependencyView(view));
+		const view = yield* readRecordDependencyViewEffect(storePath, id);
+		if (parsed.presentation === "json") {
+			return present(view);
+		}
+		return present(view, 0, formatDependencyView(view));
+	});
 }
 
 async function runOpen(
@@ -1335,10 +1741,31 @@ async function runOpen(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.open);
-	const storePath = await readyStore(parsed);
-	const locator = await locateWorkflowRecord(storePath, id);
-	return present(recordFilePath(storePath, locator.kind, id));
+	return runForgePromise(
+		runOpenEffect({
+			...parsed,
+			positionals: [
+				"open",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
+	);
+}
+
+function runOpenEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.open,
+		);
+		const storePath = yield* readyStoreEffect(parsed);
+		const locator = yield* locateWorkflowRecordEffect(storePath, id);
+		return present(recordFilePath(storePath, locator.kind, id));
+	});
 }
 
 async function runEdit(
@@ -1346,25 +1773,43 @@ async function runEdit(
 	subcommand: string | undefined,
 	rest: ReadonlyArray<string>,
 ): Promise<CommandOutput> {
-	const id = singleRecordId(subcommand, rest, commandHelp.edit);
-	const storePath = await readyStore(parsed);
-	const locator = await locateWorkflowRecord(storePath, id);
-	const filePath = recordFilePath(storePath, locator.kind, id);
-	const temporaryPath = parseAbsolutePath(
-		`${filePath}.edit-${process.pid}-${Date.now()}`,
-		"temporaryPath",
+	return runForgePromise(
+		runEditEffect({
+			...parsed,
+			positionals: [
+				"edit",
+				...(subcommand === undefined ? [] : [subcommand]),
+				...rest,
+			],
+		}),
 	);
-	const markdown = await editTemporaryFile(
-		temporaryPath,
-		await readFileString(filePath),
-		parsed,
-	);
-	const edited = await replaceWorkflowRecordFromEditedMarkdown({
-		storePath,
-		recordId: id,
-		markdown,
+}
+
+function runEditEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, CommandExecutor | FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.edit,
+		);
+		const storePath = yield* readyStoreEffect(parsed);
+		const locator = yield* locateWorkflowRecordEffect(storePath, id);
+		const filePath = recordFilePath(storePath, locator.kind, id);
+		const temporaryPath = yield* recordEditTemporaryPathEffect(filePath);
+		const markdown = yield* editTemporaryFileEffect(
+			temporaryPath,
+			yield* readTextFileEffect(filePath),
+			parsed,
+		);
+		const edited = yield* replaceWorkflowRecordFromEditedMarkdownEffect({
+			storePath,
+			recordId: id,
+			markdown,
+		});
+		return present({ updated: true, record: edited });
 	});
-	return present({ updated: true, record: edited });
 }
 
 function runProjectsEffect(
@@ -1632,36 +2077,46 @@ function helpCommandName(argv: ReadonlyArray<string>): string {
 	return "forge";
 }
 
-async function navigationQueryOptions(
+function navigationQueryOptionsEffect(
 	parsed: Parsed,
 	storePath: AbsolutePath,
-): Promise<NextRecordOptions> {
-	const projectFlag = getOptionalStringFlag(parsed, "project");
-	const initiativeFlag = getOptionalStringFlag(parsed, "initiative");
-	const project =
-		projectFlag ??
-		(initiativeFlag === undefined && parsed.flags["all-records"] !== true
-			? await inferProjectIdForCwd(parsed, storePath)
-			: undefined);
-	return {
-		project: project === undefined ? undefined : parseProjectId(project),
-		initiative:
-			initiativeFlag === undefined
-				? undefined
-				: parseRecordId(Number(initiativeFlag)),
-	};
+): Effect.Effect<NextRecordOptions, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const projectFlag = getOptionalStringFlag(parsed, "project");
+		const initiativeFlag = getOptionalStringFlag(parsed, "initiative");
+		const project =
+			projectFlag ??
+			(initiativeFlag === undefined && parsed.flags["all-records"] !== true
+				? yield* inferProjectIdForCwdEffect(parsed, storePath)
+				: undefined);
+		return {
+			project:
+				project === undefined
+					? undefined
+					: yield* parseProjectIdEffect(project, "project"),
+			initiative:
+				initiativeFlag === undefined
+					? undefined
+					: yield* recordIdFromTextEffect(initiativeFlag),
+		};
+	});
 }
 
 async function inferProjectIdForCwd(
 	parsed: Parsed,
 	storePath: AbsolutePath,
 ): Promise<string | undefined> {
-	return (
-		await inferProjectByPath({
-			storePath,
-			cwd: parseAbsolutePath(parsed.cwd, "cwd"),
-		})
-	)?.id;
+	return runForgePromise(inferProjectIdForCwdEffect(parsed, storePath));
+}
+
+function inferProjectIdForCwdEffect(
+	parsed: Parsed,
+	storePath: AbsolutePath,
+): Effect.Effect<string | undefined, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const cwd = yield* parseAbsolutePathEffect(parsed.cwd, "cwd");
+		return (yield* inferProjectByPathEffect({ storePath, cwd }))?.id;
+	});
 }
 
 function parseNewKind(value: string | undefined): RecordKind {
@@ -1677,6 +2132,13 @@ function parseNewKind(value: string | undefined): RecordKind {
 	throw usage(commandHelp.new);
 }
 
+function parseNewKindEffect(value: string | undefined) {
+	return Effect.try({
+		try: () => parseNewKind(value),
+		catch: (error) => error,
+	});
+}
+
 function parseTaskSubkind(value: string | undefined): TaskSubkind | null {
 	if (value === undefined) {
 		return null;
@@ -1687,26 +2149,71 @@ function parseTaskSubkind(value: string | undefined): TaskSubkind | null {
 	throw usage("Task kind must be research, prototype, or review.");
 }
 
-async function readProse(
+function requiredStringFlagEffect(
 	parsed: Parsed,
-	field: "body" | "description" | "message",
-): Promise<string> {
+	name: string,
+	message: string,
+) {
+	return Effect.try({
+		try: () => getRequiredFlag(parsed, name, message),
+		catch: (error) => error,
+	});
+}
+
+function optionalRecordIdFlagEffect(parsed: Parsed, name: string) {
+	return Effect.try({
+		try: () => {
+			const value = getOptionalStringFlag(parsed, name);
+			return value === undefined ? undefined : parseRecordId(Number(value));
+		},
+		catch: (error) => error,
+	});
+}
+
+type ProseField = "body" | "description" | "message";
+
+type ProseInput =
+	| { readonly source: "file"; readonly path: string }
+	| { readonly source: "stdin" }
+	| { readonly source: "inline"; readonly text: string };
+
+function readProseEffect(
+	parsed: Parsed,
+	field: ProseField,
+): Effect.Effect<string, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const input = resolveProseInput(parsed, field);
+		if (input.source === "file") {
+			return yield* readTextFileEffect(input.path);
+		}
+		if (input.source === "stdin") {
+			return yield* Effect.promise(() => readStreamText(parsed.stdin));
+		}
+		return input.text;
+	});
+}
+
+function resolveProseInput(parsed: Parsed, field: ProseField): ProseInput {
 	const inline = getOptionalStringFlag(parsed, field);
 	const file = getOptionalStringFlag(parsed, `${field}-file`);
 	if ((inline === undefined) === (file === undefined)) {
-		throw usage(
-			`Provide exactly one of --${field} <md>, --${field}-file <file>, or --${field} -.`,
-		);
+		throw proseInputUsage(field);
 	}
 	if (file !== undefined) {
-		return readTextFile(file);
+		return { source: "file", path: file };
 	}
 	if (inline === undefined) {
-		throw usage(
-			`Provide exactly one of --${field} <md>, --${field}-file <file>, or --${field} -.`,
-		);
+		throw proseInputUsage(field);
 	}
-	return inline === "-" ? readStreamText(parsed.stdin) : inline;
+	return inline === "-"
+		? { source: "stdin" }
+		: { source: "inline", text: inline };
+}
+
+function proseInputUsage(field: ProseField): ForgeError {
+	return usage(
+		`Provide exactly one of --${field} <md>, --${field}-file <file>, or --${field} -.`,
+	);
 }
 
 function scopeForNewRecord(options: {
@@ -1768,11 +2275,40 @@ function singleRecordId(
 	value: string | undefined,
 	rest: ReadonlyArray<string>,
 	message: string,
-) {
+): RecordId {
 	if (value === undefined || rest.length > 0) {
 		throw usage(message);
 	}
+	return recordIdFromText(value);
+}
+
+function singleRecordIdEffect(
+	value: string | undefined,
+	rest: ReadonlyArray<string>,
+	message: string,
+) {
+	return Effect.try({
+		try: () => singleRecordId(value, rest, message),
+		catch: (error) => error,
+	});
+}
+
+function recordIdFromText(value: string): RecordId {
 	return parseRecordId(Number(value));
+}
+
+function recordIdFromTextEffect(value: string) {
+	return Effect.try({
+		try: () => recordIdFromText(value),
+		catch: (error) => error,
+	});
+}
+
+function recordIdsFromFlag(
+	parsed: Parsed,
+	name: string,
+): ReadonlyArray<RecordId> {
+	return getStringArrayFlag(parsed, name).map(recordIdFromText);
 }
 
 function formatShownRecord(
@@ -1914,21 +2450,25 @@ function formatRecordHistory(
 		.join("\n");
 }
 
-async function findRecordComment(
+function findRecordCommentEffect(
 	storePath: AbsolutePath,
 	recordId: ReturnType<typeof parseRecordId>,
 	commentId: CommentId,
-): Promise<RecordComment> {
-	const comment = (await listRecordComments(storePath, recordId)).find(
-		(candidate) => candidate.id === commentId,
-	);
-	if (comment === undefined) {
-		throw new ForgeError({
-			kind: "record-not-found",
-			message: `Comment '${commentId}' was not found for record '${recordId}'.`,
-		});
-	}
-	return comment;
+) {
+	return Effect.gen(function* () {
+		const comment = (yield* listRecordCommentsEffect(storePath, recordId)).find(
+			(candidate) => candidate.id === commentId,
+		);
+		if (comment === undefined) {
+			return yield* Effect.fail(
+				new ForgeError({
+					kind: "record-not-found",
+					message: `Comment '${commentId}' was not found for record '${recordId}'.`,
+				}),
+			);
+		}
+		return comment;
+	});
 }
 
 function parseCommentId(value: string): CommentId {
@@ -1937,6 +2477,13 @@ function parseCommentId(value: string): CommentId {
 		throw usage(`Invalid comment id '${value}'.`);
 	}
 	return numeric as CommentId;
+}
+
+function parseCommentIdEffect(value: string) {
+	return Effect.try({
+		try: () => parseCommentId(value),
+		catch: (error) => error,
+	});
 }
 
 function formatDependencyView(view: RecordDependencyView): string {
@@ -2033,14 +2580,30 @@ function recordHasProject(
 		: false;
 }
 
-async function editTemporaryFile(
-	filePath: AbsolutePath,
-	initialContent: string,
-	parsed: Parsed,
-): Promise<string> {
-	return runForgePromise(
-		editTemporaryFileEffect(filePath, initialContent, parsed),
-	);
+function recordEditTemporaryPathEffect(filePath: AbsolutePath) {
+	return Effect.try({
+		try: () =>
+			parseAbsolutePath(
+				`${filePath}.edit-${process.pid}-${Date.now()}`,
+				"temporaryPath",
+			),
+		catch: (error) => error,
+	});
+}
+
+function commentEditTemporaryPathEffect(
+	storePath: AbsolutePath,
+	recordId: RecordId,
+	commentId: CommentId,
+) {
+	return Effect.try({
+		try: () =>
+			parseAbsolutePath(
+				`${storePath}/comment-${recordId}-${commentId}.edit-${process.pid}-${Date.now()}.md`,
+				"temporaryPath",
+			),
+		catch: (error) => error,
+	});
 }
 
 function editTemporaryFileEffect(
@@ -2055,10 +2618,6 @@ function editTemporaryFileEffect(
 	}).pipe(
 		Effect.ensuring(removeFileIfExistsEffect(filePath).pipe(Effect.ignore)),
 	);
-}
-
-async function readFileString(filePath: AbsolutePath): Promise<string> {
-	return readTextFile(filePath);
 }
 
 function writeFileStringEffect(filePath: AbsolutePath, content: string) {

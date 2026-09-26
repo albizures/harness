@@ -375,13 +375,13 @@ Agents should rely on the record snapshot plus updates for authoritative workflo
 -h, --help                  Show generated help
 ```
 
-Forge uses generated Effect CLI help and validation. Unsupported legacy no-op flags such as `--plain`, `--quiet`, and `--verbose` are rejected. Scope options are command-specific rather than root-global:
+Forge uses generated Effect CLI help and validation. Unsupported legacy no-op flags such as `--plain`, `--quiet`, and `--verbose` are rejected. Generated help may display shared parser options or repeated parent names on nested subcommands; the documented command forms in this section are the supported contract. Scope options are command-specific rather than root-global:
 
 ```text
 --project <id>              Override inferred project context or filter by project where supported
 --projects <ids>            Use a comma-separated project set where supported
 --initiative <id>           Use or filter by initiative where supported
---scope <scope>             Structured scope, e.g. project:harness or project-set:a,b
+--scope global              Create a global wayfinder where supported
 --all-records               Include all records where supported
 ```
 
@@ -391,13 +391,13 @@ Creation/mutation commands reject incompatible scope flags unless the command ex
 
 ```text
 forge new initiative --title <title> (--body <md>|--body-file <file>|--body -) --projects <ids>
-forge new wayfinder --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>|--projects <ids>|--initiative <id>|--scope <scope>]
+forge new wayfinder --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>|--projects <ids>|--initiative <id>|--scope global]
 forge new spec --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>] [--initiative <id>] [--generated-by <id>]
 forge new task --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--kind research|prototype|review] [--depends-on <id>]...
 forge new grilling --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--depends-on <id>]...
 ```
 
-Creation commands attach scope from parent, explicit scope flags, initiative, inferred cwd, or a command-specific default. Long prose supports stdin and file flags. Structured JSON input is not part of ordinary creation UX for the first deliverable.
+Creation commands attach scope from parent, explicit project/project-set flags, initiative, inferred cwd, or a command-specific default. `--scope global` is the only supported structured scope flag in this phase and applies to wayfinders. Long prose supports stdin and file flags. Structured JSON input is not part of ordinary creation UX for the first deliverable.
 
 Spec creation under an initiative must resolve exactly one project. If the initiative declares exactly one project, Forge may use it as a convenience; otherwise Forge requires explicit or inferred project context.
 

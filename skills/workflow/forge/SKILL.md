@@ -30,12 +30,15 @@ Use `forge --help` as the live command surface. Common commands for workflow ski
 - `forge project remove <id>`
 - `forge projects`
 - `forge here`
+- `forge new initiative --title <title> (--body <md>|--body-file <file>|--body -) --projects <ids>`
 - `forge new spec --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>] [--initiative <id>] [--generated-by <id>]`
 - `forge new wayfinder --title <title> (--body <md>|--body-file <file>|--body -) [--project <id>|--projects <ids>|--initiative <id>|--scope global]`
 - `forge new task --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--kind research|prototype|review] [--depends-on <id>]...`
 - `forge new grilling --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--depends-on <id>]...`
 - `forge show <record>`
+- `forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]`
 - `forge history <record>` / `forge comments <record>` / `forge updates <record>`
+- `forge initiatives [--project <id>|--all-records]`
 - `forge ready [--blocked] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]`
 - `forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]`
 - `forge start <record>`
@@ -43,9 +46,10 @@ Use `forge --help` as the live command surface. Common commands for workflow ski
 - `forge done <record> --resolution <slug>`
 - `forge deps add <record> --depends-on <id>` / `forge deps remove <record> --depends-on <id>` / `forge deps <record>`
 - `forge tree <record>`
+- `forge open <record>`
 - `forge edit <record>`
 
-If a needed operation is not exposed by `forge --help`, stop and ask for the Forge command surface to be upgraded.
+Forge uses generated Effect CLI help. If help shows shared parser flags on a command or repeats parent names for nested subcommands, still follow the narrower supported combinations documented above; handler validation is authoritative for unsupported record flag combinations. If a needed operation is not exposed by `forge --help`, stop and ask for the Forge command surface to be upgraded.
 
 ## Record kinds
 

@@ -185,6 +185,66 @@ it("when config get receives extra positional input, it should use native Effect
 	expect(stderr.text()).not.toMatch(/Usage: forge config/);
 });
 
+it("when tree receives extra positional input, it should use native Effect CLI validation", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["tree", "1", "extra"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Received unknown argument: 'extra'/);
+	expect(stderr.text()).not.toMatch(/Usage: forge tree/);
+});
+
+it("when deps add misses its dependency flag, it should use native Effect CLI validation", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["deps", "add", "1"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Expected to find option: '--depends-on'/);
+	expect(stderr.text()).not.toMatch(/Usage: forge deps/);
+});
+
+it("when initiative attach receives extra positional input, it should use native Effect CLI validation", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["initiative", "attach", "1", "2", "extra"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Received unknown argument: 'extra'/);
+	expect(stderr.text()).not.toMatch(/Usage: forge initiative/);
+});
+
+it("when initiative project add misses its project argument, it should use native Effect CLI validation", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["initiative", "project", "add", "1"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+
+	expect(code).toBe(1);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(/Missing argument <project>/);
+	expect(stderr.text()).not.toMatch(/Usage: forge initiative/);
+});
+
 it("when injected runCli options are supplied, root flags parsed by the command surface should preserve them", async () => {
 	const home = await mkdtemp(
 		path.join(os.tmpdir(), "forge-cli-injected-home-"),
@@ -1020,6 +1080,37 @@ it("when project add leaf help is requested, it should use generated leaf help",
 	expect(help).toMatch(/<id>/);
 	expect(help).toMatch(/--root/);
 	expect(help).not.toMatch(/Add or remove project roots/);
+	expect(stderr.text()).toBe("");
+});
+
+it("when migrated record leaf help is requested, it should use generated leaf help", async () => {
+	let stdout = capture();
+	let stderr = capture();
+	let code = await runCli(["new", "spec", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	let help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/--title/);
+	expect(help).toMatch(/--body/);
+	expect(help).not.toMatch(/Create Forge records/);
+	expect(stderr.text()).toBe("");
+
+	stdout = capture();
+	stderr = capture();
+	code = await runCli(["comment", "edit", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Edit a record comment/);
+	expect(help).toMatch(/<record>/);
+	expect(help).toMatch(/<comment>/);
+	expect(help).not.toMatch(/--message-file/);
 	expect(stderr.text()).toBe("");
 });
 
