@@ -1,10 +1,10 @@
 ---
-name: to-tickets
+name: to-tasks
 description: Break an approved plan into Forge Tasks under an existing Spec, preserving blockers and adding verification/release work for code changes.
 disable-model-invocation: true
 ---
 
-# To Tickets
+# To Tasks
 
 Break a plan, Spec, or conversation into Forge **Tasks**: tracer-bullet vertical slices under an existing Forge Spec, each declaring the Tasks that block it.
 

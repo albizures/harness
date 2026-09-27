@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for direct GitHub issue operations that are **not** managed by Forge workflow records.
 
-Forge planning skills (`to-spec`, `to-tickets`, `wayfinder`, and related Grilling/Task flows) must use `skills/workflow/forge/SKILL.md` as the Forge reference for command shapes, scope, parent/child relationships, dependencies, readiness, history, comments, and lifecycle rules.
+Forge planning skills (`to-spec`, `to-tasks`, `wayfinder`, and related Grilling/Task flows) must use `skills/workflow/forge/SKILL.md` as the Forge reference for command shapes, scope, parent/child relationships, dependencies, readiness, history, comments, and lifecycle rules.
 
 ## Direct GitHub conventions for non-Forge work
 
