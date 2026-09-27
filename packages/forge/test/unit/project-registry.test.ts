@@ -6,22 +6,33 @@ import { expect, it } from "vitest";
 
 import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
 import { isForgeError } from "../../src/errors.ts";
-import { ensureStoreRoot } from "../../src/filesystem-store.ts";
+import { ensureStoreRootEffect } from "../../src/filesystem-store.ts";
 import {
-	addProject,
 	addProjectEffect,
-	addProjectRoot,
+	addProjectRootEffect,
 	findProjectForPath,
-	listProjects,
 	listProjectsEffect,
 	readProjectEffect,
-	removeProject,
-	removeProjectRoot,
+	removeProjectEffect,
+	removeProjectRootEffect,
 } from "../../src/project-registry.ts";
-import { runForgePromise } from "../../src/runtime.ts";
+import { runTestEffect } from "../support/effect.ts";
 import { storeRootPaths } from "../../src/store-paths.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
+
+const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
+	runTestEffect(ensureStoreRootEffect(...args));
+const addProject = (...args: Parameters<typeof addProjectEffect>) =>
+	runTestEffect(addProjectEffect(...args));
+const addProjectRoot = (...args: Parameters<typeof addProjectRootEffect>) =>
+	runTestEffect(addProjectRootEffect(...args));
+const listProjects = (...args: Parameters<typeof listProjectsEffect>) =>
+	runTestEffect(listProjectsEffect(...args));
+const removeProject = (...args: Parameters<typeof removeProjectEffect>) =>
+	runTestEffect(removeProjectEffect(...args));
+const removeProjectRoot = (...args: Parameters<typeof removeProjectRootEffect>) =>
+	runTestEffect(removeProjectRootEffect(...args));
 
 function failureFromExit(exit: Exit.Exit<unknown, unknown>) {
 	if (!Exit.isFailure(exit)) {
@@ -99,7 +110,7 @@ it("when using the Effect API for projects, it should persist and list registry 
 	await ensureStoreRoot({ storePath, now: fixedDate });
 	const root = parseAbsolutePath("/home/a/projects/harness");
 
-	await runForgePromise(
+	await runTestEffect(
 		addProjectEffect({
 			storePath,
 			id: parseProjectId("harness"),
@@ -108,7 +119,7 @@ it("when using the Effect API for projects, it should persist and list registry 
 		}),
 	);
 
-	const projects = await runForgePromise(listProjectsEffect(storePath));
+	const projects = await runTestEffect(listProjectsEffect(storePath));
 	expect(projects).toMatchObject([{ id: "harness", roots: [root] }]);
 });
 
@@ -118,7 +129,7 @@ it("when the Effect API reads a missing project, it should fail with a project-n
 	);
 	await ensureStoreRoot({ storePath, now: fixedDate });
 
-	const exit = await runForgePromise(
+	const exit = await runTestEffect(
 		Effect.exit(readProjectEffect(storePath, parseProjectId("missing"))),
 	);
 	const error = failureFromExit(exit);
@@ -138,7 +149,7 @@ it("when the Effect API lists projects from a missing store, it should fail with
 		),
 	);
 
-	const exit = await runForgePromise(
+	const exit = await runTestEffect(
 		Effect.exit(listProjectsEffect(storePath)),
 	);
 	const error = failureFromExit(exit);

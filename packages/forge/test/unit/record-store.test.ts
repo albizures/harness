@@ -7,44 +7,38 @@ import { describe, expect, it } from "vitest";
 import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
 import { isForgeError } from "../../src/errors.ts";
 import {
-	ensureStoreRoot,
-	readStoreManifest,
+	ensureStoreRootEffect,
+	readStoreManifestEffect,
 } from "../../src/filesystem-store.ts";
 import type { RecordId } from "../../src/record-domain.ts";
 import {
-	addInitiativeDeclaredProject,
-	addRecordComment,
+	addInitiativeDeclaredProjectEffect,
 	addRecordCommentEffect,
-	addWorkflowRecordDependency,
-	attachWorkflowRecordToInitiative,
-	completeWorkflowRecord,
-	createWorkflowRecord,
+	addWorkflowRecordDependencyEffect,
+	attachWorkflowRecordToInitiativeEffect,
+	completeWorkflowRecordEffect,
 	createWorkflowRecordEffect,
 	formatRecordCommentMarkdown,
 	formatWorkflowRecordMarkdown,
-	listRecordComments,
-	listRecordHistory,
+	listRecordCommentsEffect,
 	listRecordHistoryEffect,
-	listRecordUpdates,
-	listWorkflowRecordReadiness,
+	listRecordUpdatesEffect,
 	listWorkflowRecordReadinessEffect,
 	listWorkflowRecordsEffect,
-	locateWorkflowRecord,
+	locateWorkflowRecordEffect,
 	parseWorkflowRecordMarkdown,
-	readRecordDependencyView,
-	readRecordRelationships,
-	readRecordTree,
-	readWorkflowRecord,
+	readRecordDependencyViewEffect,
+	readRecordRelationshipsEffect,
+	readRecordTreeEffect,
 	readWorkflowRecordEffect,
-	removeInitiativeDeclaredProject,
-	removeWorkflowRecordDependency,
-	replaceRecordCommentFromEditedMarkdown,
-	replaceWorkflowRecordFromEditedMarkdown,
-	selectNextWorkflowRecord,
-	startWorkflowRecord,
+	removeInitiativeDeclaredProjectEffect,
+	removeWorkflowRecordDependencyEffect,
+	replaceRecordCommentFromEditedMarkdownEffect,
+	replaceWorkflowRecordFromEditedMarkdownEffect,
+	selectNextWorkflowRecordEffect,
 	startWorkflowRecordEffect,
 } from "../../src/record-store.ts";
-import { runForgePromise } from "../../src/runtime.ts";
+import { runTestEffect } from "../support/effect.ts";
 import {
 	paddedRecordId,
 	recordFilePath,
@@ -55,6 +49,69 @@ const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 const laterDate = new Date("2026-09-20T00:00:00.000Z");
 const doneUpdateSequence = 3;
 const missingRecordId = 999 as RecordId;
+
+const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
+	runTestEffect(ensureStoreRootEffect(...args));
+const readStoreManifest = (...args: Parameters<typeof readStoreManifestEffect>) =>
+	runTestEffect(readStoreManifestEffect(...args));
+const createWorkflowRecord = (
+	...args: Parameters<typeof createWorkflowRecordEffect>
+) => runTestEffect(createWorkflowRecordEffect(...args));
+const readWorkflowRecord = (...args: Parameters<typeof readWorkflowRecordEffect>) =>
+	runTestEffect(readWorkflowRecordEffect(...args));
+const locateWorkflowRecord = (
+	...args: Parameters<typeof locateWorkflowRecordEffect>
+) => runTestEffect(locateWorkflowRecordEffect(...args));
+const readRecordRelationships = (
+	...args: Parameters<typeof readRecordRelationshipsEffect>
+) => runTestEffect(readRecordRelationshipsEffect(...args));
+const addWorkflowRecordDependency = (
+	...args: Parameters<typeof addWorkflowRecordDependencyEffect>
+) => runTestEffect(addWorkflowRecordDependencyEffect(...args));
+const removeWorkflowRecordDependency = (
+	...args: Parameters<typeof removeWorkflowRecordDependencyEffect>
+) => runTestEffect(removeWorkflowRecordDependencyEffect(...args));
+const attachWorkflowRecordToInitiative = (
+	...args: Parameters<typeof attachWorkflowRecordToInitiativeEffect>
+) => runTestEffect(attachWorkflowRecordToInitiativeEffect(...args));
+const addInitiativeDeclaredProject = (
+	...args: Parameters<typeof addInitiativeDeclaredProjectEffect>
+) => runTestEffect(addInitiativeDeclaredProjectEffect(...args));
+const removeInitiativeDeclaredProject = (
+	...args: Parameters<typeof removeInitiativeDeclaredProjectEffect>
+) => runTestEffect(removeInitiativeDeclaredProjectEffect(...args));
+const readRecordTree = (...args: Parameters<typeof readRecordTreeEffect>) =>
+	runTestEffect(readRecordTreeEffect(...args));
+const readRecordDependencyView = (
+	...args: Parameters<typeof readRecordDependencyViewEffect>
+) => runTestEffect(readRecordDependencyViewEffect(...args));
+const startWorkflowRecord = (
+	...args: Parameters<typeof startWorkflowRecordEffect>
+) => runTestEffect(startWorkflowRecordEffect(...args));
+const completeWorkflowRecord = (
+	...args: Parameters<typeof completeWorkflowRecordEffect>
+) => runTestEffect(completeWorkflowRecordEffect(...args));
+const addRecordComment = (...args: Parameters<typeof addRecordCommentEffect>) =>
+	runTestEffect(addRecordCommentEffect(...args));
+const listRecordComments = (
+	...args: Parameters<typeof listRecordCommentsEffect>
+) => runTestEffect(listRecordCommentsEffect(...args));
+const replaceRecordCommentFromEditedMarkdown = (
+	...args: Parameters<typeof replaceRecordCommentFromEditedMarkdownEffect>
+) => runTestEffect(replaceRecordCommentFromEditedMarkdownEffect(...args));
+const listRecordUpdates = (...args: Parameters<typeof listRecordUpdatesEffect>) =>
+	runTestEffect(listRecordUpdatesEffect(...args));
+const listRecordHistory = (...args: Parameters<typeof listRecordHistoryEffect>) =>
+	runTestEffect(listRecordHistoryEffect(...args));
+const listWorkflowRecordReadiness = (
+	...args: Parameters<typeof listWorkflowRecordReadinessEffect>
+) => runTestEffect(listWorkflowRecordReadinessEffect(...args));
+const selectNextWorkflowRecord = (
+	...args: Parameters<typeof selectNextWorkflowRecordEffect>
+) => runTestEffect(selectNextWorkflowRecordEffect(...args));
+const replaceWorkflowRecordFromEditedMarkdown = (
+	...args: Parameters<typeof replaceWorkflowRecordFromEditedMarkdownEffect>
+) => runTestEffect(replaceWorkflowRecordFromEditedMarkdownEffect(...args));
 
 function failureFromExit(exit: Exit.Exit<unknown, unknown>) {
 	if (!Exit.isFailure(exit)) {
@@ -782,20 +839,20 @@ it("when using Effect read APIs, it should read records, history, readiness, and
 	});
 
 	expect(
-		(await runForgePromise(listWorkflowRecordsEffect(storePath))).map(
+		(await runTestEffect(listWorkflowRecordsEffect(storePath))).map(
 			(record) => record.id,
 		),
 	).toEqual([spec.id, task.id]);
 	expect(
-		(await runForgePromise(readWorkflowRecordEffect(storePath, task.id))).body,
+		(await runTestEffect(readWorkflowRecordEffect(storePath, task.id))).body,
 	).toBe("Task body\n");
 	expect(
-		(await runForgePromise(listRecordHistoryEffect(storePath, task.id))).map(
+		(await runTestEffect(listRecordHistoryEffect(storePath, task.id))).map(
 			(entry) => entry.kind,
 		),
 	).toEqual(["update", "update", "comment"]);
 	expect(
-		(await runForgePromise(listWorkflowRecordReadinessEffect(storePath))).map(
+		(await runTestEffect(listWorkflowRecordReadinessEffect(storePath))).map(
 			(diagnosis) => diagnosis.recordId,
 		),
 	).toEqual([task.id]);
@@ -804,7 +861,7 @@ it("when using Effect read APIs, it should read records, history, readiness, and
 it("when using Effect mutation APIs, it should persist records, lifecycle, comments, and indexes", async () => {
 	const storePath = await tempStore();
 
-	const created = await runForgePromise(
+	const created = await runTestEffect(
 		createWorkflowRecordEffect({
 			storePath,
 			now: fixedDate,
@@ -823,14 +880,14 @@ it("when using Effect mutation APIs, it should persist records, lifecycle, comme
 			},
 		}),
 	);
-	const started = await runForgePromise(
+	const started = await runTestEffect(
 		startWorkflowRecordEffect({
 			storePath,
 			recordId: created.id,
 			now: laterDate,
 		}),
 	);
-	const comment = await runForgePromise(
+	const comment = await runTestEffect(
 		addRecordCommentEffect({
 			storePath,
 			recordId: created.id,
@@ -855,7 +912,7 @@ it("when using Effect mutation APIs, it should persist records, lifecycle, comme
 it("when the Effect create API has invalid references, it should fail with a ForgeError", async () => {
 	const storePath = await tempStore();
 
-	const exit = await runForgePromise(
+	const exit = await runTestEffect(
 		Effect.exit(
 			createWorkflowRecordEffect({
 				storePath,
@@ -888,7 +945,7 @@ it("when the Effect create API has invalid references, it should fail with a For
 it("when the Effect read API misses a record, it should fail with a record-not-found ForgeError", async () => {
 	const storePath = await tempStore();
 
-	const exit = await runForgePromise(
+	const exit = await runTestEffect(
 		Effect.exit(readWorkflowRecordEffect(storePath, missingRecordId)),
 	);
 	const error = failureFromExit(exit);
@@ -927,7 +984,7 @@ describe("when Promise adapters bridge Effect store operations", () => {
 			now: laterDate,
 		});
 
-		const effectRead = await runForgePromise(
+		const effectRead = await runTestEffect(
 			readWorkflowRecordEffect(storePath, created.id),
 		);
 		expect(effectRead).toMatchObject({

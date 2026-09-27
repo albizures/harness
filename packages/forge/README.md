@@ -1,6 +1,6 @@
 # @albizures/forge
 
-Forge is a personal global workflow CLI. The design source of truth is `docs/design/personal-global-workflow-cli-definition.md`; this README summarizes the implemented package operations without redefining the full workflow model.
+Forge is a personal global workflow CLI. The npm package is CLI-only: it publishes the `forge` binary and does not provide a supported library import surface. The design source of truth is `docs/design/personal-global-workflow-cli-definition.md`; this README summarizes the implemented package operations without redefining the full workflow model.
 
 ## Command surface
 
@@ -90,7 +90,7 @@ Use `forge deps add <record> --depends-on <id>` and `forge deps remove <record> 
 
 Use `forge ready` to list currently executable records and `forge ready --blocked` to show records blocked by unfinished dependencies or unavailable parents/children. By default, readiness is scoped to the inferred current project when possible; use `--project <id>`, `--initiative <id>`, or `--all-records` for explicit scope. Add `--include-hitl` to include ready grilling records, and `--planning` to include ready specs or wayfinders that need planning action.
 
-Use `forge ready --json` when automation needs structured ready-record data. The JSON shape is `{ "records": [...] }`, where each record includes `id`, `kind`, `title`, `state`, and optional scope fields. `--json` is available for the ready list view only and is rejected with `--blocked` because blocked diagnostics are explanation-oriented text.
+Use `--json` when automation needs structured output from commands that support JSON presentation, such as `store doctor`, `projects`, `here`, `new`, `show`, `deps`, `ready`, `next`, lifecycle commands, comments/history listings, initiative edits, and config commands. `forge ready --json` returns `{ "records": [...] }`, where each record includes `id`, `kind`, `title`, `state`, and optional scope fields. Unsupported JSON combinations are rejected by handler validation; for example, `forge ready --json` cannot be combined with `--blocked` because blocked diagnostics are explanation-oriented text.
 
 Use `forge next` as the deterministic daily-entry command. It reports the selected record without mutating state. Candidate selection applies the same scoping and inclusion flags as `forge ready`, then picks the oldest ready record id. Use `forge tree <record>` to inspect parent/child structure around a record.
 

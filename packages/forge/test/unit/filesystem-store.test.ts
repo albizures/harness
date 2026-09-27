@@ -7,22 +7,32 @@ import { expect, it, vi } from "vitest";
 import { parseAbsolutePath } from "../../src/domain.ts";
 import { isForgeError } from "../../src/errors.ts";
 import {
-	ensureStoreRoot,
 	ensureStoreRootEffect,
-	loadForgeConfig,
 	loadForgeConfigEffect,
 	readJsonEffect,
-	readStoreManifest,
 	readStoreManifestEffect,
-	storeDoctor,
-	writeForgeConfig,
-	writeJsonFile,
+	storeDoctorEffect,
+	writeForgeConfigEffect,
+	writeJsonFileEffect,
 	writeJsonFileIfMissingEffect,
 } from "../../src/filesystem-store.ts";
-import { runForgePromise } from "../../src/runtime.ts";
+import { runTestEffect } from "../support/effect.ts";
 import { storeRootPaths } from "../../src/store-paths.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
+
+const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
+	runTestEffect(ensureStoreRootEffect(...args));
+const loadForgeConfig = (...args: Parameters<typeof loadForgeConfigEffect>) =>
+	runTestEffect(loadForgeConfigEffect(...args));
+const readStoreManifest = (...args: Parameters<typeof readStoreManifestEffect>) =>
+	runTestEffect(readStoreManifestEffect(...args));
+const storeDoctor = (...args: Parameters<typeof storeDoctorEffect>) =>
+	runTestEffect(storeDoctorEffect(...args));
+const writeForgeConfig = (...args: Parameters<typeof writeForgeConfigEffect>) =>
+	runTestEffect(writeForgeConfigEffect(...args));
+const writeJsonFile = (...args: Parameters<typeof writeJsonFileEffect>) =>
+	runTestEffect(writeJsonFileEffect(...args));
 
 function failureFromExit(exit: Exit.Exit<unknown, unknown>) {
 	if (!Exit.isFailure(exit)) {
@@ -60,11 +70,11 @@ it("when ensuring a store root through the Effect API, it should create readable
 		await mkdtemp(path.join(os.tmpdir(), "forge-store-effect-")),
 	);
 
-	await runForgePromise(
+	await runTestEffect(
 		ensureStoreRootEffect({ storePath: directory, now: fixedDate }),
 	);
 
-	const manifest = await runForgePromise(readStoreManifestEffect(directory));
+	const manifest = await runTestEffect(readStoreManifestEffect(directory));
 	expect(manifest).toMatchObject({
 		nextRecordId: 1,
 		createdAt: fixedDate.toISOString(),
@@ -81,10 +91,10 @@ it("when an Effect JSON write is asked to create only missing files, it should p
 	const filePath = parseAbsolutePath(path.join(directory, "data.json"));
 
 	await expect(
-		runForgePromise(writeJsonFileIfMissingEffect(filePath, { first: true })),
+		runTestEffect(writeJsonFileIfMissingEffect(filePath, { first: true })),
 	).resolves.toBe(true);
 	await expect(
-		runForgePromise(writeJsonFileIfMissingEffect(filePath, { first: false })),
+		runTestEffect(writeJsonFileIfMissingEffect(filePath, { first: false })),
 	).resolves.toBe(false);
 
 	expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ first: true });
@@ -97,7 +107,7 @@ it("when an Effect JSON read receives invalid JSON, it should fail with a store-
 	const filePath = parseAbsolutePath(path.join(directory, "invalid.json"));
 	await writeFile(filePath, "{not json", "utf8");
 
-	const exit = await runForgePromise(Effect.exit(readJsonEffect(filePath)));
+	const exit = await runTestEffect(Effect.exit(readJsonEffect(filePath)));
 	const error = failureFromExit(exit);
 
 	expect(isForgeError(error)).toBe(true);
@@ -112,7 +122,7 @@ it("when an Effect config load has no config file, it should fail with a config-
 		await mkdtemp(path.join(os.tmpdir(), "forge-config-missing-effect-")),
 	);
 
-	const exit = await runForgePromise(
+	const exit = await runTestEffect(
 		Effect.exit(loadForgeConfigEffect({ homeDirectory })),
 	);
 	const error = failureFromExit(exit);

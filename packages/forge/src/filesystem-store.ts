@@ -14,7 +14,6 @@ import {
 	type StoreManifest,
 } from "./domain.ts";
 import { ForgeError } from "./errors.ts";
-import { runForgePromise } from "./runtime.ts";
 import { forgeConfigPath, storeRootPaths } from "./store-paths.ts";
 
 export type StoreIndexFiles = {
@@ -42,13 +41,6 @@ const defaultIndexes: StoreIndexFiles = {
 	byInitiative: {},
 	relationships: {},
 };
-
-export function loadForgeConfig(options: {
-	readonly homeDirectory: AbsolutePath;
-	readonly storePathOverride?: AbsolutePath;
-}): Promise<ForgeConfig> {
-	return runForgePromise(loadForgeConfigEffect(options));
-}
 
 export function loadForgeConfigEffect(options: {
 	readonly homeDirectory: AbsolutePath;
@@ -82,13 +74,6 @@ export function loadForgeConfigEffect(options: {
 	});
 }
 
-export function writeForgeConfig(options: {
-	readonly homeDirectory: AbsolutePath;
-	readonly config: ForgeConfig;
-}): Promise<void> {
-	return runForgePromise(writeForgeConfigEffect(options));
-}
-
 export function writeForgeConfigEffect(options: {
 	readonly homeDirectory: AbsolutePath;
 	readonly config: ForgeConfig;
@@ -97,13 +82,6 @@ export function writeForgeConfigEffect(options: {
 		forgeConfigPath(options.homeDirectory),
 		options.config,
 	);
-}
-
-export function ensureStoreRoot(options: {
-	readonly storePath: AbsolutePath;
-	readonly now?: Date;
-}): Promise<void> {
-	return runForgePromise(ensureStoreRootEffect(options));
 }
 
 export function ensureStoreRootEffect(options: {
@@ -135,11 +113,6 @@ export function ensureStoreRootEffect(options: {
 	});
 }
 
-export function readStoreManifest(
-	storePath: AbsolutePath,
-): Promise<StoreManifest> {
-	return runForgePromise(readStoreManifestEffect(storePath));
-}
 
 export function readStoreManifestEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -153,9 +126,6 @@ export function readStoreManifestEffect(storePath: AbsolutePath) {
 	});
 }
 
-export function ensureIndexFiles(storePath: AbsolutePath): Promise<void> {
-	return runForgePromise(ensureIndexFilesEffect(storePath));
-}
 
 export function ensureIndexFilesEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -180,13 +150,6 @@ export function ensureIndexFilesEffect(storePath: AbsolutePath) {
 			{ concurrency: "unbounded" },
 		);
 	});
-}
-
-export function storeDoctor(options: {
-	readonly storePath: AbsolutePath;
-	readonly repair?: boolean;
-}): Promise<StoreDoctorReport> {
-	return runForgePromise(storeDoctorEffect(options));
 }
 
 export function storeDoctorEffect(options: {
@@ -242,9 +205,6 @@ export function storeDoctorEffect(options: {
 	});
 }
 
-export function readTextFile(filePath: string): Promise<string> {
-	return runForgePromise(readTextFileEffect(filePath));
-}
 
 export function readTextFileEffect(filePath: string) {
 	return Effect.gen(function* () {
@@ -253,9 +213,6 @@ export function readTextFileEffect(filePath: string) {
 	});
 }
 
-export function readJson(filePath: AbsolutePath): Promise<unknown> {
-	return runForgePromise(readJsonEffect(filePath));
-}
 
 export function readJsonEffect(filePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -279,12 +236,6 @@ export function readJsonEffect(filePath: AbsolutePath) {
 	});
 }
 
-export function writeJsonFile(
-	filePath: AbsolutePath,
-	value: unknown,
-): Promise<void> {
-	return runForgePromise(writeJsonFileEffect(filePath, value));
-}
 
 export function writeJsonFileEffect(filePath: AbsolutePath, value: unknown) {
 	return Effect.gen(function* () {
@@ -307,12 +258,6 @@ export function writeJsonFileEffect(filePath: AbsolutePath, value: unknown) {
 	});
 }
 
-export function writeJsonFileIfMissing(
-	filePath: AbsolutePath,
-	value: unknown,
-): Promise<boolean> {
-	return runForgePromise(writeJsonFileIfMissingEffect(filePath, value));
-}
 
 export function writeJsonFileIfMissingEffect(
 	filePath: AbsolutePath,
@@ -327,9 +272,6 @@ export function writeJsonFileIfMissingEffect(
 	});
 }
 
-export function removeFileIfExists(filePath: AbsolutePath): Promise<void> {
-	return runForgePromise(removeFileIfExistsEffect(filePath));
-}
 
 export function removeFileIfExistsEffect(filePath: AbsolutePath) {
 	return Effect.gen(function* () {

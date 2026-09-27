@@ -5,8 +5,8 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { pathToFileURL } from "node:url";
 
-import { isCliEntrypoint, runCli, runCliMain } from "../../src/cli.ts";
-import { runForgePromise } from "../../src/runtime.ts";
+import { isCliEntrypoint, runCliEffect, runCliMain } from "../../src/cli.ts";
+import { runTestEffect } from "../support/effect.ts";
 
 const packageRoot = new URL("../../", import.meta.url);
 
@@ -21,6 +21,13 @@ function capture() {
 		},
 		text: () => text,
 	};
+}
+
+function runCli(
+	args: ReadonlyArray<string>,
+	options: Parameters<typeof runCliEffect>[1] = {},
+) {
+	return runTestEffect(runCliEffect(args, options));
 }
 
 async function runTempStoreCli(
@@ -52,7 +59,7 @@ it("when the package is created, it should expose the forge binary and checks", 
 	);
 	expect(manifest.name).toBe("@albizures/forge");
 	expect(manifest.bin.forge).toBe("./dist/cli.js");
-	expect(manifest.exports["."]).toBe("./dist/index.js");
+	expect(manifest).not.toHaveProperty("exports");
 	expect(manifest.files).toEqual(["dist"]);
 	expect(manifest.scripts.build).toBe("tsc -p tsconfig.build.json");
 	expect(manifest.scripts.typecheck).toBe(
@@ -79,7 +86,7 @@ it("when the CLI main effect runs, it should set the process exit code through t
 	const stderr = capture();
 	const processState: { exitCode?: string | number } = {};
 
-	await runForgePromise(
+	await runTestEffect(
 		runCliMain(
 			["--help"],
 			{ stdout: stdout.stream, stderr: stderr.stream, env: { HOME: "/tmp" } },
@@ -92,8 +99,8 @@ it("when the CLI main effect runs, it should set the process exit code through t
 	expect(stderr.text()).toBe("");
 });
 
-describe("when CLI commands use Promise-facing file adapters", () => {
-	it("should read body files while preserving the Promise CLI interface", async () => {
+describe("when CLI commands use Effect-facing file adapters", () => {
+	it("should read body files through the Effect CLI invocation seam", async () => {
 		const home = await mkdtemp(
 			path.join(os.tmpdir(), "forge-cli-body-file-home-"),
 		);

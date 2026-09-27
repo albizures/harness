@@ -1,20 +1,30 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
-import process from "node:process";
-import { text as readStreamText } from "node:stream/consumers";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+	defaultArgv,
+	defaultCwd,
+	defaultEnv,
+	defaultExitCodeTarget,
+	defaultHomeDirectory,
+	defaultStderr,
+	defaultStdin,
+	defaultStdout,
+	fallbackEditor,
+	isNodeCliEntrypoint,
+	readNodeStreamTextEffect,
+	uniqueNodeProcessSuffix,
+	type ExitCodeTarget,
+} from "./cli-node.ts";
 
 import * as PlatformCommand from "@effect/platform/Command";
 import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { FileSystem } from "@effect/platform/FileSystem";
 import * as Args from "@effect/cli/Args";
-import * as CliApp from "@effect/cli/CliApp";
 import * as CliCommand from "@effect/cli/Command";
 import * as CliConfig from "@effect/cli/CliConfig";
 import * as HelpDoc from "@effect/cli/HelpDoc";
 import * as Options from "@effect/cli/Options";
 import * as ValidationError from "@effect/cli/ValidationError";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 
 import {
 	decodeConfigSetInput,
@@ -84,7 +94,7 @@ import {
 	selectNextWorkflowRecordEffect,
 	startWorkflowRecordEffect,
 } from "./record-store.ts";
-import { runForgeMain, runForgePromise } from "./runtime.ts";
+import { runForgeMain } from "./runtime.ts";
 import { recordFilePath } from "./store-paths.ts";
 
 export type CliOptions = {
@@ -121,6 +131,56 @@ type Parsed = CliInvocationContext & {
 	readonly flags: Readonly<Record<string, FlagValue>>;
 };
 
+type CliRuntimeContext = {
+	readonly invocationContext: CliInvocationContext;
+	readonly setOutput: (output: CommandOutput) => void;
+};
+
+const CliRuntimeContext = Context.GenericTag<CliRuntimeContext>(
+	"@albizures/forge/CliRuntimeContext",
+);
+
+function rootCommandHandler(
+	config: unknown,
+): Effect.Effect<void, unknown, CliRuntimeContext> {
+	return Effect.gen(function* () {
+		const runtime = yield* CliRuntimeContext;
+		const parsed = parsedFromCommandConfig(
+			[],
+			config,
+			config,
+			runtime.invocationContext,
+			[],
+		);
+		const output = present(helpText);
+		runtime.setOutput(output);
+		renderOutput(parsed, output);
+	});
+}
+
+function commandHandler(
+	path: ReadonlyArray<string>,
+	action: CliAction,
+	positionals: ReadonlyArray<string> = [],
+): <A>(
+	config: A,
+) => Effect.Effect<void, unknown, CommandExecutor | FileSystem | CliRuntimeContext> {
+	return <A>(config: A) =>
+		Effect.gen(function* () {
+			const runtime = yield* CliRuntimeContext;
+			const parsed = parsedFromCommandConfig(
+				path,
+				config,
+				{},
+				runtime.invocationContext,
+				positionals,
+			);
+			const output = yield* action(parsed);
+			runtime.setOutput(output);
+			renderOutput(parsed, output);
+		});
+}
+
 const forgeRootOptions = {
 	json: Options.boolean("json").pipe(
 		Options.withDescription("Render command output as JSON."),
@@ -148,25 +208,33 @@ const configGetCommand = CliCommand.make("get", {
 	key: Args.optional(Args.text({ name: "storePath" })),
 	...presentationOptions,
 }).pipe(
+	CliCommand.withHandler(commandHandler(["config", "get"], runConfigGetEffect, ["key"])),
 	CliCommand.withDescription("Print the Forge config or a config value."),
 );
 const configSetCommand = CliCommand.make("set", {
 	key: Args.text({ name: "storePath" }),
 	value: Args.text({ name: "absolute-path" }),
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Set a Forge config value."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["config", "set"], runConfigSetEffect, ["key", "value"])),
+	CliCommand.withDescription("Set a Forge config value."),
+);
 const configCommand = CliCommand.make("config").pipe(
+	CliCommand.withHandler(commandHandler(["config"], runConfigEffect)),
 	CliCommand.withDescription("Read or update Forge CLI configuration."),
 	CliCommand.withSubcommands([configGetCommand, configSetCommand]),
 );
 
 const storePathCommand = CliCommand.make("path").pipe(
+	CliCommand.withHandler(commandHandler(["store", "path"], runStorePathEffect)),
 	CliCommand.withDescription("Print the active Forge store path."),
 );
 const storeDoctorCommand = CliCommand.make("doctor").pipe(
+	CliCommand.withHandler(commandHandler(["store", "doctor"], runStoreDoctorEffect)),
 	CliCommand.withDescription("Validate the active Forge store."),
 );
 const storeCommand = CliCommand.make("store").pipe(
+	CliCommand.withHandler(commandHandler(["store"], runStoreEffect)),
 	CliCommand.withDescription("Inspect the configured Forge store."),
 	CliCommand.withSubcommands([storePathCommand, storeDoctorCommand]),
 );
@@ -184,23 +252,37 @@ const projectAddCommand = CliCommand.make("add", {
 		Options.optional,
 		Options.withDescription("Project remote URL."),
 	),
-}).pipe(CliCommand.withDescription("Register a Forge project."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["project", "add"], runProjectAddEffect, ["id"])),
+	CliCommand.withDescription("Register a Forge project."),
+);
 const projectRootAddCommand = CliCommand.make("add", {
 	id: Args.text({ name: "id" }),
 	root: Args.text({ name: "path" }),
-}).pipe(CliCommand.withDescription("Add a root to a project."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["project", "root", "add"], runProjectRootEffect, ["id", "root"])),
+	CliCommand.withDescription("Add a root to a project."),
+);
 const projectRootRemoveCommand = CliCommand.make("remove", {
 	id: Args.text({ name: "id" }),
 	root: Args.text({ name: "path" }),
-}).pipe(CliCommand.withDescription("Remove a root from a project."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["project", "root", "remove"], runProjectRootEffect, ["id", "root"])),
+	CliCommand.withDescription("Remove a root from a project."),
+);
 const projectRootCommand = CliCommand.make("root").pipe(
+	CliCommand.withHandler(commandHandler(["project", "root"], runProjectEffect)),
 	CliCommand.withDescription("Add or remove project roots."),
 	CliCommand.withSubcommands([projectRootAddCommand, projectRootRemoveCommand]),
 );
 const projectRemoveCommand = CliCommand.make("remove", {
 	id: Args.text({ name: "id" }),
-}).pipe(CliCommand.withDescription("Remove a Forge project."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["project", "remove"], runProjectRemoveEffect, ["id"])),
+	CliCommand.withDescription("Remove a Forge project."),
+);
 const projectCommand = CliCommand.make("project").pipe(
+	CliCommand.withHandler(commandHandler(["project"], runProjectEffect)),
 	CliCommand.withDescription("Register and maintain Forge projects."),
 	CliCommand.withSubcommands([
 		projectAddCommand,
@@ -210,10 +292,12 @@ const projectCommand = CliCommand.make("project").pipe(
 );
 
 const projectsCommand = CliCommand.make("projects").pipe(
+	CliCommand.withHandler(commandHandler(["projects"], runProjectsEffect)),
 	CliCommand.withDescription("List registered Forge projects."),
 );
 
 const hereCommand = CliCommand.make("here").pipe(
+	CliCommand.withHandler(commandHandler(["here"], runHereEffect)),
 	CliCommand.withDescription(
 		"Infer the Forge project for the current directory.",
 	),
@@ -253,14 +337,14 @@ const newRecordCommand = (
 				"review",
 			] as const).pipe(Options.optional),
 			dependsOn: dependsOnOption,
-		});
+		}).pipe(CliCommand.withHandler(commandHandler(["new", kind], runNewEffect)));
 	}
 	return CliCommand.make(kind, {
 		title: titleOption,
 		...bodyOptions,
 		...newScopeOptions,
 		generatedBy: Options.text("generated-by").pipe(Options.optional),
-	});
+	}).pipe(CliCommand.withHandler(commandHandler(["new", kind], runNewEffect)));
 };
 const newInitiativeCommand = newRecordCommand("initiative");
 const newWayfinderCommand = newRecordCommand("wayfinder");
@@ -280,41 +364,59 @@ const newCommand = CliCommand.make("new").pipe(
 const showCommand = CliCommand.make("show", {
 	record: recordArg,
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Show a Forge record."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["show"], runShowEffect, ["record"])),
+	CliCommand.withDescription("Show a Forge record."),
+);
 const startCommand = CliCommand.make("start", {
 	record: recordArg,
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Start a Forge record."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["start"], runStartEffect, ["record"])),
+	CliCommand.withDescription("Start a Forge record."),
+);
 const doneCommand = CliCommand.make("done", {
 	record: recordArg,
 	resolution: Options.text("resolution"),
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Complete a Forge record."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["done"], runDoneEffect, ["record"])),
+	CliCommand.withDescription("Complete a Forge record."),
+);
 const commentEditCommand = CliCommand.make("edit", {
 	record: recordArg,
 	comment: Args.text({ name: "comment" }),
-}).pipe(CliCommand.withDescription("Edit a record comment."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["comment", "edit"], runCommentEffect, ["record", "comment"])),
+	CliCommand.withDescription("Edit a record comment."),
+);
 const commentCommand = CliCommand.make("comment", {
 	record: Args.optional(recordArg),
 	message: Options.text("message").pipe(Options.optional),
 	messageFile: Options.text("message-file").pipe(Options.optional),
 }).pipe(
+	CliCommand.withHandler(commandHandler(["comment"], runCommentEffect, ["record"])),
 	CliCommand.withDescription("Add or edit record comments."),
 	CliCommand.withSubcommands([commentEditCommand]),
 );
 const commentsCommand = CliCommand.make("comments", { record: recordArg }).pipe(
+	CliCommand.withHandler(commandHandler(["comments"], runCommentsEffect, ["record"])),
 	CliCommand.withDescription("List record comments."),
 );
 const updatesCommand = CliCommand.make("updates", { record: recordArg }).pipe(
+	CliCommand.withHandler(commandHandler(["updates"], runUpdatesEffect, ["record"])),
 	CliCommand.withDescription("List record updates."),
 );
 const historyCommand = CliCommand.make("history", { record: recordArg }).pipe(
+	CliCommand.withHandler(commandHandler(["history"], runHistoryEffect, ["record"])),
 	CliCommand.withDescription("List record history."),
 );
 const openCommand = CliCommand.make("open", { record: recordArg }).pipe(
+	CliCommand.withHandler(commandHandler(["open"], runOpenEffect, ["record"])),
 	CliCommand.withDescription("Open a record file."),
 );
 const editCommand = CliCommand.make("edit", { record: recordArg }).pipe(
+	CliCommand.withHandler(commandHandler(["edit"], runEditEffect, ["record"])),
 	CliCommand.withDescription("Edit a record file."),
 );
 
@@ -331,30 +433,44 @@ const initiativesCommand = CliCommand.make("initiatives", {
 	project: Options.text("project").pipe(Options.optional),
 	allRecords: Options.boolean("all-records"),
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("List initiative records."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["initiatives"], runInitiativesEffect)),
+	CliCommand.withDescription("List initiative records."),
+);
 const initiativeAttachCommand = CliCommand.make("attach", {
 	initiative: Args.text({ name: "initiative" }),
 	record: recordArg,
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Attach a record to an initiative."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["initiative", "attach"], runInitiativeEffect, ["initiative", "record"])),
+	CliCommand.withDescription("Attach a record to an initiative."),
+);
 const initiativeDetachCommand = CliCommand.make("detach", {
 	initiative: Args.text({ name: "initiative" }),
 	record: recordArg,
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Detach a record from an initiative."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["initiative", "detach"], runInitiativeEffect, ["initiative", "record"])),
+	CliCommand.withDescription("Detach a record from an initiative."),
+);
 const initiativeProjectAddCommand = CliCommand.make("add", {
 	initiative: Args.text({ name: "initiative" }),
 	project: Args.text({ name: "project" }),
 	...presentationOptions,
-}).pipe(CliCommand.withDescription("Add a declared project to an initiative."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["initiative", "project", "add"], runInitiativeEffect, ["initiative", "project"])),
+	CliCommand.withDescription("Add a declared project to an initiative."),
+);
 const initiativeProjectRemoveCommand = CliCommand.make("remove", {
 	initiative: Args.text({ name: "initiative" }),
 	project: Args.text({ name: "project" }),
 	...presentationOptions,
 }).pipe(
+	CliCommand.withHandler(commandHandler(["initiative", "project", "remove"], runInitiativeEffect, ["initiative", "project"])),
 	CliCommand.withDescription("Remove a declared project from an initiative."),
 );
 const initiativeProjectCommand = CliCommand.make("project").pipe(
+	CliCommand.withHandler(commandHandler(["initiative", "project"], runInitiativeEffect)),
 	CliCommand.withDescription("Maintain initiative project declarations."),
 	CliCommand.withSubcommands([
 		initiativeProjectAddCommand,
@@ -362,6 +478,7 @@ const initiativeProjectCommand = CliCommand.make("project").pipe(
 	]),
 );
 const initiativeCommand = CliCommand.make("initiative").pipe(
+	CliCommand.withHandler(commandHandler(["initiative"], runInitiativeEffect)),
 	CliCommand.withDescription("Maintain initiative membership."),
 	CliCommand.withSubcommands([
 		initiativeAttachCommand,
@@ -373,7 +490,10 @@ const listCommand = CliCommand.make("list", {
 	state: Options.text("state").pipe(Options.optional),
 	kind: Options.text("kind").pipe(Options.optional),
 	...navigationScopeOptions,
-}).pipe(CliCommand.withDescription("List workflow records."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["list"], runListEffect)),
+	CliCommand.withDescription("List workflow records."),
+);
 const readyCommand = CliCommand.make("ready", {
 	blocked: Options.boolean("blocked").pipe(
 		Options.withDescription(
@@ -382,32 +502,45 @@ const readyCommand = CliCommand.make("ready", {
 	),
 	...navigationWorkOptions,
 	...navigationScopeOptions,
-}).pipe(CliCommand.withDescription("List ready or blocked workflow records."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["ready"], runReadyEffect)),
+	CliCommand.withDescription("List ready or blocked workflow records."),
+);
 const nextCommand = CliCommand.make("next", {
 	...navigationWorkOptions,
 	...navigationScopeOptions,
-}).pipe(CliCommand.withDescription("Select the next workflow record."));
+}).pipe(
+	CliCommand.withHandler(commandHandler(["next"], runNextEffect)),
+	CliCommand.withDescription("Select the next workflow record."),
+);
 const treeCommand = CliCommand.make("tree", { record: recordArg }).pipe(
+	CliCommand.withHandler(commandHandler(["tree"], runTreeEffect, ["record"])),
 	CliCommand.withDescription("Show a record tree."),
 );
 const depsAddCommand = CliCommand.make("add", {
 	record: recordArg,
 	dependsOn: Options.text("depends-on"),
 	...presentationOptions,
-});
+}).pipe(
+	CliCommand.withHandler(commandHandler(["deps", "add"], runDepsEffect, ["record"])),
+);
 const depsRemoveCommand = CliCommand.make("remove", {
 	record: recordArg,
 	dependsOn: Options.text("depends-on"),
 	...presentationOptions,
-});
+}).pipe(
+	CliCommand.withHandler(commandHandler(["deps", "remove"], runDepsEffect, ["record"])),
+);
 const depsCommand = CliCommand.make("deps", {
 	record: Args.optional(recordArg),
 }).pipe(
+	CliCommand.withHandler(commandHandler(["deps"], runDepsEffect, ["record"])),
 	CliCommand.withDescription("Show or mutate dependencies."),
 	CliCommand.withSubcommands([depsAddCommand, depsRemoveCommand]),
 );
 
 const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
+	CliCommand.withHandler(rootCommandHandler as any),
 	CliCommand.withDescription("Forge personal workflow CLI"),
 	CliCommand.withSubcommands([
 		configCommand,
@@ -439,12 +572,6 @@ const helpText = `${HelpDoc.toAnsiText(
 	CliCommand.getHelp(forgeRootCommand, CliConfig.defaultConfig),
 )}\n`;
 
-const forgeCliApp = CliApp.make({
-	name: "forge",
-	version: "0.0.0",
-	command: forgeRootCommand.descriptor,
-});
-
 const recentCommentLimit = 3;
 const recentUpdateLimit = 5;
 
@@ -455,212 +582,149 @@ type CliAction = (
 type CliCommandRegistration = {
 	readonly path: ReadonlyArray<string>;
 	readonly descriptor: unknown;
-	readonly action?: CliAction;
-	readonly positionals?: ReadonlyArray<string>;
-};
-
-type CliActionRegistration = {
-	readonly path: ReadonlyArray<string>;
-	readonly action: CliAction;
 };
 
 const cliCommandRegistrations: ReadonlyArray<CliCommandRegistration> = [
-	{ path: ["config"], descriptor: configCommand, action: runConfigEffect },
+	{ path: ["config"], descriptor: configCommand },
 	{
 		path: ["config", "get"],
 		descriptor: configGetCommand,
-		action: runConfigGetEffect,
-		positionals: ["key"],
 	},
 	{
 		path: ["config", "set"],
 		descriptor: configSetCommand,
-		action: runConfigSetEffect,
-		positionals: ["key", "value"],
 	},
-	{ path: ["store"], descriptor: storeCommand, action: runStoreEffect },
+	{ path: ["store"], descriptor: storeCommand },
 	{
 		path: ["store", "path"],
 		descriptor: storePathCommand,
-		action: runStorePathEffect,
 	},
 	{
 		path: ["store", "doctor"],
 		descriptor: storeDoctorCommand,
-		action: runStoreDoctorEffect,
 	},
-	{ path: ["project"], descriptor: projectCommand, action: runProjectEffect },
+	{ path: ["project"], descriptor: projectCommand },
 	{
 		path: ["project", "add"],
 		descriptor: projectAddCommand,
-		action: runProjectAddEffect,
-		positionals: ["id"],
 	},
 	{ path: ["project", "root"], descriptor: projectRootCommand },
 	{
 		path: ["project", "root", "add"],
 		descriptor: projectRootAddCommand,
-		action: runProjectRootEffect,
-		positionals: ["id", "root"],
 	},
 	{
 		path: ["project", "root", "remove"],
 		descriptor: projectRootRemoveCommand,
-		action: runProjectRootEffect,
-		positionals: ["id", "root"],
 	},
 	{
 		path: ["project", "remove"],
 		descriptor: projectRemoveCommand,
-		action: runProjectRemoveEffect,
-		positionals: ["id"],
 	},
 	{ path: ["new"], descriptor: newCommand },
 	{
 		path: ["new", "initiative"],
 		descriptor: newInitiativeCommand,
-		action: runNewEffect,
 	},
 	{
 		path: ["new", "wayfinder"],
 		descriptor: newWayfinderCommand,
-		action: runNewEffect,
 	},
 	{
 		path: ["new", "spec"],
 		descriptor: newSpecCommand,
-		action: runNewEffect,
 	},
 	{
 		path: ["new", "task"],
 		descriptor: newTaskCommand,
-		action: runNewEffect,
 	},
 	{
 		path: ["new", "grilling"],
 		descriptor: newGrillingCommand,
-		action: runNewEffect,
 	},
 	{
 		path: ["show"],
 		descriptor: showCommand,
-		action: runShowEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["start"],
 		descriptor: startCommand,
-		action: runStartEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["done"],
 		descriptor: doneCommand,
-		action: runDoneEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["comment"],
 		descriptor: commentCommand,
-		action: runCommentEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["comment", "edit"],
 		descriptor: commentEditCommand,
-		action: runCommentEffect,
-		positionals: ["record", "comment"],
 	},
 	{
 		path: ["comments"],
 		descriptor: commentsCommand,
-		action: runCommentsEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["updates"],
 		descriptor: updatesCommand,
-		action: runUpdatesEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["history"],
 		descriptor: historyCommand,
-		action: runHistoryEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["initiatives"],
 		descriptor: initiativesCommand,
-		action: runInitiativesEffect,
 	},
 	{ path: ["initiative"], descriptor: initiativeCommand },
 	{
 		path: ["initiative", "attach"],
 		descriptor: initiativeAttachCommand,
-		action: runInitiativeEffect,
-		positionals: ["initiative", "record"],
 	},
 	{
 		path: ["initiative", "detach"],
 		descriptor: initiativeDetachCommand,
-		action: runInitiativeEffect,
-		positionals: ["initiative", "record"],
 	},
 	{ path: ["initiative", "project"], descriptor: initiativeProjectCommand },
 	{
 		path: ["initiative", "project", "add"],
 		descriptor: initiativeProjectAddCommand,
-		action: runInitiativeEffect,
-		positionals: ["initiative", "project"],
 	},
 	{
 		path: ["initiative", "project", "remove"],
 		descriptor: initiativeProjectRemoveCommand,
-		action: runInitiativeEffect,
-		positionals: ["initiative", "project"],
 	},
-	{ path: ["list"], descriptor: listCommand, action: runListEffect },
-	{ path: ["ready"], descriptor: readyCommand, action: runReadyEffect },
-	{ path: ["next"], descriptor: nextCommand, action: runNextEffect },
+	{ path: ["list"], descriptor: listCommand },
+	{ path: ["ready"], descriptor: readyCommand },
+	{ path: ["next"], descriptor: nextCommand },
 	{
 		path: ["tree"],
 		descriptor: treeCommand,
-		action: runTreeEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["deps"],
 		descriptor: depsCommand,
-		action: runDepsEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["deps", "add"],
 		descriptor: depsAddCommand,
-		action: runDepsEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["deps", "remove"],
 		descriptor: depsRemoveCommand,
-		action: runDepsEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["open"],
 		descriptor: openCommand,
-		action: runOpenEffect,
-		positionals: ["record"],
 	},
 	{
 		path: ["edit"],
 		descriptor: editCommand,
-		action: runEditEffect,
-		positionals: ["record"],
 	},
-	{ path: ["projects"], descriptor: projectsCommand, action: runProjectsEffect },
-	{ path: ["here"], descriptor: hereCommand, action: runHereEffect },
+	{ path: ["projects"], descriptor: projectsCommand },
+	{ path: ["here"], descriptor: hereCommand },
 ];
 
 const commandDescriptors = new Map(
@@ -670,13 +734,9 @@ const commandDescriptors = new Map(
 	]),
 );
 
-const operationalCliActions: ReadonlyArray<CliActionRegistration> = [
-	...cliCommandRegistrations.flatMap((registration): Array<CliActionRegistration> =>
-		registration.action === undefined
-			? []
-			: [{ path: registration.path, action: registration.action }],
-	),
-].sort((left, right) => right.path.length - left.path.length);
+function commandKey(path: ReadonlyArray<string>): string {
+	return path.join(" ");
+}
 
 function helpForCommand(command: string): string {
 	const descriptor = commandDescriptors.get(command);
@@ -694,82 +754,88 @@ const commandHelp: Record<string, string> = new Proxy(Object.create(null), {
 	get: (_target, property) => helpForCommand(String(property)),
 });
 
-type ExitCodeTarget = { exitCode?: string | number | null | undefined };
-
-export function runCliMain(
-	argv: ReadonlyArray<string> = process.argv.slice(2),
-	options: CliOptions = {},
-	exitCodeTarget: ExitCodeTarget = process,
-): Effect.Effect<void> {
-	return Effect.promise(async () => {
-		exitCodeTarget.exitCode = await runCli(argv, options);
-	});
+function applyRootInvocationOverrides(
+	context: CliInvocationContext,
+	argv: ReadonlyArray<string>,
+): CliInvocationContext {
+	let presentation = context.presentation;
+	let cwd = context.cwd;
+	let storeOverride = context.storeOverride;
+	for (let index = 0; index < argv.length; index += 1) {
+		const token = argv[index];
+		if (token === "--json") {
+			presentation = "json";
+			continue;
+		}
+		if (token === "--store") {
+			storeOverride = argv[index + 1] ?? storeOverride;
+			index += 1;
+			continue;
+		}
+		if (token?.startsWith("--store=")) {
+			storeOverride = token.slice("--store=".length);
+			continue;
+		}
+		if (token === "--cwd" || token === "-C") {
+			cwd = argv[index + 1] ?? cwd;
+			index += 1;
+			continue;
+		}
+		if (token?.startsWith("--cwd=")) {
+			cwd = token.slice("--cwd=".length);
+		}
+	}
+	return { ...context, presentation, cwd, storeOverride };
 }
 
-export async function runCli(
+export function runCliMain(
+	argv: ReadonlyArray<string> = defaultArgv(),
+	options: CliOptions = {},
+	exitCodeTarget: ExitCodeTarget = defaultExitCodeTarget(),
+): Effect.Effect<void, never, CommandExecutor | FileSystem> {
+	return runCliEffect(argv, options).pipe(
+		Effect.map((code) => {
+			exitCodeTarget.exitCode = code;
+		}),
+	);
+}
+
+export function runCliEffect(
 	argv: ReadonlyArray<string>,
 	options: CliOptions = {},
-): Promise<number> {
-	const stderr = options.stderr ?? process.stderr;
-	try {
-		const baseContext = await createInvocationContext(options);
+): Effect.Effect<number, never, CommandExecutor | FileSystem> {
+	const stderr = options.stderr ?? defaultStderr();
+	return Effect.gen(function* () {
+		const baseContext = applyRootInvocationOverrides(
+			yield* createInvocationContextEffect(options),
+			argv,
+		);
 		if (isHelpInvocation(argv)) {
 			writeOut(baseContext.stdout, helpForCommand(helpCommandName(argv)));
 			return 0;
 		}
 		let output: CommandOutput = { value: undefined, code: 0 };
-		await runForgePromise(
-			CliApp.run(forgeCliApp, ["node", "forge", ...argv], (nativeConfig) =>
-				Effect.gen(function* () {
-					const parsed = parsedFromNativeConfig(nativeConfig, baseContext);
-					output = yield* executeParsedCommandEffect(parsed);
-					renderOutput(parsed, output);
-				}),
-			) as never,
-		);
+		const run = CliCommand.run(forgeRootCommand, {
+			name: "forge",
+			version: "0.0.0",
+		});
+		yield* run(["node", "forge", ...argv]).pipe(
+			Effect.provideService(CliRuntimeContext, {
+				invocationContext: baseContext,
+				setOutput: (nextOutput) => {
+					output = nextOutput;
+				},
+			}),
+		) as unknown as Effect.Effect<void, unknown, CommandExecutor | FileSystem>;
 		return output.code;
-	} catch (error) {
-		writeOut(stderr, `${formatError(error)}\n`);
-		return isForgeError(error) ? 2 : 1;
-	}
-}
-
-function executeParsedCommandEffect(
-	parsed: Parsed,
-): Effect.Effect<CommandOutput, unknown, CommandExecutor | FileSystem> {
-	const action = actionForParsedCommand(parsed);
-	if (action !== undefined) {
-		return action(parsed);
-	}
-	const command = parsed.positionals[0];
-	return Effect.fail(
-		usage(
-			command === undefined
-				? helpText
-				: `Unknown command '${command}'. Run forge --help.`,
+	}).pipe(
+		Effect.catchAll((error) =>
+			Effect.sync(() => {
+				writeOut(stderr, `${formatError(error)}\n`);
+				return isForgeError(error) ? 2 : 1;
+			}),
 		),
 	);
-}
-
-function actionForParsedCommand(parsed: Parsed): CliAction | undefined {
-	const command = parsed.positionals[0];
-	if (command === undefined) {
-		return () => Effect.succeed(present(helpText));
-	}
-	return operationalCliActions.find((registration) =>
-		commandPathMatches(parsed.positionals, registration.path),
-	)?.action;
-}
-
-function commandPathMatches(
-	positionals: ReadonlyArray<string>,
-	path: ReadonlyArray<string>,
-): boolean {
-	return path.every((segment, index) => positionals[index] === segment);
-}
-
-function commandKey(path: ReadonlyArray<string>): string {
-	return path.join(" ");
 }
 
 function runConfigEffect(
@@ -1497,99 +1563,74 @@ function runHereEffect(
 	});
 }
 
-async function createInvocationContext(
+function createInvocationContextEffect(
 	options: CliOptions,
-): Promise<CliInvocationContext> {
-	const stdout = options.stdout ?? process.stdout;
-	const stderr = options.stderr ?? process.stderr;
-	const env = options.env ?? process.env;
-	const homeDirectory = env.FORGE_HOME ?? env.HOME ?? process.env.HOME;
-	if (homeDirectory === undefined) {
-		throw usage("HOME must be set.");
-	}
-	return {
-		presentation: "human",
-		cwd: options.cwd ?? process.cwd(),
-		homeDirectory,
-		stdin: options.stdin ?? process.stdin,
-		stdout,
-		stderr,
-		env,
-	};
+): Effect.Effect<CliInvocationContext, ForgeError> {
+	return Effect.try({
+		try: () => {
+			const stdout = options.stdout ?? defaultStdout();
+			const stderr = options.stderr ?? defaultStderr();
+			const env = options.env ?? defaultEnv();
+			const homeDirectory = defaultHomeDirectory(env);
+			if (homeDirectory === undefined) {
+				throw usage("HOME must be set.");
+			}
+			return {
+				presentation: "human",
+				cwd: options.cwd ?? defaultCwd(),
+				homeDirectory,
+				stdin: options.stdin ?? defaultStdin(),
+				stdout,
+				stderr,
+				env,
+			};
+		},
+		catch: (error) =>
+			error instanceof ForgeError
+				? error
+				: new ForgeError({
+						kind: "config-invalid",
+						message: String(error),
+					}),
+	});
 }
 
 type NativeParsedConfig = Readonly<Record<string, unknown>>;
-type NativeSubcommand = readonly [unknown, NativeParsedConfig];
 
-function parsedFromNativeConfig(
+function parsedFromCommandConfig(
+	path: ReadonlyArray<string>,
+	config: unknown,
 	rootConfig: unknown,
 	baseContext: CliInvocationContext,
+	positionals: ReadonlyArray<string>,
 ): Parsed {
 	const root = asNativeConfig(rootConfig);
-	const path = collectCommandPath(root);
-	const leaf = path.at(-1)?.config ?? root;
-	const flags = collectNativeFlags(root);
+	const leaf = asNativeConfig(config);
+	const flags = {
+		...collectDirectNativeFlags(root),
+		...collectDirectNativeFlags(leaf),
+	};
 	return {
 		...baseContext,
-		presentation: flags.json === true ? "json" : "human",
+		presentation: flags.json === true ? "json" : baseContext.presentation,
 		cwd: optionalString(root.cwd) ?? baseContext.cwd,
-		storeOverride: optionalString(root.store),
+		storeOverride: optionalString(root.store) ?? baseContext.storeOverride,
 		positionals: [
-			...path.map((entry) => entry.name),
-			...leafPositionals(
-				path.map((entry) => entry.name),
-				leaf,
-			),
+			...path,
+			...positionals
+				.map((key) => optionalString(leaf[key]))
+				.filter((value): value is string => value !== undefined),
 		],
 		flags,
 	};
 }
 
-function asNativeConfig(value: unknown): NativeParsedConfig {
-	return typeof value === "object" && value !== null
-		? (value as NativeParsedConfig)
-		: {};
-}
-
-function collectCommandPath(
-	config: NativeParsedConfig,
-): Array<{ name: string; config: NativeParsedConfig }> {
-	const subcommand = nativeSubcommand(config.subcommand);
-	if (subcommand === undefined) {
-		return [];
-	}
-	const [, subcommandConfig] = subcommand;
-	return [
-		{ name: nativeCommandName(subcommand[0]), config: subcommandConfig },
-		...collectCommandPath(subcommandConfig),
-	];
-}
-
-function nativeSubcommand(value: unknown): NativeSubcommand | undefined {
-	const option = value as { readonly _tag?: string; readonly value?: unknown };
-	if (option?._tag !== "Some" || !Array.isArray(option.value)) {
-		return undefined;
-	}
-	const [, config] = option.value;
-	return [option.value[0], asNativeConfig(config)] as const;
-}
-
-function nativeCommandName(tag: unknown): string {
-	const key = String((tag as { readonly key?: unknown })?.key ?? "");
-	const match = /\(([^)]+)\)$/.exec(key);
-	return match?.[1] ?? key;
-}
-
-function collectNativeFlags(
+function collectDirectNativeFlags(
 	config: NativeParsedConfig,
 ): Record<string, FlagValue> {
 	const flags: Record<string, FlagValue> = {};
 	for (const [key, value] of Object.entries(config)) {
 		if (key === "subcommand") {
-			const subcommand = nativeSubcommand(value);
-			if (subcommand !== undefined) {
-				Object.assign(flags, collectNativeFlags(subcommand[1]));
-			}
 			continue;
 		}
 		const flagValue = nativeFlagValue(value);
@@ -1598,6 +1639,12 @@ function collectNativeFlags(
 		}
 	}
 	return flags;
+}
+
+function asNativeConfig(value: unknown): NativeParsedConfig {
+	return typeof value === "object" && value !== null
+		? (value as NativeParsedConfig)
+		: {};
 }
 
 function nativeFlagValue(value: unknown): FlagValue | undefined {
@@ -1632,20 +1679,6 @@ function optionalString(value: unknown): string | undefined {
 
 function nativeFlagName(key: string): string {
 	return key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-}
-
-function leafPositionals(
-	path: ReadonlyArray<string>,
-	leaf: NativeParsedConfig,
-): ReadonlyArray<string> {
-	const registration = cliCommandRegistrations.find(
-		(candidate) => commandKey(candidate.path) === commandKey(path),
-	);
-	return (
-		registration?.positionals
-			?.map((key) => optionalString(leaf[key]))
-			.filter((value): value is string => value !== undefined) ?? []
-	);
 }
 
 function isHelpInvocation(argv: ReadonlyArray<string>): boolean {
@@ -1800,7 +1833,7 @@ function readProseEffect(
 			return yield* readTextFileEffect(input.path);
 		}
 		if (input.source === "stdin") {
-			return yield* Effect.promise(() => readStreamText(parsed.stdin));
+			return yield* readNodeStreamTextEffect(parsed.stdin);
 		}
 		return input.text;
 	});
@@ -2197,7 +2230,7 @@ function recordEditTemporaryPathEffect(filePath: AbsolutePath) {
 	return Effect.try({
 		try: () =>
 			parseAbsolutePath(
-				`${filePath}.edit-${process.pid}-${Date.now()}`,
+				`${filePath}.edit-${uniqueNodeProcessSuffix()}`,
 				"temporaryPath",
 			),
 		catch: (error) => error,
@@ -2212,7 +2245,7 @@ function commentEditTemporaryPathEffect(
 	return Effect.try({
 		try: () =>
 			parseAbsolutePath(
-				`${storePath}/comment-${recordId}-${commentId}.edit-${process.pid}-${Date.now()}.md`,
+				`${storePath}/comment-${recordId}-${commentId}.edit-${uniqueNodeProcessSuffix()}.md`,
 				"temporaryPath",
 			),
 		catch: (error) => error,
@@ -2264,7 +2297,7 @@ function isMissingFileSystemError(error: unknown): boolean {
 }
 
 function runEditorEffect(filePath: AbsolutePath, parsed: Parsed) {
-	const editor = parsed.env?.EDITOR ?? process.env.EDITOR;
+	const editor = fallbackEditor(parsed.env);
 	if (editor === undefined || editor.trim() === "") {
 		return Effect.fail(usage("EDITOR must be set to edit records."));
 	}
@@ -2467,20 +2500,9 @@ function isStoreDoctorReport(value: unknown): value is {
 
 export function isCliEntrypoint(
 	metaUrl = import.meta.url,
-	argv1 = process.argv[1],
+	argv1?: string,
 ) {
-	if (argv1 === undefined) {
-		return false;
-	}
-
-	try {
-		return (
-			pathToFileURL(realpathSync(fileURLToPath(metaUrl))).href ===
-			pathToFileURL(realpathSync(argv1)).href
-		);
-	} catch {
-		return metaUrl === pathToFileURL(argv1).href;
-	}
+	return isNodeCliEntrypoint(metaUrl, argv1);
 }
 
 if (isCliEntrypoint()) {

@@ -16,7 +16,6 @@ import {
 	removeFileIfExistsEffect,
 	writeJsonFileEffect,
 } from "./filesystem-store.ts";
-import { runForgePromise } from "./runtime.ts";
 import { projectFilePath, storeRootPaths } from "./store-paths.ts";
 
 const jsonExtensionLength = ".json".length;
@@ -25,11 +24,6 @@ export type ProjectRegistry = {
 	readonly projects: ReadonlyArray<ProjectRegistryEntry>;
 };
 
-export function listProjects(
-	storePath: AbsolutePath,
-): Promise<ReadonlyArray<ProjectRegistryEntry>> {
-	return runForgePromise(listProjectsEffect(storePath));
-}
 
 export function listProjectsEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -61,12 +55,6 @@ export function listProjectsEffect(storePath: AbsolutePath) {
 	});
 }
 
-export function readProject(
-	storePath: AbsolutePath,
-	id: ProjectId,
-): Promise<ProjectRegistryEntry> {
-	return runForgePromise(readProjectEffect(storePath, id));
-}
 
 export function readProjectEffect(storePath: AbsolutePath, id: ProjectId) {
 	return readProjectFileEffect(storePath, id).pipe(
@@ -82,17 +70,6 @@ export function readProjectEffect(storePath: AbsolutePath, id: ProjectId) {
 			return error;
 		}),
 	);
-}
-
-export function addProject(options: {
-	readonly storePath: AbsolutePath;
-	readonly id: ProjectId;
-	readonly root: AbsolutePath;
-	readonly name?: string;
-	readonly remote?: string;
-	readonly now?: Date;
-}): Promise<ProjectRegistryEntry> {
-	return runForgePromise(addProjectEffect(options));
 }
 
 export function addProjectEffect(options: {
@@ -128,15 +105,6 @@ export function addProjectEffect(options: {
 	});
 }
 
-export function addProjectRoot(options: {
-	readonly storePath: AbsolutePath;
-	readonly id: ProjectId;
-	readonly root: AbsolutePath;
-	readonly now?: Date;
-}): Promise<ProjectRegistryEntry> {
-	return runForgePromise(addProjectRootEffect(options));
-}
-
 export function addProjectRootEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly id: ProjectId;
@@ -155,15 +123,6 @@ export function addProjectRootEffect(options: {
 			updatedAt: iso(options.now ?? new Date()),
 		});
 	});
-}
-
-export function removeProjectRoot(options: {
-	readonly storePath: AbsolutePath;
-	readonly id: ProjectId;
-	readonly root: AbsolutePath;
-	readonly now?: Date;
-}): Promise<ProjectRegistryEntry> {
-	return runForgePromise(removeProjectRootEffect(options));
 }
 
 export function removeProjectRootEffect(options: {
@@ -196,13 +155,6 @@ export function removeProjectRootEffect(options: {
 	});
 }
 
-export function removeProject(options: {
-	readonly storePath: AbsolutePath;
-	readonly id: ProjectId;
-}): Promise<void> {
-	return runForgePromise(removeProjectEffect(options));
-}
-
 export function removeProjectEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly id: ProjectId;
@@ -227,13 +179,6 @@ export function removeProjectEffect(options: {
 			projectFilePath(options.storePath, options.id),
 		);
 	});
-}
-
-export function inferProjectByPath(options: {
-	readonly storePath: AbsolutePath;
-	readonly cwd: AbsolutePath;
-}): Promise<ProjectRegistryEntry | undefined> {
-	return runForgePromise(inferProjectByPathEffect(options));
 }
 
 export function inferProjectByPathEffect(options: {

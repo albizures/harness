@@ -46,7 +46,6 @@ import {
 	readStoreManifestEffect,
 	writeJsonFileEffect,
 } from "./filesystem-store.ts";
-import { runForgePromise } from "./runtime.ts";
 import {
 	commentFilePath,
 	recordFilePath,
@@ -143,14 +142,6 @@ const recordKindsForStorage = [
 	"grilling",
 ] as const;
 
-export function createWorkflowRecord(options: {
-	readonly storePath: AbsolutePath;
-	readonly input: CreateWorkflowRecordInput;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(createWorkflowRecordEffect(options));
-}
-
 export function createWorkflowRecordEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly input: CreateWorkflowRecordInput;
@@ -196,12 +187,6 @@ export function createWorkflowRecordEffect(options: {
 	});
 }
 
-export function readWorkflowRecord(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<WorkflowRecord> {
-	return runForgePromise(readWorkflowRecordEffect(storePath, recordId));
-}
 
 export function readWorkflowRecordEffect(
 	storePath: AbsolutePath,
@@ -216,12 +201,6 @@ export function readWorkflowRecordEffect(
 	});
 }
 
-export function locateWorkflowRecord(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<RecordLocator> {
-	return runForgePromise(locateWorkflowRecordEffect(storePath, recordId));
-}
 
 export function locateWorkflowRecordEffect(
 	storePath: AbsolutePath,
@@ -243,36 +222,16 @@ export function locateWorkflowRecordEffect(
 	});
 }
 
-export function listWorkflowRecords(
-	storePath: AbsolutePath,
-): Promise<Array<WorkflowRecord>> {
-	return readAllWorkflowRecords(storePath);
-}
-
 export function listWorkflowRecordsEffect(storePath: AbsolutePath) {
 	return readAllWorkflowRecordsEffect(storePath);
 }
 
-export function readRecordRelationships(
-	storePath: AbsolutePath,
-): Promise<RelationshipRecordIndex> {
-	return runForgePromise(readRecordRelationshipsEffect(storePath));
-}
 
 export function readRecordRelationshipsEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
 		const value = yield* readJsonEffect(storeRootPaths(storePath).relationshipsIndex);
 		return parseRelationshipRecordIndex(value);
 	});
-}
-
-export function addWorkflowRecordDependency(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly dependsOn: RecordId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(addWorkflowRecordDependencyEffect(options));
 }
 
 export function addWorkflowRecordDependencyEffect(options: {
@@ -323,15 +282,6 @@ export function addWorkflowRecordDependencyEffect(options: {
 	});
 }
 
-export function removeWorkflowRecordDependency(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly dependsOn: RecordId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(removeWorkflowRecordDependencyEffect(options));
-}
-
 export function removeWorkflowRecordDependencyEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
@@ -363,15 +313,6 @@ export function removeWorkflowRecordDependencyEffect(options: {
 		});
 		return updated;
 	});
-}
-
-export function attachWorkflowRecordToInitiative(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly initiativeId: RecordId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(attachWorkflowRecordToInitiativeEffect(options));
 }
 
 export function attachWorkflowRecordToInitiativeEffect(options: {
@@ -416,15 +357,6 @@ export function attachWorkflowRecordToInitiativeEffect(options: {
 	});
 }
 
-export function detachWorkflowRecordFromInitiative(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly initiativeId: RecordId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(detachWorkflowRecordFromInitiativeEffect(options));
-}
-
 export function detachWorkflowRecordFromInitiativeEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
@@ -458,15 +390,6 @@ export function detachWorkflowRecordFromInitiativeEffect(options: {
 	});
 }
 
-export function addInitiativeDeclaredProject(options: {
-	readonly storePath: AbsolutePath;
-	readonly initiativeId: RecordId;
-	readonly project: ProjectId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(addInitiativeDeclaredProjectEffect(options));
-}
-
 export function addInitiativeDeclaredProjectEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly initiativeId: RecordId;
@@ -477,15 +400,6 @@ export function addInitiativeDeclaredProjectEffect(options: {
 		...options,
 		operation: "add",
 	});
-}
-
-export function removeInitiativeDeclaredProject(options: {
-	readonly storePath: AbsolutePath;
-	readonly initiativeId: RecordId;
-	readonly project: ProjectId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(removeInitiativeDeclaredProjectEffect(options));
 }
 
 export function removeInitiativeDeclaredProjectEffect(options: {
@@ -500,12 +414,6 @@ export function removeInitiativeDeclaredProjectEffect(options: {
 	});
 }
 
-export function readRecordTree(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<RecordTreeNode> {
-	return runForgePromise(readRecordTreeEffect(storePath, recordId));
-}
 
 export function readRecordTreeEffect(
 	storePath: AbsolutePath,
@@ -521,12 +429,6 @@ export function readRecordTreeEffect(
 	});
 }
 
-export function readRecordDependencyView(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<RecordDependencyView> {
-	return runForgePromise(readRecordDependencyViewEffect(storePath, recordId));
-}
 
 export function readRecordDependencyViewEffect(
 	storePath: AbsolutePath,
@@ -543,14 +445,6 @@ export function readRecordDependencyViewEffect(
 			catch: (error) => error,
 		});
 	});
-}
-
-export function startWorkflowRecord(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(startWorkflowRecordEffect(options));
 }
 
 export function startWorkflowRecordEffect(options: {
@@ -586,15 +480,6 @@ export function startWorkflowRecordEffect(options: {
 		yield* rebuildRecordIndexesEffect(options.storePath);
 		return updated;
 	});
-}
-
-export function completeWorkflowRecord(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly resolution: string;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(completeWorkflowRecordEffect(options));
 }
 
 export function completeWorkflowRecordEffect(options: {
@@ -638,15 +523,6 @@ export function completeWorkflowRecordEffect(options: {
 	});
 }
 
-export function addRecordComment(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly body: string;
-	readonly now?: Date;
-}): Promise<RecordComment> {
-	return runForgePromise(addRecordCommentEffect(options));
-}
-
 export function addRecordCommentEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
@@ -684,12 +560,6 @@ export function addRecordCommentEffect(options: {
 	});
 }
 
-export function listRecordComments(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<Array<RecordComment>> {
-	return runForgePromise(listRecordCommentsEffect(storePath, recordId));
-}
 
 export function listRecordCommentsEffect(
 	storePath: AbsolutePath,
@@ -699,16 +569,6 @@ export function listRecordCommentsEffect(
 		yield* readWorkflowRecordEffect(storePath, recordId);
 		return yield* readRecordCommentsFromDiskEffect(storePath, recordId);
 	});
-}
-
-export function replaceRecordCommentFromEditedMarkdown(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly commentId: CommentId;
-	readonly markdown: string;
-	readonly now?: Date;
-}): Promise<RecordComment> {
-	return runForgePromise(replaceRecordCommentFromEditedMarkdownEffect(options));
 }
 
 export function replaceRecordCommentFromEditedMarkdownEffect(options: {
@@ -748,12 +608,6 @@ export function replaceRecordCommentFromEditedMarkdownEffect(options: {
 	});
 }
 
-export function listRecordUpdates(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<Array<RecordUpdate>> {
-	return runForgePromise(listRecordUpdatesEffect(storePath, recordId));
-}
 
 export function listRecordUpdatesEffect(
 	storePath: AbsolutePath,
@@ -765,12 +619,6 @@ export function listRecordUpdatesEffect(
 	});
 }
 
-export function listRecordHistory(
-	storePath: AbsolutePath,
-	recordId: RecordId,
-): Promise<ReadonlyArray<RecordHistoryEntry>> {
-	return runForgePromise(listRecordHistoryEffect(storePath, recordId));
-}
 
 export function listRecordHistoryEffect(
 	storePath: AbsolutePath,
@@ -782,13 +630,6 @@ export function listRecordHistoryEffect(
 			updates: yield* listRecordUpdatesEffect(storePath, recordId),
 		});
 	});
-}
-
-export function listWorkflowRecordReadiness(
-	storePath: AbsolutePath,
-	options: WorkflowRecordReadinessQueryOptions = {},
-): Promise<Array<ReadinessDiagnosis>> {
-	return runForgePromise(listWorkflowRecordReadinessEffect(storePath, options));
 }
 
 export function listWorkflowRecordReadinessEffect(
@@ -804,13 +645,6 @@ export function listWorkflowRecordReadinessEffect(
 	});
 }
 
-export function selectNextWorkflowRecord(
-	storePath: AbsolutePath,
-	options: NextRecordOptions = {},
-): Promise<RecordFrontmatter | undefined> {
-	return runForgePromise(selectNextWorkflowRecordEffect(storePath, options));
-}
-
 export function selectNextWorkflowRecordEffect(
 	storePath: AbsolutePath,
 	options: NextRecordOptions = {},
@@ -821,17 +655,6 @@ export function selectNextWorkflowRecordEffect(
 			options,
 		);
 	});
-}
-
-export function replaceWorkflowRecordFromEditedMarkdown(options: {
-	readonly storePath: AbsolutePath;
-	readonly recordId: RecordId;
-	readonly markdown: string;
-	readonly now?: Date;
-}): Promise<WorkflowRecord> {
-	return runForgePromise(
-		replaceWorkflowRecordFromEditedMarkdownEffect(options),
-	);
 }
 
 export function replaceWorkflowRecordFromEditedMarkdownEffect(options: {
@@ -937,9 +760,6 @@ export function parseWorkflowRecordMarkdown(
 	return { ...parsed, body };
 }
 
-export function rebuildRecordIndexes(storePath: AbsolutePath): Promise<void> {
-	return runForgePromise(rebuildRecordIndexesEffect(storePath));
-}
 
 export function rebuildRecordIndexesEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -1423,12 +1243,6 @@ function readRecordUpdatesFromDiskEffect(
 		);
 		return updates.sort((left, right) => left.sequence - right.sequence);
 	});
-}
-
-function readAllWorkflowRecords(
-	storePath: AbsolutePath,
-): Promise<Array<WorkflowRecord>> {
-	return runForgePromise(readAllWorkflowRecordsEffect(storePath));
 }
 
 function readAllWorkflowRecordsEffect(storePath: AbsolutePath) {
