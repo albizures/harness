@@ -281,12 +281,46 @@ function readProjectRecordReferencesEffect(
 		const value = yield* readJsonEffect(
 			storeRootPaths(storePath).byProjectIndex,
 		);
-		if (typeof value !== "object" || value === null || !(id in value)) {
-			return [];
-		}
-		const records = (value as Record<string, unknown>)[id];
-		return Array.isArray(records) ? records : [];
+		const index = parseByProjectRecordIndex(value);
+		return index[id] ?? [];
 	});
+}
+
+type ByProjectRecordIndex = Readonly<Record<string, ReadonlyArray<number>>>;
+
+function parseByProjectRecordIndex(value: unknown): ByProjectRecordIndex {
+	if (!isPlainRecord(value)) {
+		throw new ForgeError({
+			kind: "store-invalid",
+			message: "Forge by-project index is invalid. Index root must be an object.",
+			details: { index: "by-project" },
+		});
+	}
+	const parsed: Record<string, ReadonlyArray<number>> = {};
+	for (const [projectId, recordIds] of Object.entries(value)) {
+		if (!isNumberArray(recordIds)) {
+			throw new ForgeError({
+				kind: "store-invalid",
+				message: `Forge by-project index is invalid. Entry '${projectId}' must be an array of record ids.`,
+				details: { index: "by-project", projectId },
+			});
+		}
+		parsed[projectId] = recordIds;
+	}
+	return parsed;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNumberArray(value: unknown): value is ReadonlyArray<number> {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(item) => typeof item === "number" && Number.isInteger(item) && item > 0,
+		)
+	);
 }
 
 function writeProjectEffect(

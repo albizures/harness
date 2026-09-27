@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Cause, Effect, Exit } from "effect";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { parseAbsolutePath } from "../../src/domain.ts";
 import { isForgeError } from "../../src/errors.ts";
@@ -140,6 +140,29 @@ it("when doctor checks a valid store, it should report ok", async () => {
 	const report = await storeDoctor({ storePath });
 	expect(report.ok).toBe(true);
 	expect(report.problems).toEqual([]);
+});
+
+it("when concurrent atomic JSON writes share a timestamp, they should use distinct temporary files", async () => {
+	const directory = parseAbsolutePath(
+		await mkdtemp(path.join(os.tmpdir(), "forge-json-concurrent-write-")),
+	);
+	const filePath = parseAbsolutePath(path.join(directory, "data.json"));
+	const now = vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+	try {
+		await expect(
+			Promise.all(
+				Array.from({ length: 50 }, (_, index) =>
+					writeJsonFile(filePath, { index }),
+				),
+			),
+		).resolves.toHaveLength(50);
+	} finally {
+		now.mockRestore();
+	}
+
+	const files = await readdir(directory);
+	expect(files).toEqual(["data.json"]);
+	expect(JSON.parse(await readFile(filePath, "utf8"))).toHaveProperty("index");
 });
 
 it("when an atomic JSON write fails after creating a temporary file, it should remove the temporary file", async () => {

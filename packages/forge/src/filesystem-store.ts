@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { FileSystem } from "@effect/platform/FileSystem";
@@ -288,7 +289,7 @@ export function writeJsonFile(
 export function writeJsonFileEffect(filePath: AbsolutePath, value: unknown) {
 	return Effect.gen(function* () {
 		const temporaryPath = parseAbsolutePath(
-			`${filePath}.tmp-${process.pid}-${Date.now()}`,
+			`${filePath}.tmp-${process.pid}-${randomUUID()}`,
 			"temporaryPath",
 		);
 		yield* Effect.gen(function* () {

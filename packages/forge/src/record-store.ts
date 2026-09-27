@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { FileSystem } from "@effect/platform/FileSystem";
@@ -259,9 +260,10 @@ export function readRecordRelationships(
 }
 
 export function readRecordRelationshipsEffect(storePath: AbsolutePath) {
-	return readJsonEffect(
-		storeRootPaths(storePath).relationshipsIndex,
-	) as Effect.Effect<RelationshipRecordIndex, unknown, FileSystem>;
+	return Effect.gen(function* () {
+		const value = yield* readJsonEffect(storeRootPaths(storePath).relationshipsIndex);
+		return parseRelationshipRecordIndex(value);
+	});
 }
 
 export function addWorkflowRecordDependency(options: {
@@ -1237,7 +1239,7 @@ function writeCommentFileEffect(
 function writeAtomicTextFileEffect(filePath: AbsolutePath, content: string) {
 	return Effect.gen(function* () {
 		const temporaryPath = parseAbsolutePath(
-			`${filePath}.tmp-${process.pid}-${Date.now()}`,
+			`${filePath}.tmp-${process.pid}-${randomUUID()}`,
 			"temporaryPath",
 		);
 		yield* Effect.gen(function* () {
@@ -1261,11 +1263,94 @@ function writeAtomicTextFileEffect(filePath: AbsolutePath, content: string) {
 }
 
 function readByIdIndexEffect(storePath: AbsolutePath) {
-	return readJsonEffect(storeRootPaths(storePath).byIdIndex) as Effect.Effect<
-		ByIdRecordIndex,
-		unknown,
-		FileSystem
-	>;
+	return Effect.gen(function* () {
+		const value = yield* readJsonEffect(storeRootPaths(storePath).byIdIndex);
+		return parseByIdRecordIndex(value);
+	});
+}
+
+function parseByIdRecordIndex(value: unknown): ByIdRecordIndex {
+	if (!isPlainRecord(value)) {
+		throw invalidIndexError("by-id", "Index root must be an object.");
+	}
+	const parsed: Record<string, RecordLocator> = {};
+	for (const [recordId, locator] of Object.entries(value)) {
+		if (!isRecordLocator(locator)) {
+			throw invalidIndexError(
+				"by-id",
+				`Entry '${recordId}' must include a valid kind and relative path.`,
+			);
+		}
+		parsed[recordId] = locator;
+	}
+	return parsed;
+}
+
+function parseRelationshipRecordIndex(value: unknown): RelationshipRecordIndex {
+	if (!isPlainRecord(value)) {
+		throw invalidIndexError("relationships", "Index root must be an object.");
+	}
+	const parsed: Record<string, RelationshipRecordIndexEntry> = {};
+	for (const [recordId, entry] of Object.entries(value)) {
+		if (!isRelationshipRecordIndexEntry(entry)) {
+			throw invalidIndexError(
+				"relationships",
+				`Entry '${recordId}' must include valid relationship arrays and nullable references.`,
+			);
+		}
+		parsed[recordId] = entry;
+	}
+	return parsed;
+}
+
+function isRecordLocator(value: unknown): value is RecordLocator {
+	return (
+		isPlainRecord(value) &&
+		recordKindsForStorage.includes(value.kind as RecordKind) &&
+		typeof value.path === "string" &&
+		value.path.length > 0 &&
+		!path.isAbsolute(value.path)
+	);
+}
+
+function isRelationshipRecordIndexEntry(
+	value: unknown,
+): value is RelationshipRecordIndexEntry {
+	return (
+		isPlainRecord(value) &&
+		isNullableNumber(value.parent) &&
+		isNumberArray(value.children) &&
+		isNullableNumber(value.initiative) &&
+		isNumberArray(value.initiativeMembers) &&
+		isNumberArray(value.dependsOn) &&
+		isNumberArray(value.dependents) &&
+		isNullableNumber(value.generatedBy) &&
+		isNumberArray(value.generated)
+	);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+	return value === null || isIndexRecordId(value);
+}
+
+function isNumberArray(value: unknown): value is ReadonlyArray<number> {
+	return Array.isArray(value) && value.every(isIndexRecordId);
+}
+
+function isIndexRecordId(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function invalidIndexError(index: string, message: string): ForgeError {
+	return new ForgeError({
+		kind: "store-invalid",
+		message: `Forge ${index} index is invalid. ${message}`,
+		details: { index },
+	});
 }
 
 function readRecordCommentsFromDiskEffect(

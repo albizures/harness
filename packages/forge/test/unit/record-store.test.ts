@@ -29,8 +29,10 @@ import {
 	listWorkflowRecordReadiness,
 	listWorkflowRecordReadinessEffect,
 	listWorkflowRecordsEffect,
+	locateWorkflowRecord,
 	parseWorkflowRecordMarkdown,
 	readRecordDependencyView,
+	readRecordRelationships,
 	readRecordTree,
 	readWorkflowRecord,
 	readWorkflowRecordEffect,
@@ -107,6 +109,31 @@ it("when creating a workflow record, it should allocate a global id and write ca
 	});
 	expect(JSON.parse(await readFile(paths.byProjectIndex, "utf8"))).toEqual({
 		harness: [1],
+	});
+});
+
+it("when reading the by-id index, it should reject invalid locator shapes", async () => {
+	const storePath = await tempStore();
+	await writeFile(storeRootPaths(storePath).byIdIndex, '{"1":{"kind":"task"}}\n');
+
+	await expect(locateWorkflowRecord(storePath, 1 as RecordId)).rejects.toMatchObject({
+		kind: "store-invalid",
+		message:
+			"Forge by-id index is invalid. Entry '1' must include a valid kind and relative path.",
+	});
+});
+
+it("when reading the relationships index, it should reject invalid relationship shapes", async () => {
+	const storePath = await tempStore();
+	await writeFile(
+		storeRootPaths(storePath).relationshipsIndex,
+		'{"1":{"parent":null,"children":["2"]}}\n',
+	);
+
+	await expect(readRecordRelationships(storePath)).rejects.toMatchObject({
+		kind: "store-invalid",
+		message:
+			"Forge relationships index is invalid. Entry '1' must include valid relationship arrays and nullable references.",
 	});
 });
 

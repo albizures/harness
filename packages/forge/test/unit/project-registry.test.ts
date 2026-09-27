@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Cause, Effect, Exit } from "effect";
@@ -15,9 +15,11 @@ import {
 	listProjects,
 	listProjectsEffect,
 	readProjectEffect,
+	removeProject,
 	removeProjectRoot,
 } from "../../src/project-registry.ts";
 import { runForgePromise } from "../../src/runtime.ts";
+import { storeRootPaths } from "../../src/store-paths.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 
@@ -63,6 +65,31 @@ it("when adding projects and roots, it should persist registry entries", async (
 		now: fixedDate,
 	});
 	expect((await listProjects(storePath))[0]?.roots).toEqual([harnessRoot]);
+});
+
+it("when removing a project, it should reject invalid by-project index shapes", async () => {
+	const storePath = parseAbsolutePath(
+		await mkdtemp(path.join(os.tmpdir(), "forge-projects-invalid-index-")),
+	);
+	await ensureStoreRoot({ storePath, now: fixedDate });
+	await addProject({
+		storePath,
+		id: parseProjectId("harness"),
+		root: parseAbsolutePath("/home/a/projects/harness"),
+		now: fixedDate,
+	});
+	await writeFile(
+		storeRootPaths(storePath).byProjectIndex,
+		'{"harness":["1"]}\n',
+	);
+
+	await expect(
+		removeProject({ storePath, id: parseProjectId("harness") }),
+	).rejects.toMatchObject({
+		kind: "store-invalid",
+		message:
+			"Forge by-project index is invalid. Entry 'harness' must be an array of record ids.",
+	});
 });
 
 it("when using the Effect API for projects, it should persist and list registry entries", async () => {
