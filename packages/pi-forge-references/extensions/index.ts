@@ -33,17 +33,17 @@ export type AutocompleteProvider = {
 	) => boolean;
 };
 
-export type ForgeReadyTask = {
+export type ForgeReadyRecord = {
 	id: number;
 	title: string;
 	state: string;
 	kind: string;
 };
 
-export type ForgeReadyTaskProvider = {
-	getReadyTasks: (options?: {
+export type ForgeReadyRecordProvider = {
+	getReadyRecords: (options?: {
 		signal?: AbortSignal;
-	}) => Promise<Array<ForgeReadyTask> | undefined>;
+	}) => Promise<Array<ForgeReadyRecord> | undefined>;
 };
 
 type ForgeCommandResult = {
@@ -59,7 +59,7 @@ type ForgeCommandRunner = (
 	options: { cwd: string; timeout: number; signal?: AbortSignal },
 ) => Promise<ForgeCommandResult>;
 
-type ForgeReadyTaskProviderOptions = {
+type ForgeReadyRecordProviderOptions = {
 	runCommand?: ForgeCommandRunner;
 	now?: () => number;
 	cacheTtlMs?: number;
@@ -72,13 +72,13 @@ type ForgeReadyOutput = {
 };
 
 type ForgeReferencesExtensionOptions = {
-	createTaskProvider?: (options: {
+	createRecordProvider?: (options: {
 		pi: ExtensionAPI;
 		cwd: string;
 		notify?: (message: string, type?: "info" | "warning" | "error") => void;
-	}) => ForgeReadyTaskProvider;
+	}) => ForgeReadyRecordProvider;
 } & Pick<
-	ForgeReadyTaskProviderOptions,
+	ForgeReadyRecordProviderOptions,
 	"cacheTtlMs" | "notificationCooldownMs" | "now" | "runCommand"
 >;
 
@@ -87,7 +87,7 @@ const DEFAULT_CACHE_TTL_MS = 2_000;
 const DEFAULT_NOTIFICATION_COOLDOWN_MS = 30_000;
 const FORGE_FAILURE_NOTIFICATION = "Forge References autocomplete failed.";
 
-function isForgeReadyTask(value: unknown): value is ForgeReadyTask {
+function isForgeReadyRecord(value: unknown): value is ForgeReadyRecord {
 	if (!value || typeof value !== "object") {
 		return false;
 	}
@@ -98,20 +98,20 @@ function isForgeReadyTask(value: unknown): value is ForgeReadyTask {
 		typeof record.title === "string" &&
 		typeof record.state === "string" &&
 		record.state === "ready" &&
-		record.kind === "task"
+		typeof record.kind === "string"
 	);
 }
 
-function parseForgeReadyTasks(
+function parseForgeReadyRecords(
 	stdout: string,
-): Array<ForgeReadyTask> | undefined {
+): Array<ForgeReadyRecord> | undefined {
 	try {
 		const parsed = JSON.parse(stdout) as ForgeReadyOutput;
 		if (!Array.isArray(parsed.records)) {
 			return undefined;
 		}
 
-		return parsed.records.filter(isForgeReadyTask);
+		return parsed.records.filter(isForgeReadyRecord);
 	} catch {
 		return undefined;
 	}
@@ -130,26 +130,26 @@ function extractForgeReferenceToken(
 	return match?.[1];
 }
 
-function formatTaskItem(task: ForgeReadyTask): AutocompleteItem {
+function formatRecordItem(record: ForgeReadyRecord): AutocompleteItem {
 	return {
-		value: `#${task.id}`,
-		label: `#${task.id} ${task.title}`,
+		value: `#${record.id}`,
+		label: `#${record.id} ${record.kind} ${record.title}`,
 	};
 }
 
-type TaskMatchGroup = "exact-id" | "id-prefix" | "id-substring" | "title";
+type RecordMatchGroup = "exact-id" | "id-prefix" | "id-substring" | "title";
 
-function getTaskMatchGroup(
-	task: ForgeReadyTask,
+function getRecordMatchGroup(
+	record: ForgeReadyRecord,
 	query: string,
-): TaskMatchGroup | undefined {
+): RecordMatchGroup | undefined {
 	const normalizedQuery = query.toLowerCase();
 	if (!normalizedQuery) {
 		return "title";
 	}
 
-	const id = String(task.id).toLowerCase();
-	const title = task.title.toLowerCase();
+	const id = String(record.id).toLowerCase();
+	const title = record.title.toLowerCase();
 	if (id === normalizedQuery) {
 		return "exact-id";
 	}
@@ -165,21 +165,21 @@ function getTaskMatchGroup(
 	return undefined;
 }
 
-function filterTasks(
-	tasks: Array<ForgeReadyTask>,
+function filterRecords(
+	records: Array<ForgeReadyRecord>,
 	query: string,
 ): Array<AutocompleteItem> {
-	const groups: Record<TaskMatchGroup, Array<ForgeReadyTask>> = {
+	const groups: Record<RecordMatchGroup, Array<ForgeReadyRecord>> = {
 		"exact-id": [],
 		"id-prefix": [],
 		"id-substring": [],
 		title: [],
 	};
 
-	for (const task of tasks) {
-		const group = getTaskMatchGroup(task, query);
+	for (const record of records) {
+		const group = getRecordMatchGroup(record, query);
 		if (group) {
-			groups[group].push(task);
+			groups[group].push(record);
 		}
 	}
 
@@ -190,7 +190,7 @@ function filterTasks(
 		...groups.title,
 	]
 		.slice(0, MAX_SUGGESTIONS)
-		.map(formatTaskItem);
+		.map(formatRecordItem);
 }
 
 function applyForgeReferenceCompletion(
@@ -227,11 +227,11 @@ function applyForgeReferenceCompletion(
 	};
 }
 
-export function createForgeReadyTaskProvider(
+export function createForgeReadyRecordProvider(
 	pi: ExtensionAPI,
 	cwd: string,
-	options: ForgeReadyTaskProviderOptions = {},
-): ForgeReadyTaskProvider {
+	options: ForgeReadyRecordProviderOptions = {},
+): ForgeReadyRecordProvider {
 	const runCommand =
 		options.runCommand ??
 		((command, args, commandOptions) => pi.exec(command, args, commandOptions));
@@ -240,7 +240,7 @@ export function createForgeReadyTaskProvider(
 	const notificationCooldownMs =
 		options.notificationCooldownMs ?? DEFAULT_NOTIFICATION_COOLDOWN_MS;
 	let cache:
-		| { expiresAt: number; tasks: Array<ForgeReadyTask> | undefined }
+		| { expiresAt: number; records: Array<ForgeReadyRecord> | undefined }
 		| undefined;
 	let lastNotificationAt = Number.NEGATIVE_INFINITY;
 
@@ -254,20 +254,20 @@ export function createForgeReadyTaskProvider(
 		options.notify?.(FORGE_FAILURE_NOTIFICATION, "error");
 	}
 
-	function cacheResult(tasks: Array<ForgeReadyTask> | undefined) {
-		cache = { expiresAt: now() + cacheTtlMs, tasks };
-		return tasks;
+	function cacheResult(records: Array<ForgeReadyRecord> | undefined) {
+		cache = { expiresAt: now() + cacheTtlMs, records };
+		return records;
 	}
 
 	return {
-		getReadyTasks: async (requestOptions = {}) => {
+		getReadyRecords: async (requestOptions = {}) => {
 			if (requestOptions.signal?.aborted) {
 				return undefined;
 			}
 
 			const currentTime = now();
 			if (cache && currentTime < cache.expiresAt) {
-				return cache.tasks;
+				return cache.records;
 			}
 
 			try {
@@ -290,11 +290,11 @@ export function createForgeReadyTaskProvider(
 					return cacheResult(undefined);
 				}
 
-				const tasks = parseForgeReadyTasks(result.stdout);
-				if (!tasks) {
+				const records = parseForgeReadyRecords(result.stdout);
+				if (!records) {
 					notifyFailure();
 				}
-				return cacheResult(tasks);
+				return cacheResult(records);
 			} catch {
 				if (requestOptions.signal?.aborted) {
 					return undefined;
@@ -309,7 +309,7 @@ export function createForgeReadyTaskProvider(
 
 export function createForgeReferencesAutocompleteProvider(
 	current: AutocompleteProvider,
-	taskProvider: ForgeReadyTaskProvider,
+	recordProvider: ForgeReadyRecordProvider,
 ): AutocompleteProvider {
 	return {
 		triggerCharacters: Array.from(
@@ -327,14 +327,14 @@ export function createForgeReferencesAutocompleteProvider(
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
 
-			const tasks = await taskProvider.getReadyTasks({
+			const records = await recordProvider.getReadyRecords({
 				signal: options.signal,
 			});
-			if (options.signal.aborted || !tasks || tasks.length === 0) {
+			if (options.signal.aborted || !records || records.length === 0) {
 				return null;
 			}
 
-			const items = filterTasks(tasks, token);
+			const items = filterRecords(records, token);
 			if (items.length === 0) {
 				return null;
 			}
@@ -386,9 +386,9 @@ export function registerForgeReferencesExtension(
 		}
 
 		const notify = ctx.ui.notify?.bind(ctx.ui);
-		const taskProvider =
-			options.createTaskProvider?.({ pi, cwd: ctx.cwd, notify }) ??
-			createForgeReadyTaskProvider(pi, ctx.cwd, {
+		const recordProvider =
+			options.createRecordProvider?.({ pi, cwd: ctx.cwd, notify }) ??
+			createForgeReadyRecordProvider(pi, ctx.cwd, {
 				cacheTtlMs: options.cacheTtlMs,
 				notificationCooldownMs: options.notificationCooldownMs,
 				now: options.now,
@@ -397,7 +397,7 @@ export function registerForgeReferencesExtension(
 			});
 
 		ctx.ui.addAutocompleteProvider((current) =>
-			createForgeReferencesAutocompleteProvider(current, taskProvider),
+			createForgeReferencesAutocompleteProvider(current, recordProvider),
 		);
 	});
 }

@@ -1,11 +1,11 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: Tests use focused fakes for the Pi extension API.
 import { describe, expect, it } from "vitest";
 import {
-	createForgeReadyTaskProvider,
+	createForgeReadyRecordProvider,
 	createForgeReferencesAutocompleteProvider,
 	registerForgeReferencesExtension,
 	type AutocompleteProvider,
-	type ForgeReadyTask,
+	type ForgeReadyRecord,
 } from "../../../extensions/index.ts";
 
 function createNativeProvider(): AutocompleteProvider & {
@@ -33,7 +33,7 @@ function createNativeProvider(): AutocompleteProvider & {
 
 const AUDIT_TASK_ID = 35;
 const PACKAGE_TASK_ID = 43;
-const FORGE_TASK_REFERENCE_CURSOR_COL = 13;
+const FORGE_RECORD_REFERENCE_CURSOR_COL = 15;
 const REGISTERED_PROVIDER_REFERENCE_CURSOR_COL = 7;
 const INLINE_TOKEN_CURSOR_COL = 9;
 const MARKDOWN_HEADING_CURSOR_COL = 5;
@@ -49,30 +49,36 @@ const NOTIFICATION_COOLDOWN_EXPIRED_MS = 31_000;
 const SHORT_CACHE_TTL_MS = 2_000;
 const NOTIFICATION_COOLDOWN_MS = 30_000;
 
-function createTask(id: number, title: string): ForgeReadyTask {
-	return { id, title, state: "ready", kind: "task" };
+function createRecord(
+	id: number,
+	title: string,
+	kind = "task",
+): ForgeReadyRecord {
+	return { id, title, state: "ready", kind };
 }
 
 describe("Forge References autocomplete", () => {
-	it("should suggest ready Forge task references when the prompt token starts with #", async () => {
+	it("should suggest ready Forge record references when the prompt token starts with #", async () => {
 		const native = createNativeProvider();
 		const provider = createForgeReferencesAutocompleteProvider(native, {
-			getReadyTasks: async () => [
-				createTask(
+			getReadyRecords: async () => [
+				createRecord(
 					AUDIT_TASK_ID,
 					"Audit Forge effectful seams before migration",
+					"spec",
 				),
-				createTask(
+				createRecord(
 					PACKAGE_TASK_ID,
 					"Create Pi Forge References package skeleton",
+					"wayfinder",
 				),
 			],
 		});
 
 		const suggestions = await provider.getSuggestions(
-			["forge task #4"],
+			["forge record #4"],
 			0,
-			FORGE_TASK_REFERENCE_CURSOR_COL,
+			FORGE_RECORD_REFERENCE_CURSOR_COL,
 			{ signal: new AbortController().signal },
 		);
 
@@ -81,7 +87,7 @@ describe("Forge References autocomplete", () => {
 			items: [
 				{
 					value: "#43",
-					label: "#43 Create Pi Forge References package skeleton",
+					label: "#43 wayfinder Create Pi Forge References package skeleton",
 				},
 			],
 		});
@@ -91,7 +97,7 @@ describe("Forge References autocomplete", () => {
 	it("should preserve existing trigger characters and add the Forge reference trigger", () => {
 		const native = createNativeProvider();
 		const provider = createForgeReferencesAutocompleteProvider(native, {
-			getReadyTasks: async () => [],
+			getReadyRecords: async () => [],
 		});
 
 		expect(provider.triggerCharacters).toEqual(["/", "#"]);
@@ -100,8 +106,8 @@ describe("Forge References autocomplete", () => {
 	it("should fall back to the existing provider outside a Forge reference token", async () => {
 		const native = createNativeProvider();
 		const provider = createForgeReferencesAutocompleteProvider(native, {
-			getReadyTasks: async () => [
-				createTask(PACKAGE_TASK_ID, "Create package skeleton"),
+			getReadyRecords: async () => [
+				createRecord(PACKAGE_TASK_ID, "Create package skeleton"),
 			],
 		});
 
@@ -115,7 +121,7 @@ describe("Forge References autocomplete", () => {
 	it("should suppress Markdown heading starts", async () => {
 		const native = createNativeProvider();
 		const provider = createForgeReferencesAutocompleteProvider(native, {
-			getReadyTasks: async () => [createTask(PACKAGE_TASK_ID, "Task")],
+			getReadyRecords: async () => [createRecord(PACKAGE_TASK_ID, "Record")],
 		});
 
 		await provider.getSuggestions(["  ###"], 0, MARKDOWN_HEADING_CURSOR_COL, {
@@ -128,11 +134,11 @@ describe("Forge References autocomplete", () => {
 	it("should sort id prefix matches before title matches while preserving Forge order", async () => {
 		const native = createNativeProvider();
 		const provider = createForgeReferencesAutocompleteProvider(native, {
-			getReadyTasks: async () => [
-				createTask(ALPHA_TASK_ID, "Alpha work"),
-				createTask(FIRST_TITLE_MATCH_TASK_ID, "First title match"),
-				createTask(SECOND_TITLE_MATCH_TASK_ID, "Second title match"),
-				createTask(ALPHA_FOLLOW_UP_TASK_ID, "Alpha follow-up"),
+			getReadyRecords: async () => [
+				createRecord(ALPHA_TASK_ID, "Alpha work"),
+				createRecord(FIRST_TITLE_MATCH_TASK_ID, "First title match"),
+				createRecord(SECOND_TITLE_MATCH_TASK_ID, "Second title match"),
+				createRecord(ALPHA_FOLLOW_UP_TASK_ID, "Alpha follow-up"),
 			],
 		});
 
@@ -149,14 +155,14 @@ describe("Forge References autocomplete", () => {
 	it("should replace only the active Forge reference token when applying a suggestion", () => {
 		const native = createNativeProvider();
 		const provider = createForgeReferencesAutocompleteProvider(native, {
-			getReadyTasks: async () => [],
+			getReadyRecords: async () => [],
 		});
 
 		const applied = provider.applyCompletion(
 			["please handle #4 then"],
 			0,
 			APPLY_REFERENCE_CURSOR_COL,
-			{ value: "#43", label: "#43 Task" },
+			{ value: "#43", label: "#43 task Record" },
 			"#4",
 		);
 
@@ -169,7 +175,7 @@ describe("Forge References autocomplete", () => {
 	});
 });
 
-describe("createForgeReadyTaskProvider", () => {
+describe("createForgeReadyRecordProvider", () => {
 	it("should shell out to FORGE_BIN with ready --json using the session cwd", async () => {
 		const previousForgeBin = process.env.FORGE_BIN;
 		process.env.FORGE_BIN = "/custom/forge";
@@ -182,8 +188,8 @@ describe("createForgeReadyTaskProvider", () => {
 		};
 
 		try {
-			const provider = createForgeReadyTaskProvider(pi as any, "/repo");
-			await provider.getReadyTasks();
+			const provider = createForgeReadyRecordProvider(pi as any, "/repo");
+			await provider.getReadyRecords();
 		} finally {
 			process.env.FORGE_BIN = previousForgeBin;
 		}
@@ -209,8 +215,8 @@ describe("createForgeReadyTaskProvider", () => {
 		};
 
 		try {
-			const provider = createForgeReadyTaskProvider(pi as any, "/repo");
-			await provider.getReadyTasks();
+			const provider = createForgeReadyRecordProvider(pi as any, "/repo");
+			await provider.getReadyRecords();
 		} finally {
 			process.env.FORGE_BIN = previousForgeBin;
 		}
@@ -218,10 +224,44 @@ describe("createForgeReadyTaskProvider", () => {
 		expect(execCalls[0][0]).toBe("forge");
 	});
 
+	it("should return every ready record kind from Forge JSON", async () => {
+		const provider = createForgeReadyRecordProvider({} as any, "/repo", {
+			runCommand: async () => ({
+				code: 0,
+				stdout: JSON.stringify({
+					records: [
+						{ id: 1, kind: "spec", state: "ready", title: "Define workflow" },
+						{
+							id: 2,
+							kind: "task",
+							state: "ready",
+							title: "Implement workflow",
+						},
+						{
+							id: 3,
+							kind: "grilling",
+							state: "ready",
+							title: "Clarify workflow",
+						},
+						{ id: 4, kind: "task", state: "done", title: "Finished workflow" },
+					],
+				}),
+				stderr: "",
+				killed: false,
+			}),
+		});
+
+		expect(await provider.getReadyRecords()).toEqual([
+			{ id: 1, kind: "spec", state: "ready", title: "Define workflow" },
+			{ id: 2, kind: "task", state: "ready", title: "Implement workflow" },
+			{ id: 3, kind: "grilling", state: "ready", title: "Clarify workflow" },
+		]);
+	});
+
 	it("should cache successful empty ready sets for the configured TTL", async () => {
 		let now = CACHE_START_MS;
 		let calls = 0;
-		const provider = createForgeReadyTaskProvider({} as any, "/repo", {
+		const provider = createForgeReadyRecordProvider({} as any, "/repo", {
 			now: () => now,
 			cacheTtlMs: SHORT_CACHE_TTL_MS,
 			runCommand: async () => {
@@ -230,9 +270,9 @@ describe("createForgeReadyTaskProvider", () => {
 			},
 		});
 
-		expect(await provider.getReadyTasks()).toEqual([]);
+		expect(await provider.getReadyRecords()).toEqual([]);
 		now = CACHE_HIT_MS;
-		expect(await provider.getReadyTasks()).toEqual([]);
+		expect(await provider.getReadyRecords()).toEqual([]);
 
 		expect(calls).toBe(1);
 	});
@@ -241,7 +281,7 @@ describe("createForgeReadyTaskProvider", () => {
 		let now = CACHE_START_MS;
 		let calls = 0;
 		const notifications: Array<{ message: string; type?: string }> = [];
-		const provider = createForgeReadyTaskProvider({} as any, "/repo", {
+		const provider = createForgeReadyRecordProvider({} as any, "/repo", {
 			now: () => now,
 			cacheTtlMs: SHORT_CACHE_TTL_MS,
 			notify: (message, type) => notifications.push({ message, type }),
@@ -251,9 +291,9 @@ describe("createForgeReadyTaskProvider", () => {
 			},
 		});
 
-		expect(await provider.getReadyTasks()).toBeUndefined();
+		expect(await provider.getReadyRecords()).toBeUndefined();
 		now = CACHE_HIT_MS;
-		expect(await provider.getReadyTasks()).toBeUndefined();
+		expect(await provider.getReadyRecords()).toBeUndefined();
 
 		expect(calls).toBe(1);
 		expect(notifications).toEqual([
@@ -264,7 +304,7 @@ describe("createForgeReadyTaskProvider", () => {
 	it("should rate-limit failure notifications by the configured cooldown", async () => {
 		let now = CACHE_START_MS;
 		const notifications: Array<{ message: string; type?: string }> = [];
-		const provider = createForgeReadyTaskProvider({} as any, "/repo", {
+		const provider = createForgeReadyRecordProvider({} as any, "/repo", {
 			now: () => now,
 			cacheTtlMs: 0,
 			notificationCooldownMs: NOTIFICATION_COOLDOWN_MS,
@@ -277,11 +317,11 @@ describe("createForgeReadyTaskProvider", () => {
 			}),
 		});
 
-		await provider.getReadyTasks();
+		await provider.getReadyRecords();
 		now = NOTIFICATION_COOLDOWN_HIT_MS;
-		await provider.getReadyTasks();
+		await provider.getReadyRecords();
 		now = NOTIFICATION_COOLDOWN_EXPIRED_MS;
-		await provider.getReadyTasks();
+		await provider.getReadyRecords();
 
 		expect(notifications).toEqual([
 			{ message: "Forge References autocomplete failed.", type: "error" },
@@ -291,15 +331,15 @@ describe("createForgeReadyTaskProvider", () => {
 
 	it("should treat invalid Forge JSON as a cached failure", async () => {
 		let calls = 0;
-		const provider = createForgeReadyTaskProvider({} as any, "/repo", {
+		const provider = createForgeReadyRecordProvider({} as any, "/repo", {
 			runCommand: async () => {
 				calls += 1;
 				return { code: 0, stdout: "not-json", stderr: "", killed: false };
 			},
 		});
 
-		expect(await provider.getReadyTasks()).toBeUndefined();
-		expect(await provider.getReadyTasks()).toBeUndefined();
+		expect(await provider.getReadyRecords()).toBeUndefined();
+		expect(await provider.getReadyRecords()).toBeUndefined();
 
 		expect(calls).toBe(1);
 	});
@@ -308,7 +348,7 @@ describe("createForgeReadyTaskProvider", () => {
 		const controller = new AbortController();
 		const notifications: Array<{ message: string; type?: string }> = [];
 		let receivedSignal: AbortSignal | undefined;
-		const provider = createForgeReadyTaskProvider({} as any, "/repo", {
+		const provider = createForgeReadyRecordProvider({} as any, "/repo", {
 			notify: (message, type) => notifications.push({ message, type }),
 			runCommand: async (_command, _args, options) => {
 				receivedSignal = options.signal;
@@ -318,7 +358,7 @@ describe("createForgeReadyTaskProvider", () => {
 		});
 
 		expect(
-			await provider.getReadyTasks({ signal: controller.signal }),
+			await provider.getReadyRecords({ signal: controller.signal }),
 		).toBeUndefined();
 
 		expect(receivedSignal).toBe(controller.signal);
@@ -330,10 +370,10 @@ describe("registerForgeReferencesExtension", () => {
 	it("should register an autocomplete provider for session start without querying Forge", () => {
 		const handlers = new Map<string, any>();
 		const autocompleteProviders: Array<any> = [];
-		let readyTaskCalls = 0;
-		const taskProvider = {
-			getReadyTasks: async () => {
-				readyTaskCalls += 1;
+		let readyRecordCalls = 0;
+		const recordProvider = {
+			getReadyRecords: async () => {
+				readyRecordCalls += 1;
 				return [];
 			},
 		};
@@ -342,7 +382,7 @@ describe("registerForgeReferencesExtension", () => {
 		};
 
 		registerForgeReferencesExtension(pi as any, {
-			createTaskProvider: () => taskProvider,
+			createRecordProvider: () => recordProvider,
 		});
 		handlers.get("session_start")(
 			{},
@@ -357,7 +397,7 @@ describe("registerForgeReferencesExtension", () => {
 		);
 
 		expect(autocompleteProviders).toHaveLength(1);
-		expect(readyTaskCalls).toBe(0);
+		expect(readyRecordCalls).toBe(0);
 	});
 
 	it("should query Forge only after registered autocomplete receives an active reference token", async () => {
@@ -365,11 +405,11 @@ describe("registerForgeReferencesExtension", () => {
 		const autocompleteProviderFactories: Array<
 			(current: AutocompleteProvider) => AutocompleteProvider
 		> = [];
-		let readyTaskCalls = 0;
-		const taskProvider = {
-			getReadyTasks: async () => {
-				readyTaskCalls += 1;
-				return [createTask(PACKAGE_TASK_ID, "Create package skeleton")];
+		let readyRecordCalls = 0;
+		const recordProvider = {
+			getReadyRecords: async () => {
+				readyRecordCalls += 1;
+				return [createRecord(PACKAGE_TASK_ID, "Create package skeleton")];
 			},
 		};
 		const pi = {
@@ -377,7 +417,7 @@ describe("registerForgeReferencesExtension", () => {
 		};
 
 		registerForgeReferencesExtension(pi as any, {
-			createTaskProvider: () => taskProvider,
+			createRecordProvider: () => recordProvider,
 		});
 		handlers.get("session_start")(
 			{},
@@ -393,7 +433,7 @@ describe("registerForgeReferencesExtension", () => {
 
 		const provider = autocompleteProviderFactories[0](createNativeProvider());
 
-		expect(readyTaskCalls).toBe(0);
+		expect(readyRecordCalls).toBe(0);
 		expect(
 			await provider.getSuggestions(
 				["task #4"],
@@ -405,21 +445,21 @@ describe("registerForgeReferencesExtension", () => {
 			),
 		).toEqual({
 			prefix: "#4",
-			items: [{ value: "#43", label: "#43 Create package skeleton" }],
+			items: [{ value: "#43", label: "#43 task Create package skeleton" }],
 		});
-		expect(readyTaskCalls).toBe(1);
+		expect(readyRecordCalls).toBe(1);
 	});
 
 	it("should not register an autocomplete provider outside TUI mode", () => {
 		const handlers = new Map<string, any>();
 		const autocompleteProviders: Array<any> = [];
-		const taskProvider = { getReadyTasks: async () => [] };
+		const recordProvider = { getReadyRecords: async () => [] };
 		const pi = {
 			on: (event: string, handler: any) => handlers.set(event, handler),
 		};
 
 		registerForgeReferencesExtension(pi as any, {
-			createTaskProvider: () => taskProvider,
+			createRecordProvider: () => recordProvider,
 		});
 		handlers.get("session_start")(
 			{},
