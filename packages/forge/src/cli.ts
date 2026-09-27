@@ -107,6 +107,59 @@ export type CliOptions = {
 
 type Presentation = "human" | "json";
 
+type SummaryChild = {
+	readonly record: RecordFrontmatter;
+	readonly dependsOn: ReadonlyArray<RecordFrontmatter>;
+	readonly missingDependencies: ReadonlyArray<RecordId>;
+	readonly latestComment: RecordComment | null;
+};
+
+type RecordSummaryView = {
+	readonly record: RecordFrontmatter;
+	readonly dependsOn: ReadonlyArray<RecordFrontmatter>;
+	readonly missingDependencies: ReadonlyArray<RecordId>;
+	readonly latestComment: RecordComment | null;
+	readonly children: ReadonlyArray<SummaryChild>;
+};
+
+type SummaryRecordFact = {
+	readonly id: RecordId;
+	readonly title: string;
+	readonly kind: RecordKind;
+	readonly subkind: TaskSubkind | null;
+	readonly state: RecordFrontmatter["state"];
+	readonly resolution: string | null;
+	readonly scope: RecordFrontmatter["scope"];
+	readonly parent: RecordId | null;
+	readonly initiative: RecordId | null;
+	readonly generatedBy: RecordId | null;
+	readonly tags: ReadonlyArray<string>;
+	readonly createdAt: string;
+	readonly updatedAt: string;
+};
+
+type SummaryDependencyFacts = {
+	readonly dependsOn: ReadonlyArray<SummaryRecordFact>;
+	readonly missing: ReadonlyArray<RecordId>;
+	readonly blockers: {
+		readonly records: ReadonlyArray<SummaryRecordFact>;
+		readonly missing: ReadonlyArray<RecordId>;
+	};
+};
+
+type JsonSummaryChild = {
+	readonly record: SummaryRecordFact;
+	readonly dependencies: SummaryDependencyFacts;
+	readonly latestComment: RecordComment | null;
+};
+
+type JsonRecordSummaryView = {
+	readonly record: SummaryRecordFact;
+	readonly dependencies: SummaryDependencyFacts;
+	readonly latestComment: RecordComment | null;
+	readonly children: ReadonlyArray<JsonSummaryChild>;
+};
+
 type FlagValue = string | boolean | ReadonlyArray<string>;
 
 type CliInvocationContext = {
@@ -140,8 +193,8 @@ const CliRuntimeContext = Context.GenericTag<CliRuntimeContext>(
 	"@albizures/forge/CliRuntimeContext",
 );
 
-function rootCommandHandler(
-	config: unknown,
+function rootCommandHandler<A>(
+	config: A,
 ): Effect.Effect<void, unknown, CliRuntimeContext> {
 	return Effect.gen(function* () {
 		const runtime = yield* CliRuntimeContext;
@@ -164,7 +217,11 @@ function commandHandler(
 	positionals: ReadonlyArray<string> = [],
 ): <A>(
 	config: A,
-) => Effect.Effect<void, unknown, CommandExecutor | FileSystem | CliRuntimeContext> {
+) => Effect.Effect<
+	void,
+	unknown,
+	CommandExecutor | FileSystem | CliRuntimeContext
+> {
 	return <A>(config: A) =>
 		Effect.gen(function* () {
 			const runtime = yield* CliRuntimeContext;
@@ -208,7 +265,9 @@ const configGetCommand = CliCommand.make("get", {
 	key: Args.optional(Args.text({ name: "storePath" })),
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["config", "get"], runConfigGetEffect, ["key"])),
+	CliCommand.withHandler(
+		commandHandler(["config", "get"], runConfigGetEffect, ["key"]),
+	),
 	CliCommand.withDescription("Print the Forge config or a config value."),
 );
 const configSetCommand = CliCommand.make("set", {
@@ -216,7 +275,9 @@ const configSetCommand = CliCommand.make("set", {
 	value: Args.text({ name: "absolute-path" }),
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["config", "set"], runConfigSetEffect, ["key", "value"])),
+	CliCommand.withHandler(
+		commandHandler(["config", "set"], runConfigSetEffect, ["key", "value"]),
+	),
 	CliCommand.withDescription("Set a Forge config value."),
 );
 const configCommand = CliCommand.make("config").pipe(
@@ -230,7 +291,9 @@ const storePathCommand = CliCommand.make("path").pipe(
 	CliCommand.withDescription("Print the active Forge store path."),
 );
 const storeDoctorCommand = CliCommand.make("doctor").pipe(
-	CliCommand.withHandler(commandHandler(["store", "doctor"], runStoreDoctorEffect)),
+	CliCommand.withHandler(
+		commandHandler(["store", "doctor"], runStoreDoctorEffect),
+	),
 	CliCommand.withDescription("Validate the active Forge store."),
 );
 const storeCommand = CliCommand.make("store").pipe(
@@ -253,21 +316,33 @@ const projectAddCommand = CliCommand.make("add", {
 		Options.withDescription("Project remote URL."),
 	),
 }).pipe(
-	CliCommand.withHandler(commandHandler(["project", "add"], runProjectAddEffect, ["id"])),
+	CliCommand.withHandler(
+		commandHandler(["project", "add"], runProjectAddEffect, ["id"]),
+	),
 	CliCommand.withDescription("Register a Forge project."),
 );
 const projectRootAddCommand = CliCommand.make("add", {
 	id: Args.text({ name: "id" }),
 	root: Args.text({ name: "path" }),
 }).pipe(
-	CliCommand.withHandler(commandHandler(["project", "root", "add"], runProjectRootEffect, ["id", "root"])),
+	CliCommand.withHandler(
+		commandHandler(["project", "root", "add"], runProjectRootEffect, [
+			"id",
+			"root",
+		]),
+	),
 	CliCommand.withDescription("Add a root to a project."),
 );
 const projectRootRemoveCommand = CliCommand.make("remove", {
 	id: Args.text({ name: "id" }),
 	root: Args.text({ name: "path" }),
 }).pipe(
-	CliCommand.withHandler(commandHandler(["project", "root", "remove"], runProjectRootEffect, ["id", "root"])),
+	CliCommand.withHandler(
+		commandHandler(["project", "root", "remove"], runProjectRootEffect, [
+			"id",
+			"root",
+		]),
+	),
 	CliCommand.withDescription("Remove a root from a project."),
 );
 const projectRootCommand = CliCommand.make("root").pipe(
@@ -278,7 +353,9 @@ const projectRootCommand = CliCommand.make("root").pipe(
 const projectRemoveCommand = CliCommand.make("remove", {
 	id: Args.text({ name: "id" }),
 }).pipe(
-	CliCommand.withHandler(commandHandler(["project", "remove"], runProjectRemoveEffect, ["id"])),
+	CliCommand.withHandler(
+		commandHandler(["project", "remove"], runProjectRemoveEffect, ["id"]),
+	),
 	CliCommand.withDescription("Remove a Forge project."),
 );
 const projectCommand = CliCommand.make("project").pipe(
@@ -337,7 +414,9 @@ const newRecordCommand = (
 				"review",
 			] as const).pipe(Options.optional),
 			dependsOn: dependsOnOption,
-		}).pipe(CliCommand.withHandler(commandHandler(["new", kind], runNewEffect)));
+		}).pipe(
+			CliCommand.withHandler(commandHandler(["new", kind], runNewEffect)),
+		);
 	}
 	return CliCommand.make(kind, {
 		title: titleOption,
@@ -368,6 +447,17 @@ const showCommand = CliCommand.make("show", {
 	CliCommand.withHandler(commandHandler(["show"], runShowEffect, ["record"])),
 	CliCommand.withDescription("Show a Forge record."),
 );
+const summaryCommand = CliCommand.make("summary", {
+	record: recordArg,
+	...presentationOptions,
+}).pipe(
+	CliCommand.withHandler(
+		commandHandler(["summary"], runSummaryEffect, ["record"]),
+	),
+	CliCommand.withDescription(
+		"Summarize a Forge record and its direct children.",
+	),
+);
 const startCommand = CliCommand.make("start", {
 	record: recordArg,
 	...presentationOptions,
@@ -387,7 +477,12 @@ const commentEditCommand = CliCommand.make("edit", {
 	record: recordArg,
 	comment: Args.text({ name: "comment" }),
 }).pipe(
-	CliCommand.withHandler(commandHandler(["comment", "edit"], runCommentEffect, ["record", "comment"])),
+	CliCommand.withHandler(
+		commandHandler(["comment", "edit"], runCommentEffect, [
+			"record",
+			"comment",
+		]),
+	),
 	CliCommand.withDescription("Edit a record comment."),
 );
 const commentCommand = CliCommand.make("comment", {
@@ -395,20 +490,28 @@ const commentCommand = CliCommand.make("comment", {
 	message: Options.text("message").pipe(Options.optional),
 	messageFile: Options.text("message-file").pipe(Options.optional),
 }).pipe(
-	CliCommand.withHandler(commandHandler(["comment"], runCommentEffect, ["record"])),
+	CliCommand.withHandler(
+		commandHandler(["comment"], runCommentEffect, ["record"]),
+	),
 	CliCommand.withDescription("Add or edit record comments."),
 	CliCommand.withSubcommands([commentEditCommand]),
 );
 const commentsCommand = CliCommand.make("comments", { record: recordArg }).pipe(
-	CliCommand.withHandler(commandHandler(["comments"], runCommentsEffect, ["record"])),
+	CliCommand.withHandler(
+		commandHandler(["comments"], runCommentsEffect, ["record"]),
+	),
 	CliCommand.withDescription("List record comments."),
 );
 const updatesCommand = CliCommand.make("updates", { record: recordArg }).pipe(
-	CliCommand.withHandler(commandHandler(["updates"], runUpdatesEffect, ["record"])),
+	CliCommand.withHandler(
+		commandHandler(["updates"], runUpdatesEffect, ["record"]),
+	),
 	CliCommand.withDescription("List record updates."),
 );
 const historyCommand = CliCommand.make("history", { record: recordArg }).pipe(
-	CliCommand.withHandler(commandHandler(["history"], runHistoryEffect, ["record"])),
+	CliCommand.withHandler(
+		commandHandler(["history"], runHistoryEffect, ["record"]),
+	),
 	CliCommand.withDescription("List record history."),
 );
 const openCommand = CliCommand.make("open", { record: recordArg }).pipe(
@@ -442,7 +545,12 @@ const initiativeAttachCommand = CliCommand.make("attach", {
 	record: recordArg,
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["initiative", "attach"], runInitiativeEffect, ["initiative", "record"])),
+	CliCommand.withHandler(
+		commandHandler(["initiative", "attach"], runInitiativeEffect, [
+			"initiative",
+			"record",
+		]),
+	),
 	CliCommand.withDescription("Attach a record to an initiative."),
 );
 const initiativeDetachCommand = CliCommand.make("detach", {
@@ -450,7 +558,12 @@ const initiativeDetachCommand = CliCommand.make("detach", {
 	record: recordArg,
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["initiative", "detach"], runInitiativeEffect, ["initiative", "record"])),
+	CliCommand.withHandler(
+		commandHandler(["initiative", "detach"], runInitiativeEffect, [
+			"initiative",
+			"record",
+		]),
+	),
 	CliCommand.withDescription("Detach a record from an initiative."),
 );
 const initiativeProjectAddCommand = CliCommand.make("add", {
@@ -458,7 +571,12 @@ const initiativeProjectAddCommand = CliCommand.make("add", {
 	project: Args.text({ name: "project" }),
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["initiative", "project", "add"], runInitiativeEffect, ["initiative", "project"])),
+	CliCommand.withHandler(
+		commandHandler(["initiative", "project", "add"], runInitiativeEffect, [
+			"initiative",
+			"project",
+		]),
+	),
 	CliCommand.withDescription("Add a declared project to an initiative."),
 );
 const initiativeProjectRemoveCommand = CliCommand.make("remove", {
@@ -466,11 +584,18 @@ const initiativeProjectRemoveCommand = CliCommand.make("remove", {
 	project: Args.text({ name: "project" }),
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["initiative", "project", "remove"], runInitiativeEffect, ["initiative", "project"])),
+	CliCommand.withHandler(
+		commandHandler(["initiative", "project", "remove"], runInitiativeEffect, [
+			"initiative",
+			"project",
+		]),
+	),
 	CliCommand.withDescription("Remove a declared project from an initiative."),
 );
 const initiativeProjectCommand = CliCommand.make("project").pipe(
-	CliCommand.withHandler(commandHandler(["initiative", "project"], runInitiativeEffect)),
+	CliCommand.withHandler(
+		commandHandler(["initiative", "project"], runInitiativeEffect),
+	),
 	CliCommand.withDescription("Maintain initiative project declarations."),
 	CliCommand.withSubcommands([
 		initiativeProjectAddCommand,
@@ -522,14 +647,18 @@ const depsAddCommand = CliCommand.make("add", {
 	dependsOn: Options.text("depends-on"),
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["deps", "add"], runDepsEffect, ["record"])),
+	CliCommand.withHandler(
+		commandHandler(["deps", "add"], runDepsEffect, ["record"]),
+	),
 );
 const depsRemoveCommand = CliCommand.make("remove", {
 	record: recordArg,
 	dependsOn: Options.text("depends-on"),
 	...presentationOptions,
 }).pipe(
-	CliCommand.withHandler(commandHandler(["deps", "remove"], runDepsEffect, ["record"])),
+	CliCommand.withHandler(
+		commandHandler(["deps", "remove"], runDepsEffect, ["record"]),
+	),
 );
 const depsCommand = CliCommand.make("deps", {
 	record: Args.optional(recordArg),
@@ -540,7 +669,7 @@ const depsCommand = CliCommand.make("deps", {
 );
 
 const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
-	CliCommand.withHandler(rootCommandHandler as any),
+	CliCommand.withHandler(rootCommandHandler),
 	CliCommand.withDescription("Forge personal workflow CLI"),
 	CliCommand.withSubcommands([
 		configCommand,
@@ -548,6 +677,7 @@ const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
 		projectCommand,
 		newCommand,
 		showCommand,
+		summaryCommand,
 		startCommand,
 		doneCommand,
 		commentCommand,
@@ -645,6 +775,10 @@ const cliCommandRegistrations: ReadonlyArray<CliCommandRegistration> = [
 	{
 		path: ["show"],
 		descriptor: showCommand,
+	},
+	{
+		path: ["summary"],
+		descriptor: summaryCommand,
 	},
 	{
 		path: ["start"],
@@ -796,6 +930,7 @@ export function runCliMain(
 	return runCliEffect(argv, options).pipe(
 		Effect.map((code) => {
 			exitCodeTarget.exitCode = code;
+			return undefined;
 		}),
 	);
 }
@@ -1114,6 +1249,59 @@ function runShowEffect(
 			return present(shown);
 		}
 		return present(shown, 0, formatShownRecord(shown));
+	});
+}
+
+function runSummaryEffect(
+	parsed: Parsed,
+): Effect.Effect<CommandOutput, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const id = yield* singleRecordIdEffect(
+			parsed.positionals[1],
+			parsed.positionals.slice(2),
+			commandHelp.summary,
+		);
+		const storePath = yield* readyStoreEffect(parsed);
+		const tree = yield* readRecordTreeEffect(storePath, id);
+		const parentDependencyView = yield* readRecordDependencyViewEffect(
+			storePath,
+			tree.record.id,
+		);
+		const parentComments = yield* listRecordCommentsEffect(
+			storePath,
+			tree.record.id,
+		);
+		const children = yield* Effect.all(
+			tree.children.map((child) =>
+				Effect.gen(function* () {
+					const dependencyView = yield* readRecordDependencyViewEffect(
+						storePath,
+						child.record.id,
+					);
+					const comments = yield* listRecordCommentsEffect(
+						storePath,
+						child.record.id,
+					);
+					return {
+						record: child.record,
+						dependsOn: dependencyView.dependsOn,
+						missingDependencies: dependencyView.missingDependencies,
+						latestComment: latestRecordComment(comments),
+					};
+				}),
+			),
+		);
+		const summary: RecordSummaryView = {
+			record: tree.record,
+			dependsOn: parentDependencyView.dependsOn,
+			missingDependencies: parentDependencyView.missingDependencies,
+			latestComment: latestRecordComment(parentComments),
+			children,
+		};
+		if (parsed.presentation === "json") {
+			return present(toJsonRecordSummaryView(summary));
+		}
+		return present(summary, 0, formatRecordSummaryView(summary));
 	});
 }
 
@@ -2057,6 +2245,98 @@ function formatRecordTree(node: RecordTreeNode, depth = 0): string {
 	].join("\n");
 }
 
+function formatRecordSummaryView(summary: RecordSummaryView): string {
+	return [
+		formatRecordSummaryWithResolution(summary.record),
+		summary.children.length === 0 ? undefined : "children",
+		...summary.children.flatMap(formatSummaryChild),
+	]
+		.filter((line) => line !== undefined)
+		.join("\n");
+}
+
+function formatSummaryChild(child: SummaryChild): ReadonlyArray<string> {
+	return [
+		formatRecordSummaryWithResolution(child.record),
+		...child.dependsOn.map(
+			(record) => `  dependsOn\t${formatRecordSummaryWithResolution(record)}`,
+		),
+		...child.missingDependencies.map((id) => `  dependsOn\t${id}\tmissing`),
+		...(child.latestComment === null
+			? []
+			: [
+					`  latestComment\t${child.latestComment.id}\t${formatInlineCommentBody(child.latestComment.body)}`,
+				]),
+	];
+}
+
+function toJsonRecordSummaryView(
+	summary: RecordSummaryView,
+): JsonRecordSummaryView {
+	return {
+		record: toSummaryRecordFact(summary.record),
+		dependencies: toSummaryDependencyFacts(
+			summary.dependsOn,
+			summary.missingDependencies,
+		),
+		latestComment: summary.latestComment,
+		children: summary.children.map((child) => ({
+			record: toSummaryRecordFact(child.record),
+			dependencies: toSummaryDependencyFacts(
+				child.dependsOn,
+				child.missingDependencies,
+			),
+			latestComment: child.latestComment,
+		})),
+	};
+}
+
+function toSummaryDependencyFacts(
+	dependsOn: ReadonlyArray<RecordFrontmatter>,
+	missing: ReadonlyArray<RecordId>,
+): SummaryDependencyFacts {
+	const dependencyFacts = dependsOn.map(toSummaryRecordFact);
+	return {
+		dependsOn: dependencyFacts,
+		missing,
+		blockers: {
+			records: dependencyFacts.filter((record) => record.state !== "done"),
+			missing,
+		},
+	};
+}
+
+function toSummaryRecordFact(record: RecordFrontmatter): SummaryRecordFact {
+	return {
+		id: record.id,
+		title: record.title,
+		kind: record.kind,
+		subkind: record.subkind,
+		state: record.state,
+		resolution: record.resolution,
+		scope: record.scope,
+		parent: record.parent,
+		initiative: record.initiative,
+		generatedBy: record.generatedBy,
+		tags: record.tags,
+		createdAt: record.createdAt,
+		updatedAt: record.updatedAt,
+	};
+}
+
+function latestRecordComment(
+	comments: ReadonlyArray<RecordComment>,
+): RecordComment | null {
+	if (comments.length === 0) {
+		return null;
+	}
+	return comments[comments.length - 1] ?? null;
+}
+
+function formatInlineCommentBody(body: string): string {
+	return body.trimEnd().replace(/\n/g, "\\n");
+}
+
 function formatRecordComments(comments: ReadonlyArray<RecordComment>): string {
 	if (comments.length === 0) {
 		return "No comments.";
@@ -2158,6 +2438,16 @@ function formatDependencyView(view: RecordDependencyView): string {
 
 function formatRecordSummary(record: RecordFrontmatter): string {
 	return `${record.id}\t${record.kind}\t${record.state}\t${record.title}`;
+}
+
+function formatRecordSummaryWithResolution(record: RecordFrontmatter): string {
+	return [
+		String(record.id),
+		record.kind,
+		record.state,
+		...(record.resolution === null ? [] : [record.resolution]),
+		record.title,
+	].join("\t");
 }
 
 function formatScope(record: WorkflowRecord): string {
@@ -2498,10 +2788,7 @@ function isStoreDoctorReport(value: unknown): value is {
 	);
 }
 
-export function isCliEntrypoint(
-	metaUrl = import.meta.url,
-	argv1?: string,
-) {
+export function isCliEntrypoint(metaUrl = import.meta.url, argv1?: string) {
 	return isNodeCliEntrypoint(metaUrl, argv1);
 }
 

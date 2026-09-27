@@ -20,13 +20,16 @@ import { runTestEffect } from "../support/effect.ts";
 import { storeRootPaths } from "../../src/store-paths.ts";
 
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
+const sharedWriteTimestamp = 1_800_000_000_000;
+const concurrentWriteCount = 50;
 
 const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
 	runTestEffect(ensureStoreRootEffect(...args));
 const loadForgeConfig = (...args: Parameters<typeof loadForgeConfigEffect>) =>
 	runTestEffect(loadForgeConfigEffect(...args));
-const readStoreManifest = (...args: Parameters<typeof readStoreManifestEffect>) =>
-	runTestEffect(readStoreManifestEffect(...args));
+const readStoreManifest = (
+	...args: Parameters<typeof readStoreManifestEffect>
+) => runTestEffect(readStoreManifestEffect(...args));
 const storeDoctor = (...args: Parameters<typeof storeDoctorEffect>) =>
 	runTestEffect(storeDoctorEffect(...args));
 const writeForgeConfig = (...args: Parameters<typeof writeForgeConfigEffect>) =>
@@ -157,15 +160,15 @@ it("when concurrent atomic JSON writes share a timestamp, they should use distin
 		await mkdtemp(path.join(os.tmpdir(), "forge-json-concurrent-write-")),
 	);
 	const filePath = parseAbsolutePath(path.join(directory, "data.json"));
-	const now = vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+	const now = vi.spyOn(Date, "now").mockReturnValue(sharedWriteTimestamp);
 	try {
 		await expect(
 			Promise.all(
-				Array.from({ length: 50 }, (_, index) =>
+				Array.from({ length: concurrentWriteCount }, (_, index) =>
 					writeJsonFile(filePath, { index }),
 				),
 			),
-		).resolves.toHaveLength(50);
+		).resolves.toHaveLength(concurrentWriteCount);
 	} finally {
 		now.mockRestore();
 	}

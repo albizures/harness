@@ -407,6 +407,7 @@ Task and grilling creation require `--parent <id>`.
 
 ```text
 forge show <record>
+forge summary <record>
 forge open <record>
 forge edit <record>
 forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]
@@ -418,6 +419,8 @@ forge here
 forge projects
 forge initiatives [--project <id>|--all-records]
 ```
+
+`forge summary <record>` prints a compact record fact plus direct child dependency and latest-comment facts. With `--json`, it emits structured record, dependency, latest-comment, and direct-child facts for automation.
 
 `forge ready` lists executable ready records, including `grilling` when requested by flags. `forge ready --blocked` lists blocked candidates only and explains all known blocking reasons.
 

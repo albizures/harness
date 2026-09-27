@@ -32,7 +32,9 @@ export function defaultCwd(): string {
 	return process.cwd();
 }
 
-export function defaultHomeDirectory(env: NodeJS.ProcessEnv): string | undefined {
+export function defaultHomeDirectory(
+	env: NodeJS.ProcessEnv,
+): string | undefined {
 	return env.FORGE_HOME ?? env.HOME ?? process.env.HOME;
 }
 

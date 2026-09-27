@@ -52,13 +52,15 @@ const missingRecordId = 999 as RecordId;
 
 const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
 	runTestEffect(ensureStoreRootEffect(...args));
-const readStoreManifest = (...args: Parameters<typeof readStoreManifestEffect>) =>
-	runTestEffect(readStoreManifestEffect(...args));
+const readStoreManifest = (
+	...args: Parameters<typeof readStoreManifestEffect>
+) => runTestEffect(readStoreManifestEffect(...args));
 const createWorkflowRecord = (
 	...args: Parameters<typeof createWorkflowRecordEffect>
 ) => runTestEffect(createWorkflowRecordEffect(...args));
-const readWorkflowRecord = (...args: Parameters<typeof readWorkflowRecordEffect>) =>
-	runTestEffect(readWorkflowRecordEffect(...args));
+const readWorkflowRecord = (
+	...args: Parameters<typeof readWorkflowRecordEffect>
+) => runTestEffect(readWorkflowRecordEffect(...args));
 const locateWorkflowRecord = (
 	...args: Parameters<typeof locateWorkflowRecordEffect>
 ) => runTestEffect(locateWorkflowRecordEffect(...args));
@@ -99,10 +101,12 @@ const listRecordComments = (
 const replaceRecordCommentFromEditedMarkdown = (
 	...args: Parameters<typeof replaceRecordCommentFromEditedMarkdownEffect>
 ) => runTestEffect(replaceRecordCommentFromEditedMarkdownEffect(...args));
-const listRecordUpdates = (...args: Parameters<typeof listRecordUpdatesEffect>) =>
-	runTestEffect(listRecordUpdatesEffect(...args));
-const listRecordHistory = (...args: Parameters<typeof listRecordHistoryEffect>) =>
-	runTestEffect(listRecordHistoryEffect(...args));
+const listRecordUpdates = (
+	...args: Parameters<typeof listRecordUpdatesEffect>
+) => runTestEffect(listRecordUpdatesEffect(...args));
+const listRecordHistory = (
+	...args: Parameters<typeof listRecordHistoryEffect>
+) => runTestEffect(listRecordHistoryEffect(...args));
 const listWorkflowRecordReadiness = (
 	...args: Parameters<typeof listWorkflowRecordReadinessEffect>
 ) => runTestEffect(listWorkflowRecordReadinessEffect(...args));
@@ -171,9 +175,14 @@ it("when creating a workflow record, it should allocate a global id and write ca
 
 it("when reading the by-id index, it should reject invalid locator shapes", async () => {
 	const storePath = await tempStore();
-	await writeFile(storeRootPaths(storePath).byIdIndex, '{"1":{"kind":"task"}}\n');
+	await writeFile(
+		storeRootPaths(storePath).byIdIndex,
+		'{"1":{"kind":"task"}}\n',
+	);
 
-	await expect(locateWorkflowRecord(storePath, 1 as RecordId)).rejects.toMatchObject({
+	await expect(
+		locateWorkflowRecord(storePath, 1 as RecordId),
+	).rejects.toMatchObject({
 		kind: "store-invalid",
 		message:
 			"Forge by-id index is invalid. Entry '1' must include a valid kind and relative path.",

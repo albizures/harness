@@ -737,6 +737,139 @@ fs.writeFileSync(file, text);
 	}
 });
 
+it("when summary runs for a Spec, it should render deterministic parent and direct child facts", async () => {
+	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-summary-home-"));
+	const store = path.join(home, "store");
+	const env = { HOME: home };
+
+	for (const args of [
+		[
+			"new",
+			"spec",
+			"--title",
+			"Summarized spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		[
+			"new",
+			"task",
+			"--title",
+			"Ship summary command",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		[
+			"new",
+			"grilling",
+			"--title",
+			"Clarify output",
+			"--description",
+			"Question body",
+			"--parent",
+			"1",
+		],
+	] as const) {
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
+	}
+
+	for (const args of [
+		[
+			"new",
+			"task",
+			"--title",
+			"Prepare dependency",
+			"--description",
+			"Dependency body",
+			"--parent",
+			"1",
+		],
+		["comment", "2", "--message", "Latest meaningful comment"],
+		["deps", "add", "2", "--depends-on", "4"],
+	] as const) {
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
+	}
+
+	for (const args of [
+		["done", "4", "--resolution", "prepared"],
+		["done", "2", "--resolution", "implemented"],
+		["done", "3", "--resolution", "answered"],
+		["done", "1", "--resolution", "accepted"],
+	] as const) {
+		expect(await runTempStoreCli(args, { home, store, env })).toBe(0);
+	}
+
+	const stdout = capture();
+	expect(
+		await runTempStoreCli(["summary", "1"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toBe(
+		"1\tspec\tdone\taccepted\tSummarized spec\nchildren\n2\ttask\tdone\timplemented\tShip summary command\n  dependsOn\t4\ttask\tdone\tprepared\tPrepare dependency\n  latestComment\t1\tLatest meaningful comment\n3\tgrilling\tdone\tanswered\tClarify output\n4\ttask\tdone\tprepared\tPrepare dependency\n",
+	);
+
+	const jsonStdout = capture();
+	expect(
+		await runTempStoreCli(["summary", "1", "--json"], {
+			home,
+			store,
+			stdout: jsonStdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const summary = JSON.parse(jsonStdout.text());
+	const expectedSummaryChildCount = 3;
+	expect(summary.record).toMatchObject({
+		id: 1,
+		kind: "spec",
+		title: "Summarized spec",
+		state: "done",
+		resolution: "accepted",
+	});
+	expect(summary.dependencies).toEqual({
+		dependsOn: [],
+		missing: [],
+		blockers: { records: [], missing: [] },
+	});
+	expect(summary.latestComment).toBeNull();
+	expect(summary.children).toHaveLength(expectedSummaryChildCount);
+	expect(summary.children[0]).toMatchObject({
+		record: {
+			id: 2,
+			kind: "task",
+			title: "Ship summary command",
+			state: "done",
+			resolution: "implemented",
+		},
+		dependencies: {
+			dependsOn: [
+				{
+					id: 4,
+					kind: "task",
+					title: "Prepare dependency",
+					state: "done",
+					resolution: "prepared",
+				},
+			],
+			missing: [],
+			blockers: { records: [], missing: [] },
+		},
+		latestComment: {
+			id: 1,
+			recordId: 2,
+			body: "Latest meaningful comment\n",
+		},
+	});
+});
+
 it("when Phase 3 navigation commands run, they should mutate dependencies and select ready work", async () => {
 	const home = await mkdtemp(path.join(os.tmpdir(), "forge-cli-phase3-home-"));
 	const store = path.join(home, "store");

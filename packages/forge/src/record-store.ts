@@ -27,14 +27,10 @@ import {
 	validateInitiativeDeclaredProjectsEdit,
 	type CommentId,
 	type NextRecordOptions,
-	type ReadinessDiagnosis,
 	type RecordComment,
-	type RecordDependencyView,
 	type RecordFrontmatter,
-	type RecordHistoryEntry,
 	type RecordId,
 	type RecordKind,
-	type RecordTreeNode,
 	type RecordUpdate,
 	validateFrontmatterEdit,
 	validateInitiativeMembership,
@@ -187,7 +183,6 @@ export function createWorkflowRecordEffect(options: {
 	});
 }
 
-
 export function readWorkflowRecordEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
@@ -200,7 +195,6 @@ export function readWorkflowRecordEffect(
 		});
 	});
 }
-
 
 export function locateWorkflowRecordEffect(
 	storePath: AbsolutePath,
@@ -226,10 +220,11 @@ export function listWorkflowRecordsEffect(storePath: AbsolutePath) {
 	return readAllWorkflowRecordsEffect(storePath);
 }
 
-
 export function readRecordRelationshipsEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
-		const value = yield* readJsonEffect(storeRootPaths(storePath).relationshipsIndex);
+		const value = yield* readJsonEffect(
+			storeRootPaths(storePath).relationshipsIndex,
+		);
 		return parseRelationshipRecordIndex(value);
 	});
 }
@@ -414,7 +409,6 @@ export function removeInitiativeDeclaredProjectEffect(options: {
 	});
 }
 
-
 export function readRecordTreeEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
@@ -428,7 +422,6 @@ export function readRecordTreeEffect(
 		});
 	});
 }
-
 
 export function readRecordDependencyViewEffect(
 	storePath: AbsolutePath,
@@ -560,7 +553,6 @@ export function addRecordCommentEffect(options: {
 	});
 }
 
-
 export function listRecordCommentsEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
@@ -608,7 +600,6 @@ export function replaceRecordCommentFromEditedMarkdownEffect(options: {
 	});
 }
 
-
 export function listRecordUpdatesEffect(
 	storePath: AbsolutePath,
 	recordId: RecordId,
@@ -618,7 +609,6 @@ export function listRecordUpdatesEffect(
 		return yield* readRecordUpdatesFromDiskEffect(storePath, recordId);
 	});
 }
-
 
 export function listRecordHistoryEffect(
 	storePath: AbsolutePath,
@@ -759,7 +749,6 @@ export function parseWorkflowRecordMarkdown(
 	}
 	return { ...parsed, body };
 }
-
 
 export function rebuildRecordIndexesEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {

@@ -19,3 +19,11 @@ _Avoid_: engineering skill group, design skill group, miscellaneous skill group
 **Forge reference**:
 The canonical skill document that defines how agents operate Forge Specs, Tasks, Wayfinders, Grilling, initiatives, dependencies, readiness, lifecycle, comments, and history through public Forge CLI behavior.
 _Avoid_: duplicated Forge command table, local workflow schema reference
+
+**Orchestration skill**:
+A user-facing workflow skill that routes a user intent to narrower skills or Forge operations without duplicating their detailed procedures.
+_Avoid_: wrapper skill, duplicate skill
+
+**Transformation primitive**:
+A narrow skill that converts one work artifact into another, such as conversation context into a Forge Spec or an approved plan into Forge Tasks.
+_Avoid_: orchestration skill, workflow umbrella

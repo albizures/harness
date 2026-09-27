@@ -113,7 +113,6 @@ export function ensureStoreRootEffect(options: {
 	});
 }
 
-
 export function readStoreManifestEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
 		const manifestJson = yield* readJsonEffect(
@@ -125,7 +124,6 @@ export function readStoreManifestEffect(storePath: AbsolutePath) {
 		});
 	});
 }
-
 
 export function ensureIndexFilesEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -205,14 +203,12 @@ export function storeDoctorEffect(options: {
 	});
 }
 
-
 export function readTextFileEffect(filePath: string) {
 	return Effect.gen(function* () {
 		const fileSystem = yield* FileSystem;
 		return yield* fileSystem.readFileString(filePath, "utf8");
 	});
 }
-
 
 export function readJsonEffect(filePath: AbsolutePath) {
 	return Effect.gen(function* () {
@@ -236,7 +232,6 @@ export function readJsonEffect(filePath: AbsolutePath) {
 	});
 }
 
-
 export function writeJsonFileEffect(filePath: AbsolutePath, value: unknown) {
 	return Effect.gen(function* () {
 		const temporaryPath = parseAbsolutePath(
@@ -258,7 +253,6 @@ export function writeJsonFileEffect(filePath: AbsolutePath, value: unknown) {
 	});
 }
 
-
 export function writeJsonFileIfMissingEffect(
 	filePath: AbsolutePath,
 	value: unknown,
@@ -271,7 +265,6 @@ export function writeJsonFileIfMissingEffect(
 		return true;
 	});
 }
-
 
 export function removeFileIfExistsEffect(filePath: AbsolutePath) {
 	return Effect.gen(function* () {

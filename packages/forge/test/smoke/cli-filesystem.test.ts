@@ -163,6 +163,94 @@ it("when the packaged CLI creates a review task, it should persist task and rela
 	expect(relationships["2"]?.parent).toBe(1);
 });
 
+it("when the packaged CLI exposes summary help and output, it should summarize record facts", async () => {
+	const workspace = await createForgeSmokeWorkspace();
+
+	let result = await runPackagedForge(workspace, ["--help"]);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+	expect(result.stdout).toContain("summary [--json] <record>");
+	expect(result.stdout).toContain(
+		"Summarize a Forge record and its direct children.",
+	);
+
+	result = await runPackagedForge(workspace, [
+		"project",
+		"add",
+		"harness",
+		"--root",
+		workspace.projectRoot,
+		"--name",
+		"Harness",
+	]);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+
+	result = await runPackagedForge(
+		workspace,
+		["new", "spec", "--title", "Summary spec", "--body", "-", "--json"],
+		{ cwd: workspace.nestedCwd, input: "Spec body\n" },
+	);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toMatchObject({ id: 1 });
+
+	result = await runPackagedForge(
+		workspace,
+		[
+			"new",
+			"task",
+			"--title",
+			"Summary task",
+			"--description",
+			"-",
+			"--parent",
+			"1",
+			"--json",
+		],
+		{ input: "Task description\n" },
+	);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+	expect(JSON.parse(result.stdout)).toMatchObject({ id: 2 });
+
+	result = await runPackagedForge(workspace, [
+		"comment",
+		"2",
+		"--message",
+		"Summary smoke comment",
+	]);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+
+	result = await runPackagedForge(workspace, ["summary", "1"]);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+	expect(result.stdout).toContain("1\tspec\tready\tSummary spec");
+	expect(result.stdout).toContain("children\n2\ttask\tready\tSummary task");
+	expect(result.stdout).toContain("  latestComment\t1\tSummary smoke comment");
+
+	result = await runPackagedForge(workspace, ["summary", "1", "--json"]);
+	expectPackagedForgeExit(result, 0);
+	expect(result.stderr).toBe("");
+	const summary = JSON.parse(result.stdout) as {
+		record: { readonly id: number; readonly title: string };
+		children: Array<{
+			readonly record: { readonly id: number; readonly title: string };
+			readonly latestComment: { readonly body: string } | null;
+		}>;
+	};
+	expect(summary.record).toMatchObject({ id: 1, title: "Summary spec" });
+	expect(summary.children).toEqual([
+		expect.objectContaining({
+			record: expect.objectContaining({ id: 2, title: "Summary task" }),
+			latestComment: expect.objectContaining({
+				body: "Summary smoke comment\n",
+			}),
+		}),
+	]);
+});
+
 it(
 	"when the packaged CLI mutates lifecycle and comments, it should persist filesystem history artifacts",
 	async () => {

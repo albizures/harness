@@ -24,7 +24,6 @@ export type ProjectRegistry = {
 	readonly projects: ReadonlyArray<ProjectRegistryEntry>;
 };
 
-
 export function listProjectsEffect(storePath: AbsolutePath) {
 	return Effect.gen(function* () {
 		const projectsDirectory = storeRootPaths(storePath).projects;
@@ -54,7 +53,6 @@ export function listProjectsEffect(storePath: AbsolutePath) {
 		return entries.sort((left, right) => left.id.localeCompare(right.id));
 	});
 }
-
 
 export function readProjectEffect(storePath: AbsolutePath, id: ProjectId) {
 	return readProjectFileEffect(storePath, id).pipe(
@@ -237,7 +235,8 @@ function parseByProjectRecordIndex(value: unknown): ByProjectRecordIndex {
 	if (!isPlainRecord(value)) {
 		throw new ForgeError({
 			kind: "store-invalid",
-			message: "Forge by-project index is invalid. Index root must be an object.",
+			message:
+				"Forge by-project index is invalid. Index root must be an object.",
 			details: { index: "by-project" },
 		});
 	}

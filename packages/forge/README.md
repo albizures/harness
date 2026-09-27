@@ -22,6 +22,7 @@ forge new spec --title <title> (--body <md>|--body-file <file>|--body -) [--proj
 forge new task --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--kind research|prototype|review] [--depends-on <id>]...
 forge new grilling --title <title> (--description <md>|--description-file <file>|--description -) --parent <id> [--depends-on <id>]...
 forge show <record>
+forge summary <record>
 forge list [--state <state>] [--kind <kind>] [--project <id>|--initiative <id>|--all-records]
 forge ready [--blocked] [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
 forge next [--include-hitl] [--planning] [--project <id>|--initiative <id>|--all-records]
@@ -47,7 +48,7 @@ forge open <record>
 forge edit <record>
 ```
 
-Use `--json` for JSON output, `--store <absolute-path>` to override the configured store for tests or one-off runs, and `--cwd <absolute-path>`/`-C <absolute-path>` to test project inference for project-scoped commands. Forge uses generated Effect CLI help and validation; legacy parsed-but-unused flags such as `--plain`, `--quiet`, and `--verbose` are not supported. If generated help displays shared parser options or repeats parent names on nested subcommands, the command synopsis above remains the supported command contract and handler validation is authoritative for unsupported combinations.
+Use `--json` for JSON output, `--store <absolute-path>` to override the configured store for tests or one-off runs, and `--cwd <absolute-path>`/`-C <absolute-path>` to test project inference for project-scoped commands. `forge summary <record> --json` emits a structured record summary with dependency, latest-comment, and direct-child facts. Forge uses generated Effect CLI help and validation; legacy parsed-but-unused flags such as `--plain`, `--quiet`, and `--verbose` are not supported. If generated help displays shared parser options or repeats parent names on nested subcommands, the command synopsis above remains the supported command contract and handler validation is authoritative for unsupported combinations.
 
 ## Store setup
 
@@ -80,7 +81,7 @@ Use inline Markdown, `--body-file`/`--description-file`, or `-` to read prose fr
 
 Lifecycle state is shared by every record kind: `ready`, `in-progress`, and `done`. Use `forge start <record>` to move executable ready records to `in-progress`; start validates computed readiness, refuses blocked records, and is idempotent for records that are already in progress. Use `forge done <record> --resolution <slug>` to complete ready or in-progress records. Resolutions must be lowercase kebab-case, completion is idempotent only for the same resolution, and a done record's resolution cannot be changed. Spec, wayfinder, task, and grilling completion gates reject records with open child work; initiative completion rejects open member work.
 
-Manual comments and tool updates are separate narrative streams. Use `forge comment <record> --message <md>`, `--message-file <file>`, or `--message -` to add a manual comment, and `forge comment edit <record> <comment-id>` to edit only the comment body. `forge comments <record>` lists manual comments, `forge updates <record>` lists tool-owned system updates such as creation and lifecycle transitions, and `forge history <record>` combines both streams with clear comment/update tags. `forge show` includes quiet recent-comment and recent-update summaries alongside the current record snapshot and relationships.
+Manual comments and tool updates are separate narrative streams. Use `forge comment <record> --message <md>`, `--message-file <file>`, or `--message -` to add a manual comment, and `forge comment edit <record> <comment-id>` to edit only the comment body. `forge comments <record>` lists manual comments, `forge updates <record>` lists tool-owned system updates such as creation and lifecycle transitions, and `forge history <record>` combines both streams with clear comment/update tags. `forge show` includes quiet recent-comment and recent-update summaries alongside the current record snapshot and relationships. `forge summary <record>` prints compact parent/direct-child facts for handoff and status scans.
 
 ## Navigation and readiness
 
@@ -90,7 +91,7 @@ Use `forge deps add <record> --depends-on <id>` and `forge deps remove <record> 
 
 Use `forge ready` to list currently executable records and `forge ready --blocked` to show records blocked by unfinished dependencies or unavailable parents/children. By default, readiness is scoped to the inferred current project when possible; use `--project <id>`, `--initiative <id>`, or `--all-records` for explicit scope. Add `--include-hitl` to include ready grilling records, and `--planning` to include ready specs or wayfinders that need planning action.
 
-Use `--json` when automation needs structured output from commands that support JSON presentation, such as `store doctor`, `projects`, `here`, `new`, `show`, `deps`, `ready`, `next`, lifecycle commands, comments/history listings, initiative edits, and config commands. `forge ready --json` returns `{ "records": [...] }`, where each record includes `id`, `kind`, `title`, `state`, and optional scope fields. Unsupported JSON combinations are rejected by handler validation; for example, `forge ready --json` cannot be combined with `--blocked` because blocked diagnostics are explanation-oriented text.
+Use `--json` when automation needs structured output from commands that support JSON presentation, such as `store doctor`, `projects`, `here`, `new`, `show`, `summary`, `deps`, `ready`, `next`, lifecycle commands, comments/history listings, initiative edits, and config commands. `forge ready --json` returns `{ "records": [...] }`, where each record includes `id`, `kind`, `title`, `state`, and optional scope fields. Unsupported JSON combinations are rejected by handler validation; for example, `forge ready --json` cannot be combined with `--blocked` because blocked diagnostics are explanation-oriented text.
 
 Use `forge next` as the deterministic daily-entry command. It reports the selected record without mutating state. Candidate selection applies the same scoping and inclusion flags as `forge ready`, then picks the oldest ready record id. Use `forge tree <record>` to inspect parent/child structure around a record.
 

@@ -31,8 +31,9 @@ const listProjects = (...args: Parameters<typeof listProjectsEffect>) =>
 	runTestEffect(listProjectsEffect(...args));
 const removeProject = (...args: Parameters<typeof removeProjectEffect>) =>
 	runTestEffect(removeProjectEffect(...args));
-const removeProjectRoot = (...args: Parameters<typeof removeProjectRootEffect>) =>
-	runTestEffect(removeProjectRootEffect(...args));
+const removeProjectRoot = (
+	...args: Parameters<typeof removeProjectRootEffect>
+) => runTestEffect(removeProjectRootEffect(...args));
 
 function failureFromExit(exit: Exit.Exit<unknown, unknown>) {
 	if (!Exit.isFailure(exit)) {
@@ -149,9 +150,7 @@ it("when the Effect API lists projects from a missing store, it should fail with
 		),
 	);
 
-	const exit = await runTestEffect(
-		Effect.exit(listProjectsEffect(storePath)),
-	);
+	const exit = await runTestEffect(Effect.exit(listProjectsEffect(storePath)));
 	const error = failureFromExit(exit);
 
 	expect(isForgeError(error)).toBe(true);

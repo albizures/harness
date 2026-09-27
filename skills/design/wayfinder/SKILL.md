@@ -14,7 +14,7 @@ Wayfinder is **planning** by default. Children resolve decisions, gather facts, 
 
 ## Refer by name
 
-Every map and child has a title. In human-facing narration and map notes, refer to children by linked title rather than bare ids. Ids/URLs can ride inside the link.
+Every map and child has a title. In human-facing narration and map notes, refer to children as “<title> (#<id>)”, not just “<id>”.
 
 ## The map
 
@@ -33,7 +33,7 @@ Recommended map body:
 
 ## Decisions so far
 
-- [<closed child title>](link): <one-line gist>
+- <closed child title> (#<id>): <one-line gist>
 
 ## Not yet specified
 
@@ -86,7 +86,7 @@ User invokes with a loose destination.
 
 ### Work through the map
 
-User invokes with an existing Forge Wayfinder id/URL. A child is optional; without one, choose an executable Task child from Forge readiness. Grilling children are HITL support flows selected by explicit user direction or map context.
+User invokes with an existing Forge Wayfinder id. A child is optional; without one, choose an executable Task child from Forge readiness. Grilling children are HITL support flows selected by explicit user direction or map context.
 
 1. Load the map with `forge show <wayfinder>` and `forge history <wayfinder>`. Orient on Destination, Notes, Decisions-so-far, Not yet specified, and Out of scope.
 2. Choose the child. If the user named one, inspect it. Otherwise use `forge ready` as the executable frontier; use `--include-hitl` only when intentionally selecting Grilling.
