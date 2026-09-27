@@ -25,5 +25,13 @@ A user-facing workflow skill that routes a user intent to narrower skills or For
 _Avoid_: wrapper skill, duplicate skill
 
 **Transformation primitive**:
-A narrow skill that converts one work artifact into another, such as conversation context into a Forge Spec or an approved plan into Forge Tasks.
+A narrow workflow branch that converts one work artifact into another, such as conversation context into a Forge Spec or an approved plan into Forge Tasks.
 _Avoid_: orchestration skill, workflow umbrella
+
+**Workflow branch**:
+A named path within an orchestration skill, selected from the request and record state.
+_Avoid_: standalone skill, mode
+
+**Companion document**:
+A non-invocable Markdown document containing the procedure for one workflow branch under its orchestration skill.
+_Avoid_: subskill, nested skill
