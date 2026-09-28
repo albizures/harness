@@ -170,8 +170,8 @@ it("when the packaged CLI exposes summary help and output, it should summarize r
 	expectPackagedForgeExit(result, 0);
 	expect(result.stderr).toBe("");
 	expect(result.stdout).toContain("summary [--json] <record>");
-	expect(result.stdout).toContain(
-		"Summarize a Forge record and its direct children.",
+	expect(result.stdout).toMatch(
+		/Summarize a Forge record and its\s+direct children\./,
 	);
 
 	result = await runPackagedForge(workspace, [

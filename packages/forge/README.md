@@ -48,7 +48,7 @@ forge open <record>
 forge edit <record>
 ```
 
-Use `--json` for JSON output, `--store <absolute-path>` to override the configured store for tests or one-off runs, and `--cwd <absolute-path>`/`-C <absolute-path>` to test project inference for project-scoped commands. `forge summary <record> --json` emits a structured record summary with dependency, latest-comment, and direct-child facts. Forge uses generated Effect CLI help and validation; legacy parsed-but-unused flags such as `--plain`, `--quiet`, and `--verbose` are not supported. If generated help displays shared parser options or repeats parent names on nested subcommands, the command synopsis above remains the supported command contract and handler validation is authoritative for unsupported combinations.
+Use `--json` for JSON output, `--store <absolute-path>` to override the configured store for tests or one-off runs, and `--cwd <absolute-path>`/`-C <absolute-path>` to test project inference for project-scoped commands. `forge summary <record> --json` emits a structured record summary with dependency, latest-comment, and direct-child facts. Forge uses a concise, width-aware command index for `forge --help`, while command-specific help remains generated from the Effect CLI command tree and validation. Legacy parsed-but-unused flags such as `--plain`, `--quiet`, and `--verbose` are not supported. If generated leaf help displays shared parser options or repeats parent names on nested subcommands, the command synopsis above remains the supported command contract and handler validation is authoritative for unsupported combinations.
 
 ## Store setup
 

@@ -6,14 +6,18 @@ import { describe, expect, it } from "vitest";
 import { pathToFileURL } from "node:url";
 
 import { isCliEntrypoint, runCliEffect, runCliMain } from "../../src/cli.ts";
+import { renderRootHelp } from "../../src/cli-help.ts";
 import { runTestEffect } from "../support/effect.ts";
 
 const packageRoot = new URL("../../", import.meta.url);
 
-function capture() {
+function capture(
+	capabilities: { readonly columns?: number; readonly isTTY?: boolean } = {},
+) {
 	let text = "";
 	return {
 		stream: {
+			...capabilities,
 			write(chunk: string) {
 				text += chunk;
 				return true;
@@ -416,9 +420,127 @@ it("when help is requested, it should describe the generated Effect CLI command 
 	expect(help).toMatch(/COMMANDS/);
 	expect(help).toMatch(/config get/);
 	expect(help).toMatch(/project add/);
+	expect(help).toMatch(/project root add/);
+	expect(help).toMatch(/initiative project add/);
+	expect(help).not.toMatch(/project project root/);
+	expect(help).not.toMatch(/initiative initiative project/);
 	expect(help).toMatch(/new spec/);
 	expect(help).toMatch(/show/);
 	expect(stderr.text()).toBe("");
+});
+
+describe("when root help is rendered for an output capability", () => {
+	it("should preserve the public command order and curated global options", async () => {
+		const stdout = capture();
+		const stderr = capture();
+		const code = await runCli(["--help"], {
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: "/tmp" },
+		});
+		const help = stdout.text();
+		const commands = [
+			"config",
+			"store",
+			"project",
+			"new",
+			"show",
+			"summary",
+			"start",
+			"done",
+			"comment",
+			"comments",
+			"updates",
+			"history",
+			"initiatives",
+			"initiative",
+			"list",
+			"ready",
+			"next",
+			"tree",
+			"deps",
+			"open",
+			"edit",
+			"projects",
+			"here",
+		];
+		expect(code).toBe(0);
+		const commandPosition = (command: string) =>
+			help
+				.split("\n")
+				.findIndex((line) => line.trimStart().startsWith(`${command} `));
+		for (let index = 1; index < commands.length; index += 1) {
+			expect(commandPosition(commands[index])).toBeGreaterThan(
+				commandPosition(commands[index - 1]),
+			);
+		}
+		const options = help.slice(help.indexOf("OPTIONS"));
+		expect(options).toContain("--json");
+		expect(options).toContain("--store <path>");
+		expect(options).toContain("-C, --cwd <path>");
+		expect(options).not.toContain("--profile");
+		expect(stderr.text()).toBe("");
+	});
+
+	it("should use narrow, wide, and fallback widths without unsafe wrapping", async () => {
+		const render = async (columns?: number) => {
+			const stdout = capture({ columns });
+			const stderr = capture();
+			const code = await runCli(["--help"], {
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env: { HOME: "/tmp" },
+			});
+			expect(code).toBe(0);
+			expect(stderr.text()).toBe("");
+			return stdout.text();
+		};
+		const narrow = await render(40);
+		const wide = await render(200);
+		const fallback = await render();
+		expect(narrow).not.toBe(wide);
+		expect(fallback).toBe(narrow);
+		for (const help of [narrow, wide, fallback]) {
+			expect(help.split("\n").every((line) => line.length <= 120)).toBe(true);
+			expect(help).toContain("project root add");
+		}
+	});
+
+	it("should style headings only when color is supported", async () => {
+		const nonTty = capture({ columns: 80, isTTY: false });
+		const tty = capture({ columns: 80, isTTY: true });
+		await runCli(["--help"], { stdout: nonTty.stream, env: { HOME: "/tmp" } });
+		await runCli(["--help"], { stdout: tty.stream, env: { HOME: "/tmp" } });
+		expect(nonTty.text()).not.toContain("\u001b[");
+		expect(tty.text()).toContain("\u001b[");
+	});
+
+	it("should clamp width while preserving command names and wrapping descriptions", () => {
+		const help = renderRootHelp(
+			{
+				description: "Description",
+				commands: [
+					{
+						name: "a-command-name-that-is-longer-than-the-terminal",
+						synopsis: "A description that should remain readable.",
+					},
+				],
+				options: [],
+				guidance: "Guidance",
+			},
+			{ width: 20 },
+		);
+
+		expect(help).toContain("a-command-name-that-is-longer-than-the-terminal");
+		expect(help.split("\n").some((line) => line.length > 120)).toBe(false);
+	});
+
+	it("should style headings only when color is supported", () => {
+		expect(renderRootHelp(undefined, { color: false })).not.toContain(
+			"\u001b[",
+		);
+		expect(renderRootHelp(undefined, { color: true })).toContain("\u001b[");
+	});
 });
 
 it("when record CLI commands run, they should create, inspect, and list workflow records", async () => {
@@ -1221,6 +1343,27 @@ it("when project add leaf help is requested, it should use generated leaf help",
 	expect(help).toMatch(/--root/);
 	expect(help).not.toMatch(/Add or remove project roots/);
 	expect(stderr.text()).toBe("");
+});
+
+it("when nested command help is requested, it should not repeat internal command prefixes", async () => {
+	for (const args of [
+		["project", "--help"],
+		["initiative", "--help"],
+		["initiative", "project", "--help"],
+	]) {
+		const stdout = capture();
+		const stderr = capture();
+		const code = await runCli(args, {
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: "/tmp" },
+		});
+
+		expect(code).toBe(0);
+		expect(stdout.text()).not.toMatch(/project project root/);
+		expect(stdout.text()).not.toMatch(/initiative initiative project/);
+		expect(stderr.text()).toBe("");
+	}
 });
 
 it("when migrated record leaf help is requested, it should use generated leaf help", async () => {

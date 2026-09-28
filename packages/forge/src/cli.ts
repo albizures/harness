@@ -96,13 +96,14 @@ import {
 } from "./record-store.ts";
 import { runForgeMain } from "./runtime.ts";
 import { recordFilePath } from "./store-paths.ts";
+import { renderRootHelp, rootHelpModel } from "./cli-help.ts";
 
 export type CliOptions = {
 	readonly cwd?: string;
 	readonly env?: NodeJS.ProcessEnv;
 	readonly stdin?: NodeJS.ReadableStream;
-	readonly stdout?: Pick<NodeJS.WriteStream, "write">;
-	readonly stderr?: Pick<NodeJS.WriteStream, "write">;
+	readonly stdout?: CliOutput;
+	readonly stderr?: CliOutput;
 };
 
 type Presentation = "human" | "json";
@@ -162,14 +163,19 @@ type JsonRecordSummaryView = {
 
 type FlagValue = string | boolean | ReadonlyArray<string>;
 
+type CliOutput = Pick<NodeJS.WriteStream, "write"> & {
+	readonly columns?: number;
+	readonly isTTY?: boolean;
+};
+
 type CliInvocationContext = {
 	readonly presentation: Presentation;
 	readonly cwd: string;
 	readonly homeDirectory: string;
 	readonly storeOverride?: string;
 	readonly stdin: NodeJS.ReadableStream;
-	readonly stdout: Pick<NodeJS.WriteStream, "write">;
-	readonly stderr: Pick<NodeJS.WriteStream, "write">;
+	readonly stdout: CliOutput;
+	readonly stderr: CliOutput;
 	readonly env: NodeJS.ProcessEnv;
 };
 
@@ -205,7 +211,9 @@ function rootCommandHandler<A>(
 			runtime.invocationContext,
 			[],
 		);
-		const output = present(helpText);
+		const output = present(
+			renderRootHelpForOutput(runtime.invocationContext.stdout),
+		);
 		runtime.setOutput(output);
 		renderOutput(parsed, output);
 	});
@@ -698,9 +706,40 @@ const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
 	]),
 );
 
-const helpText = `${HelpDoc.toAnsiText(
-	CliCommand.getHelp(forgeRootCommand, CliConfig.defaultConfig),
-)}\n`;
+const helpText = renderRootHelp();
+
+function helpWidth(output: CliOutput): number | undefined {
+	return output.columns;
+}
+
+function helpColor(output: CliOutput): boolean {
+	return output.isTTY === true;
+}
+
+function renderRootHelpForOutput(output: CliOutput): string {
+	return renderRootHelp(rootHelpModel, {
+		width: helpWidth(output),
+		color: helpColor(output),
+	});
+}
+
+function stripAnsi(text: string): string {
+	return text.replace(/\u001b\[[0-?]*[ -\/]*[@-~]/g, "");
+}
+
+/**
+ * Effect CLI derives nested help usage from each descriptor's local command
+ * name. Keep that semantic tree intact, but repair the known duplicated
+ * prefixes when presenting a usage path to users.
+ */
+function normalizeDisplayedHelpPaths(text: string): string {
+	return text
+		.replace(/\bproject project root (add|remove)\b/g, "project root $1")
+		.replace(
+			/\binitiative initiative project (add|remove)\b/g,
+			"initiative project $1",
+		);
+}
 
 const recentCommentLimit = 3;
 const recentUpdateLimit = 5;
@@ -872,16 +911,20 @@ function commandKey(path: ReadonlyArray<string>): string {
 	return path.join(" ");
 }
 
-function helpForCommand(command: string): string {
+function helpForCommand(command: string, output?: CliOutput): string {
 	const descriptor = commandDescriptors.get(command);
-	return descriptor === undefined
-		? helpText
-		: `${HelpDoc.toAnsiText(
-				CliCommand.getHelp(
-					descriptor as Parameters<typeof CliCommand.getHelp>[0],
-					CliConfig.defaultConfig,
-				),
-			)}\n`;
+	if (descriptor === undefined) {
+		return output === undefined ? helpText : renderRootHelpForOutput(output);
+	}
+	const text = normalizeDisplayedHelpPaths(
+		HelpDoc.toAnsiText(
+			CliCommand.getHelp(
+				descriptor as Parameters<typeof CliCommand.getHelp>[0],
+				CliConfig.defaultConfig,
+			),
+		),
+	);
+	return `${output !== undefined && !helpColor(output) ? stripAnsi(text) : text}\n`;
 }
 
 const commandHelp: Record<string, string> = new Proxy(Object.create(null), {
@@ -946,7 +989,10 @@ export function runCliEffect(
 			argv,
 		);
 		if (isHelpInvocation(argv)) {
-			writeOut(baseContext.stdout, helpForCommand(helpCommandName(argv)));
+			writeOut(
+				baseContext.stdout,
+				helpForCommand(helpCommandName(argv), baseContext.stdout),
+			);
 			return 0;
 		}
 		let output: CommandOutput = { value: undefined, code: 0 };
