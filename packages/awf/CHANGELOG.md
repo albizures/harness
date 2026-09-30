@@ -1,5 +1,12 @@
 # @albizures/awf
 
+## 1.0.1
+
+### Patch Changes
+
+- a2174b5: Write filesystem tracker Issue Markdown frontmatter with idiomatic YAML formatting while preserving backward-compatible parsing.
+- a2174b5: Support `mapRevision.bodyFile` for Wayfinder child completion payloads so large map body revisions can be read from a local Markdown file.
+
 ## 1.0.0
 
 ### Major Changes
