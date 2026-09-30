@@ -24,6 +24,10 @@ const ansi = {
 	bold: "\u001b[1m",
 	reset: "\u001b[22m",
 } as const;
+const helpWidthMinimum = 80;
+const helpWidthMaximum = 120;
+const helpColumnMinimum = 18;
+const helpDescriptionMinimum = 12;
 
 /** The deliberately concise, navigational help shown by `forge --help`. */
 export const rootHelpModel: RootHelpModel = {
@@ -82,14 +86,21 @@ export const rootHelpModel: RootHelpModel = {
 };
 
 function usableWidth(width: number | undefined): number {
-	if (!Number.isFinite(width)) return 80;
-	return Math.min(120, Math.max(80, Math.floor(width as number)));
+	if (!Number.isFinite(width)) {
+		return helpWidthMinimum;
+	}
+	return Math.min(
+		helpWidthMaximum,
+		Math.max(helpWidthMinimum, Math.floor(width as number)),
+	);
 }
 
 function wrap(text: string, width: number): ReadonlyArray<string> {
-	if (text.length <= width) return [text];
+	if (text.length <= width) {
+		return [text];
+	}
 	const words = text.split(/\s+/);
-	const lines: string[] = [];
+	const lines: Array<string> = [];
 	let line = "";
 	for (const word of words) {
 		if (line !== "" && line.length + word.length + 1 > width) {
@@ -99,7 +110,9 @@ function wrap(text: string, width: number): ReadonlyArray<string> {
 			line = line === "" ? word : `${line} ${word}`;
 		}
 	}
-	if (line !== "") lines.push(line);
+	if (line !== "") {
+		lines.push(line);
+	}
 	return lines;
 }
 
@@ -109,12 +122,15 @@ function renderEntries(
 		readonly description: string;
 	}>,
 	width: number,
-): string[] {
+): Array<string> {
 	const prefix = "  ";
 	const longest = Math.max(...entries.map((entry) => entry.name.length));
-	const column = Math.min(Math.max(longest + 2, 18), Math.floor(width / 2));
+	const column = Math.min(
+		Math.max(longest + 2, helpColumnMinimum),
+		Math.floor(width / 2),
+	);
 	const descriptionWidth = width - prefix.length - column;
-	const lines: string[] = [];
+	const lines: Array<string> = [];
 	for (const entry of entries) {
 		// Keep names intact even if a future command or option is wider than the
 		// presentation column. The description then starts on the next line.
@@ -126,7 +142,10 @@ function renderEntries(
 			}
 			continue;
 		}
-		const wrapped = wrap(entry.description, Math.max(12, descriptionWidth));
+		const wrapped = wrap(
+			entry.description,
+			Math.max(helpDescriptionMinimum, descriptionWidth),
+		);
 		lines.push(`${prefix}${entry.name.padEnd(column)}${wrapped[0]}`);
 		for (const continuation of wrapped.slice(1)) {
 			lines.push(`${" ".repeat(prefix.length + column)}${continuation}`);

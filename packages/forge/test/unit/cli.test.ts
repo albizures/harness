@@ -430,6 +430,7 @@ it("when help is requested, it should describe the generated Effect CLI command 
 });
 
 describe("when root help is rendered for an output capability", () => {
+	const maximumHelpLineLength = 120;
 	it("should preserve the public command order and curated global options", async () => {
 		const stdout = capture();
 		const stderr = capture();
@@ -495,13 +496,17 @@ describe("when root help is rendered for an output capability", () => {
 			expect(stderr.text()).toBe("");
 			return stdout.text();
 		};
-		const narrow = await render(40);
-		const wide = await render(200);
+		const narrowWidth = 40;
+		const wideWidth = 200;
+		const narrow = await render(narrowWidth);
+		const wide = await render(wideWidth);
 		const fallback = await render();
 		expect(narrow).not.toBe(wide);
 		expect(fallback).toBe(narrow);
 		for (const help of [narrow, wide, fallback]) {
-			expect(help.split("\n").every((line) => line.length <= 120)).toBe(true);
+			expect(
+				help.split("\n").every((line) => line.length <= maximumHelpLineLength),
+			).toBe(true);
 			expect(help).toContain("project root add");
 		}
 	});
@@ -532,7 +537,9 @@ describe("when root help is rendered for an output capability", () => {
 		);
 
 		expect(help).toContain("a-command-name-that-is-longer-than-the-terminal");
-		expect(help.split("\n").some((line) => line.length > 120)).toBe(false);
+		expect(
+			help.split("\n").some((line) => line.length > maximumHelpLineLength),
+		).toBe(false);
 	});
 
 	it("should style headings only when color is supported", () => {

@@ -21,7 +21,7 @@ Use `/forge` as the command reference for project scope, relationships, readines
 3. Read the selected companion document completely before acting.
 4. Preserve the phase boundary: define first, plan under an existing Spec, then work a child Task.
 
-If the request is ambiguous between planning and execution, inspect the Spec and ask one focused clarification. Never silently create Tasks or implement directly from an unplanned Spec.
+If the request is ambiguous between planning and execution check with `forge tree <spec id>` and if there is available tasks, work in the first one.
 
 ## Shared guards
 

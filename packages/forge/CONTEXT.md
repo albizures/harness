@@ -23,3 +23,5 @@ Forge is a personal global workflow CLI package.
 **Command synopsis**: A short human-facing summary of how a command is invoked, intentionally less detailed than leaf-command usage.
 
 **Global option**: An option applicable across the Forge command surface, such as output presentation or store and working-directory selection.
+
+**Command group**: A cohesive family of related commands within the Forge command surface, sharing a domain concern and its command behavior.
