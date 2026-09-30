@@ -6,6 +6,10 @@ import {
 	validateManifest,
 } from "../../src/domain/manifest/define.ts";
 import {
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "../../src/domain/manifest/logging.ts";
+import {
 	loadManifest,
 	loadWorkflowModule,
 } from "../../src/runtime/workflow-module.ts";
@@ -28,11 +32,16 @@ const invalidTrackerFixture = new URL(
 it("should load a TypeScript-authored workflow manifest as declarative data", async () => {
 	const manifest = await loadManifest(validFixture);
 
-	expect(manifest.workflow.id).toBe("agent-workflow");
+	expect(manifest.workflow.id).toBe("w1");
 	expect(manifest.kinds.map((kind) => kind.id)).toEqual([
 		"spec",
 		"wayfinder",
 		"task",
+		"task:work",
+		"task:research",
+		"task:prototype",
+		"task:work:integration-test",
+		"task:work:merge",
 		"grilling",
 	]);
 	expect(
@@ -46,7 +55,7 @@ it("should load a TypeScript-authored workflow manifest as declarative data", as
 it("should load a Workflow module manifest and optional concrete tracker binding", async () => {
 	const workflowModule = await loadWorkflowModule(moduleFixture);
 
-	expect(workflowModule.manifest.workflow.id).toBe("agent-workflow");
+	expect(workflowModule.manifest.workflow.id).toBe("w1");
 	expect(typeof workflowModule.tracker?.getIssue).toBe("function");
 	expect(
 		typeof workflowModule.lifecycleHandlers?.["task:running/work:succeed"],
@@ -68,7 +77,7 @@ it("should ensure that Workflow module loading rejects non-concrete tracker expo
 it("should ensure that manifest loading validates the manifest export without requiring or checking tracker", async () => {
 	const manifest = await loadManifest(invalidTrackerFixture);
 
-	expect(manifest.workflow.id).toBe("agent-workflow");
+	expect(manifest.workflow.id).toBe("w1");
 });
 
 it("should reject loaded TypeScript workflow manifests with Zod-owned shape errors", async () => {
@@ -127,6 +136,133 @@ it("should reject configurable relationship projection direction", () => {
 	).toBe(true);
 });
 
+it("should accept manifest logging policy selectors and preserve default-enabled behavior", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "logging-policy", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running", "done"],
+			actions: ["work", "none"],
+			events: ["start", "succeed"],
+		},
+		concurrency: { perIssue: 1 },
+		logging: {
+			enabled: false,
+			creation: {
+				commands: { "create-ticket": true },
+			},
+			stateChanges: {
+				enabled: false,
+				events: { start: true, succeed: false },
+				commands: { "finish-ticket": true, "start-ticket": false },
+			},
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "work" },
+				transitions: [
+					{
+						from: { state: "ready", action: "work" },
+						event: "start",
+						to: { state: "running", action: "work" },
+					},
+					{
+						from: { state: "running", action: "work" },
+						event: "succeed",
+						to: { state: "done", action: "none" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "create-ticket",
+				cli: { verb: "create", target: "ticket" },
+				target: { kind: "ticket", action: "work" },
+			},
+			{
+				id: "start-ticket",
+				target: { kind: "ticket", state: "ready", action: "work" },
+				transition: { event: "start", attempt: "start" },
+			},
+			{
+				id: "finish-ticket",
+				target: { kind: "ticket", state: "running", action: "work" },
+				transition: { event: "succeed", attempt: "complete" },
+			},
+		],
+	});
+
+	expect(validateManifest(manifest)).toEqual([]);
+	expect(shouldLogCreation(manifest, "create-ticket")).toBe(true);
+	expect(shouldLogCreation(manifest, "unknown-create")).toBe(false);
+	expect(shouldLogStateChange(manifest, { event: "start" })).toBe(true);
+	const startTicket = manifest.commands[1];
+	const finishTicket = manifest.commands[2];
+	expect(startTicket).toBeDefined();
+	expect(finishTicket).toBeDefined();
+	if (startTicket === undefined || finishTicket === undefined) {
+		throw new Error("Expected manifest commands to exist.");
+	}
+	expect(shouldLogStateChange(manifest, startTicket)).toBe(false);
+	expect(shouldLogStateChange(manifest, finishTicket)).toBe(true);
+	expect(
+		shouldLogCreation({ ...manifest, logging: undefined }, "anything"),
+	).toBe(true);
+});
+
+it("should validate manifest logging selector keys", () => {
+	const manifest = defineManifest({
+		version: "v1",
+		workflow: { id: "logging-validation", version: "1.0.0" },
+		vocabulary: {
+			states: ["ready", "running"],
+			actions: ["work"],
+			events: ["start"],
+		},
+		concurrency: { perIssue: 1 },
+		logging: {
+			creation: { commands: { "missing-create": true } },
+			stateChanges: {
+				commands: { "missing-transition": false },
+				events: { missing: false },
+			},
+		},
+		kinds: [
+			{
+				id: "ticket",
+				label: "Ticket",
+				initial: { state: "ready", action: "work" },
+				transitions: [
+					{
+						from: { state: "ready", action: "work" },
+						event: "start",
+						to: { state: "running", action: "work" },
+					},
+				],
+			},
+		],
+		commands: [
+			{
+				id: "start-ticket",
+				target: { kind: "ticket", state: "ready", action: "work" },
+				transition: { event: "start" },
+			},
+		],
+	});
+
+	const messages = validateManifest(manifest)
+		.map((issue) => `${issue.path} ${issue.message}`)
+		.join("\n");
+	expect(messages).toMatch(/creation\.commands\.missing-create/);
+	expect(messages).toMatch(/stateChanges\.commands\.missing-transition/);
+	expect(messages).toMatch(/stateChanges\.events\.missing/);
+	expect(messages).toMatch(/declared command/);
+	expect(messages).toMatch(/declared event/);
+});
+
 it("should ensure that defineManifest accepts Workflow attempt transition effects", () => {
 	const manifest = defineManifest({
 		version: "v1",
@@ -177,7 +313,7 @@ it("should ensure that defineManifest accepts Workflow attempt transition effect
 	]);
 });
 
-it("should ensure that defineManifest defaults the canonical GitHub reserved prefix and keeps Zod payload schemas as runtime contracts", () => {
+it("should ensure that defineManifest keeps Zod payload schemas as runtime contracts", () => {
 	const manifest = defineManifest({
 		version: "v1",
 		workflow: { id: "tiny", version: "1.0.0" },
@@ -216,20 +352,19 @@ it("should ensure that defineManifest defaults the canonical GitHub reserved pre
 	});
 
 	expect(validateManifest(manifest)).toEqual([]);
-	expect(manifest.github.reservedPrefix).toBe("awf");
 	expect(typeof manifest.kinds[0]?.transitions[0]?.event).toBe("string");
 	expect(manifest.commands[0]?.input instanceof z.ZodType).toBe(true);
 	expect(
 		manifest.commands[0]?.input?.parse({
 			pullRequest: {
 				type: "pull-request",
-				url: " https://github.com/albizures/harness/pull/52 ",
+				url: " https://example.com/pull/52 ",
 			},
 		}),
 	).toEqual({
 		pullRequest: {
 			type: "pull-request",
-			url: "https://github.com/albizures/harness/pull/52",
+			url: "https://example.com/pull/52",
 		},
 	});
 });
@@ -243,7 +378,6 @@ it("should validate per-subkind concurrency against declared kind subkinds", () 
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: {
 			perIssue: 1,
 			perSubkind: { ticket: { bug: 1, feature: 2 } },
@@ -289,7 +423,6 @@ it("should require a workflow semantic version", () => {
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
@@ -316,7 +449,6 @@ it("should validate lifecycle active and terminal states against the workflow vo
 			actions: ["implement", "none"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: {
 			activeStates: ["running"],
@@ -367,7 +499,6 @@ it("should reject removed lifecycle retry escalation and resume allow-list contr
 			actions: ["work", "none"],
 			events: ["start", "succeed", "fail"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: {
 			activeStates: ["running"],
@@ -405,7 +536,6 @@ it("should reject readiness filters that target terminal states while allowing t
 			actions: ["implement", "none"],
 			events: ["reopen"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
 		readiness: {
@@ -453,7 +583,6 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		readiness: {
 			filters: [{ kind: "ticket", state: "ready", action: "implement" }],
@@ -512,7 +641,7 @@ it("should validate manifest-declared CLI targets and named readiness filters", 
 		/Duplicate command target declaration 'create ticket'/,
 	);
 	expect(messages).toMatch(/Duplicate id 'ticket-create'/);
-	expect(messages).toMatch(/Identifier must use lowercase/);
+	expect(messages).toMatch(/CLI target must use lowercase/);
 	expect(messages).toMatch(/Command target kind must reference a known kind/);
 	expect(messages).toMatch(
 		/Command target action must reference a known action/,
@@ -531,7 +660,6 @@ it("should reject executable hook fields embedded in workflow semantic declarati
 			actions: ["planning", "work", "none"],
 			events: ["start", "succeed", "resume"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		readiness: {
 			filters: [{ kind: "task", state: "ready", action: "work" }],
@@ -609,7 +737,6 @@ it("should reject payload schemas outside command input declarations", () => {
 			actions: ["implement", "none"],
 			events: ["start", "succeed"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		lifecycle: { escalation: { input: z.object({ reason: z.string() }) } },
 		kinds: [
@@ -655,7 +782,6 @@ it("should reject tracker as a manifest field inside defineManifest data", () =>
 			actions: ["implement"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{
@@ -684,7 +810,6 @@ it("should reject non-declarative hooks, wildcards, unknown references, and malf
 			actions: ["implement", "review"],
 			events: ["start"],
 		},
-		github: { reservedPrefix: "awf" },
 		concurrency: { perIssue: 1 },
 		kinds: [
 			{

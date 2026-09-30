@@ -37,11 +37,16 @@ it("should bind the bundled agent-workflow manifest when config is missing", asy
 			throw new Error("expected cli binding");
 		}
 		expect(binding.args).toEqual(["ready"]);
-		expect(binding.manifest.workflow.id).toBe("agent-workflow");
+		expect(binding.manifest.workflow.id).toBe("w1");
 		expect(binding.manifest.kinds.map((kind) => kind.id)).toEqual([
 			"spec",
 			"wayfinder",
 			"task",
+			"task:work",
+			"task:research",
+			"task:prototype",
+			"task:work:integration-test",
+			"task:work:merge",
 			"grilling",
 		]);
 	});
@@ -59,14 +64,14 @@ it("should ensure that default config discovery is limited to the current workin
 			throw new Error("expected cli binding");
 		}
 		expect(fromCurrentDirectory.args).toEqual(["ready"]);
-		expect(fromCurrentDirectory.manifest.workflow.id).toBe("agent-workflow");
+		expect(fromCurrentDirectory.manifest.workflow.id).toBe("w1");
 
 		const fromChildDirectory = await bindCliExecution(["ready"], child);
 		expect("manifest" in fromChildDirectory).toBe(true);
 		if (!("manifest" in fromChildDirectory)) {
 			throw new Error("expected cli binding");
 		}
-		expect(fromChildDirectory.manifest.workflow.id).toBe("agent-workflow");
+		expect(fromChildDirectory.manifest.workflow.id).toBe("w1");
 	});
 });
 
@@ -82,7 +87,7 @@ it("should ensure that explicit --config is stripped before command dispatch", a
 			throw new Error("expected cli binding");
 		}
 		expect(binding.args).toEqual(["ready"]);
-		expect(binding.manifest.workflow.id).toBe("agent-workflow");
+		expect(binding.manifest.workflow.id).toBe("w1");
 	});
 });
 

@@ -4,6 +4,7 @@ import { unknownCommand, workflowCommandByCli } from "./shared.ts";
 import { runtimeFailures } from "../failures.ts";
 
 const maxReconcileArgumentCount = 3;
+const maxMigrateArgumentCount = 3;
 export function validateKnownCommand(
 	args: Array<string>,
 	manifest?: WorkflowManifest,
@@ -27,6 +28,8 @@ export function validateKnownCommand(
 				return unknownCommand(args);
 			}
 			return requirePositionalCount(args, 1, "awf manifest validate <file>", 2);
+		case "migrate":
+			return validateMigrate(args);
 		case "workflow":
 			return validateWorkflowArguments(args);
 		default:
@@ -41,6 +44,27 @@ function validateWorkflowArguments(args: Array<string>): Envelope | undefined {
 	return failure(
 		runtimeFailures.invalidArguments({ usage: "awf workflow describe" }),
 	);
+}
+
+function validateMigrate(args: Array<string>): Envelope | undefined {
+	const usage = "awf migrate legacy-task-subkinds [--dry-run|--apply]";
+	if (args[1] !== "legacy-task-subkinds") {
+		return unknownCommand(args);
+	}
+	const allowed = new Set([
+		"migrate",
+		"legacy-task-subkinds",
+		"--dry-run",
+		"--apply",
+	]);
+	if (
+		args.length > maxMigrateArgumentCount ||
+		args.some((arg) => !allowed.has(arg)) ||
+		(args.includes("--dry-run") && args.includes("--apply"))
+	) {
+		return failure(runtimeFailures.invalidArguments({ usage }));
+	}
+	return undefined;
 }
 
 function validateManifestCliArguments(
@@ -92,12 +116,7 @@ function validateManifestCommandArguments(
 			runtimeFailures.invalidArguments({ usage: `awf ${verb} <target> ...` }),
 		);
 	}
-	return requirePositionalAndOption(
-		args,
-		`awf create ${target} --input <file|->`,
-		"--input",
-		1,
-	);
+	return undefined;
 }
 
 function validateReconcile(args: Array<string>): Envelope | undefined {
@@ -119,35 +138,44 @@ function invalidReadyArguments(): Envelope {
 	return failure(
 		runtimeFailures.invalidArguments({
 			message: "Invalid arguments for ready.",
-			usage: "awf ready [--filter <name=value>] [--limit <n>]",
+			usage: "awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
 		}),
 	);
 }
 
 export type ReadyOptions = {
+	blocked: boolean;
 	filters: Array<{ name: string; value: string }>;
 	limit?: number;
 	error?: true;
 };
 
 export function parseReadyOptions(args: Array<string>): ReadyOptions {
-	const options: ReadyOptions = { filters: [] };
-	for (let index = 1; index < args.length; index += 2) {
+	const options: ReadyOptions = { blocked: false, filters: [] };
+	for (let index = 1; index < args.length; ) {
 		const option = args[index];
+		if (option === "--blocked" && !options.blocked) {
+			options.blocked = true;
+			index += 1;
+			continue;
+		}
+
 		const value = args[index + 1];
 		if (value === undefined || value === "") {
-			return { filters: [], error: true };
+			return { blocked: false, filters: [], error: true };
 		}
 		if (option === "--filter") {
 			const parsed = parseNamedFilter(value);
 			if (parsed === undefined) {
-				return { filters: [], error: true };
+				return { blocked: false, filters: [], error: true };
 			}
 			options.filters.push(parsed);
+			index += 2;
 		} else if (option === "--limit" && options.limit === undefined) {
 			options.limit = Number(value);
+			index += 2;
 		} else {
-			return { filters: [], error: true };
+			return { blocked: false, filters: [], error: true };
 		}
 	}
 	return options;
@@ -174,29 +202,6 @@ function requirePositionalCount(
 ): Envelope | undefined {
 	const positionals = args.slice(offset).filter((arg) => !arg.startsWith("-"));
 	if (positionals.length === count && args.length === offset + count) {
-		return undefined;
-	}
-
-	return failure(runtimeFailures.invalidArguments({ usage }));
-}
-
-function requirePositionalAndOption(
-	args: Array<string>,
-	usage: string,
-	optionName: string,
-	prefixPositionals = 1,
-): Envelope | undefined {
-	const prefix = args.slice(1, 1 + prefixPositionals);
-	const optionIndex = args.indexOf(optionName);
-	if (
-		prefix.every(
-			(arg) => arg !== undefined && arg !== "" && !arg.startsWith("-"),
-		) &&
-		optionIndex === 1 + prefixPositionals &&
-		args[optionIndex + 1] !== undefined &&
-		args[optionIndex + 1] !== "" &&
-		args.length === optionIndex + 2
-	) {
 		return undefined;
 	}
 

@@ -22,19 +22,16 @@
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"test": "pnpm run test:unit && pnpm run test:integration",
-		"test:unit": "vitest run --config vitest.config.ts test/unit",
-		"test:integration": "vitest run --config vitest.config.ts test/integration",
-		"test:coverage": "vitest run --config vitest.config.ts --coverage",
-		"test:vitest": "vitest run --config vitest.config.ts",
+		"test:unit": "vitest run --config ../../vitest.config.mts test/unit",
+		"test:integration": "vitest run --config ../../vitest.config.mts test/integration",
+		"test:coverage": "vitest run --config ../../vitest.config.mts --coverage",
+		"test:vitest": "vitest run --config ../../vitest.config.mts",
 		"awf": "node ./dist/cli.js"
 	},
 	"dependencies": {
 		"jiti": "^2.7.0",
 		"type-fest": "^5.8.0",
+		"yaml": "^2.9.1",
 		"zod": "^4.4.3"
-	},
-	"devDependencies": {
-		"@vitest/coverage-v8": "4.1.10",
-		"vitest": "^4.1.10"
 	}
 }

@@ -46,7 +46,7 @@ Example:
 ---
 id: "1"
 title: "Readable issue"
-workflow: {"kind":"task","state":"ready","action":"work","version":1,"hash":"..."}
+workflow: {"kind":"task:work","state":"ready","action":"work","version":1,"hash":"..."}
 relationships: {"children":[],"dependencies":[],"dependents":[]}
 ---
 
@@ -57,7 +57,7 @@ Issue **body**.
 <!-- awf:logs v1 -->
 
 1. type: "workflow_created"
-   message: "Created from create task."
+   message: "Created from create task:work."
 2. type: "commented"
    message: |-
      First line
@@ -83,9 +83,14 @@ Example commands:
 
 ```sh
 awf --config ./awf.config.ts create spec --input ./spec.json
-awf --config ./awf.config.ts create task --input ./task.json
+awf --config ./awf.config.ts create task:work --input ./task.json
+awf --config ./awf.config.ts create task:research --input ./research-task.json
+awf --config ./awf.config.ts create task:prototype --input ./prototype-task.json
+awf --config ./awf.config.ts create task:work:integration-test --input ./integration-task.json
+awf --config ./awf.config.ts create task:work:merge --input ./merge-task.json
 awf --config ./awf.config.ts create grilling --input ./grilling.json
 awf --config ./awf.config.ts ready
+awf --config ./awf.config.ts migrate legacy-task-subkinds --dry-run
 ```
 
 A Spec create input provides `title` plus `body` or `content`:
@@ -97,7 +102,7 @@ A Spec create input provides `title` plus `body` or `content`:
 }
 ```
 
-A Task create input belongs to a Spec, carries a project-owned profile, may declare a durable subkind (`work`, `research`, or `prototype`; defaults to `work`), and may record provenance or dependency ordering explicitly. Grilling is a separate top-level collaborative kind, not a Task subkind:
+A Task create input belongs to a Spec, carries a project-owned profile, and may record provenance or dependency ordering explicitly. Use direct concrete Task creation commands (`create task:work`, `create task:research`, `create task:prototype`, `create task:work:integration-test`, or `create task:work:merge`) for bundled Task kinds. The generic `create task` seam is retained for validated programmatic use and requires a concrete `kind`. Grilling is a separate top-level collaborative kind, not a Task subkind:
 
 ```json
 {
@@ -105,7 +110,6 @@ A Task create input belongs to a Spec, carries a project-owned profile, may decl
 	"title": "Add importer retry tests",
 	"description": "Cover retry and permanent-failure behavior.",
 	"profile": "test-engineering",
-	"subkind": "work",
 	"generatedBy": "42",
 	"dependsOn": ["43"]
 }
@@ -125,11 +129,11 @@ Grilling starts at `ready/discuss`, moves to `in-discussion/discuss` when starte
 
 ## Policy boundaries
 
-AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Task subkind is durable workflow data separate from the lifecycle tuple; readiness matches kind, state, and action. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
+AWF core owns lifecycle and readiness semantics: current workflow fields, legal transitions, active-run gates, dependency gates, concurrency gates, parent/child readiness gates, tracker projection, and append-only logs. Concrete hierarchical Task kind IDs (`task:work`, `task:research`, `task:prototype`, `task:work:integration-test`, and `task:work:merge`) carry bundled Task semantics; readiness matches kind, state, and action. Project-owned profile policy stays outside the core. A Task profile is freeform routing data such as `test-engineering`, `docs`, or `release`; AWF stores and displays it but does not decide which humans, agents, prompts, tools, or SLAs that profile implies.
 
-In `agent-workflow`, a Spec starts ready for `planning`. Completing planning leaves the Spec at `ready/none` while child Tasks run. Integration testing and merging are ordinary `work` Tasks routed by profile (`integration-test` and `merge`), not Spec lifecycle actions. Readiness gates block Integration-test Tasks while implementation-gate sibling Tasks are open, and block Merge Tasks until implementation-gate Tasks are closed, no Integration-test Task is open, and at least one Integration-test Task is done. A Spec becomes `done` only through `awf spec complete <issue>`, which validates child Tasks are terminal, at least one Merge Task is done, and child Grilling issues are not open.
+In `agent-workflow`, a Spec starts ready for `planning`. `awf spec planned <issue>` records that the task breakdown has been accepted and leaves the Spec at `ready/none` while child Tasks run. Integration testing and optional merging/release handoff are ordinary `task:work:integration-test` and `task:work:merge` Tasks, not Spec lifecycle actions or profile conventions. Readiness gates block Integration-test Tasks while implementation-gate sibling Tasks are open, and block Merge Tasks until implementation-gate Tasks are closed, no Integration-test Task is open, and at least one Integration-test Task is done. A Spec becomes `done` only through `awf spec complete <issue>`, which validates planning is complete, child Tasks are terminal, and child Grilling issues are not open.
 
-AWF does not prove integration-test freshness after later follow-up work. Agents that create follow-up implementation or review Tasks after an Integration-test Task must also schedule another Integration-test Task before merge work proceeds. If the integration-test pass finds ambiguous scope, use Grilling and/or Task `need-human` rather than silently expanding executable work.
+AWF does not prove integration-test freshness after later follow-up work. Agents that create follow-up implementation or review Tasks after an Integration-test Task must also schedule another Integration-test Task before merge/release handoff work or Spec completion proceeds. If the integration-test pass finds ambiguous scope, use Grilling and/or Task `need-human` rather than silently expanding executable work.
 
 `generatedBy` records generated-by provenance only. This means generated-by provenance is not dependency ordering, is not a readiness gate, and is separate from Spec containment. Use `spec`/parent-child relationships to attach Tasks to a Spec, `dependsOn` to block one Task on another, and `generatedBy` to explain why a Task exists.
 

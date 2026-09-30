@@ -57,6 +57,7 @@ export type WorkflowDescriptionV1 = {
 			verb: string;
 			target: string;
 			usage: string;
+			examples?: Array<string>;
 		};
 		input: WorkflowDescriptionSchemaInputV1;
 	}>;
@@ -136,6 +137,9 @@ export function describeWorkflow(
 							verb: command.cli.verb,
 							target: command.cli.target,
 							usage: manifestCommandUsage(command),
+							...(command.cli.examples === undefined
+								? {}
+								: { examples: [...command.cli.examples] }),
 						},
 					}),
 			input: inputMarker(command.input),

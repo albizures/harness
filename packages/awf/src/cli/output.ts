@@ -54,11 +54,17 @@ function formatData(data: JsonValue): string {
 		if (Array.isArray(data.items)) {
 			return formatReady(data);
 		}
+		if (Array.isArray(data.blocked)) {
+			return formatBlockedReady(data.blocked);
+		}
+		if (isIssueInspectionPayload(data)) {
+			return formatIssueInspection(data);
+		}
 		if (isRecord(data.issue)) {
 			return formatIssueResult(data);
 		}
 		if (Array.isArray(data.logs)) {
-			return formatLogs(data.logs);
+			return formatLogs(data.logs, data.issueId);
 		}
 		if (typeof data.manifest === "string") {
 			return `Manifest ${data.manifest} ${typeof data.version === "string" ? data.version : ""}`.trim();
@@ -143,6 +149,7 @@ function formatWorkflowDescription(data: Record<string, JsonValue>): string {
 		lines.push(`- ${String(command.id)}`);
 		if (isRecord(command.cli) && typeof command.cli.usage === "string") {
 			lines.push(`  - Usage: ${command.cli.usage}`);
+			appendCommandExamples(lines, command.cli.examples, "  ");
 		}
 		if (isRecord(command.target)) {
 			lines.push(`  - Target: ${formatCommandTarget(command.target)}`);
@@ -328,46 +335,180 @@ function formatHelp(data: Record<string, JsonValue>): string {
 		lines.push(
 			`  ${String(command.usage ?? command.name ?? "")}  ${String(command.description ?? "")}`.trimEnd(),
 		);
-	}
-	const readiness = isRecord(data.readiness) ? data.readiness : undefined;
-	if (readiness !== undefined && Array.isArray(readiness.subkinds)) {
-		const subkinds = readiness.subkinds.filter(
-			(item): item is Record<string, JsonValue> => isRecord(item),
-		);
-		if (subkinds.length > 0) {
-			lines.push("", "Subkinds:");
-			for (const item of subkinds) {
-				lines.push(
-					`  ${String(item.kind)}: ${formatList(item.values)} (${String(item.kind)} remains the kind)`,
-				);
-			}
-		}
+		appendCommandExamples(lines, command.examples, "    ");
 	}
 	lines.push("", "Use --json for machine-readable output.");
 	return lines.join("\n");
 }
 
+function appendCommandExamples(
+	lines: Array<string>,
+	examples: JsonValue | undefined,
+	indent: string,
+): void {
+	if (!Array.isArray(examples) || examples.length === 0) {
+		return;
+	}
+	lines.push(`${indent}- Examples:`);
+	for (const example of examples) {
+		lines.push(`${indent}  - ${String(example)}`);
+	}
+}
+
 function formatReady(data: Record<string, JsonValue>): string {
 	const items = data.items as Array<JsonValue>;
-	if (items.length === 0) {
-		return "No ready work.";
+	const lines =
+		items.length === 0
+			? ["No ready work."]
+			: items.map((item) => formatReadyLine(item));
+	const blockedCount = Array.isArray(data.blocked) ? data.blocked.length : 0;
+	if (blockedCount > 0) {
+		lines.push(
+			"",
+			`Blocked work: ${blockedCount}. Use awf ready --blocked to inspect.`,
+		);
 	}
-	return items
-		.map((item) => {
-			if (!isRecord(item)) {
-				return formatValue(item);
-			}
-			const workflow = isRecord(item.workflow)
-				? ` [${formatWorkflow(item.workflow)}]`
-				: "";
-			const command =
-				isRecord(item.suggestedCommand) &&
-				typeof item.suggestedCommand.display === "string"
-					? ` — ${item.suggestedCommand.display}`
-					: "";
-			return `${String(item.id ?? "")} ${String(item.title ?? "")}${workflow}${command}`.trim();
-		})
-		.join("\n");
+	return lines.join("\n");
+}
+
+function formatBlockedReady(blocked: Array<JsonValue>): string {
+	if (blocked.length === 0) {
+		return "No blocked work.";
+	}
+	return blocked.map((item) => formatReadyLine(item, true)).join("\n");
+}
+
+function formatReadyLine(item: JsonValue, includeBlocking = false): string {
+	if (!isRecord(item)) {
+		return formatValue(item);
+	}
+	const workflow = isRecord(item.workflow)
+		? ` [${formatWorkflow(item.workflow)}]`
+		: "";
+	const command =
+		isRecord(item.suggestedCommand) &&
+		typeof item.suggestedCommand.display === "string"
+			? ` — ${item.suggestedCommand.display}`
+			: "";
+	const blocking = includeBlocking ? formatBlockingSuffix(item.blocking) : "";
+	return `${String(item.id ?? "")} ${String(item.title ?? "")}${workflow}${command}${blocking}`.trim();
+}
+
+function formatBlockingSuffix(blocking: JsonValue | undefined): string {
+	if (!Array.isArray(blocking) || blocking.length === 0) {
+		return "";
+	}
+	const gates = blocking.map((gate) => {
+		if (!isRecord(gate)) {
+			return formatValue(gate);
+		}
+		const blockers = Array.isArray(gate.blockedBy)
+			? gate.blockedBy.map(formatBlockingIssue).join(", ")
+			: "";
+		return blockers.length === 0
+			? String(gate.gate ?? "unknown")
+			: `${String(gate.gate ?? "unknown")}: ${blockers}`;
+	});
+	return ` — blocked by ${gates.join("; ")}`;
+}
+
+function formatBlockingIssue(issue: JsonValue): string {
+	if (!isRecord(issue)) {
+		return formatValue(issue);
+	}
+	return `${String(issue.id ?? "")} ${String(issue.title ?? "")}`.trim();
+}
+
+function isIssueInspectionPayload(data: Record<string, JsonValue>): boolean {
+	return (
+		isRecord(data.issue) &&
+		isRecord(data.relationships) &&
+		Array.isArray(data.recentLogs)
+	);
+}
+
+function formatIssueInspection(data: Record<string, JsonValue>): string {
+	const issue = data.issue as Record<string, JsonValue>;
+	const relationships = data.relationships as Record<string, JsonValue>;
+	const lines = [
+		`# ${formatIssue(issue)}`,
+		"",
+		"## Body",
+		"",
+		formatIssueBody(issue.body),
+		"",
+		"## Relationships",
+		"",
+	];
+
+	appendRelationshipSection(lines, "Parent", relationships.parent);
+	appendRelationshipSection(lines, "Children", relationships.children);
+	appendRelationshipSection(lines, "Dependencies", relationships.dependencies);
+	appendRelationshipSection(lines, "Dependents", relationships.dependents);
+	appendRelationshipSection(lines, "Generated by", relationships.generatedBy);
+
+	lines.push("## Recent logs", "");
+	const recentLogs = data.recentLogs as Array<JsonValue>;
+	if (recentLogs.length === 0) {
+		lines.push("None.");
+	} else {
+		for (const log of recentLogs) {
+			lines.push(formatRecentLog(log));
+		}
+	}
+
+	return lines.join("\n");
+}
+
+function formatIssueBody(body: JsonValue | undefined): string {
+	return typeof body === "string" && body.length > 0 ? body : "_No body._";
+}
+
+function appendRelationshipSection(
+	lines: Array<string>,
+	title: string,
+	value: JsonValue | undefined,
+): void {
+	lines.push(`### ${title}`, "");
+	const items = relationshipItems(value);
+	if (items.length === 0) {
+		lines.push("None.", "");
+		return;
+	}
+	for (const item of items) {
+		lines.push(formatRelatedIssue(item));
+	}
+	lines.push("");
+}
+
+function relationshipItems(value: JsonValue | undefined): Array<JsonValue> {
+	if (Array.isArray(value)) {
+		return value;
+	}
+	return value === undefined ? [] : [value];
+}
+
+function formatRelatedIssue(value: JsonValue): string {
+	if (!isRecord(value)) {
+		return `- ${formatValue(value)}`;
+	}
+	const title = typeof value.title === "string" ? ` ${value.title}` : "";
+	const missing = value.missing === true ? " (missing)" : "";
+	const workflow = isRecord(value.workflow)
+		? ` [${formatWorkflow(value.workflow)}]`
+		: "";
+	return `- ${String(value.id ?? "")}${title}${workflow}${missing}`.trimEnd();
+}
+
+function formatRecentLog(log: JsonValue): string {
+	if (!isRecord(log)) {
+		return `- ${formatValue(log)}`;
+	}
+	const suffixes = [typeof log.message === "string" ? log.message : undefined]
+		.filter((value): value is string => value !== undefined && value.length > 0)
+		.join(" — ");
+	const suffix = suffixes.length === 0 ? "" : ` — ${suffixes}`;
+	return `- ${String(log.sequence ?? "")} ${String(log.type ?? "")}${suffix}`.trimEnd();
 }
 
 function formatIssueResult(data: Record<string, JsonValue>): string {
@@ -408,39 +549,27 @@ function formatIssue(issue: Record<string, JsonValue>): string {
 	return `${String(issue.id ?? "")} ${String(issue.title ?? "")}${workflow}`.trim();
 }
 
-function formatLogs(logs: Array<JsonValue>): string {
+function formatLogs(
+	logs: Array<JsonValue>,
+	issueId: JsonValue | undefined,
+): string {
 	if (logs.length === 0) {
-		return "No logs.";
+		return typeof issueId === "string" ? `No logs for ${issueId}.` : "No logs.";
 	}
 	return logs
 		.map((log) => {
 			if (!isRecord(log)) {
 				return formatValue(log);
 			}
-			return `${String(log.sequence ?? "")} ${String(log.type ?? "")}`.trim();
+			return formatRecentLog(log).replace(/^- /u, "");
 		})
 		.join("\n");
 }
 
 function formatWorkflow(workflow: Record<string, JsonValue>): string {
-	const lifecycle = [workflow.kind, workflow.state, workflow.action]
+	return [workflow.kind, workflow.state, workflow.action]
 		.filter((value) => typeof value === "string" && value !== "none")
 		.join("/");
-	const subkind = workflowSubkind(workflow);
-	return subkind === undefined
-		? lifecycle
-		: `${lifecycle}; subkind: ${subkind}`;
-}
-
-function workflowSubkind(
-	workflow: Record<string, JsonValue>,
-): string | undefined {
-	if (typeof workflow.subkind === "string") {
-		return workflow.subkind;
-	}
-	return isRecord(workflow.data) && typeof workflow.data.subkind === "string"
-		? workflow.data.subkind
-		: undefined;
 }
 
 function formatValue(value: JsonValue): string {

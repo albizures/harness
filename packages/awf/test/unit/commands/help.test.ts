@@ -42,6 +42,24 @@ it("should ensure that help returns a stable success envelope", async () => {
 		),
 	).toBeTruthy();
 	expect(
+		data.commands.some(
+			(command) =>
+				command.usage === "awf create spec --input <file|->" &&
+				(command as { examples?: Array<string> }).examples?.includes(
+					'awf create spec --title "Title" --body -',
+				) === true,
+		),
+	).toBeTruthy();
+	expect(
+		data.commands.some(
+			(command) =>
+				command.usage === "awf create task --input <file|->" &&
+				(command as { examples?: Array<string> }).examples?.includes(
+					'awf create task --title "Title" --description -',
+				) === true,
+		),
+	).toBeTruthy();
+	expect(
 		data.commands.every((command) => command.name !== "handoff"),
 	).toBeTruthy();
 	expect(
@@ -59,7 +77,11 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 		commands: [
 			{
 				id: "ticket-create",
-				cli: { verb: "create", target: "ticket" },
+				cli: {
+					verb: "create",
+					target: "ticket",
+					examples: ['awf create ticket --title "Title" --description -'],
+				},
 				target: { kind: "task", action: "work" },
 			},
 			{
@@ -80,6 +102,15 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 	).toBeTruthy();
 	expect(
 		helpCommands(manifest).some(
+			(command) =>
+				command.usage === "awf create ticket --input <file|->" &&
+				command.examples?.includes(
+					'awf create ticket --title "Title" --description -',
+				) === true,
+		),
+	).toBeTruthy();
+	expect(
+		helpCommands(manifest).some(
 			(command) => command.usage === "awf score brief <issue> --input <file|->",
 		),
 	).toBeTruthy();
@@ -94,7 +125,5 @@ it("should ensure that help combines runtime commands with manifest CLI targets 
 			usage: "awf ready --filter spec=<spec>",
 		},
 	]);
-	expect(helpReadiness(manifest).subkinds).toEqual([
-		{ kind: "task", values: ["work", "research", "prototype"] },
-	]);
+	expect(helpReadiness(manifest).subkinds).toEqual([]);
 });

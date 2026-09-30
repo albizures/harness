@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. ADR 0006 supersedes this ADR's Task profile/subkind classification details; this ADR still records the decision to model integration-test and merge as ready-gated ordinary Tasks instead of Spec lifecycle actions.
 
 ## Context
 

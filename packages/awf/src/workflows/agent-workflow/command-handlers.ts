@@ -5,6 +5,10 @@ import type {
 	CommandHandlers,
 } from "../../runtime/command-handlers.ts";
 import { type Envelope, failure, success } from "../../runtime/envelope.ts";
+import {
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "../../domain/manifest/logging.ts";
 import { getKind, type ManifestCommand } from "../../domain/manifest/schema.ts";
 import { NeedReconciliationError, type Tracker } from "../../ports/tracker.ts";
 import type { WorkflowIssue } from "../../domain/workflow/issue.ts";
@@ -13,8 +17,9 @@ import {
 	initialWorkflowTarget,
 	isRecord,
 	lifecycleError,
-	stableStringify,
+	proseLogMessage,
 	workflowTarget,
+	kindMatches,
 } from "../../runtime/commands/shared.ts";
 import { humanInteractionCommandHandlers } from "../human-interaction-handlers.ts";
 
@@ -31,7 +36,12 @@ type TaskCreateInput = {
 	title: string;
 	description: string;
 	profile: string;
-	subkind: "work" | "research" | "prototype";
+	kind:
+		| "task:work"
+		| "task:research"
+		| "task:prototype"
+		| "task:work:integration-test"
+		| "task:work:merge";
 	dependsOn?: Array<string>;
 	generatedBy?: string;
 };
@@ -43,6 +53,8 @@ type GrillingCreateInput = {
 };
 
 const createSpecCommand: CommandHandler = specCreateCommand;
+const plannedSpecCommand: CommandHandler = specPlannedCommand;
+plannedSpecCommand.rawInput = true;
 const completeSpecCommand: CommandHandler = specCompleteCommand;
 completeSpecCommand.rawInput = true;
 const createTaskCommand: CommandHandler = taskCreateCommand;
@@ -51,8 +63,14 @@ const createGrillingCommand: CommandHandler = grillingCreateCommand;
 export const agentWorkflowCommandHandlers: CommandHandlers = {
 	...humanInteractionCommandHandlers(),
 	"spec-create": createSpecCommand,
+	"spec-planned": plannedSpecCommand,
 	"spec-complete": completeSpecCommand,
 	"task-create": createTaskCommand,
+	"task-work-create": createTaskCommand,
+	"task-research-create": createTaskCommand,
+	"task-prototype-create": createTaskCommand,
+	"task-work-integration-test-create": createTaskCommand,
+	"task-work-merge-create": createTaskCommand,
 	"grilling-create": createGrillingCommand,
 };
 
@@ -103,10 +121,14 @@ async function specCreateCommand(
 							...initialWorkflowTarget(specKind.initial),
 						},
 					},
-					initialLog: {
-						type: `${command.id}_created`,
-						message: stableStringify({ input: specInput }),
-					},
+					...(shouldLogCreation(manifest, command)
+						? {
+								initialLog: {
+									type: `${command.id}_created`,
+									message: proseLogMessage(command.id, specInput),
+								},
+							}
+						: {}),
 				},
 				...(parent === undefined
 					? []
@@ -127,19 +149,92 @@ async function specCreateCommand(
 		}
 		const issue = await tracker.getIssue(created.id);
 		const log = applied.logs[0];
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		return validateOrSucceed(command, { issue, log });
+		return validateOrSucceed(command, {
+			issue,
+			...(log === undefined ? {} : { log }),
+		});
 	} catch (error) {
 		return lifecycleError("new", error);
 	}
 }
 
+async function specPlannedCommand({
+	args = [],
+	command,
+	manifest,
+	tracker,
+}: Parameters<CommandHandler>[0]): Promise<Envelope> {
+	const issueId = args[2];
+	if (issueId === undefined) {
+		return failure("INVALID_ARGUMENTS", "Invalid arguments.", {
+			usage: "awf spec planned <issue>",
+		});
+	}
+	try {
+		const issue = await tracker.getIssue(issueId);
+		if (
+			issue.workflow.kind !== "spec" ||
+			issue.workflow.action !== "planning"
+		) {
+			return failure(
+				"UNAVAILABLE_COMMAND",
+				"Workflow command is not available for the issue's current workflow state.",
+				{ id: issue.id, command: "spec-planned" },
+			);
+		}
+		if (
+			issue.workflow.state !== "ready" &&
+			issue.workflow.state !== "running"
+		) {
+			return failure(
+				"UNAVAILABLE_COMMAND",
+				"Workflow command is not available for the issue's current workflow state.",
+				{ id: issue.id, command: "spec-planned" },
+			);
+		}
+		const result = await tracker.applyWorkflowEffects({
+			effects: [
+				{
+					type: "update-workflow",
+					issue: { id: issue.id },
+					expect: {
+						version: issue.workflow.version,
+						hash: issue.workflow.hash,
+					},
+					workflow: workflowTarget({ state: "ready", action: "none" }),
+				},
+				...(shouldLogStateChange(manifest, command)
+					? [
+							{
+								type: "record-command" as const,
+								issue: { id: issue.id },
+								log: {
+									type: "command",
+									message: "Completed Spec planning.",
+								},
+							},
+						]
+					: []),
+			],
+		});
+		return success({
+			issue: result.issues[issue.id] ?? (await tracker.getIssue(issue.id)),
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
+		});
+	} catch (error) {
+		return lifecycleError(issueId, error);
+	}
+}
+
 async function specCompleteCommand({
 	args = [],
+	command,
+	manifest,
 	tracker,
 }: Parameters<CommandHandler>[0]): Promise<Envelope> {
 	const issueId = args[2];
@@ -161,11 +256,11 @@ async function specCompleteCommand({
 				{ id: issue.id, command: "spec-complete" },
 			);
 		}
-		const blockers = await specCompletionBlockers(issue, tracker);
+		const blockers = await specCompletionBlockers(issue, tracker, manifest);
 		if (blockers.length > 0) {
 			return failure(
 				"SPEC_COMPLETION_INVALID",
-				"Spec completion requires all child Tasks terminal, at least one Merge Task done, and no open child Grilling issues.",
+				"Spec completion requires planning to be completed, all child Tasks terminal, and no open child Grilling issues.",
 				{ id: issue.id, blockedBy: blockers },
 			);
 		}
@@ -180,22 +275,23 @@ async function specCompleteCommand({
 					},
 					workflow: workflowTarget({ state: "done", action: "none" }),
 				},
-				{
-					type: "record-command",
-					issue: { id: issue.id },
-					log: {
-						type: "command",
-						message: stableStringify({
-							event: "complete",
-							to: { state: "done", action: "none" },
-						}),
-					},
-				},
+				...(shouldLogStateChange(manifest, command)
+					? [
+							{
+								type: "record-command" as const,
+								issue: { id: issue.id },
+								log: {
+									type: "command",
+									message: proseLogMessage("complete"),
+								},
+							},
+						]
+					: []),
 			],
 		});
 		return success({
 			issue: result.issues[issue.id] ?? (await tracker.getIssue(issue.id)),
-			log: result.logs[0],
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 		});
 	} catch (error) {
 		return lifecycleError(issueId, error);
@@ -205,28 +301,23 @@ async function specCompleteCommand({
 async function specCompletionBlockers(
 	issue: WorkflowIssue,
 	tracker: Tracker,
+	manifest: Parameters<CommandHandler>[0]["manifest"],
 ): Promise<Array<Record<string, JsonValue>>> {
 	if (issue.workflow.kind !== "spec") {
 		return [{ id: issue.id, reason: "not-spec", workflow: issue.workflow }];
 	}
 	const blockers: Array<Record<string, JsonValue>> = [];
-	let doneMergeTasks = 0;
 	for (const childId of issue.relationships.children) {
 		const child = await tracker.getIssue(childId);
-		if (child.workflow.kind === "task") {
-			if (
-				child.workflow.data?.profile === "merge" &&
-				child.workflow.state === "done"
-			) {
-				doneMergeTasks += 1;
-			}
-			if (child.workflow.state !== "done") {
-				blockers.push({
-					id: child.id,
-					title: child.title,
-					workflow: child.workflow,
-				});
-			}
+		if (
+			kindMatches("task", child.workflow.kind, manifest) &&
+			child.workflow.state !== "done"
+		) {
+			blockers.push({
+				id: child.id,
+				title: child.title,
+				workflow: child.workflow,
+			});
 		}
 		if (child.workflow.kind === "grilling" && child.workflow.state !== "done") {
 			blockers.push({
@@ -235,9 +326,6 @@ async function specCompletionBlockers(
 				workflow: child.workflow,
 			});
 		}
-	}
-	if (doneMergeTasks === 0) {
-		blockers.push({ gate: "merge-done", minimum: 1 });
 	}
 	return blockers;
 }
@@ -248,18 +336,18 @@ async function taskCreateCommand({
 	tracker,
 	input,
 }: Parameters<CommandHandler>[0]): Promise<Envelope> {
-	const taskKind = getKind(manifest, "task");
-	if (taskKind === undefined) {
-		return failure(
-			"MANIFEST_UNSUPPORTED",
-			"Manifest does not define task kind.",
-		);
-	}
-	const taskInput = parseTaskCreateInput(input);
+	const taskInput = parseTaskCreateInput(input, command.target.kind);
 	if (taskInput === undefined) {
 		return failure(
 			"WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED",
 			"Workflow command input is invalid.",
+		);
+	}
+	const taskKind = getKind(manifest, taskInput.kind);
+	if (taskKind === undefined) {
+		return failure(
+			"MANIFEST_UNSUPPORTED",
+			"Manifest does not define task kind.",
 		);
 	}
 
@@ -284,7 +372,7 @@ async function taskCreateCommand({
 			taskInput.dependsOn ?? [],
 		);
 		const nonTaskBlocker = blockers.find(
-			(blocker) => blocker.workflow.kind !== "task",
+			(blocker) => !kindMatches("task", blocker.workflow.kind, manifest),
 		);
 		if (nonTaskBlocker !== undefined) {
 			return failure(
@@ -298,6 +386,7 @@ async function taskCreateCommand({
 		}
 		const generatedBy = await resolveGeneratedBy(
 			tracker,
+			manifest,
 			taskInput.generatedBy,
 			parent.id,
 		);
@@ -314,19 +403,23 @@ async function taskCreateCommand({
 						title: genericIssueTitle(taskInput, "task"),
 						body: taskBody(taskInput),
 						workflow: {
-							kind: "task",
+							kind: taskInput.kind,
 							...initialWorkflowTarget(taskKind.initial),
-							data: { subkind: taskInput.subkind, profile: taskInput.profile },
+							data: { profile: taskInput.profile },
 						},
 						relationships:
 							taskInput.generatedBy === undefined
 								? undefined
 								: { generatedBy: taskInput.generatedBy },
 					},
-					initialLog: {
-						type: `${command.id}_created`,
-						message: stableStringify({ input: taskInput }),
-					},
+					...(shouldLogCreation(manifest, command)
+						? {
+								initialLog: {
+									type: `${command.id}_created`,
+									message: proseLogMessage(command.id, taskInput),
+								},
+							}
+						: {}),
 				},
 				{
 					type: "add-child",
@@ -348,12 +441,15 @@ async function taskCreateCommand({
 		}
 		const issue = await tracker.getIssue(created.id);
 		const log = applied.logs[0];
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		return validateOrSucceed(command, { issue, log });
+		return validateOrSucceed(command, {
+			issue,
+			...(log === undefined ? {} : { log }),
+		});
 	} catch (error) {
 		return lifecycleError("new", error);
 	}
@@ -408,10 +504,14 @@ async function grillingCreateCommand({
 					...initialWorkflowTarget(grillingKind.initial),
 				},
 			},
-			initialLog: {
-				type: `${command.id}_created`,
-				message: stableStringify({ input: grillingInput }),
-			},
+			...(shouldLogCreation(manifest, command)
+				? {
+						initialLog: {
+							type: `${command.id}_created`,
+							message: proseLogMessage(command.id, grillingInput),
+						},
+					}
+				: {}),
 		};
 		const applied = await tracker.applyWorkflowEffects({
 			effects: [
@@ -435,12 +535,15 @@ async function grillingCreateCommand({
 		}
 		const issue = await tracker.getIssue(created.id);
 		const log = applied.logs[0];
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		return validateOrSucceed(command, { issue, log });
+		return validateOrSucceed(command, {
+			issue,
+			...(log === undefined ? {} : { log }),
+		});
 	} catch (error) {
 		return lifecycleError("new", error);
 	}
@@ -458,7 +561,10 @@ function parseCreateInput(input: JsonValue): CreateInput | undefined {
 	};
 }
 
-function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
+function parseTaskCreateInput(
+	input: JsonValue,
+	commandKind: string,
+): TaskCreateInput | undefined {
 	if (!isRecord(input)) {
 		return undefined;
 	}
@@ -470,7 +576,7 @@ function parseTaskCreateInput(input: JsonValue): TaskCreateInput | undefined {
 		title: String(input.title),
 		description: String(input.description),
 		profile: String(input.profile),
-		subkind: isTaskSubkind(input.subkind) ? input.subkind : "work",
+		kind: taskInputKind(input, commandKind),
 		...(Array.isArray(input.dependsOn) &&
 		input.dependsOn.every((dependency) => typeof dependency === "string")
 			? { dependsOn: input.dependsOn }
@@ -494,6 +600,7 @@ async function resolveTaskBlockers(
 
 async function resolveGeneratedBy(
 	tracker: Tracker,
+	manifest: Parameters<CommandHandler>[0]["manifest"],
 	generatedBy: string | undefined,
 	specId: string,
 ): Promise<{ ok: true } | { ok: false; envelope: Envelope }> {
@@ -501,7 +608,7 @@ async function resolveGeneratedBy(
 		return { ok: true };
 	}
 	const source = await tracker.getIssue(generatedBy);
-	if (source.workflow.kind !== "task") {
+	if (!kindMatches("task", source.workflow.kind, manifest)) {
 		return {
 			ok: false,
 			envelope: failure(
@@ -530,8 +637,21 @@ async function resolveGeneratedBy(
 	return { ok: true };
 }
 
-function isTaskSubkind(value: unknown): value is TaskCreateInput["subkind"] {
-	return value === "work" || value === "research" || value === "prototype";
+function taskInputKind(
+	input: Record<string, unknown>,
+	commandKind: string,
+): TaskCreateInput["kind"] {
+	const raw = commandKind === "task" ? input.kind : commandKind;
+	if (
+		raw === "task:work" ||
+		raw === "task:research" ||
+		raw === "task:prototype" ||
+		raw === "task:work:integration-test" ||
+		raw === "task:work:merge"
+	) {
+		return raw;
+	}
+	return "task:work";
 }
 
 function parseGrillingCreateInput(

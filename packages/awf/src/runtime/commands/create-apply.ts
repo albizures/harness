@@ -5,6 +5,10 @@ import {
 	runLifecycleTransitionHandler,
 	type LifecycleTransitionHandlers,
 } from "../lifecycle-handlers.ts";
+import {
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "../../domain/manifest/logging.ts";
 import type {
 	ManifestCommand,
 	WorkflowManifest,
@@ -34,7 +38,8 @@ import {
 	workflowCommand,
 	workflowCommandByCli,
 	readOption,
-	stableStringify,
+	proseLogMessage,
+	workflowMatchesFilter,
 	workflowTarget,
 } from "./shared.ts";
 
@@ -97,7 +102,7 @@ export async function manifestCommand(
 	const effectiveVerb = verb === "run-command" ? command.cli?.verb : verb;
 	if (effectiveVerb === "create") {
 		return createGenericWorkflowIssueCommand(
-			readOption(args, "--input"),
+			args,
 			versionedTracker,
 			manifest,
 			stdin,
@@ -174,27 +179,25 @@ async function handledManifestCommand(
 		routeVerb === "run-command" ? (command.cli?.verb ?? routeVerb) : routeVerb;
 	const issueId = commandVerb === "create" ? undefined : args[2];
 	const inputPath = readOption(args, "--input");
-	if (
-		inputPath === undefined ||
-		(commandVerb !== "create" && issueId === undefined)
-	) {
+	if (commandVerb !== "create" && issueId === undefined) {
 		return failure(
 			runtimeFailures.invalidArguments({
-				usage:
-					commandVerb === "create"
-						? `awf ${routeVerb} ${command.cli?.target ?? command.id} --input <file|->`
-						: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
+				usage: `awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
 			}),
 		);
 	}
-	const raw = await readInput(inputPath, stdin);
-	const parsed = parseJsonInput(
-		raw,
-		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
-	);
-	if (!parsed.ok) {
-		return parsed;
+	const input =
+		commandVerb === "create"
+			? await readCreateCommandInput(args, stdin, command)
+			: await readStructuredCommandInput(
+					inputPath,
+					stdin,
+					`awf ${routeVerb} ${command.cli?.target ?? command.id} <issue> --input <file|->`,
+				);
+	if (!input.ok) {
+		return input;
 	}
+	const parsed = input.data;
 	const payload = parseWorkflowCommandInput(command, parsed.data);
 	if (!payload.ok) {
 		return payload;
@@ -445,20 +448,130 @@ async function validateIssueWorkflowSemanticVersion(
 	}
 }
 
-export async function createGenericWorkflowIssueCommand(
+type CreateCommandInput = { raw: string; data: JsonValue };
+
+async function readStructuredCommandInput(
 	inputPath: string | undefined,
+	stdin: string | undefined,
+	usage: string,
+): Promise<Envelope<CreateCommandInput>> {
+	if (inputPath === undefined) {
+		return failure(runtimeFailures.invalidArguments({ usage }));
+	}
+	const raw = await readInput(inputPath, stdin);
+	const parsed = parseJsonInput(
+		raw,
+		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
+	);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	return success({ raw, data: parsed.data as JsonValue });
+}
+
+async function readCreateCommandInput(
+	args: Array<string>,
+	stdin: string | undefined,
+	command: ManifestCommand,
+): Promise<Envelope<CreateCommandInput>> {
+	const usage = `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`;
+	const inputPath = readOption(args, "--input");
+	const ergonomicArgs = args
+		.slice(2)
+		.filter((arg) => arg !== "--input" && arg !== inputPath);
+	if (inputPath !== undefined && ergonomicArgs.length > 0) {
+		return failure(
+			runtimeFailures.invalidArguments({
+				message: "Use either --input or ergonomic create flags, not both.",
+				usage,
+			}),
+		);
+	}
+	if (inputPath !== undefined) {
+		const raw = await readInput(inputPath, stdin);
+		const parsed = parseJsonInput(
+			raw,
+			runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
+		);
+		if (!parsed.ok) {
+			return parsed;
+		}
+		return success({ raw, data: parsed.data as JsonValue });
+	}
+	const parsed = await parseErgonomicCreateArgs(args.slice(2), stdin, usage);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	return success({ raw: JSON.stringify(parsed.data), data: parsed.data });
+}
+
+async function parseErgonomicCreateArgs(
+	args: Array<string>,
+	stdin: string | undefined,
+	usage: string,
+): Promise<Envelope<JsonValue>> {
+	if (args.length === 0) {
+		return failure(runtimeFailures.invalidArguments({ usage }));
+	}
+	const input: Record<string, JsonValue> = {};
+	const dependsOn: Array<string> = [];
+	for (let index = 0; index < args.length; index += 2) {
+		const option = args[index];
+		const value = args[index + 1];
+		if (option === undefined || value === undefined || value === "") {
+			return failure(runtimeFailures.invalidArguments({ usage }));
+		}
+		switch (option) {
+			case "--title":
+				input.title = value;
+				break;
+			case "--body":
+				input.body = value === "-" ? (stdin ?? "") : value;
+				break;
+			case "--body-file":
+				input.body = await readInput(value, stdin);
+				break;
+			case "--description":
+				input.description = value === "-" ? (stdin ?? "") : value;
+				break;
+			case "--description-file":
+				input.description = await readInput(value, stdin);
+				break;
+			case "--parent":
+				input.parent = value;
+				break;
+			case "--spec":
+				input.spec = value;
+				break;
+			case "--profile":
+				input.profile = value;
+				break;
+			case "--depends-on":
+				dependsOn.push(value);
+				break;
+			case "--generated-by":
+				input.generatedBy = value;
+				break;
+			case "--kind":
+				input.kind = value;
+				break;
+			default:
+				return failure(runtimeFailures.invalidArguments({ usage }));
+		}
+	}
+	if (dependsOn.length > 0) {
+		input.dependsOn = dependsOn;
+	}
+	return success(input);
+}
+
+export async function createGenericWorkflowIssueCommand(
+	args: Array<string>,
 	tracker: Tracker,
 	manifest: WorkflowManifest,
 	stdin: string | undefined,
 	command: ManifestCommand,
 ): Promise<Envelope> {
-	if (inputPath === undefined) {
-		return failure(
-			runtimeFailures.invalidArguments({
-				usage: `awf create ${command.cli?.target ?? command.target.kind} --input <file|->`,
-			}),
-		);
-	}
 	const kind = manifest.kinds.find(
 		(candidate) => candidate.id === command.target.kind,
 	);
@@ -470,15 +583,12 @@ export async function createGenericWorkflowIssueCommand(
 			}),
 		);
 	}
-	const raw = await readInput(inputPath, stdin);
-	const parsed = parseJsonInput(
-		raw,
-		runtimeFailures.WORKFLOW_COMMAND_INPUT_VALIDATION_FAILED,
-	);
-	if (!parsed.ok) {
-		return parsed;
+	const input = await readCreateCommandInput(args, stdin, command);
+	if (!input.ok) {
+		return input;
 	}
-	const payload = parseWorkflowCommandInput(command, parsed.data);
+	const { raw, data: parsed } = input.data;
+	const payload = parseWorkflowCommandInput(command, parsed);
 	if (!payload.ok) {
 		return payload;
 	}
@@ -487,17 +597,21 @@ export async function createGenericWorkflowIssueCommand(
 			title: genericIssueTitle(payload.data, command.cli?.target ?? kind.id),
 			body: genericIssueBody(payload.data, raw),
 			workflow: { kind: kind.id, ...initialWorkflowTarget(kind.initial) },
-			initialLog: {
-				type: `${command.id}_created`,
-				message: stableStringify({ input: payload.data }),
-			},
+			...(shouldLogCreation(manifest, command)
+				? {
+						initialLog: {
+							type: `${command.id}_created`,
+							message: proseLogMessage(command.id, payload.data),
+						},
+					}
+				: {}),
 		});
-		if (log === undefined) {
+		if (shouldLogCreation(manifest, command) && log === undefined) {
 			throw new NeedReconciliationError(
 				"NEED_RECONCILIATION: creation log was not recorded.",
 			);
 		}
-		const data = { issue, log };
+		const data = { issue, ...(log === undefined ? {} : { log }) };
 		return success(data);
 	} catch (error) {
 		return lifecycleError("new", error);
@@ -532,7 +646,7 @@ async function transitionGenericWorkflowCommand(
 	}
 	try {
 		const issue = await tracker.getIssue(issueId);
-		if (!commandTargetMatches(command.target, issue.workflow)) {
+		if (!commandTargetMatches(command.target, issue.workflow, manifest)) {
 			return failure(
 				runtimeFailures.unavailableCommand({
 					id: issueId,
@@ -606,18 +720,22 @@ async function transitionGenericWorkflowCommand(
 					},
 					workflow,
 				},
-				{
-					type: "record-command",
-					issue: { id: issueId },
-					log: {
-						type: "command",
-						message: transitionRunLogMessage(
-							transitionCommand.event,
-							runEffect,
-							input.data,
-						),
-					},
-				},
+				...(shouldLogStateChange(manifest, command)
+					? [
+							{
+								type: "record-command" as const,
+								issue: { id: issueId },
+								log: {
+									type: "command",
+									message: transitionRunLogMessage(
+										transitionCommand.event,
+										runEffect,
+										input.data,
+									),
+								},
+							},
+						]
+					: []),
 				...handler.contribution.effects,
 			],
 		});
@@ -632,7 +750,7 @@ async function transitionGenericWorkflowCommand(
 		}
 		return success({
 			issue: updated,
-			log: result.logs[0],
+			...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 			outcome: "APPLIED",
 		});
 	} catch (error) {
@@ -678,14 +796,7 @@ function transitionRunLogMessage(
 	_runEffect: "none" | "start" | "complete",
 	input: JsonValue,
 ): string {
-	if (isEmptyPlainObject(input)) {
-		return `Applied ${event}.`;
-	}
-	return stableStringify({ event, input });
-}
-
-function isEmptyPlainObject(value: JsonValue): boolean {
-	return isRecord(value) && Object.keys(value).length === 0;
+	return proseLogMessage(event, input);
 }
 
 function commandTargetMatches(
@@ -695,9 +806,10 @@ function commandTargetMatches(
 		state: string;
 		action?: string;
 	},
+	manifest: WorkflowManifest,
 ): boolean {
 	return (
-		target.kind === workflow.kind &&
+		workflowMatchesFilter(workflow, target, manifest) &&
 		(target.state === undefined || target.state === workflow.state) &&
 		(target.action === undefined || target.action === workflow.action)
 	);

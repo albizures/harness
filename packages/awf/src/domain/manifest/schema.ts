@@ -25,14 +25,19 @@ export type ManifestKind = {
 	transitions: Array<ManifestTransition>;
 };
 
-export type ManifestKindDefinition = Omit<ManifestKind, "transitions"> & {
-	transitions: Array<ManifestTransitionDefinition>;
+export type ManifestKindDefinition = Omit<
+	ManifestKind,
+	"initial" | "transitions"
+> & {
+	initial?: ManifestStateReference;
+	transitions?: Array<ManifestTransitionDefinition>;
 };
 
 export type ManifestCli = {
 	verb: Identifier;
 	target: Identifier;
 	input?: "json" | "none";
+	examples?: Array<string>;
 };
 
 export type ManifestCommand = {
@@ -57,6 +62,7 @@ export type ManifestNamedReadinessFilter = {
 
 export type ManifestWorkflowFilter = {
 	kind?: Identifier;
+	kindGroup?: Identifier;
 	state?: Identifier;
 	action?: Identifier;
 	profile?: Identifier;
@@ -66,6 +72,11 @@ export type ManifestWorkflowFilter = {
 export type ManifestProfileGroup = {
 	name: Identifier;
 	profiles: Array<Identifier>;
+};
+
+export type ManifestKindGroup = {
+	name: Identifier;
+	kinds: Array<Identifier>;
 };
 
 export type ManifestReadinessRelationshipPolicy = {
@@ -93,6 +104,18 @@ export type ManifestLifecycleRelationshipPolicy = {
 	to: ManifestStateReference;
 };
 
+export type ManifestLoggingCategoryPolicy = {
+	enabled?: boolean;
+	commands?: Record<Identifier, boolean>;
+	events?: Record<Identifier, boolean>;
+};
+
+export type ManifestLoggingPolicy = {
+	enabled?: boolean;
+	creation?: Omit<ManifestLoggingCategoryPolicy, "events">;
+	stateChanges?: ManifestLoggingCategoryPolicy;
+};
+
 export type WorkflowManifest = {
 	version: "v1";
 	workflow: { id: Identifier; version: string };
@@ -100,9 +123,6 @@ export type WorkflowManifest = {
 		states: Array<Identifier>;
 		actions: Array<Identifier>;
 		events: Array<Identifier>;
-	};
-	github: {
-		reservedPrefix: string;
 	};
 	concurrency: {
 		perIssue: 1;
@@ -114,6 +134,7 @@ export type WorkflowManifest = {
 		filters: Array<ManifestReadinessFilter>;
 		namedFilters?: Array<ManifestNamedReadinessFilter>;
 		profileGroups?: Array<ManifestProfileGroup>;
+		kindGroups?: Array<ManifestKindGroup>;
 		relationshipPolicies?: Array<ManifestReadinessRelationshipPolicy>;
 	};
 	lifecycle?: {
@@ -121,6 +142,7 @@ export type WorkflowManifest = {
 		terminalStates?: Array<Identifier>;
 		relationshipPolicies?: Array<ManifestLifecycleRelationshipPolicy>;
 	};
+	logging?: ManifestLoggingPolicy;
 	kinds: Array<ManifestKind>;
 	commands: Array<ManifestCommand>;
 	relationships?: Array<ManifestRelationship>;
@@ -128,9 +150,8 @@ export type WorkflowManifest = {
 
 export type WorkflowManifestDefinition = Omit<
 	WorkflowManifest,
-	"github" | "kinds" | "commands"
+	"kinds" | "commands"
 > & {
-	github?: { reservedPrefix?: string };
 	kinds: Array<ManifestKindDefinition>;
 	commands: Array<ManifestCommand>;
 };
@@ -166,10 +187,16 @@ const stateReferenceSchema = z.strictObject({
 
 const workflowFilterSchema = z.strictObject({
 	kind: z.string().optional(),
+	kindGroup: z.string().optional(),
 	state: z.string().optional(),
 	action: z.string().optional(),
 	profile: z.string().optional(),
 	profileGroup: z.string().optional(),
+});
+
+const loggingCategoryPolicySchema = z.strictObject({
+	enabled: z.boolean().optional(),
+	commands: z.record(z.string(), z.boolean()).optional(),
 });
 
 export const workflowManifestStructuralSchema = z.strictObject({
@@ -180,11 +207,6 @@ export const workflowManifestStructuralSchema = z.strictObject({
 		actions: z.array(z.string()),
 		events: z.array(z.string()),
 	}),
-	github: z
-		.strictObject({
-			reservedPrefix: z.string().min(1).optional(),
-		})
-		.optional(),
 	concurrency: z.strictObject({
 		perIssue: z.literal(1),
 		perWorkflow: z.number().int().positive().optional(),
@@ -210,6 +232,14 @@ export const workflowManifestStructuralSchema = z.strictObject({
 					z.strictObject({
 						name: z.string(),
 						profiles: z.array(z.string()),
+					}),
+				)
+				.optional(),
+			kindGroups: z
+				.array(
+					z.strictObject({
+						name: z.string(),
+						kinds: z.array(z.string()),
 					}),
 				)
 				.optional(),
@@ -256,19 +286,30 @@ export const workflowManifestStructuralSchema = z.strictObject({
 				.optional(),
 		})
 		.optional(),
+	logging: z
+		.strictObject({
+			enabled: z.boolean().optional(),
+			creation: loggingCategoryPolicySchema.optional(),
+			stateChanges: loggingCategoryPolicySchema
+				.extend({ events: z.record(z.string(), z.boolean()).optional() })
+				.optional(),
+		})
+		.optional(),
 	kinds: z.array(
 		z.strictObject({
 			id: z.string(),
 			label: z.string().min(1),
-			initial: stateReferenceSchema,
+			initial: stateReferenceSchema.optional(),
 			subkinds: z.array(z.string()).optional(),
-			transitions: z.array(
-				z.strictObject({
-					from: stateReferenceSchema,
-					event: z.string(),
-					to: stateReferenceSchema,
-				}),
-			),
+			transitions: z
+				.array(
+					z.strictObject({
+						from: stateReferenceSchema,
+						event: z.string(),
+						to: stateReferenceSchema,
+					}),
+				)
+				.optional(),
 		}),
 	),
 	commands: z.array(
@@ -279,6 +320,7 @@ export const workflowManifestStructuralSchema = z.strictObject({
 					verb: z.string().min(1),
 					target: z.string(),
 					input: z.enum(["json", "none"]).optional(),
+					examples: z.array(z.string().min(1)).optional(),
 				})
 				.optional(),
 			target: workflowFilterSchema.extend({ kind: z.string() }),

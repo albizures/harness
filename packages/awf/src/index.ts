@@ -54,13 +54,9 @@ export {
 	type WorkflowDescriptionWorkflowFilterV1,
 } from "./domain/manifest/describe.ts";
 export {
-	createGhCliGitHubTracker,
-	createGitHubTracker,
-	validateGitHubTrackerCapabilities,
-	type GitHubTrackerApi,
-	type GitHubTrackerCapabilities,
-	type GitHubTrackerIssue,
-} from "./adapters/trackers/github/index.ts";
+	shouldLogCreation,
+	shouldLogStateChange,
+} from "./domain/manifest/logging.ts";
 export { NeedReconciliationError, type Tracker } from "./ports/tracker.ts";
 export { WorkflowLog } from "./domain/workflow/log.ts";
 export {

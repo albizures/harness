@@ -16,7 +16,6 @@ const defaultTicketOnlyReadyManifest = defineManifest({
 		actions: ["plan", "implement", "none"],
 		events: ["start", "succeed"],
 	},
-	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { ticket: 3 } },
 	lifecycle: { activeStates: ["running"], terminalStates: ["done"] },
 	readiness: {
@@ -585,37 +584,107 @@ it("should ensure that ready blocks tasks when applicable subkind concurrency is
 	});
 });
 
-it("should ensure that bundled task routing respects perSubkind concurrency", async () => {
+it("should ensure that bundled Integration-test and Merge readiness use task kinds without self-blocking", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "spec",
+				title: "Spec",
+				workflow: { kind: "spec", state: "ready", action: "none" },
+				relationships: {
+					children: [
+						"done-work",
+						"ready-integration",
+						"done-integration",
+						"ready-merge",
+					],
+				},
+			},
+			{
+				id: "done-work",
+				title: "Done work",
+				workflow: { kind: "task:work", state: "done", action: "none" },
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "ready-integration",
+				title: "Ready integration",
+				workflow: {
+					kind: "task:work:integration-test",
+					state: "ready",
+					action: "work",
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "done-integration",
+				title: "Done integration",
+				workflow: {
+					kind: "task:work:integration-test",
+					state: "done",
+					action: "none",
+				},
+				relationships: { parent: "spec" },
+			},
+			{
+				id: "ready-merge",
+				title: "Ready merge",
+				workflow: { kind: "task:work:merge", state: "ready", action: "work" },
+				relationships: { parent: "spec" },
+			},
+		],
+	});
+
+	const envelope = await execute(["ready"], {
+		tracker,
+		manifest: agentWorkflowManifest,
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toMatchObject({
+		items: [{ id: "ready-integration" }],
+		blocked: [
+			{
+				id: "ready-merge",
+				blocking: [
+					{
+						gate: "integration-test-done",
+						blockedBy: [{ id: "ready-integration" }],
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that bundled task routing respects concrete kind concurrency", async () => {
 	const tracker = createInMemoryTracker({
 		issues: [
 			{
 				id: "running-research",
 				title: "Running research task",
 				workflow: {
-					kind: "task",
+					kind: "task:research",
 					state: "running",
 					action: "work",
-					data: { subkind: "research" },
 				},
 			},
 			{
 				id: "ready-research",
 				title: "Ready research task",
 				workflow: {
-					kind: "task",
+					kind: "task:research",
 					state: "ready",
 					action: "work",
-					data: { subkind: "research" },
 				},
 			},
 			{
 				id: "ready-work",
 				title: "Ready work task",
 				workflow: {
-					kind: "task",
+					kind: "task:work",
 					state: "ready",
 					action: "work",
-					data: { subkind: "work" },
 				},
 			},
 		],
@@ -627,24 +696,26 @@ it("should ensure that bundled task routing respects perSubkind concurrency", as
 			...agentWorkflowManifest,
 			concurrency: {
 				...agentWorkflowManifest.concurrency,
-				perSubkind: { task: { research: 1 } },
+				perKind: {
+					...agentWorkflowManifest.concurrency.perKind,
+					"task:research": 1,
+				},
 			},
 		},
 	});
 
 	expect(envelope.ok).toBe(true);
 	expect(envelope.ok ? envelope.data : undefined).toMatchObject({
-		items: [{ id: "ready-work", workflow: { subkind: "work" } }],
+		items: [{ id: "ready-work", workflow: { kind: "task:work" } }],
 		blocked: [
 			{
 				id: "ready-research",
-				workflow: { subkind: "research" },
+				workflow: { kind: "task:research" },
 				blocking: [
 					{
 						gate: "concurrency",
-						scope: "subkind",
-						kind: "task",
-						subkind: "research",
+						scope: "kind",
+						kind: "task:research",
 						limit: 1,
 						active: 1,
 					},
@@ -711,6 +782,62 @@ it("should ensure that ready treats a missing subkind as the kind default for co
 						subkind: "work",
 						limit: 1,
 						active: 1,
+					},
+				],
+			},
+		],
+	});
+});
+
+it("should ensure that ready --blocked returns only blocked candidates and applies --limit", async () => {
+	const tracker = createInMemoryTracker({
+		issues: [
+			{
+				id: "1",
+				title: "First blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+			{
+				id: "2",
+				title: "Second blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+			{
+				id: "3",
+				title: "Ready ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+			},
+		],
+	});
+	await tracker.addDependency("1", "3");
+	await tracker.addDependency("2", "3");
+
+	const envelope = await execute(["ready", "--blocked", "--limit", "1"], {
+		tracker,
+		manifest: defaultTicketOnlyReadyManifest,
+	});
+
+	expect(envelope.ok).toBe(true);
+	expect(envelope.ok ? envelope.data : undefined).toEqual({
+		blocked: [
+			{
+				id: "1",
+				title: "First blocked ticket",
+				workflow: { kind: "ticket", state: "ready", action: "implement" },
+				blocking: [
+					{
+						gate: "dependency",
+						blockedBy: [
+							{
+								id: "3",
+								title: "Ready ticket",
+								workflow: {
+									kind: "ticket",
+									state: "ready",
+									action: "implement",
+								},
+							},
+						],
 					},
 				],
 			},
@@ -829,7 +956,9 @@ it("should ensure that malformed readiness filter expressions return a clear par
 		error: {
 			code: "INVALID_ARGUMENTS",
 			message: "Invalid arguments for ready.",
-			details: { usage: "awf ready [--filter <name=value>] [--limit <n>]" },
+			details: {
+				usage: "awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
+			},
 		},
 	});
 });

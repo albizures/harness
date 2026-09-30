@@ -12,9 +12,6 @@ _Avoid_: plugin, add-on
 A Pi resource that registers behavior with Pi, such as commands, tools, or event handlers.
 _Avoid_: plugin
 
-**Tiny package**:
-A Pi package with one narrow behavior and minimal surface area. It should avoid configuration, UI, and extra abstractions unless they are required for that behavior.
-_Avoid_: framework, toolkit
 
 **Project-local dev shim**:
 A committed project-local Pi extension under `.pi/extensions/` that loads package source resources from the workspace for development smoke testing, such as source extensions or source skill directories.

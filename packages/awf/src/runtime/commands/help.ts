@@ -8,6 +8,7 @@ export type CommandSpec = {
 	name: string;
 	usage: string;
 	description: string;
+	examples?: Array<string>;
 };
 
 type HelpReadinessFilterSpec = {
@@ -31,8 +32,9 @@ const runtimeCommands: Array<CommandSpec> = [
 	},
 	{
 		name: "ready",
-		usage: "awf ready [--filter <name=value>] [--limit <n>]",
-		description: "Return legally executable work.",
+		usage: "awf ready [--blocked] [--filter <name=value>] [--limit <n>]",
+		description:
+			"Return legally executable work; use --blocked to inspect blocked readiness candidates.",
 	},
 	{
 		name: "logs",
@@ -68,6 +70,9 @@ export function helpCommands(manifest: WorkflowManifest): Array<CommandSpec> {
 					name: `${command.cli.verb} ${command.cli.target}`,
 					usage: manifestCommandUsage(command),
 					description: `Run workflow command '${command.id}'.`,
+					...(command.cli.examples === undefined
+						? {}
+						: { examples: [...command.cli.examples] }),
 				},
 			];
 		}),
@@ -112,10 +117,6 @@ export function helpReadiness(manifest: WorkflowManifest): {
 			...filter,
 			usage: `awf ready --filter ${filter.name}=<${filter.kind}>`,
 		})),
-		subkinds: manifest.kinds.flatMap((kind) =>
-			kind.subkinds === undefined
-				? []
-				: [{ kind: kind.id, values: [...kind.subkinds] }],
-		),
+		subkinds: [],
 	};
 }

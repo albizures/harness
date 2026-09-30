@@ -24,5 +24,8 @@
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"
+	},
+	"scripts": {
+		"test": "vitest run --config ../../vitest.config.mts"
 	}
 }

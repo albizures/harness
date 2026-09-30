@@ -108,19 +108,16 @@ it("should ensure that reconcile reports malformed logs and corrupt current meta
 				id: "dupe",
 				title: "Bad labels",
 				labels: [
-					"awf:agent-workflow:kind:ticket",
-					"awf:agent-workflow:kind:spec",
-					"awf:agent-workflow:state:ready",
-					"awf:agent-workflow:action:implement",
+					"awf:w1:kind:ticket",
+					"awf:w1:kind:spec",
+					"awf:w1:state:ready",
+					"awf:w1:action:implement",
 				],
 			},
 			{
 				id: "missing",
 				title: "Missing labels",
-				labels: [
-					"awf:agent-workflow:kind:ticket",
-					"awf:agent-workflow:state:ready",
-				],
+				labels: ["awf:w1:kind:ticket", "awf:w1:state:ready"],
 			},
 		],
 	});

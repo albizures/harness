@@ -13,13 +13,25 @@ A category inside the skill catalog that groups related skills by user outcome, 
 _Avoid_: skill package, category package, bundle
 
 **Workflow skill group**:
-A skill group for meta-skills that help users coordinate agent sessions, choose agent flows, operate AWF-backed planning artifacts, or transform work artifacts so agents can operate more effectively.
+A skill group for meta-skills that help users coordinate agent sessions, choose agent flows, operate Forge workflow records, or transform work artifacts so agents can operate more effectively.
 _Avoid_: engineering skill group, design skill group, miscellaneous skill group
 
-**Agent Workflow reference**:
-The canonical skill document that defines how agents operate AWF-backed Specs, Tasks, Wayfinders, and Grilling issues through public AWF behavior.
-_Avoid_: duplicated AWF command table, local AWF schema reference
+**Forge reference**:
+The canonical skill document that defines how agents operate Forge Specs, Tasks, Wayfinders, Grilling, initiatives, dependencies, readiness, lifecycle, comments, and history through public Forge CLI behavior.
+_Avoid_: duplicated Forge command table, local workflow schema reference
 
-**GitHub-backed AWF setup**:
-A workflow-skill setup procedure that configures AWF to use the GitHub tracker through `gh`, verifies authentication and workflow loading, and leaves operational AWF command shapes in the Agent Workflow reference.
-_Avoid_: AWF GitHub prerequisite, smoke-run evidence, duplicated command reference
+**Orchestration skill**:
+A user-facing workflow skill that routes a user intent to narrower skills or Forge operations without duplicating their detailed procedures.
+_Avoid_: wrapper skill, duplicate skill
+
+**Transformation primitive**:
+A narrow workflow branch that converts one work artifact into another, such as conversation context into a Forge Spec or an approved plan into Forge Tasks.
+_Avoid_: orchestration skill, workflow umbrella
+
+**Workflow branch**:
+A named path within an orchestration skill, selected from the request and record state.
+_Avoid_: standalone skill, mode
+
+**Companion document**:
+A non-invocable Markdown document containing the procedure for one workflow branch under its orchestration skill.
+_Avoid_: subskill, nested skill

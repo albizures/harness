@@ -23,7 +23,7 @@ it("should ensure that bundled agent-workflow dispatches supported create and re
 	const task = assertSuccess<{
 		issue: { id: string; relationships: { parent?: string } };
 	}>(
-		await execute(["create", "task", "--input", "-"], {
+		await execute(["create", "task:work", "--input", "-"], {
 			tracker,
 			manifest: agentWorkflowManifest,
 			stdin: JSON.stringify({

@@ -8,17 +8,17 @@ import {
 } from "../runtime/command-handlers.ts";
 import { failure, success, type Envelope } from "../runtime/envelope.ts";
 import { parseJsonValue } from "../shared/json.ts";
+import { shouldLogStateChange } from "../domain/manifest/logging.ts";
 import type { TrackerLog } from "../ports/tracker.ts";
 import {
-	cleanCurrentTarget,
 	invalidTransition,
 	isReadyAction,
 	lifecycleError,
 	parseJsonInput,
 	parsePayloadValue,
 	policyViolation,
+	proseLogMessage,
 	readOption,
-	stableStringify,
 } from "../runtime/commands/shared.ts";
 
 const nonEmptyString = z.string().refine((value) => value.trim() !== "", {
@@ -30,13 +30,11 @@ const pauseInputSchema = z.strictObject({
 });
 
 type Issue = Awaited<ReturnType<CommandHandlerContext["tracker"]["getIssue"]>>;
-type HumanHandoffInput = JsonValue;
-type HumanHandoffTarget = { state: string; action: "none" };
-
 type HumanHandoffCommandConfig = {
 	usage: string;
 	inputSchema?: Parameters<typeof parsePayloadValue>[1];
 	invalidInputMessage: string;
+	event: string;
 	toState: "waiting-human" | "need-human";
 	logType: TrackerLog["type"];
 	validate: (
@@ -44,12 +42,6 @@ type HumanHandoffCommandConfig = {
 		issue: Issue,
 		id: string,
 	) => Envelope | undefined;
-	message: (args: {
-		input: HumanHandoffInput;
-		issue: Issue;
-		from: ReturnType<typeof cleanCurrentTarget>;
-		to: HumanHandoffTarget;
-	}) => JsonValue;
 };
 
 export function humanInteractionCommandHandlers(): CommandHandlers {
@@ -69,6 +61,7 @@ const pauseCommand = humanHandoffCommand({
 	usage: "awf run-command pause <id> --input <file|->",
 	inputSchema: pauseInputSchema,
 	invalidInputMessage: "Pause input is invalid.",
+	event: "pause",
 	toState: "waiting-human",
 	logType: "human_input_needed",
 	validate: (_context, issue, id) => {
@@ -80,28 +73,15 @@ const pauseCommand = humanHandoffCommand({
 		}
 		return undefined;
 	},
-	message: ({ input, issue, from, to }) => ({
-		event: "pause",
-		input,
-		from,
-		to,
-		pausedAction: issue.workflow.action,
-		reason: (input as { reason: string }).reason,
-	}),
 });
 
 const escalateCommand = humanHandoffCommand({
 	usage: "awf run-command escalate <id> --input <file|->",
 	invalidInputMessage: "Escalation input is invalid.",
+	event: "escalate",
 	toState: "need-human",
 	logType: "human_intervention_needed",
 	validate: (_context, _issue, _id) => undefined,
-	message: ({ input, from, to }) => ({
-		event: "escalate",
-		input,
-		from,
-		to,
-	}),
 });
 
 function humanHandoffCommand(
@@ -134,13 +114,9 @@ function humanHandoffCommand(
 				return validationFailure;
 			}
 
-			const from = cleanCurrentTarget(issue.workflow);
-			const to = { state: config.toState, action: "none" } as const;
 			const log: TrackerLog = {
 				type: config.logType,
-				message: stableStringify(
-					config.message({ input: input.data, issue, from, to }),
-				),
+				message: proseLogMessage(config.event, input.data),
 			};
 
 			return applyWorkflowTransition(context, id, issue, {
@@ -192,12 +168,20 @@ async function applyWorkflowTransition(
 				},
 				workflow: transition.workflow,
 			},
-			{ type: "record-command", issue: { id }, log: transition.log },
+			...(shouldLogStateChange(context.manifest, context.command)
+				? [
+						{
+							type: "record-command" as const,
+							issue: { id },
+							log: transition.log,
+						},
+					]
+				: []),
 		],
 	});
 	return success({
 		issue: result.issues[id] ?? (await context.tracker.getIssue(id)),
-		log: result.logs[0],
+		...(result.logs[0] === undefined ? {} : { log: result.logs[0] }),
 	});
 }
 
@@ -224,10 +208,7 @@ async function resumeCommand(
 		}
 		const log: TrackerLog = {
 			type: "action_resumed",
-			message: stableStringify({
-				event: "resume",
-				to: { state: "ready", action },
-			}),
+			message: proseLogMessage("resume"),
 		};
 		return applyWorkflowTransition(context, id, issue, {
 			workflow: { state: "ready", action },

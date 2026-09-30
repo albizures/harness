@@ -12,6 +12,7 @@ import { getIssueCommand } from "./commands/get.ts";
 import { helpCommands, helpReadiness } from "./commands/help.ts";
 import { logsCommand } from "./commands/logs.ts";
 import { validateManifestCommand } from "./commands/manifest-validate.ts";
+import { migrateLegacyTaskSubkindsCommand } from "./commands/migrate.ts";
 import { readyCommand } from "./commands/ready.ts";
 import { reconcileCommand } from "./commands/reconcile.ts";
 import { workflowCommandByCli } from "./commands/shared.ts";
@@ -90,6 +91,9 @@ export async function execute(
 			tracker,
 			manifest,
 		);
+	}
+	if (args[0] === "migrate" && args[1] === "legacy-task-subkinds") {
+		return migrateLegacyTaskSubkindsCommand(tracker, args.includes("--apply"));
 	}
 	if (args[0] === "workflow" && args[1] === "describe") {
 		return success(describeWorkflow(manifest));

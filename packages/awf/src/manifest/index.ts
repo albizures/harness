@@ -1,6 +1,8 @@
 export * from "../domain/manifest/schema.ts";
 export * from "../domain/manifest/define.ts";
 export * from "../domain/manifest/describe.ts";
+export * from "../domain/manifest/logging.ts";
+export * from "../domain/manifest/kind-registry.ts";
 export type {
 	CommandHandler,
 	CommandHandlers,

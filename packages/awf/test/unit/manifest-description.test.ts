@@ -14,7 +14,6 @@ function descriptionManifest() {
 			actions: ["plan", "implement", "review", "none"],
 			events: ["schedule", "start", "succeed", "escalate"],
 		},
-		github: { reservedPrefix: "secret-prefix" },
 		concurrency: {
 			perIssue: 1,
 			perWorkflow: 2,
@@ -78,13 +77,21 @@ function descriptionManifest() {
 		commands: [
 			{
 				id: "createSpec",
-				cli: { verb: "create", target: "spec" },
+				cli: {
+					verb: "create",
+					target: "spec",
+					examples: ['awf create spec --title "Title" --body -'],
+				},
 				target: { kind: "spec", action: "plan" },
 				input: stringInput,
 			},
 			{
 				id: "createTicket",
-				cli: { verb: "create", target: "ticket" },
+				cli: {
+					verb: "create",
+					target: "ticket",
+					examples: ['awf create ticket --title "Title" --description -'],
+				},
 				target: { kind: "ticket", action: "implement" },
 			},
 			{
@@ -172,12 +179,18 @@ describe("when building a Workflow description DTO", () => {
 		expect(description.commands).toMatchObject([
 			{
 				id: "createSpec",
-				cli: { usage: "awf create spec --input <file|->" },
+				cli: {
+					usage: "awf create spec --input <file|->",
+					examples: ['awf create spec --title "Title" --body -'],
+				},
 				input: { required: true },
 			},
 			{
 				id: "createTicket",
-				cli: { usage: "awf create ticket --input <file|->" },
+				cli: {
+					usage: "awf create ticket --input <file|->",
+					examples: ['awf create ticket --title "Title" --description -'],
+				},
 				input: { required: false },
 			},
 			{

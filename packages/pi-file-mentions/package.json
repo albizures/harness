@@ -1,0 +1,27 @@
+{
+	"name": "@albizures/pi-file-mentions",
+	"version": "0.1.0",
+	"description": "Pi package that improves @ file mention autocomplete with folder and file suggestions.",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"extension",
+		"file-mentions"
+	],
+	"license": "MIT",
+	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
+	"pi": {
+		"extensions": [
+			"./extensions"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"scripts": {
+		"test": "vitest run --config ../../vitest.config.mts"
+	}
+}

@@ -9,14 +9,7 @@ const states = [
 	"need-human",
 	"waiting-human",
 ] as const;
-const actions = [
-	"planning",
-	"work",
-	"discuss",
-	"integration-test",
-	"merge",
-	"none",
-] as const;
+const actions = ["planning", "work", "discuss", "none"] as const;
 const events = [
 	"start",
 	"succeed",
@@ -26,29 +19,48 @@ const events = [
 	"pause",
 	"resume",
 ] as const;
-const taskSubkinds = ["work", "research", "prototype"] as const;
+const taskKinds = [
+	"task:work",
+	"task:research",
+	"task:prototype",
+	"task:work:integration-test",
+	"task:work:merge",
+] as const;
+
+const nonEmptyMarkdown = z.string().refine((value) => value.trim() !== "", {
+	message: "Required",
+});
 
 const createInput = z
 	.strictObject({
 		title: z.string().trim().min(1),
-		body: z.string().trim().min(1).optional(),
-		content: z.string().trim().min(1).optional(),
+		body: nonEmptyMarkdown.optional(),
+		content: nonEmptyMarkdown.optional(),
 		parent: z.string().trim().min(1).optional(),
 	})
 	.refine(
 		(input) => input.body !== undefined || input.content !== undefined,
 		"Either body or content is required.",
 	);
+const taskBaseCreateInputShape = {
+	spec: z.string().trim().min(1).optional(),
+	parent: z.string().trim().min(1).optional(),
+	title: z.string().trim().min(1),
+	description: z.string().trim().min(1),
+	profile: z.string().trim().min(1),
+	dependsOn: z.array(z.string().trim().min(1)).optional(),
+	generatedBy: z.string().trim().min(1).optional(),
+} as const;
+const directTaskCreateInput = z
+	.strictObject(taskBaseCreateInputShape)
+	.refine(
+		(input) => input.spec !== undefined || input.parent !== undefined,
+		"Either spec or parent is required.",
+	);
 const taskCreateInput = z
 	.strictObject({
-		spec: z.string().trim().min(1).optional(),
-		parent: z.string().trim().min(1).optional(),
-		title: z.string().trim().min(1),
-		description: z.string().trim().min(1),
-		profile: z.string().trim().min(1),
-		subkind: z.enum(taskSubkinds).optional(),
-		dependsOn: z.array(z.string().trim().min(1)).optional(),
-		generatedBy: z.string().trim().min(1).optional(),
+		...taskBaseCreateInputShape,
+		kind: z.enum(taskKinds),
 	})
 	.refine(
 		(input) => input.spec !== undefined || input.parent !== undefined,
@@ -63,6 +75,13 @@ const wayfinderCompletionInput = z.strictObject({
 	summary: z.string().trim().min(1),
 });
 const anyJsonObjectInput = z.record(z.string(), z.unknown());
+
+function createExample(
+	target: string,
+	longMarkdownOption: string,
+): Array<string> {
+	return [`awf create ${target} --title "Title" --${longMarkdownOption} -`];
+}
 
 const specTransitions = [
 	{
@@ -143,13 +162,12 @@ const grillingTransitions = [
 
 export const agentWorkflowManifest = defineManifest({
 	version: "v1",
-	workflow: { id: "agent-workflow", version: "1.0.0" },
+	workflow: { id: "w1", version: "1.0.0" },
 	vocabulary: {
 		states: [...states],
 		actions: [...actions],
 		events: [...events],
 	},
-	github: { reservedPrefix: "awf" },
 	concurrency: { perIssue: 1, perWorkflow: 4, perKind: { task: 3 } },
 	readiness: {
 		filters: [
@@ -157,27 +175,25 @@ export const agentWorkflowManifest = defineManifest({
 			{ kind: "task", state: "ready", action: "work" },
 		],
 		namedFilters: [{ name: "spec", kind: "spec", relationship: "parent" }],
-		profileGroups: [
+		kindGroups: [
 			{
 				name: "implementation-gate",
-				profiles: ["implement", "review"],
+				kinds: ["task:work"],
 			},
 		],
 		relationshipPolicies: [
 			{
 				relationship: "siblings",
 				where: {
-					kind: "task",
+					kind: "task:work:integration-test",
 					state: "ready",
 					action: "work",
-					profile: "integration-test",
 				},
 				siblings: {
 					all: {
-						kind: "task",
+						kindGroup: "implementation-gate",
 						state: "done",
 						action: "none",
-						profileGroup: "implementation-gate",
 					},
 				},
 				gate: "implementation-gate",
@@ -185,17 +201,15 @@ export const agentWorkflowManifest = defineManifest({
 			{
 				relationship: "siblings",
 				where: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "ready",
 					action: "work",
-					profile: "merge",
 				},
 				siblings: {
 					all: {
-						kind: "task",
+						kindGroup: "implementation-gate",
 						state: "done",
 						action: "none",
-						profileGroup: "implementation-gate",
 					},
 				},
 				gate: "implementation-gate",
@@ -203,17 +217,15 @@ export const agentWorkflowManifest = defineManifest({
 			{
 				relationship: "siblings",
 				where: {
-					kind: "task",
+					kind: "task:work:merge",
 					state: "ready",
 					action: "work",
-					profile: "merge",
 				},
 				siblings: {
 					all: {
-						kind: "task",
+						kind: "task:work:integration-test",
 						state: "done",
 						action: "none",
-						profile: "integration-test",
 					},
 					min: 1,
 				},
@@ -242,8 +254,27 @@ export const agentWorkflowManifest = defineManifest({
 			id: "task",
 			label: "Task",
 			initial: { state: "ready", action: "work" },
-			subkinds: [...taskSubkinds],
 			transitions: [...workTransitions],
+		},
+		{
+			id: "task:work",
+			label: "Work Task",
+		},
+		{
+			id: "task:research",
+			label: "Research Task",
+		},
+		{
+			id: "task:prototype",
+			label: "Prototype Task",
+		},
+		{
+			id: "task:work:integration-test",
+			label: "Integration-test Task",
+		},
+		{
+			id: "task:work:merge",
+			label: "Merge Task",
 		},
 		{
 			id: "grilling",
@@ -299,9 +330,18 @@ export const agentWorkflowManifest = defineManifest({
 	commands: [
 		{
 			id: "spec-create",
-			cli: { verb: "create", target: "spec" },
+			cli: {
+				verb: "create",
+				target: "spec",
+				examples: createExample("spec", "body"),
+			},
 			target: { kind: "spec", action: "planning" },
 			input: createInput,
+		},
+		{
+			id: "spec-planned",
+			cli: { verb: "spec", target: "planned", input: "none" },
+			target: { kind: "spec", action: "planning" },
 		},
 		{
 			id: "spec-complete",
@@ -310,19 +350,81 @@ export const agentWorkflowManifest = defineManifest({
 		},
 		{
 			id: "wayfinder-create",
-			cli: { verb: "create", target: "wayfinder" },
+			cli: {
+				verb: "create",
+				target: "wayfinder",
+				examples: createExample("wayfinder", "body"),
+			},
 			target: { kind: "wayfinder", action: "planning" },
 			input: createInput,
 		},
 		{
 			id: "task-create",
-			cli: { verb: "create", target: "task" },
+			cli: {
+				verb: "create",
+				target: "task",
+				examples: createExample("task", "description"),
+			},
 			target: { kind: "task", action: "work" },
 			input: taskCreateInput,
 		},
 		{
+			id: "task-work-create",
+			cli: {
+				verb: "create",
+				target: "task:work",
+				examples: createExample("task:work", "description"),
+			},
+			target: { kind: "task:work", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-research-create",
+			cli: {
+				verb: "create",
+				target: "task:research",
+				examples: createExample("task:research", "description"),
+			},
+			target: { kind: "task:research", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-prototype-create",
+			cli: {
+				verb: "create",
+				target: "task:prototype",
+				examples: createExample("task:prototype", "description"),
+			},
+			target: { kind: "task:prototype", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-work-integration-test-create",
+			cli: {
+				verb: "create",
+				target: "task:work:integration-test",
+				examples: createExample("task:work:integration-test", "description"),
+			},
+			target: { kind: "task:work:integration-test", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
+			id: "task-work-merge-create",
+			cli: {
+				verb: "create",
+				target: "task:work:merge",
+				examples: createExample("task:work:merge", "description"),
+			},
+			target: { kind: "task:work:merge", action: "work" },
+			input: directTaskCreateInput,
+		},
+		{
 			id: "grilling-create",
-			cli: { verb: "create", target: "grilling" },
+			cli: {
+				verb: "create",
+				target: "grilling",
+				examples: createExample("grilling", "description"),
+			},
 			target: { kind: "grilling", action: "discuss" },
 			input: grillingCreateInput,
 		},
