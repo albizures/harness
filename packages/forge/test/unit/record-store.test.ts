@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
 import { parseAbsolutePath, parseProjectId } from "../../src/domain.ts";
 import { isForgeError } from "../../src/errors.ts";
 import {
+	acquireStoreWriteLockEffect,
 	ensureStoreRootEffect,
 	readStoreManifestEffect,
+	releaseStoreWriteLockEffect,
 } from "../../src/filesystem-store.ts";
 import type { RecordId } from "../../src/record-domain.ts";
 import {
@@ -42,6 +44,7 @@ import { runTestEffect } from "../support/effect.ts";
 import {
 	paddedRecordId,
 	recordFilePath,
+	recordRelativePath,
 	storeRootPaths,
 } from "../../src/store-paths.ts";
 
@@ -55,6 +58,12 @@ const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
 const readStoreManifest = (
 	...args: Parameters<typeof readStoreManifestEffect>
 ) => runTestEffect(readStoreManifestEffect(...args));
+const acquireStoreWriteLock = (
+	...args: Parameters<typeof acquireStoreWriteLockEffect>
+) => runTestEffect(acquireStoreWriteLockEffect(...args));
+const releaseStoreWriteLock = (
+	...args: Parameters<typeof releaseStoreWriteLockEffect>
+) => runTestEffect(releaseStoreWriteLockEffect(...args));
 const createWorkflowRecord = (
 	...args: Parameters<typeof createWorkflowRecordEffect>
 ) => runTestEffect(createWorkflowRecordEffect(...args));
@@ -107,6 +116,9 @@ const listRecordUpdates = (
 const listRecordHistory = (
 	...args: Parameters<typeof listRecordHistoryEffect>
 ) => runTestEffect(listRecordHistoryEffect(...args));
+const listWorkflowRecords = (
+	...args: Parameters<typeof listWorkflowRecordsEffect>
+) => runTestEffect(listWorkflowRecordsEffect(...args));
 const listWorkflowRecordReadiness = (
 	...args: Parameters<typeof listWorkflowRecordReadinessEffect>
 ) => runTestEffect(listWorkflowRecordReadinessEffect(...args));
@@ -173,6 +185,41 @@ it("when creating a workflow record, it should allocate a global id and write ca
 	});
 });
 
+it("when another writer holds the store lock, record creation should wait", async () => {
+	const storePath = await tempStore();
+	await acquireStoreWriteLock({ storePath });
+
+	let settled = false;
+	const pendingCreate = createWorkflowRecord({
+		storePath,
+		now: fixedDate,
+		input: {
+			title: "Locked spec",
+			kind: "spec",
+			subkind: null,
+			scope: { type: "project", project: parseProjectId("harness") },
+			parent: null,
+			initiative: null,
+			dependsOn: [],
+			generatedBy: null,
+			tags: [],
+			profile: null,
+			body: "Body\n",
+		},
+	}).finally(() => {
+		settled = true;
+	});
+
+	try {
+		await new Promise((resolve) => setTimeout(resolve, 75));
+		expect(settled).toBe(false);
+	} finally {
+		await releaseStoreWriteLock(storePath);
+	}
+
+	await expect(pendingCreate).resolves.toMatchObject({ id: 1 });
+});
+
 it("when reading the by-id index, it should reject invalid locator shapes", async () => {
 	const storePath = await tempStore();
 	await writeFile(
@@ -201,6 +248,82 @@ it("when reading the relationships index, it should reject invalid relationship 
 		message:
 			"Forge relationships index is invalid. Entry '1' must include valid relationship arrays and nullable references.",
 	});
+});
+
+it("when creating child records concurrently, it should allocate unique ids and rebuild persisted indexes", async () => {
+	const storePath = await tempStore();
+	const parent = await createWorkflowRecord({
+		storePath,
+		now: fixedDate,
+		input: {
+			title: "Concurrent parent spec",
+			kind: "spec",
+			subkind: null,
+			scope: { type: "project", project: parseProjectId("harness") },
+			parent: null,
+			initiative: null,
+			dependsOn: [],
+			generatedBy: null,
+			tags: [],
+			profile: null,
+			body: "Parent body\n",
+		},
+	});
+
+	const created = await Promise.all(
+		Array.from({ length: 16 }, (_, index) => {
+			const kind = index % 2 === 0 ? "task" : "grilling";
+			return createWorkflowRecord({
+				storePath,
+				now: laterDate,
+				input: {
+					title: `Concurrent ${kind} ${index + 1}`,
+					kind,
+					subkind: null,
+					scope: parent.scope,
+					parent: parent.id,
+					initiative: null,
+					dependsOn: [],
+					generatedBy: null,
+					tags: [],
+					profile: null,
+					body: `Concurrent ${kind} body ${index + 1}.\n`,
+				},
+			});
+		}),
+	);
+
+	const childIds = created.map((record) => record.id);
+	const sortedChildIds = [...childIds].sort((left, right) => left - right);
+	expect(new Set(childIds).size).toBe(childIds.length);
+
+	const persistedRecords = await listWorkflowRecords(storePath);
+	const persistedIds = persistedRecords.map((record) => record.id);
+	expect(new Set(persistedIds).size).toBe(persistedIds.length);
+	expect([...persistedIds].sort((left, right) => left - right)).toEqual([
+		parent.id,
+		...sortedChildIds,
+	]);
+
+	const tree = await readRecordTree(storePath, parent.id);
+	expect(
+		[...tree.children.map((child) => child.record.id)].sort(
+			(left, right) => left - right,
+		),
+	).toEqual(sortedChildIds);
+
+	const byId = JSON.parse(
+		await readFile(storeRootPaths(storePath).byIdIndex, "utf8"),
+	);
+	expect(Object.keys(byId).sort()).toEqual(
+		[parent.id, ...childIds].map(String).sort(),
+	);
+	for (const record of [parent, ...created]) {
+		expect(byId[String(record.id)]).toEqual({
+			kind: record.kind,
+			path: recordRelativePath(record.kind, record.id),
+		});
+	}
 });
 
 it("when creating a child record, it should persist parent/scope validation and relationship indexes", async () => {

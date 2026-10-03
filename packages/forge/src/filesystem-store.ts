@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { FileSystem } from "@effect/platform/FileSystem";
+import type { FileSystem as FileSystemService } from "@effect/platform/FileSystem";
 import { Effect } from "effect";
+import { parseDocument } from "yaml";
 
 import {
 	decodeForgeConfig,
@@ -33,6 +36,19 @@ export type StoreDoctorReport = {
 	readonly ok: boolean;
 	readonly problems: ReadonlyArray<StoreDoctorProblem>;
 	readonly repaired: ReadonlyArray<string>;
+};
+
+export type StoreWriteLockMetadata = {
+	readonly pid: number;
+	readonly createdAt: string;
+	readonly storePath: AbsolutePath;
+};
+
+export type StoreWriteLockOptions = {
+	readonly storePath: AbsolutePath;
+	readonly now?: Date;
+	readonly retryDelayMs?: number;
+	readonly timeoutMs?: number;
 };
 
 const defaultIndexes: StoreIndexFiles = {
@@ -102,7 +118,7 @@ export function ensureStoreRootEffect(options: {
 			],
 			{ concurrency: "unbounded" },
 		);
-		yield* writeFileIfMissingEffect(paths.lock, "");
+		yield* migrateLegacyLockPathEffect(paths.lock);
 		yield* writeJsonFileIfMissingEffect(paths.manifest, {
 			schemaVersion: 1,
 			nextRecordId: 1,
@@ -110,6 +126,74 @@ export function ensureStoreRootEffect(options: {
 			updatedAt: now,
 		} satisfies StoreManifest);
 		yield* ensureIndexFilesEffect(options.storePath);
+	});
+}
+
+export function withStoreWriteLockEffect<A, E, R>(
+	options: StoreWriteLockOptions,
+	program: Effect.Effect<A, E, R>,
+) {
+	return Effect.gen(function* () {
+		yield* acquireStoreWriteLockEffect(options);
+		return yield* program.pipe(
+			Effect.ensuring(
+				releaseStoreWriteLockEffect(options.storePath).pipe(Effect.ignore),
+			),
+		);
+	});
+}
+
+export function acquireStoreWriteLockEffect(options: StoreWriteLockOptions) {
+	return Effect.tryPromise({
+		try: async () => {
+			const retryDelayMs = options.retryDelayMs ?? 25;
+			const timeoutMs = options.timeoutMs ?? 30_000;
+			const startedAt = Date.now();
+			const lockPath = storeRootPaths(options.storePath).lock;
+			const metadata: StoreWriteLockMetadata = {
+				pid: process.pid,
+				createdAt: iso(options.now ?? new Date()),
+				storePath: options.storePath,
+			};
+
+			for (;;) {
+				let createdLockDirectory = false;
+				try {
+					await mkdir(lockPath);
+					createdLockDirectory = true;
+					await writeFile(
+						path.join(lockPath, "metadata.json"),
+						`${JSON.stringify(metadata, null, "\t")}\n`,
+						"utf8",
+					);
+					return metadata;
+				} catch (error) {
+					if (!isAlreadyExistsError(error)) {
+						if (createdLockDirectory) {
+							await rm(lockPath, { recursive: true, force: true });
+						}
+						throw error;
+					}
+					if (Date.now() - startedAt >= timeoutMs) {
+						throw new ForgeError({
+							kind: "store-invalid",
+							message: `Timed out acquiring Forge store write lock at ${lockPath}.`,
+							details: { lockPath, timeoutMs },
+						});
+					}
+					await sleep(retryDelayMs);
+				}
+			}
+		},
+		catch: (error) => error,
+	});
+}
+
+export function releaseStoreWriteLockEffect(storePath: AbsolutePath) {
+	return Effect.tryPromise({
+		try: () =>
+			rm(storeRootPaths(storePath).lock, { recursive: true, force: true }),
+		catch: (error) => error,
 	});
 }
 
@@ -198,6 +282,7 @@ export function storeDoctorEffect(options: {
 			yield* checkJsonEffect(indexPath, problems, (value) => value, false);
 		}
 		yield* checkProjectFilesEffect(paths.projects, problems);
+		yield* checkDuplicateRecordIdsEffect(paths.records, problems);
 
 		return { ok: problems.length === 0, problems, repaired };
 	});
@@ -272,6 +357,17 @@ export function removeFileIfExistsEffect(filePath: AbsolutePath) {
 		yield* fileSystem
 			.remove(filePath, { recursive: false })
 			.pipe(Effect.catchIf(isMissingFile, () => Effect.void));
+	});
+}
+
+function migrateLegacyLockPathEffect(lockPath: AbsolutePath) {
+	return Effect.gen(function* () {
+		if (yield* isDirectoryEffect(lockPath)) {
+			return;
+		}
+		if (yield* existsEffect(lockPath)) {
+			yield* removeFileIfExistsEffect(lockPath);
+		}
 	});
 }
 
@@ -356,6 +452,104 @@ function checkProjectFilesEffect(
 	});
 }
 
+function checkDuplicateRecordIdsEffect(
+	recordsDirectory: AbsolutePath,
+	problems: Array<StoreDoctorProblem>,
+): Effect.Effect<void, unknown, FileSystemService> {
+	return Effect.gen(function* () {
+		const recordFiles = yield* listMarkdownFilesEffect(recordsDirectory).pipe(
+			Effect.catchAll(() => Effect.succeed<Array<AbsolutePath>>([])),
+		);
+		const pathsById = new Map<number, Array<AbsolutePath>>();
+
+		for (const filePath of recordFiles) {
+			const id = yield* readRecordFrontmatterIdEffect(filePath).pipe(
+				Effect.catchAll(() => Effect.succeed(undefined)),
+			);
+			if (id === undefined) {
+				continue;
+			}
+			pathsById.set(id, [...(pathsById.get(id) ?? []), filePath]);
+		}
+
+		for (const [id, filePaths] of [...pathsById.entries()].sort(
+			([left], [right]) => left - right,
+		)) {
+			if (filePaths.length < 2) {
+				continue;
+			}
+			const sortedPaths = [...filePaths].sort();
+			problems.push({
+				path: recordsDirectory,
+				message: `Duplicate record id '${id}' found in record files: ${sortedPaths.join(", ")}.`,
+				repairable: false,
+			});
+		}
+	});
+}
+
+function listMarkdownFilesEffect(
+	directoryPath: AbsolutePath,
+): Effect.Effect<Array<AbsolutePath>, unknown, FileSystemService> {
+	return Effect.gen(function* () {
+		const files = yield* readDirectoryEffect(directoryPath);
+		const markdownFiles: Array<AbsolutePath> = [];
+		for (const file of files) {
+			const filePath = parseAbsolutePath(path.join(directoryPath, file));
+			if (yield* isDirectoryEffect(filePath)) {
+				markdownFiles.push(...(yield* listMarkdownFilesEffect(filePath)));
+			} else if (file.endsWith(".md")) {
+				markdownFiles.push(filePath);
+			}
+		}
+		return markdownFiles;
+	});
+}
+
+function readRecordFrontmatterIdEffect(
+	filePath: AbsolutePath,
+): Effect.Effect<number | undefined, unknown, FileSystemService> {
+	return Effect.gen(function* () {
+		const markdown = yield* readTextFileEffect(filePath);
+		const frontmatter = splitRecordFrontmatter(markdown);
+		const document = parseDocument(frontmatter, {
+			keepSourceTokens: true,
+			uniqueKeys: false,
+		});
+		if (document.errors.length > 0) {
+			return undefined;
+		}
+		const value = document.toJSON();
+		if (
+			typeof value === "object" &&
+			value !== null &&
+			"id" in value &&
+			Number.isInteger(value.id)
+		) {
+			return value.id;
+		}
+		return undefined;
+	});
+}
+
+function splitRecordFrontmatter(markdown: string) {
+	const lines = markdown.split("\n");
+	if (lines[0] !== "---") {
+		throw new ForgeError({
+			kind: "store-invalid",
+			message: "Record Markdown is missing frontmatter.",
+		});
+	}
+	const end = lines.indexOf("---", 1);
+	if (end === -1) {
+		throw new ForgeError({
+			kind: "store-invalid",
+			message: "Record Markdown has unterminated frontmatter.",
+		});
+	}
+	return lines.slice(1, end).join("\n");
+}
+
 function checkJsonEffect<T>(
 	filePath: AbsolutePath,
 	problems: Array<StoreDoctorProblem>,
@@ -423,6 +617,19 @@ function normalizeMissingFile(error: unknown): unknown {
 		code: "ENOENT",
 		cause: error,
 	});
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === "EEXIST"
+	);
+}
+
+function sleep(milliseconds: number) {
+	return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function isMissingFile(error: unknown): boolean {
