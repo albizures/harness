@@ -6,5 +6,5 @@ Harness uses Vitest as the repository-wide test runner, with tests kept in packa
 
 - Root `pnpm test` runs Vitest for all package tests.
 - Packages with tests expose package-level Vitest scripts that point at the shared root config.
-- Non-AWF unit tests live under `test/unit/...`; extension packages preserve the `extensions/` source-root segment under that folder.
-- AWF keeps its existing `test/unit` and `test/integration` split.
+- Unit tests live under `test/unit/...`; extension packages preserve the `extensions/` source-root segment under that folder.
+- Integration tests live under `test/integration/...` when a package needs them.

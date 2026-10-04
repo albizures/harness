@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. ADR 0006 supersedes inherited Task profile classification details from ADR 0004/0005; this ADR still records explicit planning completion and optional Merge Tasks.
+Obsolete. The `@albizures/awf` package has been removed from this repository; this ADR is retained only as historical context. ADR 0006 superseded inherited Task profile classification details from ADR 0004/0005.
 
 ## Context
 
