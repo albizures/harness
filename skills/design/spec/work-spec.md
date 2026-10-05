@@ -15,6 +15,7 @@
    - Do not start a new round while any previous-round task PR is still open. Report the open PRs and wait for human review to merge or explicitly close/abandon each one.
    - Create the managed worktree with `forge worktree create <task> --branch <branch> --base <ref>` plus the required copy manifest options from the plan.
    - Run every implementation, check, commit, push, and PR command from inside the managed worktree. Forge owns local worktree lifecycle only; use `git` or `gh` directly for push and PR creation.
+   - Before opening the immutable task PR, render the PR description from Forge record data using `worktree-pr-templates.md`: include at least the parent Spec id/title, Task id/title/body, dependencies, retained branch-plan metadata, verification performed, and relevant Forge comments or outcomes. If required record data or branch-plan facts are unavailable, stop before PR creation instead of inventing them.
    - Treat Forge worktree safety failures as hard stops. If create/info/remove reports missing, invalid, or dirty managed state, stop and report the exact recovery instruction instead of bypassing Forge.
    - After the task PR is open, remove the managed worktree with `forge worktree remove <task>`. The task branch and PR are immutable after PR creation: do not amend, force-push, or update them for feature or review changes.
    - Capture meaningful feature or review changes discovered after PR creation as later follow-up Tasks, not as edits to the immutable task branch.
