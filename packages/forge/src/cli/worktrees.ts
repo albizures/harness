@@ -14,6 +14,7 @@ import {
 	parseWorktreeId,
 	type AbsolutePath,
 	type IsoDateTime,
+	type WorktreeCopyManifestSnapshot,
 	type WorktreeId,
 	type WorktreeRecord,
 } from "../domain.ts";
@@ -76,6 +77,10 @@ export type WorktreeDoctorResult = {
 export type WorktreeCreateResult = {
 	readonly worktree: WorktreeRecord;
 	readonly binding: WorktreeBinding;
+};
+
+type PreparedCopyManifest = {
+	readonly snapshot: WorktreeCopyManifestSnapshot;
 };
 
 export function createWorktreeCommands(
@@ -184,16 +189,12 @@ function createRunCreateEffect() {
 			const branch = requireTextFlag(parsed, "branch");
 			const baseRef = requireTextFlag(parsed, "base");
 			const requestedPath = optionalTextFlag(parsed, "path");
-			const copyManifest = optionalTextFlag(parsed, "copyManifest");
-			if (copyManifest !== undefined) {
-				return yield* Effect.fail(
-					new ForgeError({
-						kind: "config-invalid",
-						message:
-							"forge worktree create copy manifests are not implemented yet.",
-					}),
-				);
-			}
+			const copyManifest = optionalTextFlag(parsed, "copy-manifest");
+			const copyManifests = yield* trySync(() =>
+				copyManifest === undefined
+					? []
+					: [readCopyManifest(parsed.cwd, copyManifest)],
+			);
 			const records = yield* Effect.all([
 				readWorkflowRecordEffect(storePath, taskId),
 				readAllLineageRecordsEffect(storePath, taskId),
@@ -254,16 +255,14 @@ function createRunCreateEffect() {
 				baseRef,
 				baseSha,
 				now,
+				copyManifests,
 			});
 			const created = yield* createManagedWorktreeEffect({
 				storePath,
 				record,
+				copyManifests,
 			});
-			return present(
-				created,
-				0,
-				`Created worktree ${record.id} for task ${taskId}.`,
-			);
+			return present(created, 0, formatCreateMessage(taskId, created.worktree));
 		});
 	};
 }
@@ -545,9 +544,133 @@ function validateExistingBindingEffect(options: {
 	});
 }
 
+function readCopyManifest(
+	cwd: string,
+	manifestPath: string,
+): PreparedCopyManifest {
+	const absoluteManifestPath = parseAbsolutePath(
+		path.resolve(cwd, manifestPath),
+		"copyManifest",
+	);
+	let decoded: unknown;
+	try {
+		decoded = JSON.parse(fs.readFileSync(absoluteManifestPath, "utf8"));
+	} catch (error) {
+		throw new ForgeError({
+			kind: "config-invalid",
+			message: `Copy manifest '${absoluteManifestPath}' is not readable JSON.`,
+			cause: error,
+			details: { manifestPath: absoluteManifestPath },
+		});
+	}
+	const entries = normalizeCopyManifestEntries(decoded);
+	return { snapshot: { manifestPath: absoluteManifestPath, entries } };
+}
+
+function normalizeCopyManifestEntries(
+	value: unknown,
+): WorktreeCopyManifestSnapshot["entries"] {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		!("copy" in value) ||
+		!Array.isArray((value as { readonly copy: unknown }).copy)
+	) {
+		throw new ForgeError({
+			kind: "config-invalid",
+			message: 'Copy manifest must be JSON shaped like { "copy": [...] }.',
+		});
+	}
+	const entries = new Map<
+		string,
+		WorktreeCopyManifestSnapshot["entries"][number]
+	>();
+	for (const entry of (value as { readonly copy: ReadonlyArray<unknown> })
+		.copy) {
+		if (typeof entry !== "object" || entry === null) {
+			throw new ForgeError({
+				kind: "config-invalid",
+				message: "Copy manifest entries must be objects.",
+			});
+		}
+		const rawPath = (entry as { readonly path?: unknown }).path;
+		if (typeof rawPath !== "string" || rawPath.length === 0) {
+			throw new ForgeError({
+				kind: "config-invalid",
+				message: "Copy manifest entry path must be a non-empty string.",
+			});
+		}
+		validateCopyManifestPath(rawPath);
+		entries.set(rawPath, {
+			path: rawPath,
+			optional: (entry as { readonly optional?: unknown }).optional === true,
+		});
+	}
+	return [...entries.values()];
+}
+
+function validateCopyManifestPath(copyPath: string): void {
+	const segments = copyPath.split(/[\\/]/u);
+	if (
+		path.isAbsolute(copyPath) ||
+		segments.includes("..") ||
+		segments.includes("") ||
+		copyPath.endsWith("/") ||
+		/[?*[\]]/u.test(copyPath)
+	) {
+		throw new ForgeError({
+			kind: "config-invalid",
+			message: `Copy manifest path '${copyPath}' is unsafe.`,
+			details: { path: copyPath },
+		});
+	}
+}
+
+function applyCopyManifests(
+	record: WorktreeRecord,
+	manifests: ReadonlyArray<PreparedCopyManifest>,
+): ReadonlyArray<string> {
+	const copied: Array<string> = [];
+	for (const manifest of manifests) {
+		for (const entry of manifest.snapshot.entries) {
+			const source = path.join(record.repositoryRoot, entry.path);
+			const destination = path.join(record.worktreePath, entry.path);
+			if (!fs.existsSync(source)) {
+				if (entry.optional) {
+					continue;
+				}
+				throw new ForgeError({
+					kind: "config-invalid",
+					message: `Required copy source '${entry.path}' does not exist.`,
+					details: { path: entry.path, source },
+				});
+			}
+			if (fs.statSync(source).isDirectory()) {
+				throw new ForgeError({
+					kind: "config-invalid",
+					message: `Copy manifest path '${entry.path}' points to a directory; directories are not supported.`,
+					details: { path: entry.path, source },
+				});
+			}
+			fs.mkdirSync(path.dirname(destination), { recursive: true });
+			fs.copyFileSync(source, destination);
+			copied.push(entry.path);
+		}
+	}
+	return copied;
+}
+
+function formatCreateMessage(taskId: RecordId, record: WorktreeRecord): string {
+	return [
+		`Created worktree ${record.id} for task ${taskId}.`,
+		...record.copiedPaths.map((copiedPath) => `Copied ${copiedPath}.`),
+	].join("\n");
+}
+
 function createManagedWorktreeEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly record: WorktreeRecord;
+	readonly copyManifests: ReadonlyArray<PreparedCopyManifest>;
 }): Effect.Effect<WorktreeCreateResult, unknown, FileSystem> {
 	return Effect.gen(function* () {
 		const binding: WorktreeBinding = {
@@ -555,14 +678,26 @@ function createManagedWorktreeEffect(options: {
 			status: "active",
 		};
 		yield* trySync(() => createGitWorktree(options.record));
-		const persisted = yield* writeWorktreeRecordEffect({
-			storePath: options.storePath,
-			record: options.record,
-		}).pipe(
+		const record = yield* trySync(() => ({
+			...options.record,
+			copiedPaths: applyCopyManifests(options.record, options.copyManifests),
+		})).pipe(
 			Effect.catchAll((error) =>
 				rollbackCreateFailureEffect({
 					storePath: options.storePath,
 					record: options.record,
+					cause: error,
+				}),
+			),
+		);
+		const persisted = yield* writeWorktreeRecordEffect({
+			storePath: options.storePath,
+			record,
+		}).pipe(
+			Effect.catchAll((error) =>
+				rollbackCreateFailureEffect({
+					storePath: options.storePath,
+					record,
 					cause: error,
 				}),
 			),
@@ -575,7 +710,7 @@ function createManagedWorktreeEffect(options: {
 			Effect.catchAll((error) =>
 				rollbackCreateFailureEffect({
 					storePath: options.storePath,
-					record: options.record,
+					record,
 					cause: error,
 				}),
 			),
@@ -672,6 +807,7 @@ function buildActiveWorktreeRecord(options: {
 	readonly baseRef: string;
 	readonly baseSha: string;
 	readonly now: Date;
+	readonly copyManifests?: ReadonlyArray<PreparedCopyManifest>;
 }): WorktreeRecord {
 	const timestamp = iso(options.now);
 	return {
@@ -684,7 +820,8 @@ function buildActiveWorktreeRecord(options: {
 		baseRef: options.baseRef,
 		baseSha: options.baseSha,
 		status: "active",
-		copyManifests: [],
+		copyManifests:
+			options.copyManifests?.map((manifest) => manifest.snapshot) ?? [],
 		copiedPaths: [],
 		diagnostics: [],
 		createdAt: timestamp,

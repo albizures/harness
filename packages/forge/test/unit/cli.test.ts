@@ -1621,6 +1621,219 @@ it("when worktree create receives eligible task and safe git inputs, it should c
 	expect(JSON.parse(stdout.text()).worktrees).toHaveLength(2);
 });
 
+it("when worktree create receives an explicit copy manifest, it should copy listed files and persist manifest details", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-copy-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-copy-repo-");
+	const env = { HOME: home };
+	const manifestPath = path.join(repo, "copy-manifest.json");
+	await writeFile(path.join(repo, ".env.local"), "SECRET=local\n", "utf8");
+	await writeFile(path.join(repo, "config-dev.json"), '{"ok":true}\n', "utf8");
+	await writeFile(
+		manifestPath,
+		JSON.stringify({
+			copy: [
+				{ path: ".env.local", optional: true },
+				{ path: "config-dev.json" },
+				{ path: "missing.local", optional: true },
+			],
+		}),
+		"utf8",
+	);
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Worktree task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	const stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-copy",
+				"--base",
+				"main",
+				"--copy-manifest",
+				manifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Copied \.env\.local/);
+	expect(stdout.text()).toMatch(/Copied config-dev\.json/);
+	expect(stdout.text()).not.toMatch(/missing\.local/);
+	expect(stderr.text()).toBe("");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const [worktree] = JSON.parse(stdout.text()).worktrees;
+	expect(worktree.copyManifests).toEqual([
+		{
+			manifestPath,
+			entries: [
+				{ path: ".env.local", optional: true },
+				{ path: "config-dev.json", optional: false },
+				{ path: "missing.local", optional: true },
+			],
+		},
+	]);
+	expect(worktree.copiedPaths).toEqual([".env.local", "config-dev.json"]);
+	expect(
+		await readFile(path.join(worktree.worktreePath, ".env.local"), "utf8"),
+	).toBe("SECRET=local\n");
+	expect(
+		await readFile(path.join(worktree.worktreePath, "config-dev.json"), "utf8"),
+	).toBe('{"ok":true}\n');
+});
+
+it("when worktree create receives unsafe or missing copy manifest entries, it should fail without an active binding", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-copy-invalid-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-copy-invalid-repo-");
+	const env = { HOME: home };
+	const manifestPath = path.join(repo, "copy-manifest.json");
+	await writeFile(
+		manifestPath,
+		JSON.stringify({ copy: [{ path: "missing-required.local" }] }),
+		"utf8",
+	);
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Worktree task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-copy-invalid",
+				"--base",
+				"main",
+				"--copy-manifest",
+				manifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Required copy source 'missing-required\.local' does not exist/,
+	);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	await writeFile(
+		manifestPath,
+		JSON.stringify({ copy: [{ path: "../unsafe.local" }] }),
+		"utf8",
+	);
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-copy-unsafe",
+				"--base",
+				"main",
+				"--copy-manifest",
+				manifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Copy manifest path '\.\.\/unsafe\.local' is unsafe/,
+	);
+});
+
 it("when worktree create fails during git creation, it should not leave an active binding or record", async () => {
 	const home = await mkdtemp(
 		path.join(os.tmpdir(), "forge-cli-worktree-rollback-home-"),
