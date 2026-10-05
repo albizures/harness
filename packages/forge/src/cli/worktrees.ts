@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -10,7 +11,10 @@ import { Effect } from "effect";
 
 import {
 	parseAbsolutePath,
+	parseWorktreeId,
 	type AbsolutePath,
+	type IsoDateTime,
+	type WorktreeId,
 	type WorktreeRecord,
 } from "../domain.ts";
 import { readProjectEffect } from "../project-registry.ts";
@@ -24,15 +28,19 @@ import {
 	parseRecordId,
 	type RecordId,
 	type WorkflowRecord,
+	type WorktreeBinding,
 } from "../record-domain.ts";
 import {
+	clearTaskWorktreeBindingEffect,
 	readTaskWorktreeBindingEffect,
 	readWorkflowRecordEffect,
+	writeTaskWorktreeBindingEffect,
 } from "../record-store.ts";
 import { storeRootPaths } from "../store-paths.ts";
 import {
 	listWorktreeRecordsEffect,
 	readWorktreeRecordEffect,
+	writeWorktreeRecordEffect,
 } from "../worktree-store.ts";
 import { commandHandler as buildCommandHandler, present } from "./support.ts";
 import type { CliCommandRegistration, CommandOutput, Parsed } from "./types.ts";
@@ -62,15 +70,9 @@ export type WorktreeDoctorResult = {
 	readonly problems: ReadonlyArray<never>;
 };
 
-export type WorktreeCreateValidationResult = {
-	readonly task: RecordId;
-	readonly project: string;
-	readonly repositoryRoot: AbsolutePath;
-	readonly branch: string;
-	readonly baseRef: string;
-	readonly baseSha: string;
-	readonly worktreePath: AbsolutePath;
-	readonly validated: true;
+export type WorktreeCreateResult = {
+	readonly worktree: WorktreeRecord;
+	readonly binding: WorktreeBinding;
 };
 
 export function createWorktreeCommands(
@@ -179,6 +181,16 @@ function createRunCreateEffect() {
 			const branch = requireTextFlag(parsed, "branch");
 			const baseRef = requireTextFlag(parsed, "base");
 			const requestedPath = optionalTextFlag(parsed, "path");
+			const copyManifest = optionalTextFlag(parsed, "copyManifest");
+			if (copyManifest !== undefined) {
+				return yield* Effect.fail(
+					new ForgeError({
+						kind: "config-invalid",
+						message:
+							"forge worktree create copy manifests are not implemented yet.",
+					}),
+				);
+			}
 			const records = yield* Effect.all([
 				readWorkflowRecordEffect(storePath, taskId),
 				readAllLineageRecordsEffect(storePath, taskId),
@@ -200,33 +212,49 @@ function createRunCreateEffect() {
 			);
 			yield* trySync(() => validateBranchName(branch));
 			const baseSha = yield* trySync(() => resolveBaseSha(repositoryRoot, baseRef));
-			const worktreePath = yield* trySync(() => resolveWorktreePath({
-				storePath,
-				projectId,
-				taskId,
-				requestedPath,
-			}));
-			yield* validateExistingBindingEffect({
+			const existing = yield* validateExistingBindingEffect({
 				storePath,
 				taskId,
 				branch,
 				baseRef,
-				worktreePath,
+				requestedPath,
 			});
-			const result: WorktreeCreateValidationResult = {
-				task: taskId,
-				project: projectId,
+			if (existing !== null) {
+				return present(
+					{ worktree: existing, binding: { id: existing.id, status: "active" } },
+					0,
+					`Worktree ${existing.id} already active for task ${taskId}.`,
+				);
+			}
+			const worktreeId = createWorktreeId(taskId);
+			const worktreePath = yield* trySync(() =>
+				resolveWorktreePath({
+					storePath,
+					projectId,
+					worktreeId,
+					requestedPath,
+				}),
+			);
+			const now = new Date();
+			const record = buildActiveWorktreeRecord({
+				worktreeId,
+				taskId,
+				projectId,
 				repositoryRoot,
+				worktreePath,
 				branch,
 				baseRef,
 				baseSha,
-				worktreePath,
-				validated: true,
-			};
+				now,
+			});
+			const created = yield* createManagedWorktreeEffect({
+				storePath,
+				record,
+			});
 			return present(
-				result,
+				created,
 				0,
-				`Worktree create validation passed for task ${taskId}.`,
+				`Created worktree ${record.id} for task ${taskId}.`,
 			);
 		});
 	};
@@ -434,14 +462,14 @@ function resolveBaseSha(repositoryRoot: AbsolutePath, baseRef: string): string {
 function resolveWorktreePath(options: {
 	readonly storePath: AbsolutePath;
 	readonly projectId: string;
-	readonly taskId: RecordId;
+	readonly worktreeId: WorktreeId;
 	readonly requestedPath?: string;
 }): AbsolutePath {
 	const worktreeRoot = path.join(
 		storeRootPaths(options.storePath).worktrees,
 		options.projectId,
 	);
-	const candidate = options.requestedPath ?? path.join(worktreeRoot, String(options.taskId));
+	const candidate = options.requestedPath ?? path.join(worktreeRoot, options.worktreeId);
 	const absolute = parseAbsolutePath(candidate, "worktreePath");
 	if (!pathIsInside(absolute, worktreeRoot)) {
 		throw new ForgeError({
@@ -458,7 +486,7 @@ function validateExistingBindingEffect(options: {
 	readonly taskId: RecordId;
 	readonly branch: string;
 	readonly baseRef: string;
-	readonly worktreePath: AbsolutePath;
+	readonly requestedPath?: string;
 }) {
 	return Effect.gen(function* () {
 		const binding = yield* readTaskWorktreeBindingEffect({
@@ -466,21 +494,24 @@ function validateExistingBindingEffect(options: {
 			taskId: options.taskId,
 		});
 		if (binding === null) {
-			return;
+			return null;
 		}
 		const record = yield* readWorktreeRecordEffect({
 			storePath: options.storePath,
 			worktreeId: binding.id,
 		});
+		const requestedPathMatches =
+			options.requestedPath === undefined ||
+			record.worktreePath === parseAbsolutePath(options.requestedPath, "worktreePath");
 		if (
 			record.status === "active" &&
 			record.taskId === options.taskId &&
 			record.branch === options.branch &&
 			record.baseRef === options.baseRef &&
-			record.worktreePath === options.worktreePath &&
+			requestedPathMatches &&
 			fs.existsSync(record.worktreePath)
 		) {
-			return;
+			return record;
 		}
 		return yield* Effect.fail(
 			new ForgeError({
@@ -490,6 +521,164 @@ function validateExistingBindingEffect(options: {
 			}),
 		);
 	});
+}
+
+function createManagedWorktreeEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly record: WorktreeRecord;
+}): Effect.Effect<WorktreeCreateResult, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const binding: WorktreeBinding = { id: options.record.id, status: "active" };
+		yield* trySync(() => createGitWorktree(options.record));
+		const persisted = yield* writeWorktreeRecordEffect({
+			storePath: options.storePath,
+			record: options.record,
+		}).pipe(
+			Effect.catchAll((error) =>
+				rollbackCreateFailureEffect({
+					storePath: options.storePath,
+					record: options.record,
+					cause: error,
+				}),
+			),
+		);
+		yield* writeTaskWorktreeBindingEffect({
+			storePath: options.storePath,
+			taskId: options.record.taskId as RecordId,
+			binding,
+		}).pipe(
+			Effect.catchAll((error) =>
+				rollbackCreateFailureEffect({
+					storePath: options.storePath,
+					record: options.record,
+					cause: error,
+				}),
+			),
+		);
+		return { worktree: persisted, binding };
+	});
+}
+
+function rollbackCreateFailureEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly record: WorktreeRecord;
+	readonly cause: unknown;
+}): Effect.Effect<never, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		const removed = tryRemoveGitWorktree(options.record);
+		yield* clearTaskWorktreeBindingEffect({
+			storePath: options.storePath,
+			taskId: options.record.taskId as RecordId,
+		}).pipe(Effect.catchAll(() => Effect.void));
+		if (!removed) {
+			const invalid = markWorktreeInvalid(
+				options.record,
+				"create-rollback-failed",
+				"Worktree create failed and Forge could not fully roll back the git worktree. Remove or repair it manually, then retry.",
+				options.cause,
+			);
+			yield* writeWorktreeRecordEffect({
+				storePath: options.storePath,
+				record: invalid,
+			}).pipe(Effect.catchAll(() => Effect.void));
+		}
+		return yield* Effect.fail(options.cause);
+	});
+}
+
+function createGitWorktree(record: WorktreeRecord): void {
+	fs.mkdirSync(path.dirname(record.worktreePath), { recursive: true });
+	execFileSync(
+		"git",
+		["worktree", "add", "-b", record.branch, record.worktreePath, record.baseSha],
+		{
+			cwd: record.repositoryRoot,
+			stdio: ["ignore", "pipe", "pipe"],
+		},
+	);
+}
+
+function tryRemoveGitWorktree(record: WorktreeRecord): boolean {
+	try {
+		if (!fs.existsSync(record.worktreePath)) {
+			return true;
+		}
+		execFileSync("git", ["worktree", "remove", "--force", record.worktreePath], {
+			cwd: record.repositoryRoot,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function buildActiveWorktreeRecord(options: {
+	readonly worktreeId: WorktreeId;
+	readonly taskId: RecordId;
+	readonly projectId: WorktreeRecord["projectId"];
+	readonly repositoryRoot: AbsolutePath;
+	readonly worktreePath: AbsolutePath;
+	readonly branch: string;
+	readonly baseRef: string;
+	readonly baseSha: string;
+	readonly now: Date;
+}): WorktreeRecord {
+	const timestamp = iso(options.now);
+	return {
+		id: options.worktreeId,
+		taskId: options.taskId,
+		projectId: options.projectId,
+		repositoryRoot: options.repositoryRoot,
+		worktreePath: options.worktreePath,
+		branch: options.branch,
+		baseRef: options.baseRef,
+		baseSha: options.baseSha,
+		status: "active",
+		copyManifests: [],
+		copiedPaths: [],
+		diagnostics: [],
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+}
+
+function markWorktreeInvalid(
+	record: WorktreeRecord,
+	code: string,
+	message: string,
+	cause: unknown,
+): WorktreeRecord {
+	return {
+		...record,
+		status: "invalid",
+		diagnostics: [
+			...record.diagnostics,
+			{
+				code,
+				message,
+				details: { cause: formatDiagnosticCause(cause) },
+			},
+		],
+		updatedAt: iso(new Date()),
+	};
+}
+
+function createWorktreeId(taskId: RecordId): WorktreeId {
+	return parseWorktreeId(
+		`wt_task_${taskId}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`,
+	);
+}
+
+function iso(date: Date): IsoDateTime {
+	return date.toISOString() as IsoDateTime;
+}
+
+function formatDiagnosticCause(cause: unknown): string {
+	if (cause instanceof Error) {
+		return cause.message;
+	}
+	return String(cause);
 }
 
 function pathIsInside(candidate: string, root: string): boolean {
