@@ -38,7 +38,8 @@ When a Spec is opted into worktree mode:
 - Plan first-round ordinary implementation Tasks before any worktree-backed implementation starts.
 - Keep the definition/planning/execution phase boundary intact: planning creates or confirms child Tasks; implementation happens later through direct child Task execution.
 - Treat worktree mode as execution metadata and routing guidance for ordinary implementation Tasks. Do not imply child Tasks during Spec definition.
-- Include explicit verification/release work as needed so the later worktree flow has a known integration and completion path.
+- Include explicit verification/release work as needed so the later worktree flow has a known integration and completion path, including final integration PR and completion gates.
+- Ensure the final integration/release work verifies that the integration branch contains exactly accepted task PR results plus explicit integration/conflict-resolution commits, excludes rejected or abandoned work, targets the final integration PR at the branch from which the Spec was created, renders the integration PR body from Forge record data, and confirms required verification before completion.
 - Plan task branches using `worktree-branch-planning.md`: each round starts from the current integration branch, independent Tasks base/target that integration base, linear dependencies form stacked task PR branches, and diamonds use explicit internal join branches.
 - Retain the branch-plan metadata required by `worktree-branch-planning.md` before implementation starts.
 
