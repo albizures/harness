@@ -39,6 +39,21 @@ When a Spec is opted into worktree mode:
 - Keep the definition/planning/execution phase boundary intact: planning creates or confirms child Tasks; implementation happens later through direct child Task execution.
 - Treat worktree mode as execution metadata and routing guidance for ordinary implementation Tasks. Do not imply child Tasks during Spec definition.
 - Include explicit verification/release work as needed so the later worktree flow has a known integration and completion path.
+- Plan task branches using `worktree-branch-planning.md`: each round starts from the current integration branch, independent Tasks base/target that integration base, linear dependencies form stacked task PR branches, and diamonds use explicit internal join branches.
+- Retain the branch-plan metadata required by `worktree-branch-planning.md` before implementation starts.
+
+### Worktree round and follow-up gates
+
+Use these gates only for a Spec already opted into worktree mode:
+
+- Refuse to plan or start a next round while any previous-round task PR remains open. Report the open PRs and wait for explicit human resolution.
+- Before proposing next-round Tasks, read the previous round's PR outcomes and all available review comments.
+- Treat merged PRs as accepted input to integration; treat closed, rejected, or abandoned PRs as explicit human decisions and exclude their work from integration unless the human confirms replacement work.
+- Do not create a follow-up Task solely because a PR has no available review comments.
+- Propose follow-up Tasks only for meaningful feature gaps, review feedback, replacement work, or integration needs.
+- Present next-round follow-up Tasks for human confirmation before creating them in Forge.
+- Preserve immutable task PRs after creation: later feature or review changes belong to confirmed follow-up Tasks, not updates to the existing task branch.
+- Fail before PR creation if the round dependency graph cannot be represented as an acyclic branch plan with explicit join branches where needed.
 
 ### 3. Add verification Tasks
 
