@@ -57,6 +57,8 @@ const defaultIndexes: StoreIndexFiles = {
 	byInitiative: {},
 	relationships: {},
 };
+const defaultWriteLockRetryDelayMs = 25;
+const defaultWriteLockTimeoutMs = 30_000;
 
 export function loadForgeConfigEffect(options: {
 	readonly homeDirectory: AbsolutePath;
@@ -114,6 +116,8 @@ export function ensureStoreRootEffect(options: {
 				makeDirectoryEffect(paths.records),
 				makeDirectoryEffect(paths.comments),
 				makeDirectoryEffect(paths.updates),
+				makeDirectoryEffect(paths.worktrees),
+				makeDirectoryEffect(paths.worktreeRecords),
 				makeDirectoryEffect(paths.indexes),
 			],
 			{ concurrency: "unbounded" },
@@ -146,8 +150,8 @@ export function withStoreWriteLockEffect<A, E, R>(
 export function acquireStoreWriteLockEffect(options: StoreWriteLockOptions) {
 	return Effect.tryPromise({
 		try: async () => {
-			const retryDelayMs = options.retryDelayMs ?? 25;
-			const timeoutMs = options.timeoutMs ?? 30_000;
+			const retryDelayMs = options.retryDelayMs ?? defaultWriteLockRetryDelayMs;
+			const timeoutMs = options.timeoutMs ?? defaultWriteLockTimeoutMs;
 			const startedAt = Date.now();
 			const lockPath = storeRootPaths(options.storePath).lock;
 			const metadata: StoreWriteLockMetadata = {
@@ -249,6 +253,8 @@ export function storeDoctorEffect(options: {
 			paths.records,
 			paths.comments,
 			paths.updates,
+			paths.worktrees,
+			paths.worktreeRecords,
 			paths.indexes,
 		]) {
 			if (!(yield* isDirectoryEffect(directory))) {
@@ -371,7 +377,7 @@ function migrateLegacyLockPathEffect(lockPath: AbsolutePath) {
 	});
 }
 
-function writeFileIfMissingEffect(filePath: AbsolutePath, content: string) {
+function _writeFileIfMissingEffect(filePath: AbsolutePath, content: string) {
 	return Effect.gen(function* () {
 		if (yield* existsEffect(filePath)) {
 			return false;

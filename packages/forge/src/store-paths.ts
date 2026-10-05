@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import type { AbsolutePath, ProjectId } from "./domain.ts";
+import type { AbsolutePath, ProjectId, WorktreeId } from "./domain.ts";
 import { parseAbsolutePath } from "./domain.ts";
 import type { CommentId, RecordId, RecordKind } from "./record-domain.ts";
 
@@ -19,6 +19,8 @@ export type StoreRootPaths = {
 	readonly records: AbsolutePath;
 	readonly comments: AbsolutePath;
 	readonly updates: AbsolutePath;
+	readonly worktrees: AbsolutePath;
+	readonly worktreeRecords: AbsolutePath;
 	readonly indexes: AbsolutePath;
 	readonly byIdIndex: AbsolutePath;
 	readonly byProjectIndex: AbsolutePath;
@@ -42,6 +44,8 @@ export function storeRootPaths(storePath: AbsolutePath): StoreRootPaths {
 		records: joinAbsolute(storePath, "records"),
 		comments: joinAbsolute(storePath, "comments"),
 		updates: joinAbsolute(storePath, "updates"),
+		worktrees: joinAbsolute(storePath, "worktrees"),
+		worktreeRecords: joinAbsolute(storePath, "worktree-records"),
 		indexes: joinAbsolute(storePath, "indexes"),
 		byIdIndex: joinAbsolute(storePath, "indexes", "by-id.json"),
 		byProjectIndex: joinAbsolute(storePath, "indexes", "by-project.json"),
@@ -114,6 +118,13 @@ export function updateFilePath(
 		paddedRecordId(recordId),
 		`${sequence.toString().padStart(commentSequenceWidth, "0")}-${sanitizeUpdateType(type)}.json`,
 	);
+}
+
+export function worktreeRecordFilePath(
+	storePath: AbsolutePath,
+	worktreeId: WorktreeId,
+): AbsolutePath {
+	return joinAbsolute(storePath, "worktree-records", `${worktreeId}.json`);
 }
 
 export function paddedRecordId(recordId: number): string {

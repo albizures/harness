@@ -7,6 +7,7 @@ import {
 	type IsoDateTime,
 	type ProjectId,
 	type StoreManifest,
+	type WorktreeId,
 } from "./domain.ts";
 import { ForgeError } from "./errors.ts";
 
@@ -25,6 +26,17 @@ export type LifecycleResolution = string & {
 	readonly __brand: "LifecycleResolution";
 };
 export type CommentId = number & { readonly __brand: "CommentId" };
+
+export type WorktreeBinding = {
+	readonly id: WorktreeId;
+	readonly status: "active";
+};
+
+export type RecordMetadata = {
+	readonly forge?: {
+		readonly worktreeBinding?: WorktreeBinding;
+	};
+};
 
 export type RecordScope =
 	| { readonly type: "project"; readonly project: ProjectId }
@@ -49,6 +61,7 @@ export type RecordFrontmatter = {
 	readonly generatedBy: RecordId | null;
 	readonly tags: ReadonlyArray<string>;
 	readonly profile: string | null;
+	readonly metadata?: RecordMetadata;
 	readonly createdAt: IsoDateTime;
 	readonly updatedAt: IsoDateTime;
 };
@@ -230,6 +243,7 @@ const frontmatterKeys = [
 	"generatedBy",
 	"tags",
 	"profile",
+	"metadata",
 	"createdAt",
 	"updatedAt",
 ] as const;
@@ -244,6 +258,12 @@ const projectIdSchema = S.String.pipe(
 const isoDateTimeSchema = S.String.pipe(
 	S.filter((value) => !Number.isNaN(Date.parse(value)), {
 		message: () => "must be an ISO-compatible date-time string",
+	}),
+);
+
+const worktreeIdSchema = S.String.pipe(
+	S.filter((value) => /^wt_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(value), {
+		message: () => "must match wt_[a-z0-9_]+",
 	}),
 );
 
@@ -304,6 +324,17 @@ export const recordFrontmatterSchema: S.Schema<RecordFrontmatter> = S.Struct({
 	generatedBy: S.Union(recordIdSchema, S.Null),
 	tags: S.Array(S.NonEmptyString),
 	profile: S.Union(S.NonEmptyString, S.Null),
+	metadata: S.optional(
+		S.Struct({
+			forge: S.optional(
+				S.Struct({
+					worktreeBinding: S.optional(
+						S.Struct({ id: worktreeIdSchema, status: S.Literal("active") }),
+					),
+				}),
+			),
+		}),
+	),
 	createdAt: isoDateTimeSchema,
 	updatedAt: isoDateTimeSchema,
 }) as unknown as S.Schema<RecordFrontmatter>;

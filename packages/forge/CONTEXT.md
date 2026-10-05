@@ -25,3 +25,7 @@ Forge is a personal global workflow CLI package.
 **Global option**: An option applicable across the Forge command surface, such as output presentation or store and working-directory selection.
 
 **Command group**: A cohesive family of related commands within the Forge command surface, sharing a domain concern and its command behavior.
+
+**Worktree record**: A Forge store record of one managed local git worktree, including the path, branch/base data, lifecycle state, and validation data needed to clean it up.
+
+**Worktree binding**: The Forge-owned durable association from one Task to one Worktree record.

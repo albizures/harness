@@ -32,6 +32,7 @@ import {
 	type RecordId,
 	type RecordKind,
 	type RecordUpdate,
+	type WorktreeBinding,
 	validateFrontmatterEdit,
 	validateInitiativeMembership,
 	validateRecordPlacement,
@@ -127,6 +128,7 @@ const recordFrontmatterKeys = [
 	"generatedBy",
 	"tags",
 	"profile",
+	"metadata",
 	"createdAt",
 	"updatedAt",
 ] as const;
@@ -231,6 +233,107 @@ export function readRecordRelationshipsEffect(storePath: AbsolutePath) {
 		);
 		return parseRelationshipRecordIndex(value);
 	});
+}
+
+export function readTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+}) {
+	return Effect.gen(function* () {
+		const task = yield* readWorkflowRecordEffect(
+			options.storePath,
+			options.taskId,
+		);
+		return task.metadata?.forge?.worktreeBinding ?? null;
+	});
+}
+
+export function writeTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly binding: WorktreeBinding;
+	readonly now?: Date;
+}) {
+	return updateTaskWorktreeBindingEffect({
+		...options,
+		binding: options.binding,
+	});
+}
+
+export function clearTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly now?: Date;
+}) {
+	return updateTaskWorktreeBindingEffect({ ...options, binding: null });
+}
+
+function updateTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly binding: WorktreeBinding | null;
+	readonly now?: Date;
+}) {
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const task = yield* readWorkflowRecordEffect(
+				options.storePath,
+				options.taskId,
+			);
+			if (task.kind !== "task") {
+				return yield* Effect.fail(
+					new ForgeError({
+						kind: "record-invalid",
+						message: `Record '${options.taskId}' is not a Task record.`,
+						details: { recordId: options.taskId, kind: task.kind },
+					}),
+				);
+			}
+			const metadata = applyWorktreeBinding(task.metadata, options.binding);
+			const updated: WorkflowRecord = {
+				...task,
+				...(metadata === undefined ? { metadata: undefined } : { metadata }),
+				updatedAt: iso(options.now ?? new Date()),
+			};
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: task.id,
+				type:
+					options.binding === null
+						? "worktree-binding-clear"
+						: "worktree-binding-write",
+				summary:
+					options.binding === null
+						? "Cleared Task worktree binding."
+						: "Wrote Task worktree binding.",
+				data: { worktreeId: options.binding?.id ?? null },
+				now: options.now,
+			});
+			return updated;
+		}),
+	);
+}
+
+function applyWorktreeBinding(
+	metadata: WorkflowRecord["metadata"],
+	binding: WorktreeBinding | null,
+): WorkflowRecord["metadata"] {
+	if (binding !== null) {
+		return {
+			...metadata,
+			forge: { ...metadata?.forge, worktreeBinding: binding },
+		};
+	}
+	const forge = { ...metadata?.forge };
+	delete forge.worktreeBinding;
+	if (Object.keys(forge).length > 0) {
+		return { ...metadata, forge };
+	}
+	const next = { ...metadata };
+	delete next.forge;
+	return Object.keys(next).length > 0 ? next : undefined;
 }
 
 export function addWorkflowRecordDependencyEffect(options: {
@@ -724,7 +827,10 @@ export function replaceWorkflowRecordFromEditedMarkdownEffect(options: {
 export function formatWorkflowRecordMarkdown(record: WorkflowRecord): string {
 	const frontmatter: Record<string, unknown> = {};
 	for (const key of recordFrontmatterKeys) {
-		frontmatter[key] = record[key];
+		const value = record[key];
+		if (value !== undefined) {
+			frontmatter[key] = value;
+		}
 	}
 	const yaml = stringify(frontmatter, {
 		lineWidth: 0,

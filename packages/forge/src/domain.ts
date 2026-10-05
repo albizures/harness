@@ -45,6 +45,21 @@ export function isIsoDateTime(value: string): value is IsoDateTime {
 	return !Number.isNaN(Date.parse(value));
 }
 
+export function isWorktreeId(value: string): value is WorktreeId {
+	return /^wt_[a-z0-9]+(?:_[a-z0-9]+)*$/.test(value);
+}
+
+export function parseWorktreeId(value: string): WorktreeId {
+	if (isWorktreeId(value)) {
+		return value;
+	}
+	throw new ForgeError({
+		kind: "record-invalid",
+		message: "Worktree id must be opaque and match wt_[a-z0-9_]+.",
+		details: { value },
+	});
+}
+
 export type ForgeConfig = {
 	readonly storePath: AbsolutePath;
 };
@@ -52,6 +67,42 @@ export type ForgeConfig = {
 export type StoreManifest = {
 	readonly schemaVersion: 1;
 	readonly nextRecordId: number;
+	readonly createdAt: IsoDateTime;
+	readonly updatedAt: IsoDateTime;
+};
+
+export type WorktreeId = Brand<"WorktreeId">;
+export type WorktreeStatus = "active" | "removed" | "missing" | "invalid";
+
+export type WorktreeCopyManifestEntry = {
+	readonly path: string;
+	readonly optional: boolean;
+};
+
+export type WorktreeCopyManifestSnapshot = {
+	readonly manifestPath: AbsolutePath;
+	readonly entries: ReadonlyArray<WorktreeCopyManifestEntry>;
+};
+
+export type WorktreeDiagnostic = {
+	readonly code: string;
+	readonly message: string;
+	readonly details?: Readonly<Record<string, unknown>>;
+};
+
+export type WorktreeRecord = {
+	readonly id: WorktreeId;
+	readonly taskId: number;
+	readonly projectId: ProjectId;
+	readonly repositoryRoot: AbsolutePath;
+	readonly worktreePath: AbsolutePath;
+	readonly branch: string;
+	readonly baseRef: string;
+	readonly baseSha: string;
+	readonly status: WorktreeStatus;
+	readonly copyManifests: ReadonlyArray<WorktreeCopyManifestSnapshot>;
+	readonly copiedPaths: ReadonlyArray<string>;
+	readonly diagnostics: ReadonlyArray<WorktreeDiagnostic>;
 	readonly createdAt: IsoDateTime;
 	readonly updatedAt: IsoDateTime;
 };
@@ -85,6 +136,12 @@ const isoDateTimeSchema = S.String.pipe(
 	}),
 );
 
+const worktreeIdSchema = S.String.pipe(
+	S.filter((value) => isWorktreeId(value), {
+		message: () => "must match wt_[a-z0-9_]+",
+	}),
+);
+
 export const forgeConfigSchema: S.Schema<ForgeConfig> = S.Struct({
 	storePath: absolutePathSchema,
 }) as unknown as S.Schema<ForgeConfig>;
@@ -106,6 +163,36 @@ export const projectRegistryEntrySchema: S.Schema<ProjectRegistryEntry> =
 		createdAt: isoDateTimeSchema,
 		updatedAt: isoDateTimeSchema,
 	}) as unknown as S.Schema<ProjectRegistryEntry>;
+
+export const worktreeRecordSchema: S.Schema<WorktreeRecord> = S.Struct({
+	id: worktreeIdSchema,
+	taskId: S.Number.pipe(S.int(), S.greaterThan(0)),
+	projectId: projectIdSchema,
+	repositoryRoot: absolutePathSchema,
+	worktreePath: absolutePathSchema,
+	branch: S.NonEmptyString,
+	baseRef: S.NonEmptyString,
+	baseSha: S.NonEmptyString,
+	status: S.Literal("active", "removed", "missing", "invalid"),
+	copyManifests: S.Array(
+		S.Struct({
+			manifestPath: absolutePathSchema,
+			entries: S.Array(
+				S.Struct({ path: S.NonEmptyString, optional: S.Boolean }),
+			),
+		}),
+	),
+	copiedPaths: S.Array(S.NonEmptyString),
+	diagnostics: S.Array(
+		S.Struct({
+			code: S.NonEmptyString,
+			message: S.NonEmptyString,
+			details: S.optional(S.Record({ key: S.String, value: S.Unknown })),
+		}),
+	),
+	createdAt: isoDateTimeSchema,
+	updatedAt: isoDateTimeSchema,
+}) as unknown as S.Schema<WorktreeRecord>;
 
 export function decodeWithSchema<A>(
 	schema: S.Schema<A>,
@@ -150,5 +237,14 @@ export function decodeProjectRegistryEntry(
 		value,
 		"project-invalid",
 		"Forge project registry entry is invalid.",
+	);
+}
+
+export function decodeWorktreeRecord(value: unknown): WorktreeRecord {
+	return decodeWithSchema(
+		worktreeRecordSchema,
+		value,
+		"store-invalid",
+		"Forge worktree record is invalid.",
 	);
 }
