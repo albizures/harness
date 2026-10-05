@@ -436,7 +436,12 @@ function formatHuman(value: unknown): string {
 		return value.worktrees.map(formatWorktreeRecord).join("\n");
 	}
 	if (isWorktreeDoctorReport(value)) {
-		return value.ok ? "Worktree store ok." : "Worktree store has problems.";
+		if (value.ok) {
+			return "Worktree store ok.";
+		}
+		return value.problems
+			.map((problem) => `${problem.worktreeId}: ${problem.message}`)
+			.join("\n");
 	}
 	if (isStoreDoctorReport(value)) {
 		if (value.ok) {
@@ -536,7 +541,7 @@ function isWorktreeListResult(value: unknown): value is {
 function isWorktreeDoctorReport(value: unknown): value is {
 	ok: boolean;
 	worktrees: number;
-	problems: ReadonlyArray<unknown>;
+	problems: ReadonlyArray<{ worktreeId: string; message: string }>;
 } {
 	return (
 		typeof value === "object" &&

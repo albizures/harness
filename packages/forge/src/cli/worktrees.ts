@@ -68,10 +68,22 @@ export type WorktreeListResult = {
 	readonly worktrees: ReadonlyArray<WorktreeRecord>;
 };
 
+export type WorktreeProblem = {
+	readonly worktreeId: WorktreeId;
+	readonly taskId: number;
+	readonly code: string;
+	readonly message: string;
+};
+
 export type WorktreeDoctorResult = {
 	readonly ok: boolean;
 	readonly worktrees: number;
-	readonly problems: ReadonlyArray<never>;
+	readonly problems: ReadonlyArray<WorktreeProblem>;
+};
+
+export type WorktreeInfoResult = {
+	readonly worktree: WorktreeRecord;
+	readonly problems: ReadonlyArray<WorktreeProblem>;
 };
 
 export type WorktreeCreateResult = {
@@ -285,7 +297,16 @@ function createRunInfoEffect() {
 					noActiveBinding(taskId).message,
 				);
 			}
-			return present(binding, 0, `${taskId}\t${binding.id}\t${binding.status}`);
+			const worktree = yield* readWorktreeRecordEffect({
+				storePath,
+				worktreeId: binding.id,
+			});
+			const problems = diagnoseWorktreeRecord(worktree);
+			return present(
+				{ worktree, problems },
+				0,
+				formatInfoMessage({ worktree, problems }),
+			);
 		});
 	};
 }
@@ -325,8 +346,13 @@ function createRunListEffect() {
 	): Effect.Effect<CommandOutput, unknown, FileSystem> {
 		return Effect.gen(function* () {
 			const storePath = yield* readyStoreEffect(parsed);
+			const includeAll = parsed.flags.all === true;
 			const worktrees = yield* listWorktreeRecordsEffect(storePath);
-			return present({ worktrees });
+			return present({
+				worktrees: includeAll
+					? worktrees
+					: worktrees.filter((worktree) => worktree.status === "active"),
+			});
 		});
 	};
 }
@@ -337,8 +363,36 @@ function createRunDoctorEffect() {
 	): Effect.Effect<CommandOutput, unknown, FileSystem> {
 		return Effect.gen(function* () {
 			const storePath = yield* readyStoreEffect(parsed);
+			const pruneMissing = parsed.flags["prune-missing"] === true;
 			const worktrees = yield* listWorktreeRecordsEffect(storePath);
-			return present({ ok: true, worktrees: worktrees.length, problems: [] });
+			const problems = worktrees.flatMap(diagnoseWorktreeRecord);
+			if (pruneMissing) {
+				for (const worktree of worktrees) {
+					if (
+						worktree.status !== "active" ||
+						fs.existsSync(worktree.worktreePath)
+					) {
+						continue;
+					}
+					const missing = markWorktreeMissing(worktree);
+					yield* writeWorktreeRecordEffect({ storePath, record: missing });
+					const binding = yield* readTaskWorktreeBindingEffect({
+						storePath,
+						taskId: worktree.taskId as RecordId,
+					});
+					if (binding?.id === worktree.id) {
+						yield* clearTaskWorktreeBindingEffect({
+							storePath,
+							taskId: worktree.taskId as RecordId,
+						});
+					}
+				}
+			}
+			return present({
+				ok: problems.length === 0,
+				worktrees: worktrees.length,
+				problems,
+			});
 		});
 	};
 }
@@ -667,6 +721,54 @@ function formatCreateMessage(taskId: RecordId, record: WorktreeRecord): string {
 	].join("\n");
 }
 
+function formatInfoMessage(result: WorktreeInfoResult): string {
+	return [
+		`${result.worktree.id}\t${result.worktree.status}\ttask:${result.worktree.taskId}\t${result.worktree.branch}\t${result.worktree.worktreePath}`,
+		...result.problems.map(
+			(problem) => `problem:${problem.code}\t${problem.message}`,
+		),
+	].join("\n");
+}
+
+function diagnoseWorktreeRecord(
+	record: WorktreeRecord,
+): ReadonlyArray<WorktreeProblem> {
+	const problems: Array<WorktreeProblem> = [];
+	if (record.status === "active" && !fs.existsSync(record.worktreePath)) {
+		problems.push({
+			worktreeId: record.id,
+			taskId: record.taskId,
+			code: "worktree-path-missing",
+			message: `Active worktree path '${record.worktreePath}' is missing.`,
+		});
+		return problems;
+	}
+	if (record.status === "active") {
+		try {
+			const inside = git(record.worktreePath, [
+				"rev-parse",
+				"--is-inside-work-tree",
+			]);
+			if (inside !== "true") {
+				problems.push({
+					worktreeId: record.id,
+					taskId: record.taskId,
+					code: "worktree-git-invalid",
+					message: `Active worktree path '${record.worktreePath}' is not a git worktree.`,
+				});
+			}
+		} catch {
+			problems.push({
+				worktreeId: record.id,
+				taskId: record.taskId,
+				code: "worktree-git-invalid",
+				message: `Active worktree path '${record.worktreePath}' is not a valid git worktree.`,
+			});
+		}
+	}
+	return problems;
+}
+
 function createManagedWorktreeEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly record: WorktreeRecord;
@@ -844,6 +946,21 @@ function markWorktreeInvalid(
 				code,
 				message,
 				details: { cause: formatDiagnosticCause(cause) },
+			},
+		],
+		updatedAt: iso(new Date()),
+	};
+}
+
+function markWorktreeMissing(record: WorktreeRecord): WorktreeRecord {
+	return {
+		...record,
+		status: "missing",
+		diagnostics: [
+			...record.diagnostics,
+			{
+				code: "worktree-path-missing",
+				message: `Active worktree path '${record.worktreePath}' was missing during prune.`,
 			},
 		],
 		updatedAt: iso(new Date()),

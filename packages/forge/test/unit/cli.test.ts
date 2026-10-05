@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -2044,6 +2051,165 @@ it("when worktree create receives ineligible or unsafe inputs, it should fail be
 	expect(stderr.text()).toMatch(
 		/Worktree path must be inside Forge worktree root/,
 	);
+});
+
+it("when worktree info, list, and doctor inspect active and missing worktrees, they should report stable state", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-inspect-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-inspect-repo-");
+	const env = { HOME: home };
+	const missingTaskId = 3;
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Active task", "Missing task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+	await runTempStoreCli(
+		["worktree", "create", "2", "--branch", "forge/active", "--base", "main"],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		["worktree", "create", "3", "--branch", "forge/missing", "--base", "main"],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const activeInfo = JSON.parse(stdout.text());
+	expect(activeInfo.worktree).toMatchObject({
+		taskId: 2,
+		branch: "forge/active",
+		status: "active",
+	});
+	expect(activeInfo.problems).toEqual([]);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toContain("forge/active");
+	expect(stdout.text()).toContain("forge/missing");
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	const missing = JSON.parse(stdout.text()).worktrees.find(
+		(worktree: { taskId: number }) => worktree.taskId === missingTaskId,
+	);
+	await rm(missing.worktreePath, { recursive: true, force: true });
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "doctor", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const doctor = JSON.parse(stdout.text());
+	expect(doctor.ok).toBe(false);
+	expect(doctor.problems).toEqual([
+		expect.objectContaining({
+			taskId: 3,
+			code: "worktree-path-missing",
+		}),
+	]);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "doctor", "--prune-missing"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toContain("Active worktree path");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", String(missingTaskId)], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 3 has no active worktree binding/);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(
+		JSON.parse(stdout.text()).worktrees.map(
+			(worktree: { status: string }) => worktree.status,
+		),
+	).toEqual(["active"]);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--all", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(
+		JSON.parse(stdout.text()).worktrees.map(
+			(worktree: { status: string }) => worktree.status,
+		),
+	).toEqual(["active", "missing"]);
 });
 
 it("when worktree list sees an empty store, it should render a stable empty result", async () => {
