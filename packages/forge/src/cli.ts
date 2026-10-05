@@ -45,6 +45,7 @@ import { createCommentsCommands } from "./cli/comments.ts";
 import { createInitiativesCommands } from "./cli/initiatives.ts";
 import { createNavigationCommands } from "./cli/navigation.ts";
 import { createRecordsCommands } from "./cli/records.ts";
+import { createWorktreeCommands } from "./cli/worktrees.ts";
 
 export type CliOptions = {
 	readonly cwd?: string;
@@ -119,6 +120,8 @@ const { initiativesCommand, initiativeCommand } = initiativesCommands;
 const navigationCommands = createNavigationCommands(commandHandler);
 const { listCommand, readyCommand, nextCommand, treeCommand, depsCommand } =
 	navigationCommands;
+const worktreeCommands = createWorktreeCommands(commandHandler);
+const { worktreeCommand } = worktreeCommands;
 
 const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
 	CliCommand.withHandler(rootCommandHandler),
@@ -143,6 +146,7 @@ const forgeRootCommand = CliCommand.make("forge", forgeRootOptions).pipe(
 		nextCommand,
 		treeCommand,
 		depsCommand,
+		worktreeCommand,
 		openCommand,
 		editCommand,
 		projectsCommand,
@@ -202,6 +206,7 @@ const cliCommandRegistrations: ReadonlyArray<CliCommandRegistration> = [
 	...commentsCommands.registrations,
 	...initiativesCommands.registrations,
 	...navigationCommands.registrations,
+	...worktreeCommands.registrations,
 	...recordsCommands.registrations.filter(
 		(registration) =>
 			registration.path[0] === "open" || registration.path[0] === "edit",
@@ -424,6 +429,15 @@ function formatHuman(value: unknown): string {
 	if (isProject(value)) {
 		return `${value.id}\t${value.name}\t${value.roots.join(", ")}`;
 	}
+	if (isWorktreeListResult(value)) {
+		if (value.worktrees.length === 0) {
+			return "No managed worktrees.";
+		}
+		return value.worktrees.map(formatWorktreeRecord).join("\n");
+	}
+	if (isWorktreeDoctorReport(value)) {
+		return value.ok ? "Worktree store ok." : "Worktree store has problems.";
+	}
 	if (isStoreDoctorReport(value)) {
 		if (value.ok) {
 			return "Store ok.";
@@ -500,6 +514,48 @@ function isStoreDoctorReport(value: unknown): value is {
 		"problems" in value &&
 		Array.isArray((value as { problems: unknown }).problems)
 	);
+}
+
+function isWorktreeListResult(value: unknown): value is {
+	worktrees: ReadonlyArray<{
+		id: string;
+		status: string;
+		taskId: number;
+		branch: string;
+		worktreePath: string;
+	}>;
+} {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"worktrees" in value &&
+		Array.isArray((value as { worktrees: unknown }).worktrees)
+	);
+}
+
+function isWorktreeDoctorReport(value: unknown): value is {
+	ok: boolean;
+	worktrees: number;
+	problems: ReadonlyArray<unknown>;
+} {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"ok" in value &&
+		"worktrees" in value &&
+		"problems" in value &&
+		Array.isArray((value as { problems: unknown }).problems)
+	);
+}
+
+function formatWorktreeRecord(worktree: {
+	readonly id: string;
+	readonly status: string;
+	readonly taskId: number;
+	readonly branch: string;
+	readonly worktreePath: string;
+}): string {
+	return `${worktree.id}\t${worktree.status}\ttask:${worktree.taskId}\t${worktree.branch}\t${worktree.worktreePath}`;
 }
 
 export function isCliEntrypoint(metaUrl = import.meta.url, argv1?: string) {

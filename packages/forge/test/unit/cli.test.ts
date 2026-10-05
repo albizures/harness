@@ -1373,6 +1373,159 @@ it("when nested command help is requested, it should not repeat internal command
 	}
 });
 
+it("when worktree command help is requested, it should expose the managed worktree surface", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["worktree", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	const help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Manage Forge-owned local git worktrees/);
+	expect(help).toMatch(/create/);
+	expect(help).toMatch(/info/);
+	expect(help).toMatch(/remove/);
+	expect(help).toMatch(/list/);
+	expect(help).toMatch(/doctor/);
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree create help is requested, it should document branch and base flags", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["worktree", "create", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	const help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Create a managed Forge git worktree/);
+	expect(help).toMatch(/<task>/);
+	expect(help).toMatch(/--branch/);
+	expect(help).toMatch(/--base/);
+	expect(help).toMatch(/--path/);
+	expect(help).toMatch(/--copy-manifest/);
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree read commands find no active binding, they should exit successfully", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-home-"),
+	);
+	const store = path.join(home, "store");
+	const env = { HOME: home };
+
+	expect(
+		await runTempStoreCli(
+			[
+				"new",
+				"spec",
+				"--title",
+				"Worktree spec",
+				"--body",
+				"Spec body",
+				"--project",
+				"harness",
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+	expect(
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				"Worktree task",
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+
+	for (const command of ["info", "remove"] as const) {
+		const stdout = capture();
+		const stderr = capture();
+		expect(
+			await runTempStoreCli(["worktree", command, "2"], {
+				home,
+				store,
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env,
+			}),
+		).toBe(0);
+		expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+		expect(stderr.text()).toBe("");
+	}
+});
+
+it("when worktree list sees an empty store, it should render a stable empty result", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-list-home-"),
+	);
+	const store = path.join(home, "store");
+	const stdout = capture();
+	const stderr = capture();
+
+	expect(
+		await runTempStoreCli(["worktree", "list"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: home },
+		}),
+	).toBe(0);
+	expect(stdout.text()).toBe("No managed worktrees.\n");
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree doctor sees an empty store, it should report ok without mutation", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-doctor-home-"),
+	);
+	const store = path.join(home, "store");
+	const stdout = capture();
+	const stderr = capture();
+
+	expect(
+		await runTempStoreCli(["worktree", "doctor"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: home },
+		}),
+	).toBe(0);
+	expect(stdout.text()).toBe("Worktree store ok.\n");
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree list JSON is requested, it should emit the structured empty contract", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-list-json-home-"),
+	);
+	const store = path.join(home, "store");
+	const stdout = capture();
+
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env: { HOME: home },
+		}),
+	).toBe(0);
+	expect(JSON.parse(stdout.text())).toEqual({ worktrees: [] });
+});
+
 it("when migrated record leaf help is requested, it should use generated leaf help", async () => {
 	let stdout = capture();
 	let stderr = capture();
