@@ -1,10 +1,12 @@
 # Plan Tasks
 
-Break an approved plan, Spec, or conversation into Forge **Tasks** under an existing Spec. Use tracer-bullet vertical slices, preserve blockers, and add verification/release work for code changes.
+Break an approved plan, Spec, or conversation into Forge **Tasks** under an existing Spec. Use tracer-bullet vertical slices, preserve blockers, and add verification/release work for code changes. Existing non-worktree Task execution is the default; use worktree-backed implementation mode only when the human explicitly opts the confirmed Spec into it during this planning workflow.
 
 ## Required parent Spec
 
 Require an existing Forge Spec. If the user did not supply a Spec id/URL and one is not unambiguously discoverable, stop and ask for it. Inspect the candidate with `forge show <record>` and confirm it is a Spec before drafting or publishing child Tasks.
+
+Do not use Task planning to backfill an unconfirmed definition. Spec definition remains separate: defining a Spec creates exactly the Spec unless the human explicitly asked to define and plan in one request.
 
 ## Process
 
@@ -24,6 +26,19 @@ Break the work into tracer-bullet Tasks:
 - Prefactoring comes first.
 
 Give each Task its blocking edges. Wide refactors are the exception: sequence them as expand–contract, using an integration branch only when batches cannot stay green independently, and make final integration/verification explicit.
+
+### Worktree-backed implementation opt-in
+
+Worktree-backed implementation is an optional planning decision for an existing confirmed Spec, not a replacement for ordinary `/spec` execution.
+
+Use worktree mode only when the human explicitly chooses it for the Spec (for example, asks to plan the Spec in worktrees, use Forge worktrees for implementation Tasks, or keep the main checkout clean with task PRs). If the human does not opt in, preserve the existing non-worktree execution path and do not add worktree-specific gates.
+
+When a Spec is opted into worktree mode:
+
+- Plan first-round ordinary implementation Tasks before any worktree-backed implementation starts.
+- Keep the definition/planning/execution phase boundary intact: planning creates or confirms child Tasks; implementation happens later through direct child Task execution.
+- Treat worktree mode as execution metadata and routing guidance for ordinary implementation Tasks. Do not imply child Tasks during Spec definition.
+- Include explicit verification/release work as needed so the later worktree flow has a known integration and completion path.
 
 ### 3. Add verification Tasks
 
