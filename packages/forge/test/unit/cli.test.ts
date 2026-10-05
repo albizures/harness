@@ -1488,20 +1488,21 @@ it("when worktree read commands find no active binding, they should exit success
 	}
 });
 
-it("when worktree create validates an eligible task and safe git inputs, it should succeed without creating yet", async () => {
+it("when worktree create receives eligible task and safe git inputs, it should create and bind managed worktrees", async () => {
 	const home = await mkdtemp(
 		path.join(os.tmpdir(), "forge-cli-worktree-create-home-"),
 	);
 	const store = path.join(home, "store");
 	const repo = await initGitRepository("forge-cli-worktree-repo-");
-	const worktreePath = path.join(store, "worktrees", "harness", "task-2");
+	const customWorktreePath = path.join(store, "worktrees", "harness", "task-2");
 	const env = { HOME: home };
 
 	expect(
-		await runTempStoreCli(
-			["project", "add", "harness", "--root", repo],
-			{ home, store, env },
-		),
+		await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+			home,
+			store,
+			env,
+		}),
 	).toBe(0);
 	expect(
 		await runTempStoreCli(
@@ -1518,24 +1519,26 @@ it("when worktree create validates an eligible task and safe git inputs, it shou
 			{ home, store, env },
 		),
 	).toBe(0);
-	expect(
-		await runTempStoreCli(
-			[
-				"new",
-				"task",
-				"--title",
-				"Worktree task",
-				"--description",
-				"Task body",
-				"--parent",
-				"1",
-			],
-			{ home, store, env },
-		),
-	).toBe(0);
+	for (const title of ["Custom path task", "Default path task"]) {
+		expect(
+			await runTempStoreCli(
+				[
+					"new",
+					"task",
+					"--title",
+					title,
+					"--description",
+					"Task body",
+					"--parent",
+					"1",
+				],
+				{ home, store, env },
+			),
+		).toBe(0);
+	}
 
-	const stdout = capture();
-	const stderr = capture();
+	let stdout = capture();
+	let stderr = capture();
 	expect(
 		await runTempStoreCli(
 			[
@@ -1547,13 +1550,151 @@ it("when worktree create validates an eligible task and safe git inputs, it shou
 				"--base",
 				"main",
 				"--path",
-				worktreePath,
+				customWorktreePath,
 			],
 			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
 		),
 	).toBe(0);
-	expect(stdout.text()).toBe("Worktree create validation passed for task 2.\n");
+	expect(stdout.text()).toMatch(/Created worktree wt_.* for task 2/);
 	expect(stderr.text()).toBe("");
+	expect(
+		execFileSync(
+			"git",
+			["-C", customWorktreePath, "branch", "--show-current"],
+			{ encoding: "utf8" },
+		).trim(),
+	).toBe("forge/task-2");
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-3",
+				"--base",
+				"main",
+				"--json",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	const created = JSON.parse(stdout.text());
+	expect(created.worktree).toMatchObject({
+		taskId: 3,
+		projectId: "harness",
+		branch: "forge/task-3",
+		baseRef: "main",
+		status: "active",
+		copyManifests: [],
+		copiedPaths: [],
+	});
+	expect(created.binding).toEqual({
+		id: created.worktree.id,
+		status: "active",
+	});
+	expect(created.worktree.worktreePath).toMatch(
+		new RegExp(
+			`${store.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/worktrees/harness/wt_`,
+		),
+	);
+	expect(
+		execFileSync(
+			"git",
+			["-C", created.worktree.worktreePath, "branch", "--show-current"],
+			{ encoding: "utf8" },
+		).trim(),
+	).toBe("forge/task-3");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).worktrees).toHaveLength(2);
+});
+
+it("when worktree create fails during git creation, it should not leave an active binding or record", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-rollback-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-rollback-repo-");
+	const env = { HOME: home };
+	execFileSync("git", ["branch", "existing"], { cwd: repo });
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Worktree task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			["worktree", "create", "2", "--branch", "existing", "--base", "main"],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(/Failed to create git worktree/);
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(JSON.parse(stdout.text())).toEqual({ worktrees: [] });
 });
 
 it("when worktree create receives ineligible or unsafe inputs, it should fail before creation", async () => {
@@ -1615,7 +1756,9 @@ it("when worktree create receives ineligible or unsafe inputs, it should fail be
 		),
 	).toBe(2);
 	expect(stdout.text()).toBe("");
-	expect(stderr.text()).toMatch(/worktrees are only for ordinary implementation Tasks/);
+	expect(stderr.text()).toMatch(
+		/worktrees are only for ordinary implementation Tasks/,
+	);
 
 	await runTempStoreCli(
 		[
@@ -1685,7 +1828,9 @@ it("when worktree create receives ineligible or unsafe inputs, it should fail be
 			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
 		),
 	).toBe(2);
-	expect(stderr.text()).toMatch(/Worktree path must be inside Forge worktree root/);
+	expect(stderr.text()).toMatch(
+		/Worktree path must be inside Forge worktree root/,
+	);
 });
 
 it("when worktree list sees an empty store, it should render a stable empty result", async () => {

@@ -6,7 +6,7 @@ import path from "node:path";
 import * as Args from "@effect/cli/Args";
 import * as CliCommand from "@effect/cli/Command";
 import * as Options from "@effect/cli/Options";
-import { FileSystem } from "@effect/platform/FileSystem";
+import type { FileSystem } from "@effect/platform/FileSystem";
 import { Effect } from "effect";
 
 import {
@@ -46,6 +46,9 @@ import { commandHandler as buildCommandHandler, present } from "./support.ts";
 import type { CliCommandRegistration, CommandOutput, Parsed } from "./types.ts";
 
 type CommandHandler = typeof buildCommandHandler;
+
+const worktreeIdTimestampRadix = 36;
+const worktreeIdRandomByteCount = 4;
 
 const taskArg = Args.text({ name: "task" });
 const presentationOptions = {
@@ -211,7 +214,9 @@ function createRunCreateEffect() {
 				resolveRepositoryRoot(project.roots),
 			);
 			yield* trySync(() => validateBranchName(branch));
-			const baseSha = yield* trySync(() => resolveBaseSha(repositoryRoot, baseRef));
+			const baseSha = yield* trySync(() =>
+				resolveBaseSha(repositoryRoot, baseRef),
+			);
 			const existing = yield* validateExistingBindingEffect({
 				storePath,
 				taskId,
@@ -221,7 +226,10 @@ function createRunCreateEffect() {
 			});
 			if (existing !== null) {
 				return present(
-					{ worktree: existing, binding: { id: existing.id, status: "active" } },
+					{
+						worktree: existing,
+						binding: { id: existing.id, status: "active" },
+					},
 					0,
 					`Worktree ${existing.id} already active for task ${taskId}.`,
 				);
@@ -363,7 +371,10 @@ function optionalTextFlag(parsed: Parsed, name: string): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function readAllLineageRecordsEffect(storePath: AbsolutePath, taskId: RecordId) {
+function readAllLineageRecordsEffect(
+	storePath: AbsolutePath,
+	taskId: RecordId,
+) {
 	return Effect.gen(function* () {
 		const lineage: Array<WorkflowRecord> = [];
 		let current = yield* readWorkflowRecordEffect(storePath, taskId);
@@ -394,7 +405,9 @@ function validateEligibleTask(
 		fail(`Record ${task.id} is a ${task.kind}, not an ordinary Task.`);
 	}
 	if (task.subkind !== null) {
-		fail(`Task ${task.id} is a ${task.subkind} Task; worktrees are only for ordinary implementation Tasks.`);
+		fail(
+			`Task ${task.id} is a ${task.subkind} Task; worktrees are only for ordinary implementation Tasks.`,
+		);
 	}
 	if (task.state === "done") {
 		fail(`Task ${task.id} is done and cannot receive a worktree.`);
@@ -412,7 +425,9 @@ function validateEligibleTask(
 	}
 }
 
-function resolveRepositoryRoot(roots: ReadonlyArray<AbsolutePath>): AbsolutePath {
+function resolveRepositoryRoot(
+	roots: ReadonlyArray<AbsolutePath>,
+): AbsolutePath {
 	for (const root of roots) {
 		if (!fs.existsSync(root)) {
 			continue;
@@ -426,7 +441,8 @@ function resolveRepositoryRoot(roots: ReadonlyArray<AbsolutePath>): AbsolutePath
 	}
 	throw new ForgeError({
 		kind: "project-invalid",
-		message: "Registered project roots do not resolve to a local git repository.",
+		message:
+			"Registered project roots do not resolve to a local git repository.",
 		details: { roots },
 	});
 }
@@ -448,7 +464,11 @@ function validateBranchName(branch: string): void {
 
 function resolveBaseSha(repositoryRoot: AbsolutePath, baseRef: string): string {
 	try {
-		return git(repositoryRoot, ["rev-parse", "--verify", `${baseRef}^{commit}`]);
+		return git(repositoryRoot, [
+			"rev-parse",
+			"--verify",
+			`${baseRef}^{commit}`,
+		]);
 	} catch (error) {
 		throw new ForgeError({
 			kind: "config-invalid",
@@ -469,7 +489,8 @@ function resolveWorktreePath(options: {
 		storeRootPaths(options.storePath).worktrees,
 		options.projectId,
 	);
-	const candidate = options.requestedPath ?? path.join(worktreeRoot, options.worktreeId);
+	const candidate =
+		options.requestedPath ?? path.join(worktreeRoot, options.worktreeId);
 	const absolute = parseAbsolutePath(candidate, "worktreePath");
 	if (!pathIsInside(absolute, worktreeRoot)) {
 		throw new ForgeError({
@@ -502,7 +523,8 @@ function validateExistingBindingEffect(options: {
 		});
 		const requestedPathMatches =
 			options.requestedPath === undefined ||
-			record.worktreePath === parseAbsolutePath(options.requestedPath, "worktreePath");
+			record.worktreePath ===
+				parseAbsolutePath(options.requestedPath, "worktreePath");
 		if (
 			record.status === "active" &&
 			record.taskId === options.taskId &&
@@ -528,7 +550,10 @@ function createManagedWorktreeEffect(options: {
 	readonly record: WorktreeRecord;
 }): Effect.Effect<WorktreeCreateResult, unknown, FileSystem> {
 	return Effect.gen(function* () {
-		const binding: WorktreeBinding = { id: options.record.id, status: "active" };
+		const binding: WorktreeBinding = {
+			id: options.record.id,
+			status: "active",
+		};
 		yield* trySync(() => createGitWorktree(options.record));
 		const persisted = yield* writeWorktreeRecordEffect({
 			storePath: options.storePath,
@@ -588,14 +613,34 @@ function rollbackCreateFailureEffect(options: {
 
 function createGitWorktree(record: WorktreeRecord): void {
 	fs.mkdirSync(path.dirname(record.worktreePath), { recursive: true });
-	execFileSync(
-		"git",
-		["worktree", "add", "-b", record.branch, record.worktreePath, record.baseSha],
-		{
-			cwd: record.repositoryRoot,
-			stdio: ["ignore", "pipe", "pipe"],
-		},
-	);
+	try {
+		execFileSync(
+			"git",
+			[
+				"worktree",
+				"add",
+				"-b",
+				record.branch,
+				record.worktreePath,
+				record.baseSha,
+			],
+			{
+				cwd: record.repositoryRoot,
+				stdio: ["ignore", "pipe", "pipe"],
+			},
+		);
+	} catch (error) {
+		throw new ForgeError({
+			kind: "config-invalid",
+			message: `Failed to create git worktree '${record.worktreePath}' for branch '${record.branch}'.`,
+			cause: error,
+			details: {
+				repositoryRoot: record.repositoryRoot,
+				worktreePath: record.worktreePath,
+				branch: record.branch,
+			},
+		});
+	}
 }
 
 function tryRemoveGitWorktree(record: WorktreeRecord): boolean {
@@ -603,10 +648,14 @@ function tryRemoveGitWorktree(record: WorktreeRecord): boolean {
 		if (!fs.existsSync(record.worktreePath)) {
 			return true;
 		}
-		execFileSync("git", ["worktree", "remove", "--force", record.worktreePath], {
-			cwd: record.repositoryRoot,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
+		execFileSync(
+			"git",
+			["worktree", "remove", "--force", record.worktreePath],
+			{
+				cwd: record.repositoryRoot,
+				stdio: ["ignore", "pipe", "pipe"],
+			},
+		);
 		return true;
 	} catch {
 		return false;
@@ -666,7 +715,7 @@ function markWorktreeInvalid(
 
 function createWorktreeId(taskId: RecordId): WorktreeId {
 	return parseWorktreeId(
-		`wt_task_${taskId}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`,
+		`wt_task_${taskId}_${Date.now().toString(worktreeIdTimestampRadix)}_${crypto.randomBytes(worktreeIdRandomByteCount).toString("hex")}`,
 	);
 }
 
@@ -683,7 +732,9 @@ function formatDiagnosticCause(cause: unknown): string {
 
 function pathIsInside(candidate: string, root: string): boolean {
 	const relative = path.relative(root, candidate);
-	return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+	return (
+		relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+	);
 }
 
 function git(cwd: string, args: ReadonlyArray<string>): string {
