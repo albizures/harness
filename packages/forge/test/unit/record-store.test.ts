@@ -52,6 +52,7 @@ const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 const laterDate = new Date("2026-09-20T00:00:00.000Z");
 const doneUpdateSequence = 3;
 const missingRecordId = 999 as RecordId;
+const storeLockWaitProbeMs = 75;
 
 const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
 	runTestEffect(ensureStoreRootEffect(...args));
@@ -211,7 +212,7 @@ it("when another writer holds the store lock, record creation should wait", asyn
 	});
 
 	try {
-		await new Promise((resolve) => setTimeout(resolve, 75));
+		await new Promise((resolve) => setTimeout(resolve, storeLockWaitProbeMs));
 		expect(settled).toBe(false);
 	} finally {
 		await releaseStoreWriteLock(storePath);

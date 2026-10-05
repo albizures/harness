@@ -207,11 +207,6 @@ function createRunCreateEffect() {
 			const baseRef = requireTextFlag(parsed, "base");
 			const requestedPath = optionalTextFlag(parsed, "path");
 			const copyManifest = optionalTextFlag(parsed, "copy-manifest");
-			const copyManifests = yield* trySync(() =>
-				copyManifest === undefined
-					? []
-					: [readCopyManifest(parsed.cwd, copyManifest)],
-			);
 			const records = yield* Effect.all([
 				readWorkflowRecordEffect(storePath, taskId),
 				readAllLineageRecordsEffect(storePath, taskId),
@@ -228,6 +223,13 @@ function createRunCreateEffect() {
 			}
 			const projectId = task.scope.project;
 			const project = yield* readProjectEffect(storePath, projectId);
+			const copyManifests = yield* trySync(() =>
+				readConfiguredCopyManifests({
+					cwd: parsed.cwd,
+					projectDefaultManifest: project.worktreeCopyManifest,
+					explicitManifest: copyManifest,
+				}),
+			);
 			const repositoryRoot = yield* trySync(() =>
 				resolveRepositoryRoot(project.roots),
 			);
@@ -610,14 +612,25 @@ function validateExistingBindingEffect(options: {
 	});
 }
 
-function readCopyManifest(
-	cwd: string,
-	manifestPath: string,
-): PreparedCopyManifest {
-	const absoluteManifestPath = parseAbsolutePath(
-		path.resolve(cwd, manifestPath),
-		"copyManifest",
-	);
+function readConfiguredCopyManifests(options: {
+	readonly cwd: string;
+	readonly projectDefaultManifest?: AbsolutePath;
+	readonly explicitManifest?: string;
+}): ReadonlyArray<PreparedCopyManifest> {
+	const manifests: Array<PreparedCopyManifest> = [];
+	if (options.projectDefaultManifest !== undefined) {
+		manifests.push(readCopyManifestPath(options.projectDefaultManifest));
+	}
+	if (options.explicitManifest !== undefined) {
+		manifests.push(
+			readCopyManifestPath(path.resolve(options.cwd, options.explicitManifest)),
+		);
+	}
+	return manifests;
+}
+
+function readCopyManifestPath(manifestPath: string): PreparedCopyManifest {
+	const absoluteManifestPath = parseAbsolutePath(manifestPath, "copyManifest");
 	let decoded: unknown;
 	try {
 		decoded = JSON.parse(fs.readFileSync(absoluteManifestPath, "utf8"));
@@ -697,33 +710,46 @@ function applyCopyManifests(
 	manifests: ReadonlyArray<PreparedCopyManifest>,
 ): ReadonlyArray<string> {
 	const copied: Array<string> = [];
-	for (const manifest of manifests) {
-		for (const entry of manifest.snapshot.entries) {
-			const source = path.join(record.repositoryRoot, entry.path);
-			const destination = path.join(record.worktreePath, entry.path);
-			if (!fs.existsSync(source)) {
-				if (entry.optional) {
-					continue;
-				}
-				throw new ForgeError({
-					kind: "config-invalid",
-					message: `Required copy source '${entry.path}' does not exist.`,
-					details: { path: entry.path, source },
-				});
+	for (const entry of mergeCopyManifestEntries(manifests)) {
+		const source = path.join(record.repositoryRoot, entry.path);
+		const destination = path.join(record.worktreePath, entry.path);
+		if (!fs.existsSync(source)) {
+			if (entry.optional) {
+				continue;
 			}
-			if (fs.statSync(source).isDirectory()) {
-				throw new ForgeError({
-					kind: "config-invalid",
-					message: `Copy manifest path '${entry.path}' points to a directory; directories are not supported.`,
-					details: { path: entry.path, source },
-				});
-			}
-			fs.mkdirSync(path.dirname(destination), { recursive: true });
-			fs.copyFileSync(source, destination);
-			copied.push(entry.path);
+			throw new ForgeError({
+				kind: "config-invalid",
+				message: `Required copy source '${entry.path}' does not exist.`,
+				details: { path: entry.path, source },
+			});
 		}
+		if (fs.statSync(source).isDirectory()) {
+			throw new ForgeError({
+				kind: "config-invalid",
+				message: `Copy manifest path '${entry.path}' points to a directory; directories are not supported.`,
+				details: { path: entry.path, source },
+			});
+		}
+		fs.mkdirSync(path.dirname(destination), { recursive: true });
+		fs.copyFileSync(source, destination);
+		copied.push(entry.path);
 	}
 	return copied;
+}
+
+function mergeCopyManifestEntries(
+	manifests: ReadonlyArray<PreparedCopyManifest>,
+): WorktreeCopyManifestSnapshot["entries"] {
+	const entries = new Map<
+		string,
+		WorktreeCopyManifestSnapshot["entries"][number]
+	>();
+	for (const manifest of manifests) {
+		for (const entry of manifest.snapshot.entries) {
+			entries.set(entry.path, entry);
+		}
+	}
+	return [...entries.values()];
 }
 
 function formatCreateMessage(taskId: RecordId, record: WorktreeRecord): string {

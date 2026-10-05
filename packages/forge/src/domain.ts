@@ -113,6 +113,7 @@ export type ProjectRegistryEntry = {
 	readonly roots: ReadonlyArray<AbsolutePath>;
 	readonly remote?: string;
 	readonly aliases?: ReadonlyArray<string>;
+	readonly worktreeCopyManifest?: AbsolutePath;
 	readonly createdAt: IsoDateTime;
 	readonly updatedAt: IsoDateTime;
 };
@@ -160,6 +161,7 @@ export const projectRegistryEntrySchema: S.Schema<ProjectRegistryEntry> =
 		roots: S.Array(absolutePathSchema).pipe(S.minItems(1)),
 		remote: S.optional(S.NonEmptyString),
 		aliases: S.optional(S.Array(S.NonEmptyString)),
+		worktreeCopyManifest: S.optional(absolutePathSchema),
 		createdAt: isoDateTimeSchema,
 		updatedAt: isoDateTimeSchema,
 	}) as unknown as S.Schema<ProjectRegistryEntry>;

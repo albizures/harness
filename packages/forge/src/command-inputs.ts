@@ -15,6 +15,7 @@ export type ProjectAddInput = {
 	readonly root: AbsolutePath;
 	readonly name?: string;
 	readonly remote?: string;
+	readonly worktreeCopyManifest?: AbsolutePath;
 };
 
 export type ProjectRootInput = {
@@ -46,6 +47,7 @@ export const projectAddInputSchema: S.Schema<ProjectAddInput> = S.Struct({
 	root: absolutePathSchema,
 	name: S.optional(S.NonEmptyString),
 	remote: S.optional(S.NonEmptyString),
+	worktreeCopyManifest: S.optional(absolutePathSchema),
 }) as unknown as S.Schema<ProjectAddInput>;
 
 export const projectRootInputSchema: S.Schema<ProjectRootInput> = S.Struct({

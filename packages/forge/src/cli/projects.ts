@@ -48,6 +48,12 @@ export function createProjectsCommands(
 			Options.optional,
 			Options.withDescription("Project remote URL."),
 		),
+		worktreeCopyManifest: Options.text("worktree-copy-manifest").pipe(
+			Options.optional,
+			Options.withDescription(
+				"Absolute path to this project's default worktree copy manifest.",
+			),
+		),
 	}).pipe(
 		CliCommand.withHandler(
 			commandHandler(["project", "add"], runProjectAddEffect, ["id"]),
@@ -156,6 +162,10 @@ function runProjectAddEffect(
 					root: stringFlag(parsed.flags.root),
 					name: getOptionalStringFlag(parsed, "name"),
 					remote: getOptionalStringFlag(parsed, "remote"),
+					worktreeCopyManifest: getOptionalStringFlag(
+						parsed,
+						"worktree-copy-manifest",
+					),
 				}),
 			catch: (error) => error,
 		});

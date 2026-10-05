@@ -35,6 +35,7 @@ import { storeRootPaths } from "../../src/store-paths.ts";
 const fixedDate = new Date("2026-09-19T00:00:00.000Z");
 const sharedWriteTimestamp = 1_800_000_000_000;
 const concurrentWriteCount = 50;
+const contendedLockHoldMs = 40;
 
 const ensureStoreRoot = (...args: Parameters<typeof ensureStoreRootEffect>) =>
 	runTestEffect(ensureStoreRootEffect(...args));
@@ -182,13 +183,7 @@ it("when doctor scans records, it should report duplicate persisted ids", async 
 		await mkdtemp(path.join(os.tmpdir(), "forge-doctor-duplicate-ids-")),
 	);
 	await ensureStoreRoot({ storePath, now: fixedDate });
-	const taskPath = path.join(
-		storePath,
-		"records",
-		"task",
-		"000",
-		"000007.md",
-	);
+	const taskPath = path.join(storePath, "records", "task", "000", "000007.md");
 	const grillingPath = path.join(
 		storePath,
 		"records",
@@ -255,7 +250,6 @@ it("when an atomic JSON write fails after creating a temporary file, it should r
 	expect(await readdir(directory)).toEqual(["target.json"]);
 });
 
-
 it("when acquiring and releasing a store write lock, it should write diagnostic metadata and remove the lock", async () => {
 	const storePath = parseAbsolutePath(
 		await mkdtemp(path.join(os.tmpdir(), "forge-lock-acquire-")),
@@ -313,7 +307,7 @@ it("when a store write lock is contended, it should wait until the holder releas
 		{ storePath, now: fixedDate, retryDelayMs: 5 },
 		Effect.tryPromise(async () => {
 			events.push("first-start");
-			await new Promise((resolve) => setTimeout(resolve, 40));
+			await new Promise((resolve) => setTimeout(resolve, contendedLockHoldMs));
 			events.push("first-end");
 		}),
 	);

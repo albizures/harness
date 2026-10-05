@@ -76,6 +76,7 @@ export function addProjectEffect(options: {
 	readonly root: AbsolutePath;
 	readonly name?: string;
 	readonly remote?: string;
+	readonly worktreeCopyManifest?: AbsolutePath;
 	readonly now?: Date;
 }) {
 	return Effect.gen(function* () {
@@ -95,6 +96,7 @@ export function addProjectEffect(options: {
 			name: options.name ?? titleizeProjectId(options.id),
 			roots: [normalizeRoot(options.root)],
 			remote: options.remote,
+			worktreeCopyManifest: options.worktreeCopyManifest,
 			createdAt: now,
 			updatedAt: now,
 		});

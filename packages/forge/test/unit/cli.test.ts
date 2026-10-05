@@ -1378,6 +1378,7 @@ it("when project add leaf help is requested, it should use generated leaf help",
 	expect(help).toMatch(/Register a Forge project/);
 	expect(help).toMatch(/<id>/);
 	expect(help).toMatch(/--root/);
+	expect(help).toMatch(/--worktree-copy-manifest/);
 	expect(help).not.toMatch(/Add or remove project roots/);
 	expect(stderr.text()).toBe("");
 });
@@ -1733,6 +1734,308 @@ it("when worktree create receives an explicit copy manifest, it should copy list
 	expect(
 		await readFile(path.join(worktree.worktreePath, "config-dev.json"), "utf8"),
 	).toBe('{"ok":true}\n');
+});
+
+it("when worktree create has a project default copy manifest, it should merge it before explicit entries", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-default-copy-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-default-copy-repo-");
+	const env = { HOME: home };
+	const mergedManifestTaskId = 3;
+	const defaultManifestPath = path.join(repo, "default-copy-manifest.json");
+	const explicitManifestPath = path.join(repo, "explicit-copy-manifest.json");
+	await writeFile(path.join(repo, "default-only.txt"), "default\n", "utf8");
+	await writeFile(path.join(repo, "explicit-only.txt"), "explicit\n", "utf8");
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({ copy: [{ path: "default-only.txt" }] }),
+		"utf8",
+	);
+	await writeFile(
+		explicitManifestPath,
+		JSON.stringify({
+			copy: [
+				{ path: "overridden.local", optional: true },
+				{ path: "explicit-only.txt" },
+			],
+		}),
+		"utf8",
+	);
+
+	expect(
+		await runTempStoreCli(
+			[
+				"project",
+				"add",
+				"harness",
+				"--root",
+				repo,
+				"--worktree-copy-manifest",
+				defaultManifestPath,
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Default manifest task", "Merged manifest task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+
+	let stdout = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-default-copy",
+				"--base",
+				"main",
+				"--json",
+			],
+			{ home, store, stdout: stdout.stream, env },
+		),
+	).toBe(0);
+	const defaultOnly = JSON.parse(stdout.text());
+	expect(defaultOnly.worktree.copyManifests).toEqual([
+		{
+			manifestPath: defaultManifestPath,
+			entries: [{ path: "default-only.txt", optional: false }],
+		},
+	]);
+	expect(defaultOnly.worktree.copiedPaths).toEqual(["default-only.txt"]);
+
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({
+			copy: [
+				{ path: "default-only.txt" },
+				{ path: "overridden.local", optional: false },
+			],
+		}),
+		"utf8",
+	);
+
+	stdout = capture();
+	const stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-merged-copy",
+				"--base",
+				"main",
+				"--copy-manifest",
+				explicitManifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Copied default-only\.txt/);
+	expect(stdout.text()).toMatch(/Copied explicit-only\.txt/);
+	expect(stdout.text()).not.toMatch(/overridden\.local/);
+	expect(stderr.text()).toBe("");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const worktree = JSON.parse(stdout.text()).worktrees.find(
+		(candidate: { readonly taskId: number }) =>
+			candidate.taskId === mergedManifestTaskId,
+	);
+	expect(worktree.copyManifests).toEqual([
+		{
+			manifestPath: defaultManifestPath,
+			entries: [
+				{ path: "default-only.txt", optional: false },
+				{ path: "overridden.local", optional: false },
+			],
+		},
+		{
+			manifestPath: explicitManifestPath,
+			entries: [
+				{ path: "overridden.local", optional: true },
+				{ path: "explicit-only.txt", optional: false },
+			],
+		},
+	]);
+	expect(worktree.copiedPaths).toEqual([
+		"default-only.txt",
+		"explicit-only.txt",
+	]);
+	expect(
+		await readFile(
+			path.join(worktree.worktreePath, "default-only.txt"),
+			"utf8",
+		),
+	).toBe("default\n");
+	expect(
+		await readFile(
+			path.join(worktree.worktreePath, "explicit-only.txt"),
+			"utf8",
+		),
+	).toBe("explicit\n");
+});
+
+it("when a project default copy manifest is unsafe or missing required sources, it should fail without an active binding", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-default-copy-invalid-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository(
+		"forge-cli-worktree-default-copy-invalid-repo-",
+	);
+	const env = { HOME: home };
+	const defaultManifestPath = path.join(repo, "default-copy-manifest.json");
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({ copy: [{ path: "../unsafe.local" }] }),
+		"utf8",
+	);
+
+	await runTempStoreCli(
+		[
+			"project",
+			"add",
+			"harness",
+			"--root",
+			repo,
+			"--worktree-copy-manifest",
+			defaultManifestPath,
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Unsafe default task", "Missing default task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-default-unsafe",
+				"--base",
+				"main",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Copy manifest path '\.\.\/unsafe\.local' is unsafe/,
+	);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({ copy: [{ path: "missing-required.local" }] }),
+		"utf8",
+	);
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-default-missing",
+				"--base",
+				"main",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Required copy source 'missing-required\.local' does not exist/,
+	);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "3"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 3 has no active worktree binding/);
 });
 
 it("when worktree create receives unsafe or missing copy manifest entries, it should fail without an active binding", async () => {
