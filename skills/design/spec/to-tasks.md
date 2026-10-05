@@ -49,6 +49,8 @@ Use these gates only for a Spec already opted into worktree mode:
 
 - Refuse to plan or start a next round while any previous-round task PR remains open. Report the open PRs and wait for explicit human resolution.
 - Before proposing next-round Tasks, read the previous round's PR outcomes and all available review comments.
+- Before proposing or creating follow-up Tasks, validate the next-round integration branch with `git`, `gh`, and local branch inspection: it must contain exactly the accepted merged task PR results plus explicit integration/conflict-resolution commits, and it must exclude rejected, closed, or abandoned task PR work.
+- If the integration branch has unexpected commits, is missing accepted work, includes rejected/closed/abandoned work, or has an unverified tip, stop before follow-up Task planning and report the reconciliation needed.
 - Treat merged PRs as accepted input to integration; treat closed, rejected, or abandoned PRs as explicit human decisions and exclude their work from integration unless the human confirms replacement work.
 - Do not create a follow-up Task solely because a PR has no available review comments.
 - Propose follow-up Tasks only for meaningful feature gaps, review feedback, replacement work, or integration needs.

@@ -6,6 +6,8 @@ Use this reference only for Specs that have explicitly opted into worktree-backe
 
 Each implementation round starts from the current Spec integration branch. The integration branch is the round integration base: it contains the accepted result from earlier rounds plus explicit integration/conflict-resolution commits.
 
+Before next-round follow-up Task planning, validate the integration branch with `git`, `gh`, and local branch inspection. It must contain exactly the accepted merged task PR results plus explicit integration/conflict-resolution commits, exclude rejected/closed/abandoned task PR work, and have a known expected tip. If unexpected commits, missing accepted work, rejected work, or an unverified tip are present, stop before follow-up Task planning and report the reconciliation needed.
+
 Do not plan task branches from the user's main checkout or from an unverified ad-hoc branch. If the integration branch or its expected tip is unknown, stop before PR creation and ask for the round gate to establish it.
 
 ## Branch shapes
