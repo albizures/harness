@@ -91,6 +91,11 @@ export type WorktreeCreateResult = {
 	readonly binding: WorktreeBinding;
 };
 
+export type WorktreeRemoveResult = {
+	readonly worktree: WorktreeRecord;
+	readonly binding: null;
+};
+
 type PreparedCopyManifest = {
 	readonly snapshot: WorktreeCopyManifestSnapshot;
 };
@@ -329,12 +334,19 @@ function createRunRemoveEffect() {
 					noActiveBinding(taskId).message,
 				);
 			}
-			return yield* Effect.fail(
-				new ForgeError({
-					kind: "config-invalid",
-					message:
-						"forge worktree remove is registered but removal is not implemented yet.",
-				}),
+			const worktree = yield* readWorktreeRecordEffect({
+				storePath,
+				worktreeId: binding.id,
+			});
+			const removed = yield* removeManagedWorktreeEffect({
+				storePath,
+				taskId,
+				worktree,
+			});
+			return present(
+				removed,
+				0,
+				`Removed worktree ${removed.worktree.id} for task ${taskId}.`,
 			);
 		});
 	};
@@ -880,6 +892,110 @@ function createGitWorktree(record: WorktreeRecord): void {
 	}
 }
 
+function removeManagedWorktreeEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly worktree: WorktreeRecord;
+}): Effect.Effect<WorktreeRemoveResult, unknown, FileSystem> {
+	return Effect.gen(function* () {
+		yield* trySync(() =>
+			validateRemovableWorktree(options.taskId, options.worktree),
+		);
+		yield* trySync(() => removeCleanGitWorktree(options.worktree));
+		const removed = yield* writeWorktreeRecordEffect({
+			storePath: options.storePath,
+			record: markWorktreeRemoved(options.worktree),
+		});
+		const binding = yield* readTaskWorktreeBindingEffect({
+			storePath: options.storePath,
+			taskId: options.taskId,
+		});
+		if (binding?.id === options.worktree.id) {
+			yield* clearTaskWorktreeBindingEffect({
+				storePath: options.storePath,
+				taskId: options.taskId,
+			});
+		}
+		return { worktree: removed, binding: null };
+	});
+}
+
+function validateRemovableWorktree(
+	taskId: RecordId,
+	record: WorktreeRecord,
+): void {
+	if (record.status !== "active") {
+		throw new ForgeError({
+			kind: "record-invalid",
+			message: `Worktree ${record.id} is ${record.status}, not active.`,
+			details: { worktreeId: record.id, status: record.status },
+		});
+	}
+	if (record.taskId !== taskId) {
+		throw new ForgeError({
+			kind: "record-invalid",
+			message: `Worktree ${record.id} belongs to task ${record.taskId}, not task ${taskId}.`,
+			details: { worktreeId: record.id, taskId, recordTaskId: record.taskId },
+		});
+	}
+	if (!fs.existsSync(record.worktreePath)) {
+		throw new ForgeError({
+			kind: "record-invalid",
+			message: `Active worktree path '${record.worktreePath}' is missing. Run forge worktree doctor --prune-missing to clear missing bindings.`,
+			details: { worktreeId: record.id, worktreePath: record.worktreePath },
+		});
+	}
+	assertGitWorktreeClean(record);
+}
+
+function assertGitWorktreeClean(record: WorktreeRecord): void {
+	let status: string;
+	try {
+		status = git(record.worktreePath, [
+			"status",
+			"--porcelain",
+			"--untracked-files=all",
+		]);
+	} catch (error) {
+		throw new ForgeError({
+			kind: "record-invalid",
+			message: `Active worktree path '${record.worktreePath}' is not a valid git worktree.`,
+			cause: error,
+			details: { worktreeId: record.id, worktreePath: record.worktreePath },
+		});
+	}
+	if (status.length > 0) {
+		throw new ForgeError({
+			kind: "record-invalid",
+			message: `Worktree ${record.id} has uncommitted changes; refusing to remove dirty worktree.`,
+			details: {
+				worktreeId: record.id,
+				worktreePath: record.worktreePath,
+				status,
+			},
+		});
+	}
+}
+
+function removeCleanGitWorktree(record: WorktreeRecord): void {
+	try {
+		execFileSync("git", ["worktree", "remove", record.worktreePath], {
+			cwd: record.repositoryRoot,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+	} catch (error) {
+		throw new ForgeError({
+			kind: "config-invalid",
+			message: `Failed to remove git worktree '${record.worktreePath}'.`,
+			cause: error,
+			details: {
+				repositoryRoot: record.repositoryRoot,
+				worktreePath: record.worktreePath,
+			},
+		});
+	}
+}
+
 function tryRemoveGitWorktree(record: WorktreeRecord): boolean {
 	try {
 		if (!fs.existsSync(record.worktreePath)) {
@@ -963,6 +1079,14 @@ function markWorktreeMissing(record: WorktreeRecord): WorktreeRecord {
 				message: `Active worktree path '${record.worktreePath}' was missing during prune.`,
 			},
 		],
+		updatedAt: iso(new Date()),
+	};
+}
+
+function markWorktreeRemoved(record: WorktreeRecord): WorktreeRecord {
+	return {
+		...record,
+		status: "removed",
 		updatedAt: iso(new Date()),
 	};
 }

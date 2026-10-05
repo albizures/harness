@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
 	chmod,
 	mkdtemp,
@@ -2210,6 +2211,250 @@ it("when worktree info, list, and doctor inspect active and missing worktrees, t
 			(worktree: { status: string }) => worktree.status,
 		),
 	).toEqual(["active", "missing"]);
+});
+
+it("when worktree remove sees a clean managed worktree, it should remove the worktree, clear the binding, and keep branch history", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-remove-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-remove-repo-");
+	const env = { HOME: home };
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Clean remove task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"worktree",
+			"create",
+			"2",
+			"--branch",
+			"forge/remove-clean",
+			"--base",
+			"main",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	const [created] = JSON.parse(stdout.text()).worktrees;
+
+	stdout = capture();
+	const stderr = capture();
+	expect(
+		await runTempStoreCli(["worktree", "remove", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Removed worktree wt_.* for task 2/);
+	expect(stderr.text()).toBe("");
+	expect(existsSync(created.worktreePath)).toBe(false);
+	expect(
+		execFileSync("git", ["branch", "--list", "forge/remove-clean"], {
+			cwd: repo,
+			encoding: "utf8",
+		}).trim(),
+	).toBe("forge/remove-clean");
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "info", "2"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(JSON.parse(stdout.text()).worktrees).toEqual([]);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--all", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(JSON.parse(stdout.text()).worktrees).toEqual([
+		expect.objectContaining({ taskId: 2, status: "removed" }),
+	]);
+});
+
+it("when worktree remove sees dirty managed worktrees, it should refuse removal and preserve the active binding", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-remove-dirty-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-remove-dirty-repo-");
+	const env = { HOME: home };
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Untracked task", "Unstaged task", "Staged task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+
+	const untrackedTaskId = 2;
+	const unstagedTaskId = 3;
+	const stagedTaskId = 4;
+	const dirtyTaskIds = [untrackedTaskId, unstagedTaskId, stagedTaskId];
+	for (const taskId of dirtyTaskIds) {
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				String(taskId),
+				"--branch",
+				`forge/remove-dirty-${taskId}`,
+				"--base",
+				"main",
+			],
+			{ home, store, env },
+		);
+	}
+
+	let stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	const worktrees = JSON.parse(stdout.text()).worktrees as Array<{
+		taskId: number;
+		worktreePath: string;
+	}>;
+	const worktreePath = (taskId: number) =>
+		worktrees.find((worktree) => worktree.taskId === taskId)?.worktreePath ??
+		"";
+	await writeFile(
+		path.join(worktreePath(untrackedTaskId), "local.txt"),
+		"local\n",
+		"utf8",
+	);
+	await writeFile(
+		path.join(worktreePath(unstagedTaskId), "README.md"),
+		"changed\n",
+		"utf8",
+	);
+	await writeFile(
+		path.join(worktreePath(stagedTaskId), "README.md"),
+		"staged\n",
+		"utf8",
+	);
+	execFileSync("git", ["add", "README.md"], {
+		cwd: worktreePath(stagedTaskId),
+	});
+
+	for (const taskId of dirtyTaskIds) {
+		stdout = capture();
+		const stderr = capture();
+		expect(
+			await runTempStoreCli(["worktree", "remove", String(taskId)], {
+				home,
+				store,
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env,
+			}),
+		).toBe(2);
+		expect(stderr.text()).toMatch(/refusing to remove dirty worktree/);
+		expect(
+			execFileSync(
+				"git",
+				["-C", worktreePath(taskId), "status", "--porcelain"],
+				{
+					encoding: "utf8",
+				},
+			).trim().length,
+		).toBeGreaterThan(0);
+	}
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(
+		JSON.parse(stdout.text()).worktrees.map(
+			(worktree: { status: string }) => worktree.status,
+		),
+	).toEqual(["active", "active", "active"]);
 });
 
 it("when worktree list sees an empty store, it should render a stable empty result", async () => {
