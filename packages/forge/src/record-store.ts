@@ -32,6 +32,7 @@ import {
 	type RecordId,
 	type RecordKind,
 	type RecordUpdate,
+	type WorktreeBinding,
 	validateFrontmatterEdit,
 	validateInitiativeMembership,
 	validateRecordPlacement,
@@ -40,6 +41,7 @@ import {
 import {
 	readJsonEffect,
 	readStoreManifestEffect,
+	withStoreWriteLockEffect,
 	writeJsonFileEffect,
 } from "./filesystem-store.ts";
 import {
@@ -126,6 +128,7 @@ const recordFrontmatterKeys = [
 	"generatedBy",
 	"tags",
 	"profile",
+	"metadata",
 	"createdAt",
 	"updatedAt",
 ] as const;
@@ -143,44 +146,47 @@ export function createWorkflowRecordEffect(options: {
 	readonly input: CreateWorkflowRecordInput;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const now = iso(options.now ?? new Date());
-		const manifest = yield* readStoreManifestEffect(options.storePath);
-		const allocation = allocateRecordId({ manifest, now: options.now });
-		const { body, ...frontmatterInput } = options.input;
-		const record = yield* Effect.try({
-			try: () =>
-				parseRecordFrontmatter({
-					...frontmatterInput,
-					id: allocation.recordId,
-					state: "ready",
-					resolution: null,
-					createdAt: now,
-					updatedAt: now,
-				}),
-			catch: (error) => error,
-		});
-		const withBody = { ...record, body } satisfies WorkflowRecord;
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const now = iso(options.now ?? new Date());
+			const manifest = yield* readStoreManifestEffect(options.storePath);
+			const allocation = allocateRecordId({ manifest, now: options.now });
+			const { body, ...frontmatterInput } = options.input;
+			const record = yield* Effect.try({
+				try: () =>
+					parseRecordFrontmatter({
+						...frontmatterInput,
+						id: allocation.recordId,
+						state: "ready",
+						resolution: null,
+						createdAt: now,
+						updatedAt: now,
+					}),
+				catch: (error) => error,
+			});
+			const withBody = { ...record, body } satisfies WorkflowRecord;
 
-		yield* assertRecordPathIsFreeEffect(options.storePath, withBody.id);
-		yield* validateRecordReferencesEffect(options.storePath, withBody);
+			yield* assertRecordPathIsFreeEffect(options.storePath, withBody.id);
+			yield* validateRecordReferencesEffect(options.storePath, withBody);
 
-		yield* writeJsonFileEffect(
-			storeRootPaths(options.storePath).manifest,
-			allocation.manifest,
-		);
-		yield* writeRecordFileEffect(options.storePath, withBody);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: withBody.id,
-			type: "create",
-			summary: "Created record.",
-			data: { kind: withBody.kind },
-			now: options.now,
-		});
-		return withBody;
-	});
+			yield* writeJsonFileEffect(
+				storeRootPaths(options.storePath).manifest,
+				allocation.manifest,
+			);
+			yield* writeRecordFileEffect(options.storePath, withBody);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: withBody.id,
+				type: "create",
+				summary: "Created record.",
+				data: { kind: withBody.kind },
+				now: options.now,
+			});
+			return withBody;
+		}),
+	);
 }
 
 export function readWorkflowRecordEffect(
@@ -229,52 +235,156 @@ export function readRecordRelationshipsEffect(storePath: AbsolutePath) {
 	});
 }
 
+export function readTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+}) {
+	return Effect.gen(function* () {
+		const task = yield* readWorkflowRecordEffect(
+			options.storePath,
+			options.taskId,
+		);
+		return task.metadata?.forge?.worktreeBinding ?? null;
+	});
+}
+
+export function writeTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly binding: WorktreeBinding;
+	readonly now?: Date;
+}) {
+	return updateTaskWorktreeBindingEffect({
+		...options,
+		binding: options.binding,
+	});
+}
+
+export function clearTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly now?: Date;
+}) {
+	return updateTaskWorktreeBindingEffect({ ...options, binding: null });
+}
+
+function updateTaskWorktreeBindingEffect(options: {
+	readonly storePath: AbsolutePath;
+	readonly taskId: RecordId;
+	readonly binding: WorktreeBinding | null;
+	readonly now?: Date;
+}) {
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const task = yield* readWorkflowRecordEffect(
+				options.storePath,
+				options.taskId,
+			);
+			if (task.kind !== "task") {
+				return yield* Effect.fail(
+					new ForgeError({
+						kind: "record-invalid",
+						message: `Record '${options.taskId}' is not a Task record.`,
+						details: { recordId: options.taskId, kind: task.kind },
+					}),
+				);
+			}
+			const metadata = applyWorktreeBinding(task.metadata, options.binding);
+			const updated: WorkflowRecord = {
+				...task,
+				...(metadata === undefined ? { metadata: undefined } : { metadata }),
+				updatedAt: iso(options.now ?? new Date()),
+			};
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: task.id,
+				type:
+					options.binding === null
+						? "worktree-binding-clear"
+						: "worktree-binding-write",
+				summary:
+					options.binding === null
+						? "Cleared Task worktree binding."
+						: "Wrote Task worktree binding.",
+				data: { worktreeId: options.binding?.id ?? null },
+				now: options.now,
+			});
+			return updated;
+		}),
+	);
+}
+
+function applyWorktreeBinding(
+	metadata: WorkflowRecord["metadata"],
+	binding: WorktreeBinding | null,
+): WorkflowRecord["metadata"] {
+	if (binding !== null) {
+		return {
+			...metadata,
+			forge: { ...metadata?.forge, worktreeBinding: binding },
+		};
+	}
+	const forge = { ...metadata?.forge };
+	delete forge.worktreeBinding;
+	if (Object.keys(forge).length > 0) {
+		return { ...metadata, forge };
+	}
+	const next = { ...metadata };
+	delete next.forge;
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
 export function addWorkflowRecordDependencyEffect(options: {
 	readonly storePath: AbsolutePath;
 	readonly recordId: RecordId;
 	readonly dependsOn: RecordId;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
-		const { record, updated } = yield* Effect.try({
-			try: () => {
-				const record = requireRecordFromList(records, options.recordId);
-				const dependsOn = requireRecordFromList(records, options.dependsOn);
-				if (record.dependsOn.includes(options.dependsOn)) {
-					return { record, dependsOn, updated: record };
-				}
-				const updated: WorkflowRecord = {
-					...record,
-					dependsOn: sortedUnique([...record.dependsOn, options.dependsOn]),
-					updatedAt: iso(options.now ?? new Date()),
-				};
-				validateDependencyEdge({
-					record: updated,
-					dependsOn,
-					records: records.map((candidate) =>
-						candidate.id === updated.id ? updated : candidate,
-					),
-				});
-				return { record, dependsOn, updated };
-			},
-			catch: (error) => error,
-		});
-		if (updated === record) {
-			return record;
-		}
-		yield* writeRecordFileEffect(options.storePath, updated);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: updated.id,
-			type: "dependency-add",
-			summary: `Added dependency ${options.dependsOn}.`,
-			data: { dependsOn: options.dependsOn },
-			now: options.now,
-		});
-		return updated;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+			const { record, updated } = yield* Effect.try({
+				try: () => {
+					const record = requireRecordFromList(records, options.recordId);
+					const dependsOn = requireRecordFromList(records, options.dependsOn);
+					if (record.dependsOn.includes(options.dependsOn)) {
+						return { record, dependsOn, updated: record };
+					}
+					const updated: WorkflowRecord = {
+						...record,
+						dependsOn: sortedUnique([...record.dependsOn, options.dependsOn]),
+						updatedAt: iso(options.now ?? new Date()),
+					};
+					validateDependencyEdge({
+						record: updated,
+						dependsOn,
+						records: records.map((candidate) =>
+							candidate.id === updated.id ? updated : candidate,
+						),
+					});
+					return { record, dependsOn, updated };
+				},
+				catch: (error) => error,
+			});
+			if (updated === record) {
+				return record;
+			}
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: updated.id,
+				type: "dependency-add",
+				summary: `Added dependency ${options.dependsOn}.`,
+				data: { dependsOn: options.dependsOn },
+				now: options.now,
+			});
+			return updated;
+		}),
+	);
 }
 
 export function removeWorkflowRecordDependencyEffect(options: {
@@ -283,31 +393,34 @@ export function removeWorkflowRecordDependencyEffect(options: {
 	readonly dependsOn: RecordId;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const record = yield* readWorkflowRecordEffect(
-			options.storePath,
-			options.recordId,
-		);
-		if (!record.dependsOn.includes(options.dependsOn)) {
-			return record;
-		}
-		const updated: WorkflowRecord = {
-			...record,
-			dependsOn: record.dependsOn.filter((id) => id !== options.dependsOn),
-			updatedAt: iso(options.now ?? new Date()),
-		};
-		yield* writeRecordFileEffect(options.storePath, updated);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: updated.id,
-			type: "dependency-remove",
-			summary: `Removed dependency ${options.dependsOn}.`,
-			data: { dependsOn: options.dependsOn },
-			now: options.now,
-		});
-		return updated;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const record = yield* readWorkflowRecordEffect(
+				options.storePath,
+				options.recordId,
+			);
+			if (!record.dependsOn.includes(options.dependsOn)) {
+				return record;
+			}
+			const updated: WorkflowRecord = {
+				...record,
+				dependsOn: record.dependsOn.filter((id) => id !== options.dependsOn),
+				updatedAt: iso(options.now ?? new Date()),
+			};
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: updated.id,
+				type: "dependency-remove",
+				summary: `Removed dependency ${options.dependsOn}.`,
+				data: { dependsOn: options.dependsOn },
+				now: options.now,
+			});
+			return updated;
+		}),
+	);
 }
 
 export function attachWorkflowRecordToInitiativeEffect(options: {
@@ -316,40 +429,46 @@ export function attachWorkflowRecordToInitiativeEffect(options: {
 	readonly initiativeId: RecordId;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
-		const { record, updated } = yield* Effect.try({
-			try: () => {
-				const record = requireRecordFromList(records, options.recordId);
-				const initiative = requireRecordFromList(records, options.initiativeId);
-				if (record.initiative === options.initiativeId) {
-					return { record, updated: record };
-				}
-				const updated: WorkflowRecord = {
-					...record,
-					initiative: options.initiativeId,
-					updatedAt: iso(options.now ?? new Date()),
-				};
-				validateInitiativeMembership(updated, initiative);
-				return { record, updated };
-			},
-			catch: (error) => error,
-		});
-		if (updated === record) {
-			return record;
-		}
-		yield* writeRecordFileEffect(options.storePath, updated);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: updated.id,
-			type: "initiative-attach",
-			summary: `Attached to initiative ${options.initiativeId}.`,
-			data: { initiative: options.initiativeId },
-			now: options.now,
-		});
-		return updated;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+			const { record, updated } = yield* Effect.try({
+				try: () => {
+					const record = requireRecordFromList(records, options.recordId);
+					const initiative = requireRecordFromList(
+						records,
+						options.initiativeId,
+					);
+					if (record.initiative === options.initiativeId) {
+						return { record, updated: record };
+					}
+					const updated: WorkflowRecord = {
+						...record,
+						initiative: options.initiativeId,
+						updatedAt: iso(options.now ?? new Date()),
+					};
+					validateInitiativeMembership(updated, initiative);
+					return { record, updated };
+				},
+				catch: (error) => error,
+			});
+			if (updated === record) {
+				return record;
+			}
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: updated.id,
+				type: "initiative-attach",
+				summary: `Attached to initiative ${options.initiativeId}.`,
+				data: { initiative: options.initiativeId },
+				now: options.now,
+			});
+			return updated;
+		}),
+	);
 }
 
 export function detachWorkflowRecordFromInitiativeEffect(options: {
@@ -358,31 +477,34 @@ export function detachWorkflowRecordFromInitiativeEffect(options: {
 	readonly initiativeId: RecordId;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const record = yield* readWorkflowRecordEffect(
-			options.storePath,
-			options.recordId,
-		);
-		if (record.initiative !== options.initiativeId) {
-			return record;
-		}
-		const updated: WorkflowRecord = {
-			...record,
-			initiative: null,
-			updatedAt: iso(options.now ?? new Date()),
-		};
-		yield* writeRecordFileEffect(options.storePath, updated);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: updated.id,
-			type: "initiative-detach",
-			summary: `Detached from initiative ${options.initiativeId}.`,
-			data: { initiative: options.initiativeId },
-			now: options.now,
-		});
-		return updated;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const record = yield* readWorkflowRecordEffect(
+				options.storePath,
+				options.recordId,
+			);
+			if (record.initiative !== options.initiativeId) {
+				return record;
+			}
+			const updated: WorkflowRecord = {
+				...record,
+				initiative: null,
+				updatedAt: iso(options.now ?? new Date()),
+			};
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: updated.id,
+				type: "initiative-detach",
+				summary: `Detached from initiative ${options.initiativeId}.`,
+				data: { initiative: options.initiativeId },
+				now: options.now,
+			});
+			return updated;
+		}),
+	);
 }
 
 export function addInitiativeDeclaredProjectEffect(options: {
@@ -445,34 +567,37 @@ export function startWorkflowRecordEffect(options: {
 	readonly recordId: RecordId;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
-		const { record, result } = yield* Effect.try({
-			try: () => {
-				const record = requireRecordFromList(records, options.recordId);
-				return {
-					record,
-					result: startRecordLifecycle(record, records, options.now),
-				};
-			},
-			catch: (error) => error,
-		});
-		if (!result.changed) {
-			return record;
-		}
-		const updated = { ...record, ...result.record };
-		yield* writeRecordFileEffect(options.storePath, updated);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: record.id,
-			type: "start",
-			summary: "Started record.",
-			data: { state: "in-progress" },
-			now: options.now,
-		});
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		return updated;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+			const { record, result } = yield* Effect.try({
+				try: () => {
+					const record = requireRecordFromList(records, options.recordId);
+					return {
+						record,
+						result: startRecordLifecycle(record, records, options.now),
+					};
+				},
+				catch: (error) => error,
+			});
+			if (!result.changed) {
+				return record;
+			}
+			const updated = { ...record, ...result.record };
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: record.id,
+				type: "start",
+				summary: "Started record.",
+				data: { state: "in-progress" },
+				now: options.now,
+			});
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			return updated;
+		}),
+	);
 }
 
 export function completeWorkflowRecordEffect(options: {
@@ -481,39 +606,42 @@ export function completeWorkflowRecordEffect(options: {
 	readonly resolution: string;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
-		const { record, result } = yield* Effect.try({
-			try: () => {
-				const record = requireRecordFromList(records, options.recordId);
-				return {
-					record,
-					result: completeRecordLifecycle(
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+			const { record, result } = yield* Effect.try({
+				try: () => {
+					const record = requireRecordFromList(records, options.recordId);
+					return {
 						record,
-						records,
-						options.resolution,
-						options.now,
-					),
-				};
-			},
-			catch: (error) => error,
-		});
-		if (!result.changed) {
-			return record;
-		}
-		const updated = { ...record, ...result.record };
-		yield* writeRecordFileEffect(options.storePath, updated);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: record.id,
-			type: "done",
-			summary: `Completed record with resolution ${options.resolution}.`,
-			data: { resolution: result.record.resolution },
-			now: options.now,
-		});
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		return updated;
-	});
+						result: completeRecordLifecycle(
+							record,
+							records,
+							options.resolution,
+							options.now,
+						),
+					};
+				},
+				catch: (error) => error,
+			});
+			if (!result.changed) {
+				return record;
+			}
+			const updated = { ...record, ...result.record };
+			yield* writeRecordFileEffect(options.storePath, updated);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: record.id,
+				type: "done",
+				summary: `Completed record with resolution ${options.resolution}.`,
+				data: { resolution: result.record.resolution },
+				now: options.now,
+			});
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			return updated;
+		}),
+	);
 }
 
 export function addRecordCommentEffect(options: {
@@ -522,35 +650,38 @@ export function addRecordCommentEffect(options: {
 	readonly body: string;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		yield* readWorkflowRecordEffect(options.storePath, options.recordId);
-		const comments = yield* readRecordCommentsFromDiskEffect(
-			options.storePath,
-			options.recordId,
-		);
-		const now = iso(options.now ?? new Date());
-		const comment = yield* Effect.try({
-			try: () =>
-				parseRecordComment({
-					id: allocateNextCommentId(options.recordId, comments),
-					recordId: options.recordId,
-					createdAt: now,
-					updatedAt: now,
-					body: options.body,
-				}),
-			catch: (error) => error,
-		});
-		yield* writeCommentFileEffect(options.storePath, comment);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: options.recordId,
-			type: "comment",
-			summary: `Added comment ${comment.id}.`,
-			data: { commentId: comment.id },
-			now: options.now,
-		});
-		return comment;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			yield* readWorkflowRecordEffect(options.storePath, options.recordId);
+			const comments = yield* readRecordCommentsFromDiskEffect(
+				options.storePath,
+				options.recordId,
+			);
+			const now = iso(options.now ?? new Date());
+			const comment = yield* Effect.try({
+				try: () =>
+					parseRecordComment({
+						id: allocateNextCommentId(options.recordId, comments),
+						recordId: options.recordId,
+						createdAt: now,
+						updatedAt: now,
+						body: options.body,
+					}),
+				catch: (error) => error,
+			});
+			yield* writeCommentFileEffect(options.storePath, comment);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: options.recordId,
+				type: "comment",
+				summary: `Added comment ${comment.id}.`,
+				data: { commentId: comment.id },
+				now: options.now,
+			});
+			return comment;
+		}),
+	);
 }
 
 export function listRecordCommentsEffect(
@@ -570,34 +701,37 @@ export function replaceRecordCommentFromEditedMarkdownEffect(options: {
 	readonly markdown: string;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const before = yield* readRecordCommentEffect(
-			options.storePath,
-			options.recordId,
-			options.commentId,
-		);
-		const edited = yield* Effect.try({
-			try: () => {
-				const parsed = parseRecordCommentMarkdown(options.markdown, {
-					expectedRecordId: options.recordId,
-					expectedCommentId: options.commentId,
-				});
-				validateCommentEdit(before, parsed);
-				return { ...parsed, updatedAt: iso(options.now ?? new Date()) };
-			},
-			catch: (error) => error,
-		});
-		yield* writeCommentFileEffect(options.storePath, edited);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: options.recordId,
-			type: "comment-edit",
-			summary: `Edited comment ${options.commentId}.`,
-			data: { commentId: options.commentId },
-			now: options.now,
-		});
-		return edited;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const before = yield* readRecordCommentEffect(
+				options.storePath,
+				options.recordId,
+				options.commentId,
+			);
+			const edited = yield* Effect.try({
+				try: () => {
+					const parsed = parseRecordCommentMarkdown(options.markdown, {
+						expectedRecordId: options.recordId,
+						expectedCommentId: options.commentId,
+					});
+					validateCommentEdit(before, parsed);
+					return { ...parsed, updatedAt: iso(options.now ?? new Date()) };
+				},
+				catch: (error) => error,
+			});
+			yield* writeCommentFileEffect(options.storePath, edited);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: options.recordId,
+				type: "comment-edit",
+				summary: `Edited comment ${options.commentId}.`,
+				data: { commentId: options.commentId },
+				now: options.now,
+			});
+			return edited;
+		}),
+	);
 }
 
 export function listRecordUpdatesEffect(
@@ -653,44 +787,50 @@ export function replaceWorkflowRecordFromEditedMarkdownEffect(options: {
 	readonly markdown: string;
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const before = yield* readWorkflowRecordEffect(
-			options.storePath,
-			options.recordId,
-		);
-		const { edited, validation } = yield* Effect.try({
-			try: () => {
-				const parsed = parseWorkflowRecordMarkdown(options.markdown, {
-					expectedId: before.id,
-					expectedKind: before.kind,
-				});
-				const validation = validateFrontmatterEdit(before, parsed);
-				const edited: WorkflowRecord = {
-					...parsed,
-					updatedAt: iso(options.now ?? new Date()),
-				};
-				return { edited, validation };
-			},
-			catch: (error) => error,
-		});
-		yield* writeRecordFileEffect(options.storePath, edited);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: edited.id,
-			type: "edit",
-			summary: "Edited record Markdown.",
-			data: { changedFrontmatter: validation.changed },
-			now: options.now,
-		});
-		return edited;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const before = yield* readWorkflowRecordEffect(
+				options.storePath,
+				options.recordId,
+			);
+			const { edited, validation } = yield* Effect.try({
+				try: () => {
+					const parsed = parseWorkflowRecordMarkdown(options.markdown, {
+						expectedId: before.id,
+						expectedKind: before.kind,
+					});
+					const validation = validateFrontmatterEdit(before, parsed);
+					const edited: WorkflowRecord = {
+						...parsed,
+						updatedAt: iso(options.now ?? new Date()),
+					};
+					return { edited, validation };
+				},
+				catch: (error) => error,
+			});
+			yield* writeRecordFileEffect(options.storePath, edited);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: edited.id,
+				type: "edit",
+				summary: "Edited record Markdown.",
+				data: { changedFrontmatter: validation.changed },
+				now: options.now,
+			});
+			return edited;
+		}),
+	);
 }
 
 export function formatWorkflowRecordMarkdown(record: WorkflowRecord): string {
 	const frontmatter: Record<string, unknown> = {};
 	for (const key of recordFrontmatterKeys) {
-		frontmatter[key] = record[key];
+		const value = record[key];
+		if (value !== undefined) {
+			frontmatter[key] = value;
+		}
 	}
 	const yaml = stringify(frontmatter, {
 		lineWidth: 0,
@@ -850,63 +990,68 @@ function mutateInitiativeDeclaredProjectsEffect(options: {
 	readonly operation: "add" | "remove";
 	readonly now?: Date;
 }) {
-	return Effect.gen(function* () {
-		const records = yield* readAllWorkflowRecordsEffect(options.storePath);
-		const result = yield* Effect.try({
-			try: () => {
-				const before = requireRecordFromList(records, options.initiativeId);
-				if (
-					before.kind !== "initiative" ||
-					before.scope.type !== "project-set"
-				) {
-					validateInitiativeDeclaredProjectsEdit(before, before, records);
-				}
-				const beforeProjects =
-					before.scope.type === "project-set" ? before.scope.projects : [];
-				const afterProjects =
-					options.operation === "add"
-						? sortedUnique([...beforeProjects, options.project])
-						: beforeProjects.filter((project) => project !== options.project);
-				if (sameProjectIds(beforeProjects, afterProjects)) {
-					return { before, updated: before, changedProjects: [] };
-				}
-				const validationAfter: WorkflowRecord = {
-					...before,
-					scope: { type: "project-set", projects: afterProjects },
-				};
-				const validation = validateInitiativeDeclaredProjectsEdit(
-					before,
-					validationAfter,
-					records,
-				);
-				const updated: WorkflowRecord = {
-					...validationAfter,
-					updatedAt: iso(options.now ?? new Date()),
-				};
-				return {
-					before,
-					updated,
-					changedProjects:
-						options.operation === "add" ? validation.added : validation.removed,
-				};
-			},
-			catch: (error) => error,
-		});
-		if (result.updated === result.before) {
-			return result.before;
-		}
-		yield* writeRecordFileEffect(options.storePath, result.updated);
-		yield* rebuildRecordIndexesEffect(options.storePath);
-		yield* appendRecordUpdateEffect({
-			storePath: options.storePath,
-			recordId: result.updated.id,
-			type: `initiative-project-${options.operation}`,
-			summary: `${options.operation === "add" ? "Added" : "Removed"} initiative project ${options.project}.`,
-			data: { projects: result.changedProjects },
-			now: options.now,
-		});
-		return result.updated;
-	});
+	return withStoreWriteLockEffect(
+		{ storePath: options.storePath },
+		Effect.gen(function* () {
+			const records = yield* readAllWorkflowRecordsEffect(options.storePath);
+			const result = yield* Effect.try({
+				try: () => {
+					const before = requireRecordFromList(records, options.initiativeId);
+					if (
+						before.kind !== "initiative" ||
+						before.scope.type !== "project-set"
+					) {
+						validateInitiativeDeclaredProjectsEdit(before, before, records);
+					}
+					const beforeProjects =
+						before.scope.type === "project-set" ? before.scope.projects : [];
+					const afterProjects =
+						options.operation === "add"
+							? sortedUnique([...beforeProjects, options.project])
+							: beforeProjects.filter((project) => project !== options.project);
+					if (sameProjectIds(beforeProjects, afterProjects)) {
+						return { before, updated: before, changedProjects: [] };
+					}
+					const validationAfter: WorkflowRecord = {
+						...before,
+						scope: { type: "project-set", projects: afterProjects },
+					};
+					const validation = validateInitiativeDeclaredProjectsEdit(
+						before,
+						validationAfter,
+						records,
+					);
+					const updated: WorkflowRecord = {
+						...validationAfter,
+						updatedAt: iso(options.now ?? new Date()),
+					};
+					return {
+						before,
+						updated,
+						changedProjects:
+							options.operation === "add"
+								? validation.added
+								: validation.removed,
+					};
+				},
+				catch: (error) => error,
+			});
+			if (result.updated === result.before) {
+				return result.before;
+			}
+			yield* writeRecordFileEffect(options.storePath, result.updated);
+			yield* rebuildRecordIndexesEffect(options.storePath);
+			yield* appendRecordUpdateEffect({
+				storePath: options.storePath,
+				recordId: result.updated.id,
+				type: `initiative-project-${options.operation}`,
+				summary: `${options.operation === "add" ? "Added" : "Removed"} initiative project ${options.project}.`,
+				data: { projects: result.changedProjects },
+				now: options.now,
+			});
+			return result.updated;
+		}),
+	);
 }
 
 function validateRecordReferencesEffect(

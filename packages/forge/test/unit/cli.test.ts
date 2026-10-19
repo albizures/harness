@@ -1,4 +1,13 @@
-import { chmod, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import {
+	chmod,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -55,6 +64,27 @@ async function runTempStoreCli(
 		stderr,
 		env: { HOME: options.home, ...options.env },
 	});
+}
+
+async function initGitRepository(prefix: string) {
+	const repo = await mkdtemp(path.join(os.tmpdir(), prefix));
+	execFileSync("git", ["init", "-b", "main"], { cwd: repo });
+	await writeFile(path.join(repo, "README.md"), "# repo\n", "utf8");
+	execFileSync("git", ["add", "README.md"], { cwd: repo });
+	execFileSync(
+		"git",
+		[
+			"-c",
+			"user.name=Forge Tests",
+			"-c",
+			"user.email=forge@example.test",
+			"commit",
+			"-m",
+			"initial",
+		],
+		{ cwd: repo },
+	);
+	return repo;
 }
 
 it("when the package is created, it should expose the forge binary and checks", async () => {
@@ -1348,6 +1378,7 @@ it("when project add leaf help is requested, it should use generated leaf help",
 	expect(help).toMatch(/Register a Forge project/);
 	expect(help).toMatch(/<id>/);
 	expect(help).toMatch(/--root/);
+	expect(help).toMatch(/--worktree-copy-manifest/);
 	expect(help).not.toMatch(/Add or remove project roots/);
 	expect(stderr.text()).toBe("");
 });
@@ -1371,6 +1402,1422 @@ it("when nested command help is requested, it should not repeat internal command
 		expect(stdout.text()).not.toMatch(/initiative initiative project/);
 		expect(stderr.text()).toBe("");
 	}
+});
+
+it("when worktree command help is requested, it should expose the managed worktree surface", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["worktree", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	const help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Manage Forge-owned local git worktrees/);
+	expect(help).toMatch(/create/);
+	expect(help).toMatch(/info/);
+	expect(help).toMatch(/remove/);
+	expect(help).toMatch(/list/);
+	expect(help).toMatch(/doctor/);
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree create help is requested, it should document branch and base flags", async () => {
+	const stdout = capture();
+	const stderr = capture();
+	const code = await runCli(["worktree", "create", "--help"], {
+		stdout: stdout.stream,
+		stderr: stderr.stream,
+		env: { HOME: "/tmp" },
+	});
+	const help = stdout.text();
+	expect(code).toBe(0);
+	expect(help).toMatch(/Create a managed Forge git worktree/);
+	expect(help).toMatch(/<task>/);
+	expect(help).toMatch(/--branch/);
+	expect(help).toMatch(/--base/);
+	expect(help).toMatch(/--path/);
+	expect(help).toMatch(/--copy-manifest/);
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree read commands find no active binding, they should exit successfully", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-home-"),
+	);
+	const store = path.join(home, "store");
+	const env = { HOME: home };
+
+	expect(
+		await runTempStoreCli(
+			[
+				"new",
+				"spec",
+				"--title",
+				"Worktree spec",
+				"--body",
+				"Spec body",
+				"--project",
+				"harness",
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+	expect(
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				"Worktree task",
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+
+	for (const command of ["info", "remove"] as const) {
+		const stdout = capture();
+		const stderr = capture();
+		expect(
+			await runTempStoreCli(["worktree", command, "2"], {
+				home,
+				store,
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env,
+			}),
+		).toBe(0);
+		expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+		expect(stderr.text()).toBe("");
+	}
+});
+
+it("when worktree create receives eligible task and safe git inputs, it should create and bind managed worktrees", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-create-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-repo-");
+	const customWorktreePath = path.join(store, "worktrees", "harness", "task-2");
+	const env = { HOME: home };
+
+	expect(
+		await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+			home,
+			store,
+			env,
+		}),
+	).toBe(0);
+	expect(
+		await runTempStoreCli(
+			[
+				"new",
+				"spec",
+				"--title",
+				"Worktree spec",
+				"--body",
+				"Spec body",
+				"--project",
+				"harness",
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+	for (const title of ["Custom path task", "Default path task"]) {
+		expect(
+			await runTempStoreCli(
+				[
+					"new",
+					"task",
+					"--title",
+					title,
+					"--description",
+					"Task body",
+					"--parent",
+					"1",
+				],
+				{ home, store, env },
+			),
+		).toBe(0);
+	}
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-2",
+				"--base",
+				"main",
+				"--path",
+				customWorktreePath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Created worktree wt_.* for task 2/);
+	expect(stderr.text()).toBe("");
+	expect(
+		execFileSync(
+			"git",
+			["-C", customWorktreePath, "branch", "--show-current"],
+			{ encoding: "utf8" },
+		).trim(),
+	).toBe("forge/task-2");
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-3",
+				"--base",
+				"main",
+				"--json",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	const created = JSON.parse(stdout.text());
+	expect(created.worktree).toMatchObject({
+		taskId: 3,
+		projectId: "harness",
+		branch: "forge/task-3",
+		baseRef: "main",
+		status: "active",
+		copyManifests: [],
+		copiedPaths: [],
+	});
+	expect(created.binding).toEqual({
+		id: created.worktree.id,
+		status: "active",
+	});
+	expect(created.worktree.worktreePath).toMatch(
+		new RegExp(
+			`${store.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/worktrees/harness/wt_`,
+		),
+	);
+	expect(
+		execFileSync(
+			"git",
+			["-C", created.worktree.worktreePath, "branch", "--show-current"],
+			{ encoding: "utf8" },
+		).trim(),
+	).toBe("forge/task-3");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(JSON.parse(stdout.text()).worktrees).toHaveLength(2);
+});
+
+it("when worktree create receives an explicit copy manifest, it should copy listed files and persist manifest details", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-copy-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-copy-repo-");
+	const env = { HOME: home };
+	const manifestPath = path.join(repo, "copy-manifest.json");
+	await writeFile(path.join(repo, ".env.local"), "SECRET=local\n", "utf8");
+	await writeFile(path.join(repo, "config-dev.json"), '{"ok":true}\n', "utf8");
+	await writeFile(
+		manifestPath,
+		JSON.stringify({
+			copy: [
+				{ path: ".env.local", optional: true },
+				{ path: "config-dev.json" },
+				{ path: "missing.local", optional: true },
+			],
+		}),
+		"utf8",
+	);
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Worktree task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	const stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-copy",
+				"--base",
+				"main",
+				"--copy-manifest",
+				manifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Copied \.env\.local/);
+	expect(stdout.text()).toMatch(/Copied config-dev\.json/);
+	expect(stdout.text()).not.toMatch(/missing\.local/);
+	expect(stderr.text()).toBe("");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const [worktree] = JSON.parse(stdout.text()).worktrees;
+	expect(worktree.copyManifests).toEqual([
+		{
+			manifestPath,
+			entries: [
+				{ path: ".env.local", optional: true },
+				{ path: "config-dev.json", optional: false },
+				{ path: "missing.local", optional: true },
+			],
+		},
+	]);
+	expect(worktree.copiedPaths).toEqual([".env.local", "config-dev.json"]);
+	expect(
+		await readFile(path.join(worktree.worktreePath, ".env.local"), "utf8"),
+	).toBe("SECRET=local\n");
+	expect(
+		await readFile(path.join(worktree.worktreePath, "config-dev.json"), "utf8"),
+	).toBe('{"ok":true}\n');
+});
+
+it("when worktree create has a project default copy manifest, it should merge it before explicit entries", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-default-copy-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-default-copy-repo-");
+	const env = { HOME: home };
+	const mergedManifestTaskId = 3;
+	const defaultManifestPath = path.join(repo, "default-copy-manifest.json");
+	const explicitManifestPath = path.join(repo, "explicit-copy-manifest.json");
+	await writeFile(path.join(repo, "default-only.txt"), "default\n", "utf8");
+	await writeFile(path.join(repo, "explicit-only.txt"), "explicit\n", "utf8");
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({ copy: [{ path: "default-only.txt" }] }),
+		"utf8",
+	);
+	await writeFile(
+		explicitManifestPath,
+		JSON.stringify({
+			copy: [
+				{ path: "overridden.local", optional: true },
+				{ path: "explicit-only.txt" },
+			],
+		}),
+		"utf8",
+	);
+
+	expect(
+		await runTempStoreCli(
+			[
+				"project",
+				"add",
+				"harness",
+				"--root",
+				repo,
+				"--worktree-copy-manifest",
+				defaultManifestPath,
+			],
+			{ home, store, env },
+		),
+	).toBe(0);
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Default manifest task", "Merged manifest task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+
+	let stdout = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-default-copy",
+				"--base",
+				"main",
+				"--json",
+			],
+			{ home, store, stdout: stdout.stream, env },
+		),
+	).toBe(0);
+	const defaultOnly = JSON.parse(stdout.text());
+	expect(defaultOnly.worktree.copyManifests).toEqual([
+		{
+			manifestPath: defaultManifestPath,
+			entries: [{ path: "default-only.txt", optional: false }],
+		},
+	]);
+	expect(defaultOnly.worktree.copiedPaths).toEqual(["default-only.txt"]);
+
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({
+			copy: [
+				{ path: "default-only.txt" },
+				{ path: "overridden.local", optional: false },
+			],
+		}),
+		"utf8",
+	);
+
+	stdout = capture();
+	const stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-merged-copy",
+				"--base",
+				"main",
+				"--copy-manifest",
+				explicitManifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Copied default-only\.txt/);
+	expect(stdout.text()).toMatch(/Copied explicit-only\.txt/);
+	expect(stdout.text()).not.toMatch(/overridden\.local/);
+	expect(stderr.text()).toBe("");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const worktree = JSON.parse(stdout.text()).worktrees.find(
+		(candidate: { readonly taskId: number }) =>
+			candidate.taskId === mergedManifestTaskId,
+	);
+	expect(worktree.copyManifests).toEqual([
+		{
+			manifestPath: defaultManifestPath,
+			entries: [
+				{ path: "default-only.txt", optional: false },
+				{ path: "overridden.local", optional: false },
+			],
+		},
+		{
+			manifestPath: explicitManifestPath,
+			entries: [
+				{ path: "overridden.local", optional: true },
+				{ path: "explicit-only.txt", optional: false },
+			],
+		},
+	]);
+	expect(worktree.copiedPaths).toEqual([
+		"default-only.txt",
+		"explicit-only.txt",
+	]);
+	expect(
+		await readFile(
+			path.join(worktree.worktreePath, "default-only.txt"),
+			"utf8",
+		),
+	).toBe("default\n");
+	expect(
+		await readFile(
+			path.join(worktree.worktreePath, "explicit-only.txt"),
+			"utf8",
+		),
+	).toBe("explicit\n");
+});
+
+it("when a project default copy manifest is unsafe or missing required sources, it should fail without an active binding", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-default-copy-invalid-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository(
+		"forge-cli-worktree-default-copy-invalid-repo-",
+	);
+	const env = { HOME: home };
+	const defaultManifestPath = path.join(repo, "default-copy-manifest.json");
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({ copy: [{ path: "../unsafe.local" }] }),
+		"utf8",
+	);
+
+	await runTempStoreCli(
+		[
+			"project",
+			"add",
+			"harness",
+			"--root",
+			repo,
+			"--worktree-copy-manifest",
+			defaultManifestPath,
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Unsafe default task", "Missing default task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-default-unsafe",
+				"--base",
+				"main",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Copy manifest path '\.\.\/unsafe\.local' is unsafe/,
+	);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	await writeFile(
+		defaultManifestPath,
+		JSON.stringify({ copy: [{ path: "missing-required.local" }] }),
+		"utf8",
+	);
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-default-missing",
+				"--base",
+				"main",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Required copy source 'missing-required\.local' does not exist/,
+	);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "3"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 3 has no active worktree binding/);
+});
+
+it("when worktree create receives unsafe or missing copy manifest entries, it should fail without an active binding", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-copy-invalid-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-copy-invalid-repo-");
+	const env = { HOME: home };
+	const manifestPath = path.join(repo, "copy-manifest.json");
+	await writeFile(
+		manifestPath,
+		JSON.stringify({ copy: [{ path: "missing-required.local" }] }),
+		"utf8",
+	);
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Worktree task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-copy-invalid",
+				"--base",
+				"main",
+				"--copy-manifest",
+				manifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Required copy source 'missing-required\.local' does not exist/,
+	);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	await writeFile(
+		manifestPath,
+		JSON.stringify({ copy: [{ path: "../unsafe.local" }] }),
+		"utf8",
+	);
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/task-copy-unsafe",
+				"--base",
+				"main",
+				"--copy-manifest",
+				manifestPath,
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Copy manifest path '\.\.\/unsafe\.local' is unsafe/,
+	);
+});
+
+it("when worktree create fails during git creation, it should not leave an active binding or record", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-rollback-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-rollback-repo-");
+	const env = { HOME: home };
+	execFileSync("git", ["branch", "existing"], { cwd: repo });
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Worktree task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			["worktree", "create", "2", "--branch", "existing", "--base", "main"],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(/Failed to create git worktree/);
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(JSON.parse(stdout.text())).toEqual({ worktrees: [] });
+});
+
+it("when worktree create receives ineligible or unsafe inputs, it should fail before creation", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-invalid-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-invalid-repo-");
+	const env = { HOME: home };
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Research task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+			"--kind",
+			"research",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	let stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"2",
+				"--branch",
+				"forge/research",
+				"--base",
+				"main",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stdout.text()).toBe("");
+	expect(stderr.text()).toMatch(
+		/worktrees are only for ordinary implementation Tasks/,
+	);
+
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Implementation task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"bad branch name",
+				"--base",
+				"main",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(/Invalid git branch name/);
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-3",
+				"--base",
+				"missing-ref",
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(/Base ref 'missing-ref' does not resolve/);
+
+	stdout = capture();
+	stderr = capture();
+	expect(
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				"3",
+				"--branch",
+				"forge/task-3",
+				"--base",
+				"main",
+				"--path",
+				path.join(home, "outside"),
+			],
+			{ home, store, stdout: stdout.stream, stderr: stderr.stream, env },
+		),
+	).toBe(2);
+	expect(stderr.text()).toMatch(
+		/Worktree path must be inside Forge worktree root/,
+	);
+});
+
+it("when worktree info, list, and doctor inspect active and missing worktrees, they should report stable state", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-inspect-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-inspect-repo-");
+	const env = { HOME: home };
+	const missingTaskId = 3;
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Active task", "Missing task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+	await runTempStoreCli(
+		["worktree", "create", "2", "--branch", "forge/active", "--base", "main"],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		["worktree", "create", "3", "--branch", "forge/missing", "--base", "main"],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", "2", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const activeInfo = JSON.parse(stdout.text());
+	expect(activeInfo.worktree).toMatchObject({
+		taskId: 2,
+		branch: "forge/active",
+		status: "active",
+	});
+	expect(activeInfo.problems).toEqual([]);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "list"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toContain("forge/active");
+	expect(stdout.text()).toContain("forge/missing");
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	const missing = JSON.parse(stdout.text()).worktrees.find(
+		(worktree: { taskId: number }) => worktree.taskId === missingTaskId,
+	);
+	await rm(missing.worktreePath, { recursive: true, force: true });
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "doctor", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	const doctor = JSON.parse(stdout.text());
+	expect(doctor.ok).toBe(false);
+	expect(doctor.problems).toEqual([
+		expect.objectContaining({
+			taskId: 3,
+			code: "worktree-path-missing",
+		}),
+	]);
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "doctor", "--prune-missing"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toContain("Active worktree path");
+
+	stdout = capture();
+	expect(
+		await runTempStoreCli(["worktree", "info", String(missingTaskId)], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Task 3 has no active worktree binding/);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(
+		JSON.parse(stdout.text()).worktrees.map(
+			(worktree: { status: string }) => worktree.status,
+		),
+	).toEqual(["active"]);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--all", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(
+		JSON.parse(stdout.text()).worktrees.map(
+			(worktree: { status: string }) => worktree.status,
+		),
+	).toEqual(["active", "missing"]);
+});
+
+it("when worktree remove sees a clean managed worktree, it should remove the worktree, clear the binding, and keep branch history", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-remove-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-remove-repo-");
+	const env = { HOME: home };
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"new",
+			"task",
+			"--title",
+			"Clean remove task",
+			"--description",
+			"Task body",
+			"--parent",
+			"1",
+		],
+		{ home, store, env },
+	);
+	await runTempStoreCli(
+		[
+			"worktree",
+			"create",
+			"2",
+			"--branch",
+			"forge/remove-clean",
+			"--base",
+			"main",
+		],
+		{ home, store, env },
+	);
+
+	let stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	const [created] = JSON.parse(stdout.text()).worktrees;
+
+	stdout = capture();
+	const stderr = capture();
+	expect(
+		await runTempStoreCli(["worktree", "remove", "2"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env,
+		}),
+	).toBe(0);
+	expect(stdout.text()).toMatch(/Removed worktree wt_.* for task 2/);
+	expect(stderr.text()).toBe("");
+	expect(existsSync(created.worktreePath)).toBe(false);
+	expect(
+		execFileSync("git", ["branch", "--list", "forge/remove-clean"], {
+			cwd: repo,
+			encoding: "utf8",
+		}).trim(),
+	).toBe("forge/remove-clean");
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "info", "2"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(stdout.text()).toMatch(/Task 2 has no active worktree binding/);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(JSON.parse(stdout.text()).worktrees).toEqual([]);
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--all", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(JSON.parse(stdout.text()).worktrees).toEqual([
+		expect.objectContaining({ taskId: 2, status: "removed" }),
+	]);
+});
+
+it("when worktree remove sees dirty managed worktrees, it should refuse removal and preserve the active binding", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-remove-dirty-home-"),
+	);
+	const store = path.join(home, "store");
+	const repo = await initGitRepository("forge-cli-worktree-remove-dirty-repo-");
+	const env = { HOME: home };
+
+	await runTempStoreCli(["project", "add", "harness", "--root", repo], {
+		home,
+		store,
+		env,
+	});
+	await runTempStoreCli(
+		[
+			"new",
+			"spec",
+			"--title",
+			"Worktree spec",
+			"--body",
+			"Spec body",
+			"--project",
+			"harness",
+		],
+		{ home, store, env },
+	);
+	for (const title of ["Untracked task", "Unstaged task", "Staged task"]) {
+		await runTempStoreCli(
+			[
+				"new",
+				"task",
+				"--title",
+				title,
+				"--description",
+				"Task body",
+				"--parent",
+				"1",
+			],
+			{ home, store, env },
+		);
+	}
+
+	const untrackedTaskId = 2;
+	const unstagedTaskId = 3;
+	const stagedTaskId = 4;
+	const dirtyTaskIds = [untrackedTaskId, unstagedTaskId, stagedTaskId];
+	for (const taskId of dirtyTaskIds) {
+		await runTempStoreCli(
+			[
+				"worktree",
+				"create",
+				String(taskId),
+				"--branch",
+				`forge/remove-dirty-${taskId}`,
+				"--base",
+				"main",
+			],
+			{ home, store, env },
+		);
+	}
+
+	let stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	const worktrees = JSON.parse(stdout.text()).worktrees as Array<{
+		taskId: number;
+		worktreePath: string;
+	}>;
+	const worktreePath = (taskId: number) =>
+		worktrees.find((worktree) => worktree.taskId === taskId)?.worktreePath ??
+		"";
+	await writeFile(
+		path.join(worktreePath(untrackedTaskId), "local.txt"),
+		"local\n",
+		"utf8",
+	);
+	await writeFile(
+		path.join(worktreePath(unstagedTaskId), "README.md"),
+		"changed\n",
+		"utf8",
+	);
+	await writeFile(
+		path.join(worktreePath(stagedTaskId), "README.md"),
+		"staged\n",
+		"utf8",
+	);
+	execFileSync("git", ["add", "README.md"], {
+		cwd: worktreePath(stagedTaskId),
+	});
+
+	for (const taskId of dirtyTaskIds) {
+		stdout = capture();
+		const stderr = capture();
+		expect(
+			await runTempStoreCli(["worktree", "remove", String(taskId)], {
+				home,
+				store,
+				stdout: stdout.stream,
+				stderr: stderr.stream,
+				env,
+			}),
+		).toBe(2);
+		expect(stderr.text()).toMatch(/refusing to remove dirty worktree/);
+		expect(
+			execFileSync(
+				"git",
+				["-C", worktreePath(taskId), "status", "--porcelain"],
+				{
+					encoding: "utf8",
+				},
+			).trim().length,
+		).toBeGreaterThan(0);
+	}
+
+	stdout = capture();
+	await runTempStoreCli(["worktree", "list", "--json"], {
+		home,
+		store,
+		stdout: stdout.stream,
+		env,
+	});
+	expect(
+		JSON.parse(stdout.text()).worktrees.map(
+			(worktree: { status: string }) => worktree.status,
+		),
+	).toEqual(["active", "active", "active"]);
+});
+
+it("when worktree list sees an empty store, it should render a stable empty result", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-list-home-"),
+	);
+	const store = path.join(home, "store");
+	const stdout = capture();
+	const stderr = capture();
+
+	expect(
+		await runTempStoreCli(["worktree", "list"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: home },
+		}),
+	).toBe(0);
+	expect(stdout.text()).toBe("No managed worktrees.\n");
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree doctor sees an empty store, it should report ok without mutation", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-doctor-home-"),
+	);
+	const store = path.join(home, "store");
+	const stdout = capture();
+	const stderr = capture();
+
+	expect(
+		await runTempStoreCli(["worktree", "doctor"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			stderr: stderr.stream,
+			env: { HOME: home },
+		}),
+	).toBe(0);
+	expect(stdout.text()).toBe("Worktree store ok.\n");
+	expect(stderr.text()).toBe("");
+});
+
+it("when worktree list JSON is requested, it should emit the structured empty contract", async () => {
+	const home = await mkdtemp(
+		path.join(os.tmpdir(), "forge-cli-worktree-list-json-home-"),
+	);
+	const store = path.join(home, "store");
+	const stdout = capture();
+
+	expect(
+		await runTempStoreCli(["worktree", "list", "--json"], {
+			home,
+			store,
+			stdout: stdout.stream,
+			env: { HOME: home },
+		}),
+	).toBe(0);
+	expect(JSON.parse(stdout.text())).toEqual({ worktrees: [] });
 });
 
 it("when migrated record leaf help is requested, it should use generated leaf help", async () => {

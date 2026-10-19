@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Obsolete. The `@albizures/awf` package has been removed from this repository; this ADR is retained only as historical context.
 
 ## Context
 

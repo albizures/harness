@@ -19,11 +19,9 @@
 			"./extensions"
 		]
 	},
-	"dependencies": {
-		"@earendil-works/pi-tui": "^0.82.0"
-	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
 	},
 	"scripts": {
 		"test": "vitest run --config ../../vitest.config.mts"

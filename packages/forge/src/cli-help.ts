@@ -68,6 +68,11 @@ export const rootHelpModel: RootHelpModel = {
 		{ name: "next", synopsis: "Select the next executable record." },
 		{ name: "tree", synopsis: "Show a record relationship tree." },
 		{ name: "deps", synopsis: "Show or mutate dependencies." },
+		{
+			name: "worktree",
+			synopsis:
+				"worktree create / info / remove / list / doctor: manage Forge-owned local git worktrees.",
+		},
 		{ name: "open", synopsis: "Open a record in an editor." },
 		{ name: "edit", synopsis: "Edit a workflow record." },
 		{ name: "projects", synopsis: "List registered projects." },
@@ -82,7 +87,7 @@ export const rootHelpModel: RootHelpModel = {
 		},
 	],
 	guidance:
-		"Run 'forge <command> --help' for detailed command help. Summarize a Forge record and its direct children. Commands include project root add, initiative project add, and new spec.",
+		"Run 'forge <command> --help' for detailed command help. Summarize a Forge record and its direct children. Commands include project root add, initiative project add, new spec, and worktree info.",
 };
 
 function usableWidth(width: number | undefined): number {

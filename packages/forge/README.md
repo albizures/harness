@@ -10,7 +10,7 @@ forge config get [storePath]
 forge config set storePath <absolute-path>
 forge store path
 forge store doctor
-forge project add <id> --root <path> [--name <name>] [--remote <url>]
+forge project add <id> --root <path> [--name <name>] [--remote <url>] [--worktree-copy-manifest <absolute-path>]
 forge project root add <id> <path>
 forge project root remove <id> <path>
 forge project remove <id>
@@ -60,6 +60,8 @@ forge store doctor
 ```
 
 The config file lives at `$HOME/.config/forge/config.json`. Commands that need the store fail with a setup hint until `storePath` is configured, unless `--store` is supplied.
+
+A project may define a default worktree copy manifest at registration time with `--worktree-copy-manifest <absolute-path>`. `forge worktree create` reads that project registry field before any explicit `--copy-manifest <file>`, applies the same JSON/relative-file-only safety rules to both manifests, and lets explicit duplicate paths override default entry options.
 
 For disposable local or integration-test runs, prefer a temp store override so your real config is not touched:
 

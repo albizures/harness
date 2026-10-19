@@ -45,6 +45,11 @@ Use `forge --help` as the live command surface. Common commands for workflow ski
 - `forge comment <record> --message <md>|--message-file <file>|--message -`
 - `forge done <record> --resolution <slug>`
 - `forge deps add <record> --depends-on <id>` / `forge deps remove <record> --depends-on <id>` / `forge deps <record>`
+- `forge worktree create <task> --branch <branch> --base <ref> [--path <path>] [--copy-manifest <path>] [--json]`
+- `forge worktree info <task> [--json]`
+- `forge worktree remove <task> [--json]`
+- `forge worktree list [--all] [--json]`
+- `forge worktree doctor [--prune-missing] [--json]`
 - `forge tree <record>`
 - `forge open <record>`
 - `forge edit <record>`
@@ -88,8 +93,14 @@ Forge refuses to complete parent records while open child work remains. Do not m
 
 Use comments for normal child outcomes, decisions, and map-change notes. Use `forge edit <record>` only when the canonical Wayfinder body itself must change.
 
+## Worktree boundary
+
+Forge owns local managed worktree primitives: create, info, list, doctor, remove, and safety checks for missing, invalid, or dirty managed worktree state. Use `forge worktree` for those local lifecycle operations only.
+
+The Spec workflow owns git and GitHub orchestration around those worktrees. Pushes, PR creation, PR comment retrieval, task branch stack orchestration, round gates, accepted-work integration, and final integration PR creation use `git` or `gh` directly according to the Spec workflow, not Forge commands.
+
 ## Boundaries
 
-- Forge is authoritative for workflow records, relationships, readiness, lifecycle state, comments, and history.
+- Forge is authoritative for workflow records, relationships, readiness, lifecycle state, comments, history, and managed local worktree state.
 - Do not edit Forge store files by hand; use Forge commands.
 - Do not use GitHub issues as the backing store for Forge workflow records.

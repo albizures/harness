@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. ADR 0006 supersedes this ADR's Task profile/subkind classification details; this ADR still records the decision to model integration-test and merge as ready-gated ordinary Tasks instead of Spec lifecycle actions.
+Obsolete. The `@albizures/awf` package has been removed from this repository; this ADR is retained only as historical context. ADR 0006 superseded this ADR's Task profile/subkind classification details.
 
 ## Context
 

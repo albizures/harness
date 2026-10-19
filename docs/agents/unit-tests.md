@@ -19,9 +19,3 @@ When changing behavior:
 - Cover the happy path, important edge cases, and failure paths.
 - Maintain or improve meaningful coverage; do not reduce coverage for the affected behavior.
 - Run the package's coverage command when one is available.
-
-Current package-specific coverage command:
-
-```sh
-pnpm --filter @albizures/awf test:coverage
-```
