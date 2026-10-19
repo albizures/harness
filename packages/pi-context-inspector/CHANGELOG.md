@@ -1,5 +1,11 @@
 # @albizures/pi-context-inspector
 
+## 0.2.1
+
+### Patch Changes
+
+- f2a9e17: Declare Pi's terminal UI package as a host-provided peer dependency so Pi loads the extension with its shared runtime module.
+
 ## 0.2.0
 
 ### Minor Changes

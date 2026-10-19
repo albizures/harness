@@ -1,6 +1,6 @@
 {
 	"name": "@albizures/pi-footer-status",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Pi package for customizing the footer status area.",
 	"keywords": [
 		"pi-package",
